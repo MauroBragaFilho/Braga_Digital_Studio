@@ -1,0 +1,362 @@
+<div class="montage-screen-container" style="display: flex; flex-direction: column; gap: 16px; height: 100%; width: 100%; box-sizing: border-box; overflow-y: auto; padding-right: 4px;">
+  
+  <!-- 1. CABEÇALHO DA TELA & BOTÃO SALVAR -->
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <p style="color: var(--muted); font-size: 13px; margin: 0;">Monte seu vídeo combinando abertura, vídeos principais e finalização.</p>
+    </div>
+    
+    <button id="btnSaveProject" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='var(--card-2)'">
+      <span class="material-symbols-rounded" style="font-size: 18px;">save</span>
+      Salvar Projeto
+    </button>
+  </div>
+
+  <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
+  <div id="montageDebugBanner" style="display: none; background: rgba(229, 57, 53, 0.15); border: 1px solid #e53935; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 11px; color: #ff8a80; max-height: 120px; overflow-y: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: #e53935; margin-bottom: 4px;">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <span class="material-symbols-rounded" style="font-size: 16px;">error</span>
+        [ERRO DETECTADO NO SISTEMA]
+      </span>
+      <button onclick="document.getElementById('montageDebugBanner').style.display='none'" style="background: rgba(0,0,0,0.3); border: 1px solid #e53935; color: #fff; font-size: 10px; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Fechar Erro</button>
+    </div>
+    <pre id="montageLogOutput" style="margin: 0; white-space: pre-wrap; word-break: break-all; color: #ffffff;"></pre>
+  </div>
+
+  <!-- 2. STEPPER BAR (PASSO A PASSO NUMERADO COM STATUS DINÂMICO) -->
+  <div class="montage-stepper" style="display: flex; align-items: center; justify-content: space-between; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 24px;">
+    
+    <!-- PASSO 1: ABERTURA -->
+    <div id="step1Item" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step1Badge" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">1</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">ABERTURA</div>
+        <div id="step1Sub" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Defina a abertura do vídeo</div>
+      </div>
+    </div>
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 2: VÍDEOS PRINCIPAIS -->
+    <div id="step2Item" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step2Badge" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">2</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">VÍDEOS PRINCIPAIS</div>
+        <div id="step2Sub" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Adicione os vídeos principais</div>
+      </div>
+    </div>
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 3: FINALIZAÇÃO -->
+    <div id="step3Item" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step3Badge" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">3</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">FINALIZAÇÃO</div>
+        <div id="step3Sub" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Defina a finalização do vídeo</div>
+      </div>
+    </div>
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 4: EXPORTAR / PROGRESSO -->
+    <div id="step4Item" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step4Badge" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">4</div>
+      <div>
+        <div id="step4Title" style="font-size: 12px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">EXPORTAR</div>
+        <div id="step4Sub" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Configure e exporte seu vídeo</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PAINEL PRINCIPAL EM COLUNAS -->
+  <div style="display: flex; gap: 16px; min-height: 480px; flex: 1;">
+    
+    <!-- COLUNA 1 (ESQUERDA): ABERTURA, FINALIZAÇÃO, DURAÇÃO FIXA -->
+    <div style="width: 270px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;">
+      
+      <!-- ABERTURA CARD -->
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: #ffffff;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>ABERTURA (Comum)</span>
+            <span class="material-symbols-rounded" style="font-size: 14px; color: var(--muted); cursor: help;" title="Vídeo de vinheta exibido antes de cada item">info</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 8px; border: 1px solid var(--line); align-items: center;">
+          <div style="width: 80px; height: 48px; background: #000; border-radius: 4px; overflow: hidden; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center;">
+            <img id="imgIntroThumb" src="" style="width: 100%; height: 100%; object-fit: cover; display: none;" onError="this.style.display='none'" />
+            <span id="phIntroIcon" class="material-symbols-rounded" style="color: var(--muted); font-size: 20px;">movie</span>
+          </div>
+          <div style="flex: 1; min-width: 0; font-size: 11px;">
+            <div id="lblIntroName" style="font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Nenhuma</div>
+            <div id="lblIntroDuration" style="color: var(--muted); margin-top: 2px;">00:00:00</div>
+            <div id="lblIntroRes" style="color: var(--muted);">-</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 6px;">
+          <button id="btnSelectIntro" style="flex: 1; height: 32px; background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='var(--card-2)'">
+            <span class="material-symbols-rounded" style="font-size: 14px;">edit</span>
+            Alterar Abertura
+          </button>
+          <button id="btnRemoveIntro" title="Remover abertura" style="width: 32px; height: 32px; background: var(--card-2); color: #e53935; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">delete</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- FINALIZAÇÃO CARD -->
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: #ffffff;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>FINALIZAÇÃO (Comum)</span>
+            <span class="material-symbols-rounded" style="font-size: 14px; color: var(--muted); cursor: help;" title="Vídeo de encerramento exibido após cada item">info</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 8px; border: 1px solid var(--line); align-items: center;">
+          <div style="width: 80px; height: 48px; background: #000; border-radius: 4px; overflow: hidden; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center;">
+            <img id="imgOutroThumb" src="" style="width: 100%; height: 100%; object-fit: cover; display: none;" onError="this.style.display='none'" />
+            <span id="phOutroIcon" class="material-symbols-rounded" style="color: var(--muted); font-size: 20px;">movie</span>
+          </div>
+          <div style="flex: 1; min-width: 0; font-size: 11px;">
+            <div id="lblOutroName" style="font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Nenhuma</div>
+            <div id="lblOutroDuration" style="color: var(--muted); margin-top: 2px;">00:00:00</div>
+            <div id="lblOutroRes" style="color: var(--muted);">-</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 6px;">
+          <button id="btnSelectOutro" style="flex: 1; height: 32px; background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='var(--card-2)'">
+            <span class="material-symbols-rounded" style="font-size: 14px;">edit</span>
+            Alterar Finalização
+          </button>
+          <button id="btnRemoveOutro" title="Remover finalização" style="width: 32px; height: 32px; background: var(--card-2); color: #e53935; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">delete</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- DURAÇÃO FIXA CARD (COM SELEÇÃO DE PORCENTAGEM PADRÃO) -->
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #ffffff;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>DURAÇÃO FIXA</span>
+            <span class="material-symbols-rounded" style="font-size: 14px; color: var(--muted);">info</span>
+          </div>
+          <span style="font-size: 11px; color: var(--muted);">Porcentagem Padrão</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line);">
+          <input type="range" id="sliderGlobalPct" min="1" max="100" value="100" style="flex: 1; accent-color: #e53935; cursor: pointer;" />
+          <div style="display: flex; align-items: center; gap: 2px; background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px;">
+            <input type="number" id="numGlobalPct" min="1" max="100" value="100" style="width: 44px; background: transparent; border: none; color: #ffffff; font-weight: 700; text-align: center; font-size: 10px; outline: none;" />
+            <span style="color: #e53935; font-weight: 700; font-size: 11px;">%</span>
+          </div>
+        </div>
+
+        <p style="font-size: 11px; color: var(--muted); margin: 0; line-height: 1.4;">Define a % inicial aplicada aos novos vídeos da fila (alterar vídeos individuais não muda este valor).</p>
+      </div>
+    </div>
+
+    <!-- COLUNA 2 (CENTRO): VÍDEOS PRINCIPAIS & TABELA COM BOTÕES EM UMA LINHA -->
+    <div style="flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column;">
+      
+      <!-- Cabeçalho da Tabela & Botões de Ação em UMA ÚNICA LINHA -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: #ffffff; white-space: nowrap;">
+          <span>VÍDEOS PRINCIPAIS (<span id="mainCount">0</span>)</span>
+        </div>
+
+        <!-- Barra de Botões em Uma Linha com Texto Curto -->
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
+          <button id="btnAddMainVideos" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">add</span>
+            Adicionar
+          </button>
+
+          <button id="btnImportFromLibrary" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">video_library</span>
+            Biblioteca
+          </button>
+          
+          <button id="btnAddFolder" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">folder</span>
+            Pasta
+          </button>
+
+          <button id="btnClearQueue" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">delete_sweep</span>
+            Limpar Fila
+          </button>
+
+          <select id="selSortOrder" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-weight: 600; font-size: 12px; outline: none; cursor: pointer; white-space: nowrap;">
+            <option value="default">Por Importação</option>
+            <option value="name_asc">Por Nome (A-Z)</option>
+            <option value="duration_desc">Por Duração (Maior)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tabela Sem As Colunas de Áudio/Alinhamento + Com % UTILIZADO DO VÍDEO -->
+      <div style="flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,0.2);">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase;">
+              <th style="padding: 10px 12px; width: 40px;">#</th>
+              <th style="padding: 10px 12px;">VÍDEO</th>
+              <th style="padding: 10px 12px; width: 120px;">DURAÇÃO ORIGINAL</th>
+              <th style="padding: 10px 12px; width: 200px;">% UTILIZADO DO VÍDEO</th>
+              <th style="padding: 10px 12px; width: 110px;">DURAÇÃO FINAL</th>
+              <th style="padding: 10px 12px; width: 60px; text-align: center;">STATUS</th>
+              <th style="padding: 10px 12px; width: 40px;"></th>
+            </tr>
+          </thead>
+          <tbody id="montageMainBody">
+            <!-- Populado via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé da Tabela -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12px; color: var(--muted); padding: 0 4px;">
+        <div>Duração total dos vídeos principais: <strong id="mainTotalDuration" style="color: #ffffff; font-size: 13px; margin-left: 4px;">00:00:00</strong></div>
+        <div style="font-size: 11px; color: var(--muted);">Alterar a % de um vídeo afeta apenas aquele vídeo.</div>
+      </div>
+    </div>
+
+    <!-- COLUNA 3 (DIREITA): CONFIGURAÇÕES DE SAÍDA S/ PRORES + PASTA VÍDEOS/MONTAGEM -->
+    <div style="width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px;">
+      
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+        <h3 style="font-size: 13px; font-weight: 700; color: #ffffff; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">CONFIGURAÇÕES DE SAÍDA</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 12px; font-size: 12px;">
+          <div>
+            <label style="color: var(--muted); display: block; margin-bottom: 6px;">Resolução</label>
+            <select id="selRes" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none;">
+              <option value="1080p" selected>1080p (Full HD)</option>
+              <option value="720p">720p (HD)</option>
+              <option value="1440p">1440p (Quad HD)</option>
+              <option value="2160p">2160p (4K)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="color: var(--muted); display: block; margin-bottom: 6px;">FPS</label>
+            <select id="selFps" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none;">
+              <option value="30" selected>30</option>
+              <option value="24">24</option>
+              <option value="60">60</option>
+              <option value="Manter original">Manter original</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="color: var(--muted); display: block; margin-bottom: 6px;">Codec</label>
+            <select id="selCodec" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none;">
+              <option value="H.264" selected>H.264</option>
+              <option value="H.265">H.265 (HEVC)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="color: var(--muted); display: block; margin-bottom: 6px;">Qualidade</label>
+            <select id="selQuality" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none;">
+              <option value="Alta" selected>Alta</option>
+              <option value="Média">Média</option>
+              <option value="Máxima">Máxima</option>
+              <option value="Baixa">Baixa</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="color: var(--muted); display: block; margin-bottom: 6px;">Formato</label>
+            <select id="selFormat" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none;">
+              <option value="MP4" selected>MP4</option>
+              <option value="MKV">MKV</option>
+              <option value="MOV">MOV</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="color: var(--muted); display: block; margin-bottom: 6px;">Pasta de Destino</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" id="txtDestFolder" value="C:\Users\mauri\Videos\Montagem" style="flex: 1; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 11px;" />
+              <button id="btnSelectDestFolder" title="Selecionar Pasta" style="width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #f25c05; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                <span class="material-symbols-rounded" style="font-size: 18px;">folder_open</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PAINEL INFERIOR: BOTÕES DE AÇÃO -->
+  <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
+    <div style="font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px;">
+      <span class="material-symbols-rounded" style="font-size: 18px; color: #4caf50;">check_circle</span>
+      <span>Projeto pronto para ser processado pelo motor de montagem BDS.</span>
+    </div>
+
+    <div style="display: flex; gap: 12px;">
+      <button id="btnExportAll" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 12px 28px; font-weight: 700; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(229, 57, 53, 0.3);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+        <span class="material-symbols-rounded" style="font-size: 20px;">upload</span>
+        Exportar Todos os Vídeos
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL PARA ESCOLHER A ORIGEM DA BIBLIOTECA (BDSM, OBS, NVIDIA, TODAS) -->
+  <div id="librarySelectModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 440px; padding: 24px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-rounded" style="color: #f25c05;">video_library</span>
+          Selecione a Biblioteca
+        </h3>
+        <button id="btnCloseLibModal" style="background: transparent; border: none; color: var(--muted); cursor: pointer;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+          <span class="material-symbols-rounded" style="font-size: 20px;">close</span>
+        </button>
+      </div>
+
+      <p style="font-size: 13px; color: var(--muted); margin: 0;">De qual origem você deseja puxar os vídeos para a fila de montagem?</p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn-lib-option" data-origin="BDSM_DEVICE" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #f25c05;">smartphone</span>
+            <span>Dispositivos BDSM</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-lib-option" data-origin="OBS" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #4caf50;">videocam</span>
+            <span>OBS Studio</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-lib-option" data-origin="SHADOWPLAY" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #2196f3;">sports_esports</span>
+            <span>NVIDIA ShadowPlay</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-lib-option" data-origin="ALL" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #ff9800;">video_library</span>
+            <span>Todas as Mídias da Biblioteca</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

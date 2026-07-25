@@ -1,0 +1,277 @@
+<div class="converter-screen-container" style="display: flex; flex-direction: column; gap: 16px; height: 100%; width: 100%; box-sizing: border-box; overflow-y: auto; padding-right: 4px;">
+  
+  <!-- CABEÇALHO -->
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <p style="color: var(--muted); font-size: 13px; margin: 0;">Visualize e edite os metadados e estrutura técnica do arquivo.</p>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <span id="metaFileName" style="font-size: 13px; font-weight: 700; color: var(--accent);">-</span>
+      <button type="button" id="btnSelectMetaFile" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 7px 16px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+        <span class="material-symbols-rounded" style="font-size: 16px;">file_open</span> Carregar Arquivo
+      </button>
+      <button type="button" class="hidden" id="btnResetMeta" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 16px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+        <span class="material-symbols-rounded" style="font-size: 16px;">clear_all</span> Limpar Mídia
+      </button>
+    </div>
+  </div>
+
+  <!-- COLUNAS PRINCIPAIS -->
+  <div style="display: flex; gap: 16px; min-height: 480px; flex: 1;">
+    
+    <!-- ESQUERDA: Abas e Forms -->
+    <div style="flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column;">
+      
+      <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px;">ESTRUTURA METADADOS</div>
+      
+      <nav class="meta-tabs" style="display: flex; gap: 16px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto;">
+        <button type="button" class="meta-tab active" data-tab="tags">Geral (Tags)</button>
+        <button type="button" class="meta-tab" data-tab="info">Info Técnica</button>
+        <button type="button" class="meta-tab" data-tab="streams">Streams</button>
+        <button type="button" class="meta-tab" data-tab="chapters">Capítulos</button>
+        <button type="button" class="meta-tab" data-tab="cover">Capa</button>
+        <button type="button" class="meta-tab" data-tab="json">JSON Raw</button>
+      </nav>
+
+      <div style="flex: 1; overflow-y: auto; padding-right: 8px;">
+        
+        <!-- ABA: TAGS -->
+        <div class="meta-panel active" id="tab-tags">
+          <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 12px; text-transform: uppercase;">
+            <span>CAMPO</span><span>ANTES</span><span>DEPOIS</span>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Título</label>
+              <input type="text" id="tag-orig-title" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-title" data-tag="title" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Artista</label>
+              <input type="text" id="tag-orig-artist" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-artist" data-tag="artist" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Álbum</label>
+              <input type="text" id="tag-orig-album" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-album" data-tag="album" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Copyright</label>
+              <input type="text" id="tag-orig-copyright" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-copyright" data-tag="copyright" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Gênero</label>
+              <input type="text" id="tag-orig-genre" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-genre" data-tag="genre" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Ano</label>
+              <input type="text" id="tag-orig-date" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-date" data-tag="date" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+            <div style="display: grid; grid-template-columns: 90px 1fr 1fr; gap: 16px; align-items: center;">
+              <label style="font-size: 12px; font-weight: 600;">Idioma</label>
+              <input type="text" id="tag-orig-language" disabled placeholder="Não definido" style="background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 12px;">
+              <input type="text" id="tag-language" data-tag="language" placeholder="Deixar em branco" style="background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;">
+            </div>
+          </div>
+          
+          <div style="display: none;">
+            <input type="text" id="tag-track" data-tag="track">
+            <input type="text" id="tag-composer" data-tag="composer">
+            <input type="text" id="tag-director" data-tag="director">
+            <input type="text" id="tag-publisher" data-tag="publisher">
+            <input type="text" id="tag-comment" data-tag="comment">
+            <input type="text" id="tag-encoder" data-tag="encoder">
+            <input type="text" id="tag-location" data-tag="location">
+          </div>
+        </div>
+
+        <!-- ABA: INFO TÉCNICA -->
+        <div class="meta-panel hidden" id="tab-info">
+          <div class="info-grid" id="readOnlyGrid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12px;">
+            <!-- Preenchido pelo JS -->
+          </div>
+        </div>
+        
+        <!-- ABA: STREAMS -->
+        <div class="meta-panel hidden" id="tab-streams">
+          <div id="streamsList" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Preenchido pelo JS -->
+          </div>
+        </div>
+        
+        <!-- ABA: CAPÍTULOS -->
+        <div class="meta-panel hidden" id="tab-chapters">
+          <button type="button" id="btnAddChapter" style="margin-bottom: 16px; background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 11px; cursor: pointer;">+ Novo Capítulo</button>
+          <div style="border: 1px solid var(--line); border-radius: 6px; overflow: hidden;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+              <thead>
+                <tr style="background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px;">
+                  <th style="padding: 10px;">Início</th>
+                  <th style="padding: 10px;">Fim</th>
+                  <th style="padding: 10px;">Título</th>
+                  <th style="padding: 10px;">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="chaptersList"></tbody>
+            </table>
+          </div>
+        </div>
+        
+        <!-- ABA: CAPA -->
+        <div class="meta-panel hidden" id="tab-cover">
+          <div style="display: flex; gap: 12px;">
+            <button type="button" id="btnReplaceCover" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 11px; cursor: pointer;">Alterar Capa</button>
+            <button type="button" id="btnRemoveCover" style="background: rgba(229, 57, 53, 0.1); color: #ff8a80; border: 1px solid #e53935; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 11px; cursor: pointer;">Remover Capa</button>
+          </div>
+          <p id="coverStatusText" style="font-size: 12px; color: var(--muted); margin-top: 12px;"></p>
+        </div>
+
+        <!-- ABA: JSON -->
+        <div class="meta-panel hidden" id="tab-json">
+          <button type="button" id="btnCopyJson" style="margin-bottom: 12px; background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 11px; cursor: pointer;">Copiar JSON</button>
+          <pre id="rawJsonArea" style="background: rgba(0,0,0,0.4); color: #4ade80; padding: 16px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px; border-radius: 6px; border: 1px solid var(--line); margin: 0;"></pre>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DIREITA: Informações e Status -->
+    <div style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px;">
+      
+      <!-- THUMBNAIL -->
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px;">
+        <h3 style="font-size: 13px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0; text-transform: uppercase;">MINIATURA / CAPA</h3>
+        
+        <div style="width: 100%; aspect-ratio: 16/9; background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 8px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+          <img id="coverPreview" src="" alt="Capa" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+          <div id="coverPlaceholder" style="font-size: 12px; font-weight: 600; color: var(--muted); position: absolute; text-transform: uppercase; letter-spacing: 0.5px;">Sem Arte</div>
+        </div>
+      </div>
+
+      <!-- INFORMAÇÕES -->
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; flex: 1;">
+        <h3 style="font-size: 13px; font-weight: 700; color: #ffffff; margin: 0 0 16px 0; text-transform: uppercase;">RESUMO</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 14px; font-size: 12px;">
+          <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 8px;">
+            <span style="color: var(--muted); font-weight: 600;">Duração:</span>
+            <span id="metaFileDurationInfo" style="color: #ffffff; font-weight: 700;">-</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 8px;">
+            <span style="color: var(--muted); font-weight: 600;">Modo:</span>
+            <span style="color: #4ade80; font-weight: 700;">Direct Stream Copy</span>
+          </div>
+          
+          <div id="metaLogArea" class="hidden" style="margin-top: 8px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border: 1px solid var(--line);">
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 700; font-size: 11px; margin-bottom: 6px;">
+              <span class="material-symbols-rounded" style="font-size: 14px;">sync</span> STATUS
+            </div>
+            <span id="metaStatusText" style="color: #ffffff; font-size: 11px; word-break: break-all;">Aguardando...</span>
+            <pre id="metaLogOutput" style="display: none;"></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AÇÕES (RODAPÉ) -->
+  <div id="metaExportArea" class="hidden" style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 24px; display: flex; justify-content: flex-end; align-items: center; margin-top: auto;">
+    <div style="display: none;">
+      <input type="radio" name="exportMode" value="overwrite" checked>
+      <input type="radio" name="exportMode" value="new">
+      <input type="text" id="outMetaFolder">
+      <button type="button" id="btnChangeMetaFolder"></button>
+      <input type="text" id="outMetaName">
+    </div>
+    
+    <div style="display: flex; gap: 12px; width: 340px;">
+      <button type="button" onclick="document.getElementById('btnResetMeta').click();" style="flex: 1; background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s;">Reverter Tags</button>
+      <button type="button" id="btnExportMeta" style="flex: 1; background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s;">
+        <span class="material-symbols-rounded" style="font-size: 18px;">save</span> Salvar Metadados
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL DE CONFIRMAÇÃO DE DIFF -->
+<dialog id="diffModal" style="background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: #ffffff; width: 440px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+    <span class="material-symbols-rounded" style="color: #e53935; font-size: 24px;">fact_check</span>
+    <h3 style="margin: 0; font-size: 16px; font-weight: 800;">Confirmar Alterações</h3>
+  </div>
+  
+  <p style="font-size: 12px; color: var(--muted); margin-top: 0; margin-bottom: 16px;">As seguintes alterações serão gravadas no arquivo original:</p>
+
+  <div id="diffList" style="font-family: monospace; font-size: 11px; max-height: 240px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 24px;"></div>
+  
+  <div style="display: flex; gap: 12px; justify-content: flex-end;">
+    <button type="button" id="btnCancelDiff" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 12px; cursor: pointer;">Cancelar</button>
+    <button type="button" id="btnConfirmDiff" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 8px 16px; font-weight: 700; font-size: 12px; cursor: pointer;">Gravar no Arquivo</button>
+  </div>
+</dialog>
+
+<style>
+  .meta-panel.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+  .meta-panel.hidden { display: none !important; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  
+  .meta-tab {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding-bottom: 8px;
+    border-bottom: 2px solid transparent;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .meta-tab:hover { color: #ffffff; }
+  .meta-tab.active {
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+  }
+  
+  .info-item {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--line);
+    padding: 10px 14px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .info-item label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+  .info-item span { font-size: 12px; font-weight: 600; color: #ffffff; }
+
+  .stream-card {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .stream-card .s-info { font-size: 12px; color: #ffffff; font-weight: 600; line-height: 1.4; }
+  .stream-card .s-info .small { font-size: 11px; font-weight: 400; color: var(--muted); }
+  .stream-card .s-edit { display: flex; gap: 12px; }
+
+  #chaptersList td input[type="text"], #chaptersList td input[type="number"] {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--line);
+    color: #ffffff;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+</style>

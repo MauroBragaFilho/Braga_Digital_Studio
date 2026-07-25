@@ -1,0 +1,106 @@
+<div class="home-container" style="padding-top: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; box-sizing: border-box; overflow: hidden;">
+  <!-- Estatísticas -->
+  <section class="home-section" style="margin-top: 24px;">
+    <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+      <div class="stat-card" style="background: var(--card); border: 1px solid var(--line); padding: 20px; border-radius: 8px; flex: 1; min-width: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+        <div style="color: var(--muted); font-size: 13px; font-weight: 500; margin-bottom: 6px;">Total de Mídias</div>
+        <div id="statTotalMedia" style="font-size: 32px; font-weight: 700; color: #fff;">0</div>
+        <div id="statMediaBreakdown" style="color: var(--muted); font-size: 11px; margin-top: 6px; display: flex; gap: 8px; align-items: center; justify-content: center; white-space: nowrap;">
+          <span><strong id="statCountVideos" style="color: #fff;">0</strong> vídeos</span> • 
+          <span><strong id="statCountAudios" style="color: #fff;">0</strong> áudios</span> • 
+          <span><strong id="statCountPhotos" style="color: #fff;">0</strong> fotos</span>
+        </div>
+      </div>
+      <div class="stat-card" style="background: var(--card); border: 1px solid var(--line); padding: 24px; border-radius: 8px; flex: 1; min-width: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+        <div style="color: var(--muted); font-size: 13px; font-weight: 500; margin-bottom: 8px;">Espaço Ocupado</div>
+        <div id="statTotalSize" style="font-size: 32px; font-weight: 700; color: var(--accent);">0 GB</div>
+        <div style="color: var(--muted); font-size: 12px; margin-top: 8px;">
+          Última Sincronização: <span id="statLastSync">-</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gravações Recentes -->
+  <section class="home-section" style="margin-top: 24px;">
+    <h2 style="font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; color: #fff;">
+      <span class="material-symbols-rounded" style="color: var(--accent); font-size: 18px;">add_box</span>
+      Gravações Recentes
+    </h2>
+    <div class="recordings-row" id="recentRecordings" style="display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px;">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- Ações Rápidas -->
+  <section class="home-section" style="margin-top: 32px;">
+    <h2 style="font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; color: #fff;">
+      <span class="material-symbols-rounded" style="color: var(--accent); font-size: 18px;">bolt</span>
+      Ações Rápidas
+    </h2>
+    <div class="quick-actions-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+      <button class="qa-card" data-target="download">
+        <span class="material-symbols-rounded qa-icon">download</span>
+        <strong>Downloads</strong>
+        <span>Baixe vídeos e áudios</span>
+      </button>
+      <button class="qa-card" data-target="converter">
+        <span class="material-symbols-rounded qa-icon">sync</span>
+        <strong>Conversão</strong>
+        <span>Converta arquivos de mídia</span>
+      </button>
+      <button class="qa-card" data-target="montage">
+        <span class="material-symbols-rounded qa-icon">movie</span>
+        <strong>Montagem</strong>
+        <span>Montagem de Vídeos</span>
+      </button>
+      <button class="qa-card" data-target="silence">
+        <span class="material-symbols-rounded qa-icon">graphic_eq</span>
+        <strong>Remover Silêncio</strong>
+        <span>Cortes Inteligentes</span>
+      </button>
+      <button class="qa-card" data-target="settings">
+        <span class="material-symbols-rounded qa-icon">settings</span>
+        <strong>Configurações</strong>
+        <span>Opções do Sistema</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Últimos Trabalhos -->
+  <section class="home-section" style="margin-top: 32px; flex: 1; display: flex; flex-direction: column; min-height: 0;">
+    <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #fff;">Últimos Trabalhos</h2>
+    
+    <div class="jobs-tabs" style="display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin-bottom: 16px;">
+      <button class="job-tab active">Recentes</button>
+      <button class="job-tab">Convertidos</button>
+      <button class="job-tab">Downloads</button>
+      <button class="job-tab">Importados</button>
+      <button class="job-tab">Favoritos</button>
+    </div>
+
+    <div class="table-container" style="background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: auto; flex: 1; min-height: 0;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; min-width: 650px;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--line); color: var(--muted);">
+            <th style="padding: 12px 16px; font-weight: 500;">Nome</th>
+            <th style="padding: 12px 16px; font-weight: 500;">Tipo</th>
+            <th style="padding: 12px 16px; font-weight: 500;">Origem</th>
+            <th style="padding: 12px 16px; font-weight: 500;">Duração</th>
+            <th style="padding: 12px 16px; font-weight: 500;">Resolução</th>
+            <th style="padding: 12px 16px; font-weight: 500;">Data</th>
+            <th style="padding: 12px 16px; font-weight: 500;">Tamanho</th>
+            <th style="padding: 12px 16px; font-weight: 500; text-align: right;">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="recentJobsTable">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer style="margin-top: 40px; text-align: center; color: var(--muted); font-size: 11px; padding-bottom: 16px;">
+    © 2026 Braga Digital Studio. Todos os direitos reservados.
+  </footer>
+</div>

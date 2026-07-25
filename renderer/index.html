@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Braga Digital Studio</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="sidebar" aria-label="Navegação">
+      <div class="brand">
+        <div class="brand-mark">BDS</div>
+        <div>
+          <strong>BRAGA DIGITAL STUDIO</strong>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <button class="tab-button" data-view="home" type="button">
+          <span class="material-symbols-rounded">home</span>
+          Home
+        </button>
+        <button class="tab-button" data-view="download" type="button">
+          <span class="material-symbols-rounded">download</span>
+          Downloads
+        </button>
+        <button class="tab-button" data-view="converter" type="button">
+          <span class="material-symbols-rounded">sync</span>
+          Conversor
+        </button>
+        <button class="tab-button" data-view="montage" type="button">
+          <span class="material-symbols-rounded">movie</span>
+          Montagem de Vídeos
+        </button>
+        <button class="tab-button" data-view="silence" type="button">
+          <span class="material-symbols-rounded">graphic_eq</span>
+          Remover Silêncio
+        </button>
+        <button class="tab-button" data-view="metadata" type="button">
+          <span class="material-symbols-rounded">label</span>
+          Metadados
+        </button>
+        <button class="tab-button" data-view="library" type="button">
+          <span class="material-symbols-rounded">video_library</span>
+          Biblioteca
+        </button>
+        <button class="tab-button" data-view="upload" type="button">
+          <span class="material-symbols-rounded">cloud_upload</span>
+          Envio
+        </button>
+        <button class="tab-button" data-view="devices" type="button">
+          <span class="material-symbols-rounded">devices</span>
+          Dispositivos
+        </button>
+        <button class="tab-button" data-view="luts" type="button">
+          <span class="material-symbols-rounded">palette</span>
+          LUTs
+        </button>
+        <button class="tab-button" data-view="settings" type="button">
+          <span class="material-symbols-rounded">settings</span>
+          Configurações
+        </button>
+      </nav>
+
+      <div class="sidebar-footer" style="padding: 20px; font-size: 12px; color: var(--muted); text-align: center; border-top: 1px solid var(--border-color);">
+        <div id="storageIndicators" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; text-align: left; display: none;"></div>
+        <section class="tool-state">
+        <span class="state-dot" id="stateDot"></span>
+        <span id="stateText">Pronto</span>
+      </section>
+        <p style="margin: 0;">Desenvolvido por <strong>Braga Dev</strong></p>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="global-header" style="-webkit-app-region: drag; display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 16px; flex-shrink: 0;">
+          <h1 class="page-title" id="globalPageTitle" style="font-size: 16px; font-weight: 700; color: #fff; margin: 0; white-space: nowrap;">Home</h1>
+          <div style="width: 1px; height: 16px; background: var(--line);"></div>
+          <span id="globalMediaCount" style="font-size: 11px; color: var(--muted); display: none; white-space: nowrap;">0 mídias encontradas</span>
+        </div>
+
+        <div class="search-wrapper" style="-webkit-app-region: no-drag; background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; flex: 1; max-width: 460px; min-width: 180px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; width: 100%;">
+            <span class="material-symbols-rounded" style="color: var(--muted); font-size: 18px; margin-right: 8px;">search</span>
+            <input type="text" placeholder="Pesquisar por nome, codec, projeto, origem..." id="globalSearch" style="background: transparent; border: none; outline: none; color: #fff; width: 100%; font-size: 12px; font-family: 'Inter', sans-serif;">
+          </div>
+          <span class="shortcut" style="white-space: nowrap; font-size: 10px; color: var(--muted); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">Ctrl + K</span>
+        </div>
+
+        <div class="header-actions" style="-webkit-app-region: no-drag; display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <div class="window-controls" style="display: flex; align-items: center; gap: 4px;">
+            <button id="win-min" class="win-btn" title="Minimizar"><span class="material-symbols-rounded" style="font-size: 16px;">remove</span></button>
+            <button id="win-max" class="win-btn" title="Maximizar"><span class="material-symbols-rounded" style="font-size: 14px;">check_box_outline_blank</span></button>
+            <button id="win-close" class="win-btn win-close-btn" title="Fechar"><span class="material-symbols-rounded" style="font-size: 16px;">close</span></button>
+          </div>
+        </div>
+      </header>
+      <section class="content" id="dynamic-content"></section>
+    </div>
+  </main>
+
+  <dialog id="playlistDialog">
+    <form method="dialog">
+      <h2>Playlist detectada</h2>
+      <p><strong>Nome:</strong> <span id="playlistName"></span></p>
+      <p><strong>Quantidade de itens:</strong> <span id="playlistCount"></span></p>
+      <menu>
+        <button value="cancel" class="secondary">Cancelar</button>
+        <button value="confirm" class="primary red">Continuar</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Overlay de Dependências Iniciais -->
+  <div id="initOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(18, 18, 18, 0.95); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; color: white;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite; margin-bottom: 24px; color: var(--primary);">
+      <line x1="12" y1="2" x2="12" y2="6"></line>
+      <line x1="12" y1="18" x2="12" y2="22"></line>
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+      <line x1="2" y1="12" x2="6" y2="12"></line>
+      <line x1="18" y1="12" x2="22" y2="12"></line>
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+    </svg>
+    <h2 style="margin: 0 0 8px 0; font-size: 24px;">Baixando componentes essenciais...</h2>
+    <p style="color: var(--muted); margin: 0;">Isso acontece apenas na primeira vez que você abre o aplicativo.</p>
+    <style>
+      @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+  </div>
+
+  <!-- MODAL GLOBAL BDS -->
+  <dialog id="bdsGlobalModal" class="bds-modal">
+    <div class="bds-modal-content">
+      <div class="bds-modal-header">
+        <span class="material-symbols-rounded bds-modal-icon" id="bdsModalIcon">info</span>
+        <h3 id="bdsModalTitle">Mensagem</h3>
+      </div>
+      <div class="bds-modal-body">
+        <p id="bdsModalMessage">Corpo da mensagem.</p>
+          <input type="text" id="bdsModalInput" class="bds-input" style="display: none; margin-top: 15px; width: 100%; box-sizing: border-box;" autocomplete="off">
+      </div>
+      <div class="bds-modal-footer">
+        <button type="button" id="bdsModalBtnCancel" class="bds-btn-secondary" style="display: none;">Cancelar</button>
+        <button type="button" id="bdsModalBtnConfirm" class="bds-btn-primary">OK</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Floating Video Player -->
+  <div id="floatingPlayerOverlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 10000; align-items: center; justify-content: center; padding: 40px;">
+    <div id="floatingPlayerContainer" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); display: flex; flex-direction: column; overflow: hidden; width: 100%; max-width: 1000px; max-height: 600px; aspect-ratio: 16/9;">
+      <!-- Header -->
+      <div id="floatingPlayerHeader" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--line);">
+        <span id="floatingPlayerTitle" style="font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">Vídeo</span>
+        <button id="floatingPlayerCloseBtn" style="background: transparent; border: none; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 2px; border-radius: 4px; transition: 0.2s;">
+          <span class="material-symbols-rounded" style="font-size: 16px;">close</span>
+        </button>
+      </div>
+      <!-- Video Content -->
+      <div id="videoContainer" style="flex: 1; background: #000; position: relative; overflow: hidden; display: flex;">
+        <video id="floatingVideoElement" autoplay style="width: 100%; height: 100%; object-fit: contain; cursor: pointer;"></video>
+        <img id="floatingImageElement" style="width: 100%; height: 100%; object-fit: contain; display: none;" />
+        
+        <!-- Custom Controls -->
+        <div id="customVideoControls" style="position: absolute; bottom: 0; left: 0; width: 100%; padding: 24px 16px 12px; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); display: flex; flex-direction: column; gap: 8px; transition: opacity 0.3s ease; opacity: 1;">
+          <!-- Progress Bar -->
+          <div style="display: flex; align-items: center; width: 100%; gap: 12px; cursor: pointer;" id="progressBarContainer">
+            <span id="videoCurrentTime" style="color: #fff; font-size: 11px; font-weight: 500; font-family: monospace; width: 45px; text-align: right;">00:00</span>
+            <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.2); border-radius: 4px; position: relative; overflow: hidden;" id="progressTrack">
+              <div id="progressFill" style="position: absolute; top: 0; left: 0; height: 100%; width: 0%; background: var(--accent); transition: width 0.1s linear;"></div>
+            </div>
+            <span id="videoDuration" style="color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 500; font-family: monospace; width: 45px;">00:00</span>
+          </div>
+
+          <!-- Bottom Controls Row -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <button id="btnPlayPause" style="background: transparent; border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 50%; transition: background 0.2s;">
+                <span class="material-symbols-rounded" style="font-size: 28px;">pause</span>
+              </button>
+              
+              <div style="display: flex; align-items: center; gap: 8px; margin-left: 8px;" class="volume-container">
+                <button id="btnMute" style="background: transparent; border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px; transition: opacity 0.2s;">
+                  <span class="material-symbols-rounded" style="font-size: 20px;">volume_up</span>
+                </button>
+                <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" style="width: 80px; accent-color: #fff; height: 4px; cursor: pointer;">
+              </div>
+            </div>
+            
+            <div>
+              <button id="btnFullscreen" style="background: transparent; border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 4px; transition: background 0.2s;">
+                <span class="material-symbols-rounded" style="font-size: 20px;">fullscreen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

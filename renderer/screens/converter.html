@@ -1,0 +1,239 @@
+<div class="converter-screen-container" style="display: flex; flex-direction: column; gap: 16px; height: 100%; width: 100%; box-sizing: border-box; overflow-y: auto; padding-right: 4px;">
+  
+  <!-- 1. CABEÇALHO DA TELA -->
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <p style="color: var(--muted); font-size: 13px; margin: 0;">Converta múltiplos arquivos de vídeo e áudio em lote com barras de progresso individuais por arquivo.</p>
+    </div>
+  </div>
+
+  <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
+  <div id="converterDebugBanner" style="display: none; background: rgba(229, 57, 53, 0.15); border: 1px solid #e53935; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 11px; color: #ff8a80; max-height: 120px; overflow-y: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: #e53935; margin-bottom: 4px;">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <span class="material-symbols-rounded" style="font-size: 16px;">error</span>
+        [ERRO DETECTADO NO SISTEMA]
+      </span>
+      <button onclick="document.getElementById('converterDebugBanner').style.display='none'" style="background: rgba(0,0,0,0.3); border: 1px solid #e53935; color: #fff; font-size: 10px; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Fechar Erro</button>
+    </div>
+    <pre id="converterLogOutput" style="margin: 0; white-space: pre-wrap; word-break: break-all; color: #ffffff;"></pre>
+  </div>
+
+  <!-- 2. STEPPER BAR (PASSO A PASSO NUMERADO COM STATUS DINÂMICO) -->
+  <div class="converter-stepper" style="display: flex; align-items: center; justify-content: space-between; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 24px;">
+    
+    <!-- PASSO 1: FILA DE ARQUIVOS -->
+    <div id="step1ItemConverter" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step1BadgeConverter" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">1</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff;">FILA DE ARQUIVOS</div>
+        <div id="step1SubConverter" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Adicione as mídias</div>
+      </div>
+    </div>
+
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 2: FORMATO & QUALIDADE -->
+    <div id="step2ItemConverter" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step2BadgeConverter" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">2</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff;">FORMATO & CODEC</div>
+        <div id="step2SubConverter" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Configurações de Saída</div>
+      </div>
+    </div>
+
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 3: CONVERTER & EXPORTAR -->
+    <div id="step3ItemConverter" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step3BadgeConverter" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">3</div>
+      <div>
+        <div id="step3TitleConverter" style="font-size: 12px; font-weight: 700; color: #ffffff;">CONVERTER & EXPORTAR</div>
+        <div id="step3SubConverter" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Inicie a conversão em lote</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PAINEL PRINCIPAL EM COLUNAS -->
+  <div style="display: flex; gap: 16px; flex: 1; height: 100%; min-height: 0;">
+    
+    <!-- COLUNA PRINCIPAL (ESQUERDA/CENTRO): TABELA DE CONVERSÃO COM BARRA EM UMA LINHA -->
+    <div style="flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; min-height: 0; height: 100%;">
+      
+      <!-- Cabeçalho da Tabela & Botões em Uma Linha -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: #ffffff; white-space: nowrap;">
+          <span>ARQUIVOS SELECIONADOS (<span id="converterMainCount">0</span>)</span>
+        </div>
+
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
+          <button id="btnAddConverterFiles" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">add</span>
+            Adicionar
+          </button>
+
+          <button id="btnImportConverterFromLibrary" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">video_library</span>
+            Biblioteca
+          </button>
+          
+          <button id="btnAddConverterFolder" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">folder</span>
+            Pasta
+          </button>
+
+          <button id="btnClearConverterQueue" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">delete_sweep</span>
+            Limpar Fila
+          </button>
+
+          <select id="selConverterSortOrder" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-weight: 600; font-size: 12px; outline: none; cursor: pointer; white-space: nowrap;">
+            <option value="default">Por Importação</option>
+            <option value="name_asc">Por Nome (A-Z)</option>
+            <option value="duration_desc">Por Duração (Maior)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- TABELA DE CONVERSÃO COM BARRA DE PROGRESSO INDIVIDUAL -->
+      <div style="flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,0.2);">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase;">
+              <th style="padding: 10px 12px; width: 40px;">#</th>
+              <th style="padding: 10px 12px;">VÍDEO / ÁUDIO</th>
+              <th style="padding: 10px 12px; width: 110px;">FORMATO ATUAL</th>
+              <th style="padding: 10px 12px; width: 110px;">FORMATO SAÍDA</th>
+              <th style="padding: 10px 12px; width: 180px;">PROGRESSO</th>
+              <th style="padding: 10px 12px; width: 40px;"></th>
+            </tr>
+          </thead>
+          <tbody id="converterMainBody">
+            <!-- Populado via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé da Tabela -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12px; color: var(--muted); padding: 0 4px;">
+        <div>Duração total dos arquivos: <strong id="converterTotalDuration" style="color: #ffffff; font-size: 13px; margin-left: 4px;">00:00:00</strong></div>
+      </div>
+    </div>
+
+    <!-- COLUNA DIREITA: CONFIGURAÇÕES DE CONVERSÃO -->
+    <div style="width: 290px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px;">
+      
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 16px;">
+        <h3 style="font-size: 13px; font-weight: 700; color: #ffffff; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">PARÂMETROS DE CONVERSÃO</h3>
+        
+        <!-- FORMATO DE SAÍDA -->
+        <div>
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Formato de Saída</label>
+          <select id="selConverterOutFormat" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px; font-weight: 700;">
+            <option value="mp4">MP4 (Vídeo)</option>
+            <option value="mp3">MP3 (Áudio)</option>
+          </select>
+        </div>
+
+        <!-- CODEC DE VÍDEO -->
+        <div id="converterCodecContainer">
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Codec de Vídeo</label>
+          <select id="selConverterCodec" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px;">
+            <option value="libx264">H.264 (Maior Compatibilidade)</option>
+            <option value="libx265">H.265 / HEVC (Menor Tamanho)</option>
+          </select>
+        </div>
+
+        <!-- RESOLUÇÃO DA SAÍDA -->
+        <div>
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Resolução de Vídeo</label>
+          <select id="selConverterResolution" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px;">
+            <option value="original">Original da Mídia</option>
+            <option value="2160">4K Ultra HD (2160p)</option>
+            <option value="1440">2K Quad HD (1440p)</option>
+            <option value="1080">Full HD (1080p)</option>
+            <option value="720">HD (720p)</option>
+            <option value="480">SD (480p)</option>
+          </select>
+        </div>
+
+        <!-- BITRATE DE ÁUDIO -->
+        <div>
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Qualidade do Áudio</label>
+          <select id="selConverterAudioBitrate" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px;">
+            <option value="128k">128 kbps (Padrão)</option>
+            <option value="192k" selected>192 kbps (Alta Qualidade)</option>
+            <option value="320k">320 kbps (Qualidade Máxima)</option>
+          </select>
+        </div>
+
+        <!-- PASTA DE DESTINO DA CONVERSÃO -->
+        <div>
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Pasta de Destino</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="outConverterFolder" value="C:\Users\mauri\Videos\Conversao" style="flex: 1; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 11px;" />
+            <button id="btnSelectConverterDestFolder" title="Selecionar Pasta" style="width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #e53935; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+              <span class="material-symbols-rounded" style="font-size: 18px;">folder_open</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BOTÃO PRINCIPAL DE PROCESSAMENTO -->
+        <div style="margin-top: 8px;">
+          <button id="btnStartConverterQueue" style="width: 100%; background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 12px 16px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(76, 175, 80, 0.3);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+            <span class="material-symbols-rounded" style="font-size: 20px;">sync</span>
+            Converter Todos os Arquivos
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MODAL PARA SELEÇÃO DE BIBLIOTECA DA CONVERSÃO -->
+  <div id="converterLibraryModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 440px; padding: 24px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="font-size: 16px; font-weight: 700; color: #ffffff; margin: 0;">Importar da Biblioteca</h3>
+        <button id="btnCloseConverterLibModal" style="background: transparent; border: none; color: var(--muted); cursor: pointer;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <p style="font-size: 13px; color: var(--muted); margin: 0;">Escolha de qual fonte da biblioteca você deseja carregar os arquivos:</p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn-converter-lib-option" data-origin="BDSM_DEVICE" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #f25c05;">smartphone</span>
+            <span>Dispositivos BDSM</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-converter-lib-option" data-origin="OBS" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #4caf50;">videocam</span>
+            <span>OBS Studio</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-converter-lib-option" data-origin="SHADOWPLAY" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #2196f3;">sports_esports</span>
+            <span>NVIDIA ShadowPlay</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-converter-lib-option" data-origin="ALL" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#4caf50'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #ff9800;">video_library</span>
+            <span>Todas as Mídias da Biblioteca</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

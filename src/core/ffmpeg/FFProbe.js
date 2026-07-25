@@ -1,0 +1,74 @@
+const logger = require('../../../services/logService');
+const { exec } = require('child_process');
+const util = require('util');
+const path = require('path');
+const execPromise = util.promisify(exec);
+
+class FFProbe {
+    /**
+     * @param {Object} options
+     * @param {string} options.ffprobePath - Caminho completo para o executável ffprobe
+     */
+    constructor({ ffprobePath }) {
+        this.ffprobePath = ffprobePath;
+    }
+
+    /**
+     * Analisa um arquivo de mídia e retorna seus metadados essenciais.
+     * @param {string} filePath - Caminho do vídeo/áudio
+     * @returns {Promise<Object>} Metadados parseados
+     */
+    async analyze(filePath) {
+        // Comando FFProbe formatando a saída para JSON e pegando apenas informações de formato e streams
+        const command = `"${this.ffprobePath}" -v quiet -print_format json -show_format -show_streams "${filePath}"`;
+
+        try {
+            const { stdout } = await execPromise(command);
+            const data = JSON.parse(stdout);
+
+            let duration = data.format?.duration ? parseFloat(data.format.duration) : 0;
+            let filesize = data.format?.size ? parseInt(data.format.size, 10) : 0;
+            let bitrate = data.format?.bit_rate ? parseInt(data.format.bit_rate, 10) : 0;
+
+            let width = 0, height = 0, fps = 0, video_codec = null, audio_codec = null;
+
+            if (data.streams) {
+                for (const stream of data.streams) {
+                    if (stream.codec_type === 'video') {
+                        width = stream.width || width;
+                        height = stream.height || height;
+                        video_codec = stream.codec_name || video_codec;
+                        if (stream.r_frame_rate) {
+                            const [num, den] = stream.r_frame_rate.split('/');
+                            fps = den && den !== '0' ? parseFloat(num) / parseFloat(den) : 0;
+                        }
+                    } else if (stream.codec_type === 'audio') {
+                        audio_codec = stream.codec_name || audio_codec;
+                    }
+                }
+            }
+
+            let creation_time = null;
+            if (data.format?.tags?.creation_time) {
+                creation_time = data.format.tags.creation_time;
+            }
+
+            return {
+                duration,
+                filesize,
+                width,
+                height,
+                fps: parseFloat(fps.toFixed(2)),
+                video_codec,
+                audio_codec,
+                bitrate,
+                creation_time
+            };
+        } catch (error) {
+            logger.error(`[FFProbe] Erro ao analisar ${filePath}:`, error.message);
+            throw error;
+        }
+    }
+}
+
+module.exports = FFProbe;

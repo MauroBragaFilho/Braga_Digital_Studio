@@ -1,0 +1,583 @@
+<div class="luts-screen-container">
+  
+  <!-- CABEÇALHO -->
+  <div class="luts-header">
+    <div class="luts-tabs">
+      <div class="lut-tab active">MEUS LUTs</div>
+      <div class="lut-tab">IMPORTAR</div>
+    </div>
+    
+    <div class="luts-header-actions">
+      <div class="luts-search">
+        <input type="text" id="lutSearchInput" placeholder="Buscar LUT...">
+        <span class="material-symbols-rounded">search</span>
+      </div>
+      
+      <div class="luts-filters">
+        <select class="lut-select" id="lutTypeFilter">
+          <option>Todos os tipos</option>
+          <option>3D LUTs</option>
+          <option>1D LUTs</option>
+        </select>
+        <select class="lut-select" id="lutSortFilter">
+          <option>Mais recentes</option>
+          <option>Nome (A-Z)</option>
+          <option>Tamanho</option>
+        </select>
+        <button class="lut-icon-btn"><span class="material-symbols-rounded">format_list_bulleted</span></button>
+      </div>
+
+      <button class="lut-icon-btn" id="btnRefreshLuts"><span class="material-symbols-rounded">sync</span></button>
+      <button class="lut-icon-btn"><span class="material-symbols-rounded">grid_view</span></button>
+      <button class="lut-icon-btn"><span class="material-symbols-rounded">view_list</span></button>
+      
+      <button type="button" id="btnImportLut" class="lut-btn-primary">
+        <span class="material-symbols-rounded" style="font-size: 18px;">add</span> IMPORTAR LUT
+      </button>
+    </div>
+  </div>
+
+  <!-- CONTEÚDO PRINCIPAL (Grid e Inspector) -->
+  <div class="luts-content">
+    
+    <!-- GRID DE LUTS -->
+    <div class="luts-grid-area">
+      <div id="lutsGrid" class="luts-grid">
+        <!-- Cards injetados via JS -->
+      </div>
+      
+      <div id="lutsEmptyState" style="display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); gap: 12px;">
+        <span class="material-symbols-rounded" style="font-size: 48px; opacity: 0.5;">gradient</span>
+        <span style="font-size: 13px;">Nenhum LUT encontrado.</span>
+      </div>
+    </div>
+
+    <!-- INSPECTOR LATERAL -->
+    <div class="luts-inspector">
+      <div class="inspector-header">
+        <span style="font-weight: 700; letter-spacing: 1px;">INSPECTOR</span>
+        <button class="lut-icon-btn small"><span class="material-symbols-rounded">close</span></button>
+      </div>
+
+      <div id="inspectorContent" class="inspector-content">
+        <!-- COMPONENTE ANTES/DEPOIS -->
+        <div class="lut-slider-container" id="lutSliderContainer">
+          <!-- Imagem Base (Antes) -->
+          <img src="./assets/lut_preview.jpg" class="lut-slider-img base-img" draggable="false">
+          <div class="lut-slider-label before">ANTES</div>
+          
+          <!-- Imagem Modificada (Depois) -->
+          <div class="lut-slider-overlay" id="lutSliderOverlay">
+            <img src="./assets/lut_preview.jpg" class="lut-slider-img target-img" id="lutSliderTargetImg" draggable="false">
+            <div class="lut-slider-label after">DEPOIS</div>
+          </div>
+          
+          <!-- Divisor -->
+          <div class="lut-slider-divider" id="lutSliderDivider">
+            <div class="lut-slider-handle">
+              <span class="material-symbols-rounded" style="font-size: 14px; color: #fff;">code</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+          <h2 id="insName" style="margin: 0; font-size: 16px; font-weight: 700; color: #fff; word-break: break-all;">Selecione um LUT</h2>
+          <span class="lut-badge-3d" style="background: rgba(76, 175, 80, 0.2); color: #4caf50; border-color: rgba(76, 175, 80, 0.3);">3D LUT</span>
+        </div>
+
+        <div class="inspector-details">
+          <div class="detail-row"><span>Tipo</span><span id="insType">--</span></div>
+          <div class="detail-row"><span>Tamanho</span><span id="insSize">--</span></div>
+          <div class="detail-row"><span>Resolução</span><span id="insRes">33 x 33 x 33</span></div>
+          <div class="detail-row"><span>Data de criação</span><span id="insDate">--</span></div>
+          <div class="detail-row" style="align-items: flex-start;">
+            <span>Caminho</span>
+            <div style="text-align: right; max-width: 180px; word-break: break-all;">
+              <span id="insPath" style="display: block; margin-bottom: 4px;">--</span>
+              <span class="material-symbols-rounded" style="font-size: 14px; cursor: pointer; color: var(--muted);" title="Copiar caminho">content_copy</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspector-section">
+          <h3>DESCRIÇÃO</h3>
+          <div class="inspector-box" id="insDesc">
+            LUT com perfil cinematográfico suave, cores balanceadas e contraste controlado.
+          </div>
+        </div>
+
+        <div class="inspector-section" style="margin-top: auto; padding-top: 20px;">
+          <h3 style="margin-bottom: 12px;">AÇÕES</h3>
+          <div class="inspector-actions">
+            <button id="btnSendLutToBDSM" class="lut-btn-primary full-width" style="margin-bottom: 8px;" disabled>
+              APLICAR LUT
+            </button>
+            <button class="lut-btn-outline full-width" id="btnFullscreenLut">
+              VISUALIZAR EM TELA CHEIA <span class="material-symbols-rounded" style="font-size: 16px; margin-left: auto;">open_in_full</span>
+            </button>
+            <button class="lut-btn-outline full-width" id="btnRenameLut">
+              RENOMEAR <span class="material-symbols-rounded" style="font-size: 16px; margin-left: auto;">edit</span>
+            </button>
+            <button class="lut-btn-outline full-width danger" id="btnDeleteLut">
+              EXCLUIR <span class="material-symbols-rounded" style="font-size: 16px; margin-left: auto;">delete</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RODAPÉ -->
+  <div class="luts-footer">
+    <span style="color: var(--muted);">Total: <span style="color: #e53935; font-weight: 700;" id="ftTotal">0 LUTs</span></span>
+    <span style="color: var(--muted);">|</span>
+    <span style="color: var(--muted);">Selecionado: <span style="color: #e53935; font-weight: 700;" id="ftSelected">0 LUT</span></span>
+  </div>
+
+
+  <!-- MODAL FULLSCREEN -->
+  <div id="lutFullscreenModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; align-items: center; justify-content: center;">
+    
+    <div style="position: absolute; top: 20px; left: 20px; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); z-index: 10;">
+      <h2 id="fsLutName" style="margin: 0; font-size: 24px; font-weight: 700;">Nome do LUT</h2>
+      <span style="font-size: 14px; opacity: 0.7;">Pré-visualização em Tela Cheia</span>
+    </div>
+    
+    <button id="btnFsClose" class="lut-icon-btn" style="position: absolute; top: 20px; right: 20px; z-index: 10; background: rgba(0,0,0,0.5); border: none;">
+      <span class="material-symbols-rounded">close</span>
+    </button>
+    
+    <div class="lut-slider-container" id="fsSliderContainer" style="width: 100%; height: 100%; max-width: none; border-radius: 0; margin: 0; border: none;">
+      <img src="./assets/lut_preview.jpg" class="lut-slider-img base-img" draggable="false" style="object-fit: contain;">
+      <div class="lut-slider-label before" style="font-size: 14px; padding: 4px 12px; top: auto; bottom: 30px; left: 30px;">ANTES</div>
+      
+      <div class="lut-slider-overlay" id="fsSliderOverlay">
+        <img src="./assets/lut_preview.jpg" class="lut-slider-img target-img" id="fsSliderTargetImg" draggable="false" style="object-fit: contain;">
+        <div class="lut-slider-label after" style="font-size: 14px; padding: 4px 12px; top: auto; bottom: 30px; right: 30px;">DEPOIS</div>
+      </div>
+      
+      <div class="lut-slider-divider" id="fsSliderDivider">
+        <div class="lut-slider-handle">
+          <span class="material-symbols-rounded" style="font-size: 14px; color: #fff;">code</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* ROOT CONTAINER */
+  .luts-screen-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: #0f1011;
+  }
+
+  /* HEADER */
+  .luts-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+  
+  .luts-tabs {
+    display: flex;
+    gap: 32px;
+  }
+  .lut-tab {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    cursor: pointer;
+    position: relative;
+    padding-bottom: 16px;
+    margin-bottom: -17px;
+    transition: 0.2s;
+  }
+  .lut-tab.active {
+    color: #e53935;
+  }
+  .lut-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #e53935;
+  }
+
+  .luts-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* INPUTS & SELECTS */
+  .luts-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .luts-search input {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    padding: 8px 12px 8px 32px;
+    border-radius: 6px;
+    font-size: 12px;
+    width: 200px;
+    outline: none;
+    transition: 0.2s;
+  }
+  .luts-search input:focus { border-color: #e53935; }
+  .luts-search span {
+    position: absolute;
+    left: 10px;
+    font-size: 16px;
+    color: var(--muted);
+  }
+
+  .luts-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 16px;
+  }
+  .lut-select {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    padding: 8px 30px 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23999999%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px top 50%;
+    background-size: 8px auto;
+  }
+
+  /* BUTTONS */
+  .lut-btn-primary {
+    background: #e53935;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: 600;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+  .lut-btn-primary:hover:not(:disabled) { background: #f44336; }
+  .lut-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  .lut-btn-outline {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: 600;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+  .lut-btn-outline:hover { background: rgba(255,255,255,0.05); color: #fff; }
+  .lut-btn-outline.danger:hover { background: rgba(229,57,53,0.1); color: #e53935; border-color: rgba(229,57,53,0.3); }
+
+  .full-width { width: 100%; justify-content: center; }
+
+  .lut-icon-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--muted);
+    border-radius: 6px;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+  .lut-icon-btn:hover { background: rgba(255,255,255,0.05); color: #fff; }
+  .lut-icon-btn.small { width: 24px; height: 24px; border: none; }
+
+  /* CONTENT AREA */
+  .luts-content {
+    display: flex;
+    gap: 24px;
+    flex: 1;
+    overflow: hidden; /* Importante para o Grid e Inspector rolarem internamente */
+  }
+
+  /* GRID */
+  .luts-grid-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto; /* Rolagem apenas no Grid */
+    padding-right: 8px;
+  }
+  
+  /* Scrollbar customizada para o Grid */
+  .luts-grid-area::-webkit-scrollbar { width: 6px; }
+  .luts-grid-area::-webkit-scrollbar-track { background: transparent; }
+  .luts-grid-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  .luts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    padding-bottom: 24px;
+  }
+
+  /* CARD */
+  .lut-card {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: 0.2s;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .lut-card:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
+  .lut-card.selected { border-color: #e53935; box-shadow: 0 0 0 1px #e53935; }
+  
+  .lut-card-img {
+    width: 100%;
+    aspect-ratio: 16/10;
+    object-fit: cover;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    filter: brightness(0.9);
+    transition: 0.3s;
+  }
+  .lut-card:hover .lut-card-img { filter: brightness(1.1); }
+  
+  .lut-card-body {
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .lut-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+  }
+  
+  .lut-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .lut-card-meta {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 8px;
+  }
+
+  .lut-badge-3d {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .lut-checkbox {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 20px;
+    height: 20px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: 0.2s;
+  }
+  .lut-card:hover .lut-checkbox { opacity: 1; }
+  .lut-card.selected .lut-checkbox { opacity: 1; background: #e53935; border-color: #e53935; }
+  .lut-checkbox .material-symbols-rounded { font-size: 14px; color: #fff; opacity: 0; }
+  .lut-card.selected .lut-checkbox .material-symbols-rounded { opacity: 1; }
+
+  /* INSPECTOR */
+  .luts-inspector {
+    width: 340px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px;
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .inspector-header {
+    padding: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .inspector-content {
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .inspector-content::-webkit-scrollbar { width: 4px; }
+  .inspector-content::-webkit-scrollbar-track { background: transparent; }
+  .inspector-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+  /* COMPONENTE BEFORE/AFTER SLIDER */
+  .lut-slider-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    user-select: none;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .lut-slider-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .lut-slider-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    /* O CSS clip-path ou width será controlado via JS para revelar a imagem Base */
+    width: 50%; /* Estado inicial */
+  }
+  .lut-slider-divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    background: #e53935;
+    transform: translateX(-50%);
+    cursor: ew-resize;
+    z-index: 10;
+  }
+  .lut-slider-handle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 28px;
+    background: #e53935;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+  .lut-slider-label {
+    position: absolute;
+    top: 10px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .lut-slider-label.before { left: 10px; }
+  .lut-slider-label.after { right: 10px; }
+
+  /* DETAILS */
+  .inspector-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 12px;
+    margin-bottom: 24px;
+  }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .detail-row > span:first-child { color: var(--muted); }
+  .detail-row > span:last-child { color: #fff; }
+
+  .inspector-section h3 {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin: 0 0 8px 0;
+  }
+  .inspector-box {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* FOOTER */
+  .luts-footer {
+    display: flex;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 8px;
+    font-size: 12px;
+  }
+</style>

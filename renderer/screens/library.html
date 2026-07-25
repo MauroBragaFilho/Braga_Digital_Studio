@@ -1,0 +1,447 @@
+<div class="library-container" style="display: flex; height: calc(100% + 48px); margin: -24px; overflow: hidden; font-family: 'Inter', sans-serif;">
+  
+  <!-- Left Sidebar: Filters -->
+  <aside class="library-filters" style="width: 260px; min-width: 260px; background: transparent; display: flex; flex-direction: column; padding: 24px 20px; overflow-y: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+      <h2 style="font-size: 13px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin: 0;">Filtros</h2>
+      <button id="btnLimparFiltros" style="background: none; border: none; color: var(--accent); font-size: 11px; font-weight: 500; cursor: pointer; padding: 0;">Limpar</button>
+    </div>
+    
+    <div id="filterFavoritesContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div style="height: 1px; background: var(--line); margin-bottom: 24px;"></div>
+    
+    <div id="filterOriginsContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterAlbumsContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterTypesContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterResContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterFpsContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterDateContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterProjectsContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+    <div id="filterTagsContainer" class="filter-group" style="margin-bottom: 24px;"></div>
+
+  </aside>
+
+  <!-- Main Library Area -->
+  <main class="library-main" style="flex: 1; display: flex; flex-direction: column; background: var(--bg); position: relative;">
+    
+    <!-- Topbar -->
+    <header style="padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line);">
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button id="btnViewGrid" class="lib-view-btn active" title="Visualização em Grade" style="background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
+          <span class="material-symbols-rounded" style="font-size: 20px;">grid_view</span>
+        </button>
+        <button id="btnViewList" class="lib-view-btn" title="Visualização em Lista" style="background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
+          <span class="material-symbols-rounded" style="font-size: 20px;">view_list</span>
+        </button>
+        
+        <div style="margin-left: 16px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px;">
+          Ordenar por: 
+          <select id="selectSort" style="background: transparent; border: none; color: #fff; font-size: 12px; cursor: pointer; outline: none;">
+            <option value="recorded_at">Data de gravação</option>
+            <option value="imported_at">Data de importação</option>
+            <option value="filesize">Tamanho</option>
+          </select>
+          <span id="btnSortOrder" class="material-symbols-rounded" style="font-size: 16px; cursor: pointer;" title="Inverter Ordem">arrow_downward</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; align-items: center;">
+        
+        <!-- Bulk Actions Container -->
+        <div id="libActionBar" style="display: none; align-items: center; gap: 8px; margin-right: 16px; padding-right: 16px; border-right: 1px solid var(--line);">
+          <div style="font-size: 12px; color: var(--muted); margin-right: 8px;" id="libSelectedCount">0 selecionado</div>
+          <button class="secondary" id="btnActionFavorite" title="Favoritar" style="display: flex; align-items: center; justify-content: center; min-height: 32px; width: 32px; padding: 0;"><span class="material-symbols-rounded" style="font-size: 18px;">star_border</span></button>
+          <button class="secondary" id="btnActionRename" title="Renomear" style="display: flex; align-items: center; justify-content: center; min-height: 32px; width: 32px; padding: 0;"><span class="material-symbols-rounded" style="font-size: 18px;">edit</span></button>
+          <button class="secondary" id="btnActionTags" title="Adicionar Tags" style="display: flex; align-items: center; justify-content: center; min-height: 32px; width: 32px; padding: 0;"><span class="material-symbols-rounded" style="font-size: 18px;">label</span></button>
+          <button class="secondary" id="btnActionProject" title="Vincular Projeto" style="display: flex; align-items: center; justify-content: center; min-height: 32px; width: 32px; padding: 0;"><span class="material-symbols-rounded" style="font-size: 18px;">create_new_folder</span></button>
+          <button class="secondary" id="btnActionMove" title="Mover Arquivos" style="display: flex; align-items: center; justify-content: center; min-height: 32px; width: 32px; padding: 0;"><span class="material-symbols-rounded" style="font-size: 18px;">drive_file_move</span></button>
+          <button class="secondary danger" id="btnActionDelete" title="Excluir Permanentemente" style="display: flex; align-items: center; justify-content: center; min-height: 32px; width: 32px; padding: 0;"><span class="material-symbols-rounded" style="font-size: 18px;">delete</span></button>
+        </div>
+
+        <button id="btnReloadLibrary" title="Recarregar Biblioteca" style="background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+          <span class="material-symbols-rounded" style="font-size: 20px;">refresh</span>
+        </button>
+        <button id="btnAddCustomSourceBtn" style="background: #f25c05; color: #ffffff; border: none; border-radius: 6px; padding: 7px 14px; font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: 0 4px 12px rgba(242, 92, 5, 0.25);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+          <span class="material-symbols-rounded" style="font-size: 18px;">create_new_folder</span>
+          + Nova Fonte
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Area -->
+    <div id="libContentArea" style="flex: 1; overflow-y: auto; padding: 24px; position: relative;">
+      <!-- JS injetará o grid ou a lista aqui -->
+    </div>
+
+  </main>
+
+  <!-- Right Sidebar: Inspector -->
+  <!-- Right Sidebar: Inspector -->
+  <aside id="libraryInspector" style="width: 360px; min-width: 360px; background: var(--card); border-left: 1px solid var(--line); display: none; flex-direction: column; overflow-y: auto; overflow-x: hidden;">
+    
+    <div id="inspectorThumbnail" style="width: 100%; height: 200px; background-size: cover; background-position: center; background-color: #000; position: relative;">
+      <button id="closeInspectorBtn" style="position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.5); border: none; color: #fff; cursor: pointer; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);"><span class="material-symbols-rounded" style="font-size: 18px;">close</span></button>
+      <button id="btnPlayMedia" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.6); color: #fff; border: 2px solid #fff; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s;">
+        <span class="material-symbols-rounded" style="font-size: 24px;">play_arrow</span>
+      </button>
+      <div id="inspectorThumbDuration" style="position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;">00:00</div>
+    </div>
+
+
+
+    <!-- Inspector Content: Detalhes -->
+    <div style="padding: 20px;">
+      
+      <div style="display: flex; flex-direction: column; gap: 16px; font-size: 12px;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Nome</span>
+          <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex: 1; position: relative;">
+            <input type="text" id="inspectorTitleEdit" style="display: none; background: rgba(0,0,0,0.5); border: 1px solid var(--accent); color: #fff; padding: 2px 4px; border-radius: 4px; font-size: 12px; width: 100%;">
+            <span id="inspectorTitle" style="color: #fff; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; cursor: pointer;" title="Clique para renomear">-</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Origem</span>
+          <div style="display: flex; align-items: center; gap: 6px; color: #fff;">
+            <span id="inspectorOriginIcon" class="material-symbols-rounded" style="font-size: 14px; color: var(--muted);">computer</span>
+            <span id="inspectorOrigin">-</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Caminho</span>
+          <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex: 1;">
+            <span id="inspectorPath" style="color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">-</span>
+            <span class="material-symbols-rounded" style="font-size: 14px; color: var(--muted); cursor: pointer;" title="Copiar caminho">content_copy</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); margin-bottom: 16px;">
+          <span style="color: var(--muted); width: 120px;">Favorito</span>
+          <span id="inspectorFavStar" class="material-symbols-rounded" style="font-size: 20px; cursor: pointer; color: var(--muted); transition: color 0.2s;">star</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="color: var(--muted); width: 120px;">Projeto</span>
+          <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex: 1;">
+            <span id="inspectorProject" style="color: #fff; text-align: right;">Gameplay GTA V</span>
+            <span class="material-symbols-rounded" style="font-size: 14px; color: var(--muted); cursor: pointer;">folder</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line);">
+          <span style="color: var(--muted); width: 120px; padding-top: 4px;">Tags</span>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; flex: 1; gap: 4px;">
+            <div id="inspectorTags" style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; width: 100%;">
+              <span class="material-symbols-rounded" id="btnAddTag" style="font-size: 16px; color: var(--muted); cursor: pointer; padding: 2px 6px; border: 1px solid var(--line); border-radius: 12px;">add</span>
+            </div>
+            <input type="text" id="inspectorTagEdit" placeholder="Nova tag..." style="display: none; background: rgba(0,0,0,0.5); border: 1px solid var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; width: 80px; margin-top: 4px;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Data de Gravação</span>
+          <span id="inspectorRecordDate" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Data de Importação</span>
+          <span id="inspectorDate" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div id="rowDuration" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Duração</span>
+          <span id="inspectorDuration" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div id="rowRes" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Resolução</span>
+          <span id="inspectorRes" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div id="rowFps" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">FPS</span>
+          <span id="inspectorFps" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div id="rowVCodec" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Codec de Vídeo</span>
+          <span id="inspectorVCodec" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div id="rowACodec" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Codec de Áudio</span>
+          <span id="inspectorACodec" style="color: #fff; text-align: right;">-</span>
+        </div>
+        
+        <div id="rowVBitrate" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Bitrate de Vídeo</span>
+          <span id="inspectorVBitrate" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div id="rowABitrate" style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Bitrate de Áudio</span>
+          <span id="inspectorABitrate" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Tamanho</span>
+          <span id="inspectorSize" style="color: #fff; text-align: right;">-</span>
+        </div>
+
+
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--muted); width: 120px;">Status</span>
+          <div style="display: flex; align-items: center; gap: 6px; color: #fff;">
+            <div style="width: 6px; height: 6px; border-radius: 50%; background: #4caf50;"></div>
+            Disponível
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<style>
+  .lib-view-btn.active {
+    background: rgba(255,255,255,0.1) !important;
+    color: #fff !important;
+  }
+  .lib-view-btn:hover {
+    background: rgba(255,255,255,0.05);
+  }
+  
+  /* GRID VIEW */
+  .lib-date-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 32px 0 16px 0;
+  }
+  .lib-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .lib-card {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    position: relative;
+  }
+  .lib-card:hover {
+    background: rgba(255,255,255,0.03);
+  }
+  .lib-card.selected {
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.03);
+  }
+  
+  .lib-card-badge-new {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 12px;
+    z-index: 2;
+  }
+  .lib-card-badge-fav {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: #fff;
+    z-index: 2;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .media-clickable:hover .lib-card-badge-fav, .media-clickable.selected .lib-card-badge-fav, .lib-card-badge-fav.active {
+    opacity: 1;
+  }
+  
+  .lib-card-checkbox {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .media-clickable:hover .lib-card-checkbox, .media-clickable.selected .lib-card-checkbox, .lib-card-checkbox:checked {
+    opacity: 1;
+  }
+  
+  .lib-card-thumb {
+    width: 100%;
+    height: 124px;
+    background-size: cover;
+    background-position: center;
+    background-color: #000;
+    position: relative;
+    border-radius: 6px;
+  }
+  .lib-card-duration {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .lib-card-info {
+    padding: 12px 4px;
+    position: relative;
+  }
+  .lib-card-title {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 20px;
+  }
+  .lib-card-meta {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 8px;
+  }
+  
+  .lib-card-origin {
+    font-size: 10px;
+    color: var(--muted);
+    background: rgba(255,255,255,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 8px;
+  }
+  
+  .lib-card-menu {
+    position: absolute;
+    top: 10px;
+    right: 0;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .lib-card-menu:hover {
+    color: #fff;
+  }
+
+  /* LIST VIEW */
+  .lib-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+  }
+  .lib-list-table th {
+    padding: 12px 16px;
+    font-weight: 500;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .lib-list-table td {
+    padding: 12px 16px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .lib-list-table tr:hover td {
+    background: rgba(255,255,255,0.02);
+  }
+  .lib-list-table tr.selected td {
+    background: rgba(255,255,255,0.05);
+  }
+  .lib-list-thumb {
+    width: 48px;
+    height: 27px;
+    background-size: cover;
+    background-position: center;
+    border-radius: 2px;
+  }
+  
+  /* CUSTOM FILTER CHECKBOXES */
+  .lib-filter-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .lib-filter-row:hover {
+    color: #fff;
+  }
+  .lib-filter-row input[type="checkbox"] {
+    display: none;
+  }
+  .lib-filter-custom-chk {
+    font-size: 18px !important;
+    color: var(--muted);
+    transition: color 0.2s;
+  }
+  .lib-filter-row input[type="checkbox"]:checked + .lib-filter-custom-chk {
+    color: var(--accent);
+  }
+  .lib-filter-count {
+    font-size: 11px;
+  }
+</style>
+
+<!-- MODAL DE CADASTRO DE FONTE PERSONALIZADA -->
+<div id="modalAddCustomSource" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+  <div style="background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 460px; padding: 24px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.6);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h3 style="font-size: 16px; font-weight: 700; color: #ffffff; margin: 0; display: flex; align-items: center; gap: 8px;">
+        <span class="material-symbols-rounded" style="color: #f25c05;">create_new_folder</span>
+        Nova Fonte Personalizada
+      </h3>
+      <button id="btnCloseCustomSourceModal" style="background: transparent; border: none; color: var(--muted); cursor: pointer;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <p style="font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5;">
+      Cadastre uma pasta local ou dispositivo externo (ex: Cartão SD, HD Externo, Podcast Studio). As mídias serão indexadas automaticamente com o nome da fonte escolhida.
+    </p>
+
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div>
+        <label style="font-size: 11px; font-weight: 700; color: #ffffff; display: block; margin-bottom: 6px; text-transform: uppercase;">Nome da Fonte / Origem</label>
+        <input type="text" id="inputCustomSourceName" placeholder="Ex: Podcast Studio, Câmera Sony, Cartão SD..." style="width: 100%; height: 38px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; color: #ffffff; font-size: 13px; font-weight: 600; outline: none; box-sizing: border-box;" />
+      </div>
+
+      <div>
+        <label style="font-size: 11px; font-weight: 700; color: #ffffff; display: block; margin-bottom: 6px; text-transform: uppercase;">Caminho da Pasta</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="inputCustomSourcePath" placeholder="Selecione a pasta no seu computador..." style="flex: 1; height: 38px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; color: #ffffff; font-size: 12px; outline: none; box-sizing: border-box;" />
+          <button id="btnBrowseCustomSourceFolder" style="width: 38px; height: 38px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #f25c05; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 20px;">folder_open</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+      <button id="btnCancelAddCustomSource" style="background: transparent; border: 1px solid var(--line); color: var(--muted); padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">Cancelar</button>
+      <button id="btnConfirmAddCustomSource" style="background: #f25c05; border: none; color: #ffffff; padding: 8px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <span class="material-symbols-rounded" style="font-size: 18px;">check_circle</span>
+        Cadastrar & Importar Mídias
+      </button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,230 @@
+<div class="view-header">
+  <div>
+    <p style="font-size: 12px;">Personalize o comportamento do aplicativo.</p>
+  </div>
+  <button id="saveSettingsButton" class="primary red" type="button" style="min-height: 28px; padding: 0 16px; font-size: 11px;">Salvar Alterações</button>
+</div>
+
+<div class="split-layout" style="grid-template-columns: 220px 1fr; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card);">
+  <!-- Settings Sidebar -->
+  <div class="settings-sidebar" style="background: rgba(0,0,0,0.2); padding: 16px 0; border-right: 1px solid var(--line); border-radius: 0;">
+    <div style="display: flex; flex-direction: column; gap: 2px;">
+      <button class="settings-tab active" data-target="menu-geral" style="width: 100%; text-align: left; padding: 10px 24px; border-radius: 0; font-size: 12px; display: flex; align-items: center; gap: 12px; border-left: 3px solid var(--accent); background: rgba(255,255,255,0.05); color: var(--text);">
+        <span class="material-symbols-rounded">tune</span>
+        Geral
+      </button>
+      <button class="settings-tab" data-target="menu-downloads" style="width: 100%; text-align: left; padding: 10px 24px; border-radius: 0; font-size: 12px; display: flex; align-items: center; gap: 12px; border-left: 3px solid transparent;">
+        <span class="material-symbols-rounded">folder</span>
+        Pastas
+      </button>
+      <button class="settings-tab" data-target="menu-atualizacoes" style="width: 100%; text-align: left; padding: 10px 24px; border-radius: 0; font-size: 12px; display: flex; align-items: center; gap: 12px; border-left: 3px solid transparent;">
+        <span class="material-symbols-rounded">system_update</span>
+        Atualizações
+      </button>
+      <button class="settings-tab" data-target="menu-sistema" style="width: 100%; text-align: left; padding: 10px 24px; border-radius: 0; font-size: 12px; display: flex; align-items: center; gap: 12px; border-left: 3px solid transparent;">
+        <span class="material-symbols-rounded">desktop_windows</span>
+        Sistema
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings Content -->
+  <div class="settings-content" style="padding: 24px; border: none; border-radius: 0; background: transparent; overflow-y: auto; max-height: calc(100vh - 120px);">
+    
+    <!-- GERAL / TEMAS -->
+    <div id="menu-geral" class="settings-view active">
+      <div style="margin-bottom: 24px;">
+        <h3 style="font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin: 0 0 12px 0;">GERAL</h3>
+        <div style="display: grid; gap: 16px;">
+          <label class="check-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 13px; font-weight: 600; color: #fff;">Atualização Automática (GitHub)</span>
+              <span style="font-size: 11px; color: var(--muted);">Verifica e baixa atualizações automaticamente de <a href="https://github.com/MauroBragaFilho/Braga_Digital_Studio.git" style="color: var(--accent); text-decoration: none;" target="_blank">MauroBragaFilho/Braga_Digital_Studio</a></span>
+            </div>
+            <input type="checkbox" id="autoUpdateGithub" style="width: auto; accent-color: var(--accent);" checked>
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <h3 style="font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin: 0 0 12px 0;">TEMAS</h3>
+        <div style="display: grid; gap: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 12px;">Tema</span>
+            <select style="width: 200px; background: rgba(0,0,0,0.2);"><option>Escuro (Padrão)</option></select>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 12px;">Cor de Destaque</span>
+            <div style="width: 16px; height: 16px; background: var(--accent); border-radius: 2px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PASTAS -->
+    <div id="menu-downloads" class="settings-view" style="display: none;">
+      <h3 style="font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin: 0 0 12px 0;">LOCAL DE DOWNLOAD (VÍDEOS E ÁUDIOS)</h3>
+      <label class="check-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
+        <input id="useDefaultFolderInput" type="checkbox" style="width: auto; accent-color: var(--accent);">
+        <span style="font-size: 12px;">Utilizar pasta "PADRÃO" do sistema (Música e Vídeos)</span>
+      </label>
+
+      <div id="customFoldersGroup" style="display: grid; gap: 16px;">
+        <label>
+          <span style="font-size: 12px; display: block; margin-bottom: 8px;">Pasta de destino para Áudio (MP3)</span>
+          <div style="display: flex; gap: 8px;">
+            <input id="mp3FolderInput" type="text" readonly style="flex: 1; background: rgba(0,0,0,0.2);">
+            <button id="mp3FolderButton" class="secondary" type="button" style="padding: 0 12px; font-size: 11px;">Alterar</button>
+          </div>
+        </label>
+        <label>
+          <span style="font-size: 12px; display: block; margin-bottom: 8px;">Pasta de destino para Vídeo (MP4)</span>
+          <div style="display: flex; gap: 8px;">
+            <input id="mp4FolderInput" type="text" readonly style="flex: 1; background: rgba(0,0,0,0.2);">
+            <button id="mp4FolderButton" class="secondary" type="button" style="padding: 0 12px; font-size: 11px;">Alterar</button>
+          </div>
+        </label>
+      </div>
+
+      <div style="width: 100%; height: 1px; background: var(--line); margin: 24px 0;"></div>
+
+      <h3 style="font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin: 0 0 12px 0;">PASTAS DA BIBLIOTECA</h3>
+      <div style="display: grid; gap: 16px;">
+        <label>
+          <span style="font-size: 12px; display: block; margin-bottom: 8px;">Gravação do OBS Studio</span>
+          <div style="display: flex; gap: 8px;">
+            <input id="obsFolderInput" type="text" readonly style="flex: 1; background: rgba(0,0,0,0.2);">
+            <button id="obsFolderButton" class="secondary" type="button" style="padding: 0 12px; font-size: 11px;">Alterar</button>
+          </div>
+        </label>
+        <label>
+          <span style="font-size: 12px; display: block; margin-bottom: 8px;">Gravação do NVIDIA Shadowplay</span>
+          <div style="display: flex; gap: 8px;">
+            <input id="shadowplayFolderInput" type="text" readonly style="flex: 1; background: rgba(0,0,0,0.2);">
+            <button id="shadowplayFolderButton" class="secondary" type="button" style="padding: 0 12px; font-size: 11px;">Alterar</button>
+          </div>
+        </label>
+        <label>
+          <span style="font-size: 12px; display: block; margin-bottom: 8px;">Pasta de importação de Dispositivos (BDSM)</span>
+          <div style="display: flex; gap: 8px;">
+            <input id="deviceFolderInput" type="text" readonly style="flex: 1; background: rgba(0,0,0,0.2);">
+            <button id="deviceFolderButton" class="secondary" type="button" style="padding: 0 12px; font-size: 11px;">Alterar</button>
+          </div>
+        </label>
+      </div>
+
+      <div style="width: 100%; height: 1px; background: var(--line); margin: 24px 0;"></div>
+
+      <!-- FONTES PERSONALIZADAS DA BIBLIOTECA -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+          <h3 style="font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin: 0 0 4px 0;">PASTAS PERSONALIZADAS DA BIBLIOTECA</h3>
+          <p style="font-size: 11px; color: var(--muted); margin: 0;">Cadastre ou remova fontes de mídias personalizadas (Câmeras, Cartão SD, Podcast Studio, etc.).</p>
+        </div>
+        <button id="btnSettingsAddCustomSource" style="background: #f25c05; color: #ffffff; border: none; border-radius: 6px; padding: 7px 12px; font-weight: 700; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer; box-shadow: 0 4px 12px rgba(242, 92, 5, 0.25);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+          <span class="material-symbols-rounded" style="font-size: 16px;">create_new_folder</span>
+          + Nova Fonte
+        </button>
+      </div>
+
+      <div id="settingsCustomSourcesList" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+        <!-- Populado via JS -->
+      </div>
+    </div>
+
+    <!-- ATUALIZAÇÕES -->
+    <div id="menu-atualizacoes" class="settings-view" style="display: none;">
+      <h3 style="font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin: 0 0 12px 0;">ATUALIZAÇÕES DO SISTEMA</h3>
+      <p style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">Mantenha os motores de download e conversão atualizados.</p>
+      
+      <div style="margin-bottom: 16px; font-size: 12px;">
+        Versão atual: <span id="versionDisplay" style="color: var(--text);">Carregando...</span>
+      </div>
+
+      <label class="check-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
+        <input id="autoUpdateInput" type="checkbox" style="width: auto; accent-color: var(--accent);">
+        <span style="font-size: 12px;">Atualizar automaticamente</span>
+      </label>
+
+      <button id="updateDepsButton" class="secondary" type="button" style="width: 200px;">Verificar Atualizações</button>
+      <p id="updateStatusText" style="margin-top: 12px; font-size: 11px; font-weight: bold;"></p>
+    </div>
+
+    <!-- SISTEMA -->
+    <div id="menu-sistema" class="settings-view" style="display: none;">
+      <h3 style="font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin: 0 0 12px 0;">SISTEMA</h3>
+      <div style="display: grid; gap: 16px;">
+        <div>
+          <strong style="font-size: 12px; display: block; margin-bottom: 4px;">Versão</strong>
+          <span style="font-size: 12px; color: var(--muted);" id="sysVersion">Carregando...</span>
+        </div>
+        <div>
+          <strong style="font-size: 12px; display: block; margin-bottom: 4px;">Empresa</strong>
+          <span style="font-size: 12px; color: var(--muted);">Braga Dev</span>
+        </div>
+        <div>
+          <strong style="font-size: 12px; display: block; margin-bottom: 4px;">Pastas do Aplicativo</strong>
+          <span style="font-size: 12px; color: var(--muted);" id="sysFolders">Carregando...</span>
+        </div>
+        <div>
+          <strong style="font-size: 12px; display: block; margin-bottom: 4px;">Atualizações</strong>
+          <span style="font-size: 12px; color: var(--muted);">Automático via Braga Dev</span>
+        </div>
+        <div>
+          <strong style="font-size: 12px; display: block; margin-bottom: 4px;">Licenças</strong>
+          <span style="font-size: 12px; color: var(--muted);">MIT License - FFmpeg, yt-dlp, Node.js, Electron</span>
+        </div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(244, 67, 54, 0.3);">
+          <strong style="font-size: 12px; display: block; margin-bottom: 8px; color: #f44336;">PERIGO</strong>
+          <p style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">Atenção: Esta ação limpa o banco de dados interno da biblioteca. Os arquivos de vídeo no disco NÃO serão excluídos, mas as marcações de favoritos e tags serão perdidas.</p>
+          <button id="btnClearDatabase" class="secondary danger" type="button" style="width: auto; padding: 0 16px; background: rgba(244,67,54,0.1); border-color: rgba(244,67,54,0.5); color: #f44336;">Limpar Banco de Dados</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL DE CADASTRO DE FONTE PERSONALIZADA (SETTINGS) -->
+<div id="modalSettingsAddCustomSource" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+  <div style="background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 460px; padding: 24px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.6);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h3 style="font-size: 16px; font-weight: 700; color: #ffffff; margin: 0; display: flex; align-items: center; gap: 8px;">
+        <span class="material-symbols-rounded" style="color: #f25c05;">create_new_folder</span>
+        Nova Fonte Personalizada
+      </h3>
+      <button id="btnCloseSettingsCustomSourceModal" style="background: transparent; border: none; color: var(--muted); cursor: pointer;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <p style="font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5;">
+      Cadastre uma pasta local ou dispositivo externo (ex: Cartão SD, HD Externo, Podcast Studio). As mídias serão indexadas automaticamente com o nome da fonte escolhida.
+    </p>
+
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div>
+        <label style="font-size: 11px; font-weight: 700; color: #ffffff; display: block; margin-bottom: 6px; text-transform: uppercase;">Nome da Fonte / Origem</label>
+        <input type="text" id="inputSettingsCustomSourceName" placeholder="Ex: Podcast Studio, Câmera Sony, Cartão SD..." style="width: 100%; height: 38px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; color: #ffffff; font-size: 13px; font-weight: 600; outline: none; box-sizing: border-box;" />
+      </div>
+
+      <div>
+        <label style="font-size: 11px; font-weight: 700; color: #ffffff; display: block; margin-bottom: 6px; text-transform: uppercase;">Caminho da Pasta</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="inputSettingsCustomSourcePath" placeholder="Selecione a pasta no seu computador..." style="flex: 1; height: 38px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; color: #ffffff; font-size: 12px; outline: none; box-sizing: border-box;" />
+          <button id="btnSettingsBrowseCustomSourceFolder" style="width: 38px; height: 38px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #f25c05; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 20px;">folder_open</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+      <button id="btnSettingsCancelAddCustomSource" style="background: transparent; border: 1px solid var(--line); color: var(--muted); padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">Cancelar</button>
+      <button id="btnSettingsConfirmAddCustomSource" style="background: #f25c05; border: none; color: #ffffff; padding: 8px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <span class="material-symbols-rounded" style="font-size: 18px;">check_circle</span>
+        Cadastrar & Importar Mídias
+      </button>
+    </div>
+  </div>
+</div>

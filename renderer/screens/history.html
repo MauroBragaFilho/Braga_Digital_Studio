@@ -1,0 +1,42 @@
+<div class="view-header">
+  <div>
+    <h2>Histórico</h2>
+    <p>Histórico de Downloads e de Arquivos Convertidos.</p>
+  </div>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <select id="historyTypeSelect">
+      <option value="downloads">Downloads</option>
+      <option value="conversions">Conversões</option>
+    </select>
+    <button id="clearHistoryButton" class="secondary" type="button">Limpar</button>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table id="downloadsTable">
+    <thead>
+      <tr>
+        <th>Título</th>
+        <th>Tipo</th>
+        <th>Resolução</th>
+        <th>Status</th>
+        <th>Data</th>
+        <th>Pasta</th>
+      </tr>
+    </thead>
+    <tbody id="historyBody"></tbody>
+  </table>
+
+  <table id="conversionsTable" style="display: none;">
+    <thead>
+      <tr>
+        <th>Arquivo de Origem</th>
+        <th>Arquivo de Saída</th>
+        <th>Formato / Encoder</th>
+        <th>Status</th>
+        <th>Data</th>
+      </tr>
+    </thead>
+    <tbody id="conversionsBody"></tbody>
+  </table>
+</div>

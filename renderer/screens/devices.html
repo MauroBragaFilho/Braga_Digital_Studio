@@ -1,0 +1,131 @@
+<div class="devices-container" style="display: flex; gap: 20px; height: 100%; width: 100%; box-sizing: border-box; overflow: hidden;">
+  <!-- Coluna Esquerda: Grid de Dispositivos -->
+  <div class="devices-left-column" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-right: 6px;">
+    
+    <!-- Título e Descrição da Tela -->
+    <div style="margin-bottom: 24px;">
+      <p style="color: var(--muted); font-size: 13px; margin: 0;">Gerencie câmeras, cartões, servidores e outros dispositivos conectados.</p>
+    </div>
+
+    <!-- Barra de Controle do Grid -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-weight: 700; color: #ffffff; font-size: 15px;">Dispositivos conectados (<span id="devicesCount">0</span>)</span>
+        <button id="btnRefreshDevices" title="Atualizar lista" style="background: transparent; border: none; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 4px; border-radius: 4px; transition: all 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+          <span class="material-symbols-rounded" style="font-size: 18px;">refresh</span>
+        </button>
+      </div>
+
+      <button id="btnAddDevice" style="background: var(--accent); color: #ffffff; border: none; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; display: none; align-items: center; gap: 6px; cursor: pointer; transition: filter 0.2s;" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+        <span class="material-symbols-rounded" style="font-size: 18px;">add</span>
+        Adicionar dispositivo
+      </button>
+    </div>
+
+    <!-- Grid com os Cards dos Dispositivos -->
+    <div class="devices-grid" id="devicesGrid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start;">
+      <!-- Populado via JS -->
+    </div>
+  </div>
+
+  <!-- Coluna Direita: Painel Inspector de Detalhes -->
+  <div class="device-inspector-sidebar" id="deviceInspector" style="width: 360px; flex-shrink: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; overflow-y: auto;">
+    <!-- Populado via JS ao selecionar um dispositivo -->
+  </div>
+</div>
+
+<!-- MTP Explorer Modal -->
+<div id="mtpExplorerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+  <div style="background: var(--bg); border: 1px solid var(--line); border-radius: 12px; width: 800px; max-width: 90vw; height: 600px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+    
+    <!-- Modal Header -->
+    <div style="padding: 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin: 0 0 4px 0; display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-rounded" style="color: #00bcd4;">photo_camera</span>
+          Explorador de Dispositivo
+        </h2>
+        <div id="mtpExplorerBreadcrumb" style="font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center;">
+          <!-- Pão de migalhas preenchido via JS -->
+        </div>
+      </div>
+      <button id="btnMtpClose" class="icon-btn" style="background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 4px;">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <!-- Modal Body (Listagem) -->
+    <div style="flex: 1; overflow-y: auto; padding: 16px;">
+      <div id="mtpExplorerLoading" style="display: none; text-align: center; color: var(--muted); margin-top: 40px;">
+        <span class="material-symbols-rounded" style="font-size: 40px; animation: spin 1s linear infinite;">sync</span>
+        <div style="margin-top: 8px;">Acessando câmera, aguarde...</div>
+      </div>
+      <div id="mtpExplorerList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px;">
+        <!-- Itens preenchidos via JS -->
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+      <div style="padding: 16px; border-top: 1px solid var(--line); background: var(--card); display: flex; align-items: center; justify-content: space-between; border-radius: 0 0 12px 12px;">
+        
+        <!-- Progress Container (Hidden initially) -->
+        <div id="mtpProgressContainer" style="display: none; flex: 1; margin-right: 20px; align-items: center; gap: 15px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #fff;">
+              <span id="mtpProgressText">Copiando arquivo...</span>
+              <span id="mtpProgressPercent">0%</span>
+            </div>
+            <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; width: 100%;">
+              <div id="mtpProgressBar" style="height: 100%; background: #00bcd4; width: 0%; transition: width 0.2s;"></div>
+            </div>
+            <div style="font-size: 10px; color: var(--muted);">
+              Tempo estimado: <span id="mtpProgressEta">--:--</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="mtpImportActionContainer" style="display: flex; align-items: center; gap: 10px; width: 100%; justify-content: space-between;">
+          <div style="font-size: 12px; color: var(--muted);">
+            <span id="mtpExplorerSelectedCount">0</span> itens selecionados
+          </div>
+          <button id="btnMtpImport" style="background: #f25c05; color: #ffffff; border: none; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" disabled>
+            <span class="material-symbols-rounded" style="font-size: 18px;">download</span>
+            Importar Selecionados
+          </button>
+        </div>
+      </div>
+  </div>
+</div>
+<style>
+@keyframes spin { 100% { transform: rotate(360deg); } }
+.mtp-item {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+.mtp-item:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.2);
+}
+.mtp-item.selected {
+  border-color: #00bcd4;
+  background: rgba(0, 188, 212, 0.1);
+}
+.mtp-item .checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  accent-color: #00bcd4;
+  pointer-events: none;
+}
+</style>
