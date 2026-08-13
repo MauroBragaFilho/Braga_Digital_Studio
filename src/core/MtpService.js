@@ -1,7 +1,7 @@
 const { exec, spawn } = require('child_process');
 const EventEmitter = require('events');
 const path = require('path');
-const logger = require('../../services/logService');
+const logger = require('../services/logService');
 
 // Helper script C# para interop WPD nativo (sem janela Shell.Application)
 const wpdCSCode = `

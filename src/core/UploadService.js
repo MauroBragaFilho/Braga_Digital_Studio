@@ -1,6 +1,6 @@
 const { BrowserWindow } = require('electron');
 const EventEmitter = require('events');
-const logger = require('../../services/logService');
+const logger = require('../services/logService');
 
 class UploadService extends EventEmitter {
     constructor() {

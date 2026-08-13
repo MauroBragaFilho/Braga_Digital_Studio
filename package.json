@@ -41,7 +41,6 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "services/**/*",
       "src/**/*",
       "config/**/*",
       "database/**/*",

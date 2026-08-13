@@ -1,5 +1,5 @@
 const { EventEmitter } = require('events');
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const { exec } = require('child_process');
 const { Bonjour } = require('bonjour-service');
 const BdsmClient = require('./BdsmClient');

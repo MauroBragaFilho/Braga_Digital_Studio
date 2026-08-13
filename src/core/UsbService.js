@@ -2,7 +2,7 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
-const logger = require('../../services/logService');
+const logger = require('../services/logService');
 
 class UsbService extends EventEmitter {
   /**

@@ -1,4 +1,4 @@
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const chokidar = require('chokidar');
 const path = require('path');
 const EventBus = require('../EventBus');
