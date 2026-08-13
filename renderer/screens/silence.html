@@ -1,0 +1,235 @@
+<div class="silence-screen-container" style="display: flex; flex-direction: column; gap: 16px; height: 100%; width: 100%; box-sizing: border-box; overflow-y: auto; padding-right: 4px;">
+  
+  <!-- 1. CABEÇALHO DA TELA -->
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <p style="color: var(--muted); font-size: 13px; margin: 0;">Detecte e remova trechos de silêncio de múltiplos áudios ou vídeos com cortes automáticos.</p>
+    </div>
+  </div>
+
+  <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
+  <div id="silenceDebugBanner" style="display: none; background: rgba(229, 57, 53, 0.15); border: 1px solid #e53935; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 11px; color: #ff8a80; max-height: 120px; overflow-y: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: #e53935; margin-bottom: 4px;">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <span class="material-symbols-rounded" style="font-size: 16px;">error</span>
+        [ERRO DETECTADO NO SISTEMA]
+      </span>
+      <button onclick="document.getElementById('silenceDebugBanner').style.display='none'" style="background: rgba(0,0,0,0.3); border: 1px solid #e53935; color: #fff; font-size: 10px; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Fechar Erro</button>
+    </div>
+    <pre id="silenceLogOutput" style="margin: 0; white-space: pre-wrap; word-break: break-all; color: #ffffff;"></pre>
+  </div>
+
+  <!-- 2. STEPPER BAR (PASSO A PASSO NUMERADO COM STATUS DINÂMICO) -->
+  <div class="silence-stepper" style="display: flex; align-items: center; justify-content: space-between; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 24px;">
+    
+    <!-- PASSO 1: FILA DE ARQUIVOS -->
+    <div id="step1ItemSilence" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step1BadgeSilence" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">1</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff;">FILA DE ARQUIVOS</div>
+        <div id="step1SubSilence" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Adicione os áudios/vídeos</div>
+      </div>
+    </div>
+
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 2: CONFIGURAÇÃO DE CORTE -->
+    <div id="step2ItemSilence" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step2BadgeSilence" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">2</div>
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: #ffffff;">PARÂMETROS DE SILÊNCIO</div>
+        <div id="step2SubSilence" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Sensibilidade & Duração</div>
+      </div>
+    </div>
+
+    <span class="material-symbols-rounded" style="color: var(--line); font-size: 20px;">chevron_right</span>
+
+    <!-- PASSO 3: PROCESSAR & EXPORTAR -->
+    <div id="step3ItemSilence" class="step-item" style="display: flex; align-items: center; gap: 12px; transition: all 0.3s;">
+      <div id="step3BadgeSilence" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--muted); transition: all 0.3s;">3</div>
+      <div>
+        <div id="step3TitleSilence" style="font-size: 12px; font-weight: 700; color: #ffffff;">PROCESSAR & EXPORTAR</div>
+        <div id="step3SubSilence" style="font-size: 11px; color: var(--muted); transition: all 0.3s;">Inicie os cortes automáticos</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PAINEL PRINCIPAL EM COLUNAS -->
+  <div style="display: flex; gap: 16px; min-height: 480px; flex: 1;">
+    
+    <!-- COLUNA PRINCIPAL (ESQUERDA/CENTRO): TABELA DE ARQUIVOS COM BOTÕES EM UMA LINHA -->
+    <div style="flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column;">
+      
+      <!-- Cabeçalho da Tabela & Botões de Ação em UMA ÚNICA LINHA -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: #ffffff; white-space: nowrap;">
+          <span>ARQUIVOS SELECIONADOS (<span id="silenceMainCount">0</span>)</span>
+        </div>
+
+        <!-- Barra de Botões em Uma Linha com Texto Curto (Igual à Montagem) -->
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
+          <button id="btnAddSilenceVideos" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">add</span>
+            Adicionar
+          </button>
+
+          <button id="btnImportSilenceFromLibrary" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">video_library</span>
+            Biblioteca
+          </button>
+          
+          <button id="btnAddSilenceFolder" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">folder</span>
+            Pasta
+          </button>
+
+          <button id="btnClearSilenceQueue" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+            <span class="material-symbols-rounded" style="font-size: 16px;">delete_sweep</span>
+            Limpar Fila
+          </button>
+
+          <select id="selSilenceSortOrder" style="background: var(--card-2); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-weight: 600; font-size: 12px; outline: none; cursor: pointer; white-space: nowrap;">
+            <option value="default">Por Importação</option>
+            <option value="name_asc">Por Nome (A-Z)</option>
+            <option value="duration_desc">Por Duração (Maior)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- TABELA DE ARQUIVOS -->
+      <div style="flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,0.2);">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase;">
+              <th style="padding: 10px 12px; width: 40px;">#</th>
+              <th style="padding: 10px 12px;">VÍDEO / ARQUIVO</th>
+              <th style="padding: 10px 12px; width: 130px;">DURAÇÃO ORIGINAL</th>
+              <th style="padding: 10px 12px; width: 140px;">SILÊNCIO DETECTADO</th>
+              <th style="padding: 10px 12px; width: 130px;">DURAÇÃO ESTIMADA</th>
+              <th style="padding: 10px 12px; width: 90px; text-align: center;">STATUS</th>
+              <th style="padding: 10px 12px; width: 40px;"></th>
+            </tr>
+          </thead>
+          <tbody id="silenceMainBody">
+            <!-- Populado via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé da Tabela -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12px; color: var(--muted); padding: 0 4px;">
+        <div>Duração total dos arquivos: <strong id="silenceTotalDuration" style="color: #ffffff; font-size: 13px; margin-left: 4px;">00:00:00</strong></div>
+        <div style="font-size: 11px; color: var(--muted);">Trechos silenciosos são cortados automaticamente durante a exportação.</div>
+      </div>
+    </div>
+
+    <!-- COLUNA DIREITA: CONFIGURAÇÕES DE REMOÇÃO DE SILÊNCIO -->
+    <div style="width: 290px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px;">
+      
+      <div style="background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 16px;">
+        <h3 style="font-size: 13px; font-weight: 700; color: #ffffff; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">PARÂMETROS DE SILÊNCIO</h3>
+        
+        <!-- SENSIBILIDADE (THRESHOLD dB) -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--muted);">Sensibilidade (Threshold)</label>
+            <span id="lblSensitivity" style="font-size: 12px; font-weight: 700; color: #f25c05;">-30 dB</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="range" id="sliderSensitivity" min="-60" max="-10" step="1" value="-30" style="flex: 1; accent-color: #f25c05; cursor: pointer;" />
+            <input type="number" id="numSensitivity" min="-60" max="-10" value="-30" style="width: 52px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; color: #ffffff; font-weight: 700; text-align: center; font-size: 11px; height: 32px; outline: none;" />
+          </div>
+        </div>
+
+        <!-- DURAÇÃO MÍNIMA DO SILÊNCIO -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--muted);">Duração Mínima do Silêncio</label>
+            <span id="lblMinDuration" style="font-size: 12px; font-weight: 700; color: #ffffff;">0.5 s (500ms)</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="range" id="sliderMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="flex: 1; accent-color: #f25c05; cursor: pointer;" />
+            <input type="number" id="numMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="width: 52px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; color: #ffffff; font-weight: 700; text-align: center; font-size: 11px; height: 32px; outline: none;" />
+          </div>
+        </div>
+
+        <!-- MODO DE PROCESSAMENTO -->
+        <div>
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Modo de Processamento</label>
+          <select id="selSilenceMode" style="width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px;">
+            <option value="remove">Remover Silêncio Completamente</option>
+            <option value="reduce05">Reduzir Silêncio para 0.5s</option>
+            <option value="reduce10">Reduzir Silêncio para 1.0s</option>
+          </select>
+        </div>
+
+        <!-- PASTA DE DESTINO DA EXPORTAÇÃO -->
+        <div>
+          <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Pasta de Destino</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="outSilenceFolder" value="C:\Users\mauri\Videos\RemoverSilencio" style="flex: 1; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 11px;" />
+            <button id="btnSelectSilenceDestFolder" title="Selecionar Pasta" style="width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #f25c05; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+              <span class="material-symbols-rounded" style="font-size: 18px;">folder_open</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BOTÃO PRINCIPAL DE PROCESSAMENTO -->
+        <div style="margin-top: 8px;">
+          <button id="btnStartSilenceQueue" style="width: 100%; background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 12px 16px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(229, 57, 53, 0.3);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+            <span class="material-symbols-rounded" style="font-size: 20px;">graphic_eq</span>
+            Remover Silêncio
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MODAL PARA SELEÇÃO DE BIBLIOTECA (BDSM, OBS, NVIDIA, TODAS) -->
+  <div id="silenceLibraryModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 440px; padding: 24px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="font-size: 16px; font-weight: 700; color: #ffffff; margin: 0;">Importar da Biblioteca</h3>
+        <button id="btnCloseSilenceLibModal" style="background: transparent; border: none; color: var(--muted); cursor: pointer;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <p style="font-size: 13px; color: var(--muted); margin: 0;">Escolha de qual fonte da biblioteca você deseja carregar os arquivos:</p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn-silence-lib-option" data-origin="BDSM_DEVICE" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #f25c05;">smartphone</span>
+            <span>Dispositivos BDSM</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-silence-lib-option" data-origin="OBS" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #4caf50;">videocam</span>
+            <span>OBS Studio</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-silence-lib-option" data-origin="SHADOWPLAY" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #2196f3;">sports_esports</span>
+            <span>NVIDIA ShadowPlay</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+
+        <button class="btn-silence-lib-option" data-origin="ALL" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-rounded" style="color: #ff9800;">video_library</span>
+            <span>Todas as Mídias da Biblioteca</span>
+          </div>
+          <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

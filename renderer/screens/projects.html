@@ -1,0 +1,159 @@
+<div class="proj-container">
+
+  <!-- Main Area -->
+  <main class="proj-main">
+
+    <!-- Topbar -->
+    <header class="proj-topbar">
+      <h2 class="proj-topbar-title">Meus Projetos</h2>
+      <button id="btnNewProject" class="proj-btn-primary">
+        <span class="material-symbols-rounded">add</span>
+        Novo Projeto
+      </button>
+    </header>
+
+    <!-- Content Area -->
+    <div id="projectsContentArea" class="proj-content-area">
+        <div id="projectsGrid" class="proj-grid">
+            <!-- Projetos injetados pelo JS -->
+        </div>
+    </div>
+
+  </main>
+
+  <!-- Right Sidebar: Inspector -->
+  <aside id="projectInspector" class="proj-inspector">
+
+    <div id="inspectorProjCover" class="proj-inspector-cover" title="Clique para alterar a capa">
+      <div class="cover-overlay">
+        <span class="material-symbols-rounded">add_photo_alternate</span>
+      </div>
+      <button id="closeProjInspectorBtn" class="proj-inspector-close-btn">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <!-- Inspector Content -->
+    <div class="proj-inspector-body">
+
+      <div class="proj-inspector-fields">
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Nome</span>
+          <span id="inspectorProjName" class="proj-detail-value proj-detail-value--strong">-</span>
+        </div>
+
+        <div class="proj-detail-row">
+            <span class="proj-detail-label">Cor do Projeto</span>
+            <input type="color" id="inspectorProjColor" class="proj-color-swatch">
+        </div>
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Status</span>
+          <span id="inspectorProjStatus" class="proj-detail-value">-</span>
+        </div>
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Cliente</span>
+          <span id="inspectorProjClient" class="proj-detail-value">-</span>
+        </div>
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Tipo</span>
+          <span id="inspectorProjType" class="proj-detail-value">-</span>
+        </div>
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Data de Início</span>
+          <span id="inspectorProjStart" class="proj-detail-value">-</span>
+        </div>
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Data de Entrega</span>
+          <span id="inspectorProjDeadline" class="proj-detail-value">-</span>
+        </div>
+
+        <div class="proj-detail-row proj-detail-row--divider">
+          <span class="proj-detail-label">Qtd. de Vídeos</span>
+          <span id="inspectorProjCount" class="proj-detail-value">-</span>
+        </div>
+
+        <div class="proj-detail-row">
+          <span class="proj-detail-label">Espaço Utilizado</span>
+          <span id="inspectorProjSize" class="proj-detail-value">-</span>
+        </div>
+
+        <!-- Buttons -->
+        <div class="proj-inspector-actions">
+            <button id="btnOpenProject" class="proj-btn-accent">
+                <span class="material-symbols-rounded">folder_open</span> Abrir Projeto
+            </button>
+            <button id="btnEditProject" class="proj-btn-secondary">
+                <span class="material-symbols-rounded">edit</span> Editar Propriedades
+            </button>
+            <button id="btnDeleteProject" class="proj-btn-danger">
+                <span class="material-symbols-rounded">delete</span> Excluir
+            </button>
+        </div>
+
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- Modal Novo/Editar Projeto -->
+<div id="modalProjectForm" class="proj-modal-overlay">
+  <div class="proj-modal">
+    <h3 id="modalProjectTitle" class="proj-modal-title">Novo Projeto</h3>
+
+    <input type="hidden" id="projFormId">
+
+    <div>
+        <label class="proj-form-label">NOME DO PROJETO</label>
+        <input type="text" id="projFormName" class="proj-form-input" />
+    </div>
+
+    <div class="proj-form-row">
+        <div class="proj-form-col">
+            <label class="proj-form-label">CLIENTE</label>
+            <input type="text" id="projFormClient" class="proj-form-input" />
+        </div>
+        <div class="proj-form-col">
+            <label class="proj-form-label">TIPO</label>
+            <input type="text" id="projFormType" placeholder="Ex: Casamento" class="proj-form-input" />
+        </div>
+    </div>
+
+    <div class="proj-form-row">
+        <div class="proj-form-col">
+            <label class="proj-form-label">INÍCIO</label>
+            <input type="date" id="projFormStart" class="proj-form-input" />
+        </div>
+        <div class="proj-form-col">
+            <label class="proj-form-label">ENTREGA</label>
+            <input type="date" id="projFormDeadline" class="proj-form-input" />
+        </div>
+    </div>
+
+    <div class="proj-form-row">
+        <div class="proj-form-col">
+            <label class="proj-form-label">STATUS</label>
+            <select id="projFormStatus" class="proj-form-input">
+                <option value="Ativo">Ativo</option>
+                <option value="Pausado">Pausado</option>
+                <option value="Concluído">Concluído</option>
+            </select>
+        </div>
+        <div>
+            <label class="proj-form-label">COR</label>
+            <input type="color" id="projFormColor" value="#3b82f6" class="proj-form-color-input" />
+        </div>
+    </div>
+
+    <div class="proj-form-actions">
+      <button id="btnCancelProjForm" class="proj-btn-outline">Cancelar</button>
+      <button id="btnSaveProjForm" class="proj-btn-accent-sm">Salvar</button>
+    </div>
+  </div>
+</div>

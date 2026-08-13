@@ -1,0 +1,227 @@
+<div class="metadata-screen-container">
+  
+  <!-- CABEÇALHO -->
+  <div class="metadata-header">
+    <div class="metadata-description">
+      <p>Visualize e edite os metadados e estrutura técnica do arquivo.</p>
+    </div>
+    <div class="metadata-header-actions">
+      <span id="metaFileName" class="meta-file-name">-</span>
+      <button type="button" id="btnSelectMetaFile" class="meta-btn-primary">
+        <span class="material-symbols-rounded">file_open</span> Carregar Arquivo
+      </button>
+      <button type="button" id="btnResetMeta" class="meta-btn-secondary hidden">
+        <span class="material-symbols-rounded">clear_all</span> Limpar Mídia
+      </button>
+    </div>
+  </div>
+
+  <!-- COLUNAS PRINCIPAIS -->
+  <div class="metadata-main-layout">
+    
+    <!-- ESQUERDA: Abas e Forms -->
+    <div class="metadata-editor-panel">
+      
+      <div class="metadata-panel-header">
+        <h3 class="metadata-panel-title">ESTRUTURA METADADOS</h3>
+      </div>
+      
+      <nav class="meta-tabs">
+        <button type="button" class="meta-tab active" data-tab="tags">Geral (Tags)</button>
+        <button type="button" class="meta-tab" data-tab="info">Info Técnica</button>
+        <button type="button" class="meta-tab" data-tab="streams">Streams</button>
+        <button type="button" class="meta-tab" data-tab="chapters">Capítulos</button>
+        <button type="button" class="meta-tab" data-tab="cover">Capa</button>
+        <button type="button" class="meta-tab" data-tab="json">JSON Raw</button>
+      </nav>
+
+      <div class="meta-panels-container">
+        
+        <!-- ABA: TAGS -->
+        <div class="meta-panel active" id="tab-tags">
+          <div class="meta-grid-header">
+            <span>CAMPO</span><span>ANTES</span><span>DEPOIS</span>
+          </div>
+          
+          <div class="meta-tags-form">
+            <div class="meta-tag-row">
+              <label>Título</label>
+              <input type="text" id="tag-orig-title" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-title" data-tag="title" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+            <div class="meta-tag-row">
+              <label>Artista</label>
+              <input type="text" id="tag-orig-artist" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-artist" data-tag="artist" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+            <div class="meta-tag-row">
+              <label>Álbum</label>
+              <input type="text" id="tag-orig-album" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-album" data-tag="album" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+            <div class="meta-tag-row">
+              <label>Copyright</label>
+              <input type="text" id="tag-orig-copyright" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-copyright" data-tag="copyright" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+            <div class="meta-tag-row">
+              <label>Gênero</label>
+              <input type="text" id="tag-orig-genre" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-genre" data-tag="genre" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+            <div class="meta-tag-row">
+              <label>Ano</label>
+              <input type="text" id="tag-orig-date" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-date" data-tag="date" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+            <div class="meta-tag-row">
+              <label>Idioma</label>
+              <input type="text" id="tag-orig-language" disabled placeholder="Não definido" class="meta-tag-readonly">
+              <input type="text" id="tag-language" data-tag="language" placeholder="Deixar em branco" class="meta-tag-editable">
+            </div>
+          </div>
+          
+          <div class="meta-tags-hidden-fields">
+            <input type="text" id="tag-track" data-tag="track">
+            <input type="text" id="tag-composer" data-tag="composer">
+            <input type="text" id="tag-director" data-tag="director">
+            <input type="text" id="tag-publisher" data-tag="publisher">
+            <input type="text" id="tag-comment" data-tag="comment">
+            <input type="text" id="tag-encoder" data-tag="encoder">
+            <input type="text" id="tag-location" data-tag="location">
+          </div>
+        </div>
+
+        <!-- ABA: INFO TÉCNICA -->
+        <div class="meta-panel hidden" id="tab-info">
+          <div class="info-grid" id="readOnlyGrid">
+            <!-- Preenchido pelo JS -->
+          </div>
+        </div>
+        
+        <!-- ABA: STREAMS -->
+        <div class="meta-panel hidden" id="tab-streams">
+          <div id="streamsList" class="streams-list">
+            <!-- Preenchido pelo JS -->
+          </div>
+        </div>
+        
+        <!-- ABA: CAPÍTULOS -->
+        <div class="meta-panel hidden" id="tab-chapters">
+          <button type="button" id="btnAddChapter" class="meta-btn-secondary">
+            + Novo Capítulo
+          </button>
+          <div class="meta-chapters-table-container">
+            <table class="meta-chapters-table">
+              <thead>
+                <tr>
+                  <th>Início</th>
+                  <th>Fim</th>
+                  <th>Título</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="chaptersList"></tbody>
+            </table>
+          </div>
+        </div>
+        
+        <!-- ABA: CAPA -->
+        <div class="meta-panel hidden" id="tab-cover">
+          <div class="meta-cover-actions">
+            <button type="button" id="btnReplaceCover" class="meta-btn-secondary">
+              Alterar Capa
+            </button>
+            <button type="button" id="btnRemoveCover" class="meta-btn-danger">
+              Remover Capa
+            </button>
+          </div>
+          <p id="coverStatusText" class="meta-cover-status-text"></p>
+        </div>
+
+        <!-- ABA: JSON -->
+        <div class="meta-panel hidden" id="tab-json">
+          <button type="button" id="btnCopyJson" class="meta-btn-secondary">
+            Copiar JSON
+          </button>
+          <pre id="rawJsonArea" class="meta-raw-json-area"></pre>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DIREITA: Informações e Status -->
+    <div class="metadata-sidebar">
+      
+      <!-- THUMBNAIL -->
+      <div class="metadata-cover-card">
+        <h3 class="metadata-cover-title">MINIATURA / CAPA</h3>
+        
+        <div class="metadata-cover-preview-container">
+          <img id="coverPreview" class="metadata-cover-preview" alt="Capa">
+          <div id="coverPlaceholder" class="metadata-cover-placeholder">Sem Arte</div>
+        </div>
+      </div>
+
+      <!-- INFORMAÇÕES -->
+      <div class="metadata-summary-card">
+        <h3 class="metadata-summary-title">RESUMO</h3>
+        
+        <div class="metadata-summary-content">
+          <div class="metadata-summary-item">
+            <span class="metadata-summary-label">Duração:</span>
+            <span id="metaFileDurationInfo" class="metadata-summary-value">-</span>
+          </div>
+          <div class="metadata-summary-item">
+            <span class="metadata-summary-label">Modo:</span>
+            <span class="metadata-summary-value metadata-summary-value-success">Direct Stream Copy</span>
+          </div>
+          
+          <div id="metaLogArea" class="metadata-log-area hidden">
+            <div class="metadata-log-header">
+              <span class="material-symbols-rounded metadata-log-icon">sync</span>
+              <span class="metadata-log-title">STATUS</span>
+            </div>
+            <span id="metaStatusText" class="metadata-status-text">Aguardando...</span>
+            <pre id="metaLogOutput" class="metadata-log-output"></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AÇÕES (RODAPÉ) -->
+  <div id="metaExportArea" class="metadata-export-area hidden">
+    <div class="metadata-export-actions">
+      <button type="button" id="btnRevertTags" class="meta-btn-secondary">
+        Reverter Tags
+      </button>
+      <button type="button" id="btnExportMeta" class="meta-btn-primary">
+        <span class="material-symbols-rounded">save</span> Salvar Metadados
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL DE CONFIRMAÇÃO DE DIFF -->
+<dialog id="diffModal" class="metadata-diff-modal">
+  <div class="metadata-diff-modal-header">
+    <span class="material-symbols-rounded metadata-diff-modal-icon">fact_check</span>
+    <h3 class="metadata-diff-modal-title">Confirmar Alterações</h3>
+  </div>
+  
+  <p class="metadata-diff-modal-desc">
+    As seguintes alterações serão gravadas no arquivo original:
+  </p>
+
+  <div id="diffList" class="metadata-diff-list">
+    <!-- Preenchido pelo JS -->
+  </div>
+  
+  <div class="metadata-diff-modal-actions">
+    <button type="button" id="btnCancelDiff" class="meta-btn-secondary">Cancelar</button>
+    <button type="button" id="btnConfirmDiff" class="meta-btn-primary">Gravar no Arquivo</button>
+  </div>
+</dialog>

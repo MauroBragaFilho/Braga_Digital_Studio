@@ -1,0 +1,364 @@
+<div class="montage-screen-container">
+  
+  <!-- 1. CABEÇALHO DA TELA & BOTÃO SALVAR -->
+  <div class="montage-header">
+    <div class="montage-description">
+      <p>Monte seu vídeo combinando abertura, vídeos principais e finalização.</p>
+    </div>
+    
+    <button id="btnSaveProject" class="montage-btn-save" type="button">
+      <span class="material-symbols-rounded">save</span>
+      Salvar Projeto
+    </button>
+  </div>
+
+  <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
+  <div id="montageDebugBanner" class="montage-debug-banner hidden">
+    <div class="montage-debug-header">
+      <span class="montage-debug-title">
+        <span class="material-symbols-rounded">error</span>
+        [ERRO DETECTADO NO SISTEMA]
+      </span>
+      <button id="btnCloseDebugBanner" class="montage-debug-close-btn" type="button">Fechar Erro</button>
+    </div>
+    <pre id="montageLogOutput" class="montage-log-output"></pre>
+  </div>
+
+  <!-- 2. STEPPER BAR (PASSO A PASSO NUMERADO COM STATUS DINÂMICO) -->
+  <div class="montage-stepper">
+    
+    <!-- PASSO 1: ABERTURA -->
+    <div id="step1Item" class="step-item">
+      <div id="step1Badge" class="step-badge step-badge-pending">1</div>
+      <div>
+        <div class="step-title">ABERTURA</div>
+        <div id="step1Sub" class="step-subtitle step-text-pending">Defina a abertura do vídeo</div>
+      </div>
+    </div>
+    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+
+    <!-- PASSO 2: VÍDEOS PRINCIPAIS -->
+    <div id="step2Item" class="step-item">
+      <div id="step2Badge" class="step-badge step-badge-pending">2</div>
+      <div>
+        <div class="step-title">VÍDEOS PRINCIPAIS</div>
+        <div id="step2Sub" class="step-subtitle step-text-pending">Adicione os vídeos principais</div>
+      </div>
+    </div>
+    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+
+    <!-- PASSO 3: FINALIZAÇÃO -->
+    <div id="step3Item" class="step-item">
+      <div id="step3Badge" class="step-badge step-badge-pending">3</div>
+      <div>
+        <div class="step-title">FINALIZAÇÃO</div>
+        <div id="step3Sub" class="step-subtitle step-text-pending">Defina a finalização do vídeo</div>
+      </div>
+    </div>
+    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+
+    <!-- PASSO 4: EXPORTAR / PROGRESSO -->
+    <div id="step4Item" class="step-item">
+      <div id="step4Badge" class="step-badge step-badge-pending">4</div>
+      <div>
+        <div id="step4Title" class="step-title">EXPORTAR</div>
+        <div id="step4Sub" class="step-subtitle step-text-pending">Configure e exporte seu vídeo</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PAINEL PRINCIPAL EM COLUNAS -->
+  <div class="montage-main-layout">
+    
+    <!-- COLUNA 1 (ESQUERDA): ABERTURA, FINALIZAÇÃO, DURAÇÃO FIXA -->
+    <div class="montage-sidebar">
+      
+      <!-- ABERTURA CARD -->
+      <div class="montage-card">
+        <div class="montage-card-header">
+          <div class="montage-card-title-group">
+            <span>ABERTURA (Comum)</span>
+            <span class="material-symbols-rounded montage-card-info" title="Vídeo de vinheta exibido antes de cada item">info</span>
+          </div>
+        </div>
+
+        <div class="montage-video-preview">
+          <div class="montage-video-thumb">
+            <img id="imgIntroThumb" class="montage-video-thumb-img hidden" onError="this.classList.add('hidden')" />
+            <span id="phIntroIcon" class="material-symbols-rounded montage-video-thumb-placeholder">movie</span>
+          </div>
+          <div class="montage-video-info">
+            <div id="lblIntroName" class="montage-video-name">Nenhuma</div>
+            <div id="lblIntroDuration" class="montage-video-duration">00:00:00</div>
+            <div id="lblIntroRes" class="montage-video-resolution">-</div>
+          </div>
+        </div>
+
+        <div class="montage-card-actions">
+          <button id="btnSelectIntro" class="montage-btn-secondary" type="button">
+            <span class="material-symbols-rounded">edit</span>
+            Alterar Abertura
+          </button>
+          <button id="btnRemoveIntro" class="montage-btn-danger" title="Remover abertura" type="button">
+            <span class="material-symbols-rounded">delete</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- FINALIZAÇÃO CARD -->
+      <div class="montage-card">
+        <div class="montage-card-header">
+          <div class="montage-card-title-group">
+            <span>FINALIZAÇÃO (Comum)</span>
+            <span class="material-symbols-rounded montage-card-info" title="Vídeo de encerramento exibido após cada item">info</span>
+          </div>
+        </div>
+
+        <div class="montage-video-preview">
+          <div class="montage-video-thumb">
+            <img id="imgOutroThumb" class="montage-video-thumb-img hidden" onError="this.classList.add('hidden')" />
+            <span id="phOutroIcon" class="material-symbols-rounded montage-video-thumb-placeholder">movie</span>
+          </div>
+          <div class="montage-video-info">
+            <div id="lblOutroName" class="montage-video-name">Nenhuma</div>
+            <div id="lblOutroDuration" class="montage-video-duration">00:00:00</div>
+            <div id="lblOutroRes" class="montage-video-resolution">-</div>
+          </div>
+        </div>
+
+        <div class="montage-card-actions">
+          <button id="btnSelectOutro" class="montage-btn-secondary" type="button">
+            <span class="material-symbols-rounded">edit</span>
+            Alterar Finalização
+          </button>
+          <button id="btnRemoveOutro" class="montage-btn-danger" title="Remover finalização" type="button">
+            <span class="material-symbols-rounded">delete</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- DURAÇÃO FIXA CARD (COM SELEÇÃO DE PORCENTAGEM PADRÃO) -->
+      <div class="montage-card">
+        <div class="montage-card-header">
+          <div class="montage-card-title-group">
+            <span>DURAÇÃO FIXA</span>
+            <span class="material-symbols-rounded montage-card-info">info</span>
+          </div>
+          <span class="montage-card-subtitle">Porcentagem Padrão</span>
+        </div>
+
+        <div class="montage-global-pct-control">
+          <input type="range" id="sliderGlobalPct" class="montage-slider" min="1" max="100" value="100" />
+          <div class="montage-global-pct-input-wrap">
+            <input type="number" id="numGlobalPct" class="montage-input-pct" min="1" max="100" value="100" />
+            <span class="montage-pct-label">%</span>
+          </div>
+        </div>
+
+        <p class="montage-global-pct-help">
+          Define a % inicial aplicada aos novos vídeos da fila (alterar vídeos individuais não muda este valor).
+        </p>
+      </div>
+    </div>
+
+    <!-- COLUNA 2 (CENTRO): VÍDEOS PRINCIPAIS & TABELA COM BOTÕES EM UMA LINHA -->
+    <div class="montage-content-panel">
+      
+      <!-- Cabeçalho da Tabela & Botões de Ação em UMA ÚNICA LINHA -->
+      <div class="montage-table-header">
+        <div class="montage-table-title-group">
+          <span>VÍDEOS PRINCIPAIS (<span id="mainCount">0</span>)</span>
+        </div>
+
+        <!-- Barra de Botões em Uma Linha com Texto Curto -->
+        <div class="montage-table-actions">
+          <button id="btnAddMainVideos" class="montage-btn-primary" type="button">
+            <span class="material-symbols-rounded">add</span>
+            Adicionar
+          </button>
+
+          <button id="btnImportFromLibrary" class="montage-btn-secondary" type="button">
+            <span class="material-symbols-rounded">video_library</span>
+            Biblioteca
+          </button>
+          
+          <button id="btnAddFolder" class="montage-btn-secondary" type="button">
+            <span class="material-symbols-rounded">folder</span>
+            Pasta
+          </button>
+
+          <button id="btnClearQueue" class="montage-btn-secondary" type="button">
+            <span class="material-symbols-rounded">delete_sweep</span>
+            Limpar Fila
+          </button>
+
+          <select id="selSortOrder" class="montage-select-sort">
+            <option value="default">Por Importação</option>
+            <option value="name_asc">Por Nome (A-Z)</option>
+            <option value="duration_desc">Por Duração (Maior)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tabela Sem As Colunas de Áudio/Alinhamento + Com % UTILIZADO DO VÍDEO -->
+      <div class="montage-table-container">
+        <table class="montage-table">
+          <thead>
+            <tr class="montage-table-head">
+              <th>#</th>
+              <th>VÍDEO</th>
+              <th>DURAÇÃO ORIGINAL</th>
+              <th>% UTILIZADO DO VÍDEO</th>
+              <th>DURAÇÃO FINAL</th>
+              <th>STATUS</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="montageMainBody">
+            <!-- Populado via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé da Tabela -->
+      <div class="montage-table-footer">
+        <div>Duração total dos vídeos principais: <strong id="mainTotalDuration">00:00:00</strong></div>
+        <div class="montage-table-help">Alterar a % de um vídeo afeta apenas aquele vídeo.</div>
+      </div>
+    </div>
+
+    <!-- COLUNA 3 (DIREITA): CONFIGURAÇÕES DE SAÍDA S/ PRORES + PASTA VÍDEOS/MONTAGEM -->
+    <div class="montage-config-panel">
+      
+      <div class="montage-config-section">
+        <h3 class="montage-config-title">CONFIGURAÇÕES DE SAÍDA</h3>
+        
+        <div class="montage-config-form">
+          <div class="montage-form-group">
+            <label>Resolução</label>
+            <select id="selRes" class="montage-select">
+              <option value="1080p" selected>1080p (Full HD)</option>
+              <option value="720p">720p (HD)</option>
+              <option value="1440p">1440p (Quad HD)</option>
+              <option value="2160p">2160p (4K)</option>
+            </select>
+          </div>
+
+          <div class="montage-form-group">
+            <label>FPS</label>
+            <select id="selFps" class="montage-select">
+              <option value="30" selected>30</option>
+              <option value="24">24</option>
+              <option value="60">60</option>
+              <option value="original">Manter original</option>
+            </select>
+          </div>
+
+          <div class="montage-form-group">
+            <label>Codec</label>
+            <select id="selCodec" class="montage-select">
+              <option value="H.264" selected>H.264</option>
+              <option value="H.265">H.265 (HEVC)</option>
+            </select>
+          </div>
+
+          <div class="montage-form-group">
+            <label>Qualidade</label>
+            <select id="selQuality" class="montage-select">
+              <option value="Alta" selected>Alta</option>
+              <option value="Média">Média</option>
+              <option value="Máxima">Máxima</option>
+              <option value="Baixa">Baixa</option>
+            </select>
+          </div>
+
+          <div class="montage-form-group">
+            <label>Formato</label>
+            <select id="selFormat" class="montage-select">
+              <option value="MP4" selected>MP4</option>
+              <option value="MKV">MKV</option>
+              <option value="MOV">MOV</option>
+            </select>
+          </div>
+
+          <div class="montage-form-group">
+            <label>Pasta de Destino</label>
+            <div class="montage-input-group">
+              <input type="text" id="txtDestFolder" class="montage-input" value="C:\Users\Public\Videos\Montagem" />
+              <button id="btnSelectDestFolder" title="Selecionar Pasta" class="montage-btn-icon">
+                <span class="material-symbols-rounded">folder_open</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PAINEL INFERIOR: BOTÕES DE AÇÃO -->
+  <div class="montage-bottom-bar">
+    <div class="montage-status-message">
+      <span class="material-symbols-rounded montage-status-icon">check_circle</span>
+      <span>Projeto pronto para ser processado pelo motor de montagem BDS.</span>
+    </div>
+
+    <div class="montage-bottom-actions">
+      <button id="btnExportAll" class="montage-btn-export" type="button">
+        <span class="material-symbols-rounded">upload</span>
+        Exportar Todos os Vídeos
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL PARA ESCOLHER A ORIGEM DA BIBLIOTECA (BDSM, OBS, NVIDIA, TODAS) -->
+  <div id="librarySelectModal" class="montage-modal-overlay hidden">
+    <div class="montage-modal">
+      
+      <div class="montage-modal-header">
+        <h3 class="montage-modal-title">
+          <span class="material-symbols-rounded montage-modal-icon">video_library</span>
+          Selecione a Biblioteca
+        </h3>
+        <button id="btnCloseLibModal" class="montage-modal-close-btn" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <p class="montage-modal-text">De qual origem você deseja puxar os vídeos para a fila de montagem?</p>
+
+      <div class="montage-modal-options">
+        <button class="montage-lib-option" data-origin="BDSM_DEVICE" type="button">
+          <div class="montage-lib-option-text">
+            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-bdsm">smartphone</span>
+            <span>Dispositivos BDSM</span>
+          </div>
+          <span class="material-symbols-rounded">chevron_right</span>
+        </button>
+
+        <button class="montage-lib-option" data-origin="OBS" type="button">
+          <div class="montage-lib-option-text">
+            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-obs">videocam</span>
+            <span>OBS Studio</span>
+          </div>
+          <span class="material-symbols-rounded">chevron_right</span>
+        </button>
+
+        <button class="montage-lib-option" data-origin="SHADOWPLAY" type="button">
+          <div class="montage-lib-option-text">
+            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-shadowplay">sports_esports</span>
+            <span>NVIDIA ShadowPlay</span>
+          </div>
+          <span class="material-symbols-rounded">chevron_right</span>
+        </button>
+
+        <button class="montage-lib-option" data-origin="ALL" type="button">
+          <div class="montage-lib-option-text">
+            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-all">video_library</span>
+            <span>Todas as Mídias da Biblioteca</span>
+          </div>
+          <span class="material-symbols-rounded">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,58 @@
+﻿/* ==========================================
+   UPLOAD SCREEN (YOUTUBE STUDIO) - MODULAR CSS
+   ========================================== */
+
+.bds-uploads-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg, #000);
+}
+
+/* Status Bar de Cookies */
+.bds-upl-status-bar {
+  display: none; /* Começa escondida */
+  background: rgba(76, 175, 80, 0.15);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+  color: #4caf50;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+/* Classe injetada via JS para mostrar a barra */
+.bds-upl-status-bar.active {
+  display: flex;
+}
+
+.bds-upl-status-close {
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.bds-upl-status-close:hover {
+  opacity: 1;
+}
+
+/* Webview Container (ocupa 100% da tela) */
+.bds-upl-webview-container {
+  flex: 1;
+  width: 100%;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+
+#youtubeStudioWebview {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: flex; /* Necessário para o webview ocupar o espaço corretamente no Electron */
+}

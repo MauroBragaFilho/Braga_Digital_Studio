@@ -1,0 +1,185 @@
+<div class="devices-container">
+  <!-- Coluna Esquerda: Grid de Dispositivos -->
+  <div class="devices-left-column">
+    <div class="devices-description">
+      <p>Gerencie câmeras, cartões, servidores e outros dispositivos conectados.</p>
+    </div>
+
+    <!-- Barra de Controle do Grid -->
+    <div class="devices-control-bar">
+      <div class="devices-control-left">
+        <span class="devices-count-label">Dispositivos conectados (<span id="devicesCount">0</span>)</span>
+        <button id="btnRefreshDevices" class="devices-icon-btn" title="Atualizar lista" type="button">
+          <span class="material-symbols-rounded">refresh</span>
+        </button>
+        <button id="btnManageHiddenDevices" class="devices-manage-hidden-btn hidden" type="button">
+          <span class="material-symbols-rounded">settings_applications</span>
+          Gerenciar Ocultos (<span id="hiddenDevicesCount">0</span>)
+        </button>
+      </div>
+
+      <button id="btnAddDevice" class="devices-add-btn hidden" type="button">
+        <span class="material-symbols-rounded">add</span>
+        Adicionar dispositivo
+      </button>
+    </div>
+
+    <!-- Grid com os Cards dos Dispositivos -->
+    <div class="devices-grid" id="devicesGrid">
+      <!-- Populado via JS -->
+    </div>
+  </div>
+
+  <!-- Coluna Direita: Painel Inspector de Detalhes -->
+  <div class="device-inspector-sidebar" id="deviceInspector">
+    <!-- Populado via JS ao selecionar um dispositivo -->
+  </div>
+</div>
+
+<!-- MTP Explorer Modal -->
+<div id="mtpExplorerModal" class="devices-modal-overlay hidden">
+  <div class="devices-modal devices-modal-large">
+    <div class="devices-modal-header">
+      <div class="devices-modal-title-group">
+        <h2 class="devices-modal-title">
+          <span class="material-symbols-rounded mtp-icon">photo_camera</span>
+          Explorador de Dispositivo
+        </h2>
+        <div id="mtpExplorerBreadcrumb" class="mtp-breadcrumb">
+          <!-- Pão de migalhas preenchido via JS -->
+        </div>
+      </div>
+      <button id="btnMtpClose" class="devices-modal-close-btn" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <div class="devices-modal-body">
+      <div id="mtpExplorerLoading" class="mtp-loading hidden">
+        <span class="material-symbols-rounded mtp-loading-icon">sync</span>
+        <div>Acessando câmera, aguarde...</div>
+      </div>
+      <div id="mtpExplorerList" class="mtp-items-grid">
+        <!-- Itens preenchidos via JS -->
+      </div>
+    </div>
+
+    <div class="devices-modal-footer">
+      <div id="mtpProgressContainer" class="mtp-progress-container hidden">
+        <div class="mtp-progress-info">
+          <div class="mtp-progress-header">
+            <span id="mtpProgressText">Copiando arquivo...</span>
+            <span id="mtpProgressPercent">0%</span>
+          </div>
+          <div class="mtp-progress-bar">
+            <div id="mtpProgressBar" class="mtp-progress-fill"></div>
+          </div>
+          <div class="mtp-progress-eta">
+            <span>Tempo estimado: <span id="mtpProgressEta">--:--</span></span>
+            <span class="mtp-progress-divider">•</span>
+            <span>Velocidade: <span id="mtpProgressSpeed">-- MB/s</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="mtpImportActionContainer" class="mtp-import-actions">
+        <div class="mtp-selected-count">
+          <span id="mtpExplorerSelectedCount">0</span> itens selecionados
+        </div>
+        <button id="btnMtpImport" class="devices-btn-primary-orange" type="button" disabled>
+          <span class="material-symbols-rounded">download</span>
+          Importar Selecionados
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BDSM Import Modal -->
+<div id="bdsmImportModal" class="devices-modal-overlay hidden">
+  <div class="devices-modal devices-modal-medium">
+    <div class="devices-modal-header">
+      <h2 class="devices-modal-title">
+        <span class="material-symbols-rounded bdsm-icon">smartphone</span>
+        Importação Inteligente (BDSM)
+      </h2>
+      <button id="btnBdsmClose" class="devices-modal-close-btn" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <div class="devices-modal-body">
+      <div id="bdsmLoading" class="bdsm-loading">
+        <span class="material-symbols-rounded bdsm-loading-icon">sync</span>
+        <div>Analisando arquivos no celular...</div>
+      </div>
+      
+      <div id="bdsmContent" class="bdsm-content hidden">
+        <div class="bdsm-stats-banner">
+          <h3 id="bdsmStats" class="bdsm-stats-text">0 vídeos encontrados. 0 novos.</h3>
+        </div>
+        
+        <div class="bdsm-dest-select">
+          <label class="bdsm-label">Destino da Importação:</label>
+          <select id="bdsmProjectSelect" class="bdsm-select">
+            <option value="lib">Biblioteca Geral (Raiz)</option>
+          </select>
+        </div>
+
+        <div id="bdsmMediaList" class="bdsm-media-grid">
+          <!-- Items inseridos pelo JS -->
+        </div>
+      </div>
+    </div>
+
+    <div class="devices-modal-footer devices-modal-footer-right">
+      <button id="btnBdsmImportAction" class="devices-btn-primary-orange" type="button">
+        <span class="material-symbols-rounded">download</span>
+        Importar Novos
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Hidden Devices Modal -->
+<div id="manageHiddenDevicesModal" class="devices-modal-overlay hidden">
+  <div class="devices-modal devices-modal-medium">
+    <div class="devices-modal-header">
+      <h2 class="devices-modal-title">
+        <span class="material-symbols-rounded">settings_applications</span>
+        Gerenciar Dispositivos
+      </h2>
+      <button id="btnManageHiddenClose" class="devices-modal-close-btn" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <div class="devices-modal-body">
+      <div class="manage-hidden-section">
+        <h3 class="manage-hidden-title">
+          <span class="material-symbols-rounded manage-hidden-icon-active">devices</span>
+          Disponíveis (Ativos)
+        </h3>
+        <div id="manageHiddenAvailableList" class="manage-hidden-list">
+          <!-- Preenchido via JS -->
+        </div>
+      </div>
+
+      <div class="manage-hidden-section">
+        <h3 class="manage-hidden-title">
+          <span class="material-symbols-rounded manage-hidden-icon-muted">visibility_off</span>
+          Ignorados (Ocultos)
+        </h3>
+        <div id="manageHiddenIgnoredList" class="manage-hidden-list">
+          <!-- Preenchido via JS -->
+        </div>
+      </div>
+    </div>
+
+    <div class="devices-modal-footer devices-modal-footer-right">
+      <button id="btnManageHiddenDone" class="devices-btn-secondary" type="button">
+        Concluir
+      </button>
+    </div>
+  </div>
+</div>

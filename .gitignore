@@ -1,0 +1,51 @@
+# Dependências do Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Empacotamento do Electron Builder
+dist/
+build/
+release/
+out/
+
+# Dados do Aplicativo (Banco de dados, thumbnails, etc)
+data/*
+!data/.gitkeep
+database/*
+!database/.gitkeep
+
+# Arquivos de Sessão / Login (YouTube e outros)
+Partitions/
+Cookies
+Cookies-journal
+config/
+
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Arquivos de ambiente e chaves sensíveis
+.env
+.env.local
+.env.development
+.env.production
+*.pem
+*.key
+*.cert
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores / IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

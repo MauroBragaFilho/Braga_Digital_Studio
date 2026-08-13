@@ -1,0 +1,512 @@
+﻿/* ==========================================================================
+   PROJECT WORKSPACE SCREEN - MODULAR CSS
+   ========================================================================== */
+
+/* --- CONTAINER PRINCIPAL --- */
+.ws-container {
+  display: flex;
+  height: calc(100% + 48px);
+  margin: -24px;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+}
+
+/* --- PANE GERAL --- */
+.ws-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+}
+
+.ws-lib-pane {
+  width: 320px;
+  min-width: 320px;
+  border-right: 1px solid var(--line);
+}
+
+.ws-bins-pane {
+  flex: 1;
+  position: relative;
+  background: #16181d;
+}
+
+.ws-inspector-pane {
+  width: 320px;
+  min-width: 320px;
+  background: var(--card);
+  border-left: 1px solid var(--line);
+}
+
+/* --- PANE HEADER (Biblioteca) --- */
+.ws-pane-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--card);
+}
+
+.ws-pane-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ws-pane-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.ws-icon-btn-plain {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.ws-icon-btn-plain:hover {
+  color: var(--text);
+}
+
+.ws-icon-btn-plain .material-symbols-rounded {
+  font-size: 18px;
+}
+
+.ws-search-input {
+  width: 100%;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ws-search-input:focus {
+  border-color: var(--accent);
+}
+
+.ws-lib-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* --- CENTER HEADER (Bins) --- */
+.ws-center-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+}
+
+.ws-center-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+
+.ws-center-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-btn-outline {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ws-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ws-btn-outline .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.ws-btn-accent {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: filter 0.2s;
+}
+
+.ws-btn-accent:hover {
+  filter: brightness(1.1);
+}
+
+.ws-btn-accent .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.ws-bins-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  position: relative;
+  background: #16181d;
+}
+
+/* --- INSPECTOR PANE --- */
+.ws-back-wrapper {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-btn-back {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.ws-btn-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ws-btn-back .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.ws-inspector-section {
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.ws-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 0 0 16px 0;
+}
+
+.ws-empty-state {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 32px 0;
+}
+
+.ws-selection-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.ws-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ws-field-label {
+  color: var(--muted);
+}
+
+.ws-field-input {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ws-field-input:focus {
+  border-color: var(--accent);
+}
+
+.ws-media-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ws-media-thumb {
+  width: 100%;
+  aspect-ratio: 16/9;
+  background-size: cover;
+  background-position: center;
+  border-radius: 6px;
+  background-color: #000;
+}
+
+.ws-media-detail-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.ws-media-detail-label {
+  color: var(--muted);
+}
+
+.ws-media-detail-value {
+  color: var(--text);
+}
+
+.ws-media-detail-value--path {
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+.ws-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ws-btn-save {
+  flex: 1;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ws-btn-delete {
+  background: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+  border: 1px solid rgba(244, 67, 54, 0.2);
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* --- EXPORT SECTION --- */
+.ws-export-section {
+  padding: 20px;
+  border-top: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.ws-btn-export-premiere {
+  width: 100%;
+  background: #331e54;
+  color: #e9b3fd;
+  border: 1px solid #6b3fa0;
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ws-btn-export-premiere:hover {
+  filter: brightness(1.1);
+}
+
+.ws-export-icon {
+  width: 20px;
+  height: 20px;
+  filter: grayscale(1) brightness(2) drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+}
+
+.ws-export-desc {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  margin: 12px 0 0 0;
+}
+
+/* --- DRAGGABLE LIBRARY ITEM (Bloco existente movido) --- */
+.ws-lib-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: grab;
+  transition: background 0.2s;
+}
+
+.ws-lib-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-lib-item:active {
+  cursor: grabbing;
+}
+
+.ws-lib-thumb {
+  width: 48px;
+  height: 27px;
+  background-size: cover;
+  background-position: center;
+  border-radius: 4px;
+  background-color: #000;
+  flex-shrink: 0;
+}
+
+.ws-lib-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.ws-lib-title {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.ws-lib-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* --- BIN TREE ITEM (Bloco existente movido) --- */
+.ws-bin-node {
+  margin-left: 20px;
+  position: relative;
+}
+
+.ws-bin-node::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -12px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+
+.ws-bin-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  transition: background 0.2s;
+  border: 1px solid transparent;
+}
+
+.ws-bin-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ws-bin-header.selected {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent);
+}
+
+.ws-bin-header.drag-over {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+}
+
+.ws-bin-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-bin-media {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  transition: background 0.2s;
+  position: relative;
+  border: 1px solid transparent;
+}
+
+.ws-bin-media::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: -12px;
+  width: 12px;
+  height: 1px;
+  background: var(--line);
+}
+
+.ws-bin-media:hover {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+}
+
+.ws-bin-media.selected {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* --- UTILS --- */
+.hidden {
+  display: none !important;
+}

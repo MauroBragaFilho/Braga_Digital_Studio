@@ -1,0 +1,224 @@
+<div class="settings-container">
+
+  <!-- CABEÇALHO -->
+  <div class="settings-header">
+    <p class="settings-description">Personalize o comportamento do aplicativo.</p>
+    <button id="saveSettingsButton" class="settings-btn-primary" type="button">
+      <span class="material-symbols-rounded">save</span> Salvar Alterações
+    </button>
+  </div>
+
+  <div class="settings-layout">
+
+    <!-- SIDEBAR DE ABAS -->
+    <aside class="settings-sidebar">
+      <button class="settings-tab active" data-tab="settingsGeneralView" type="button">
+        <span class="material-symbols-rounded">tune</span> Geral
+      </button>
+      <button class="settings-tab" data-tab="settingsFoldersView" type="button">
+        <span class="material-symbols-rounded">folder</span> Pastas
+      </button>
+      <button class="settings-tab" data-tab="settingsUpdatesView" type="button">
+        <span class="material-symbols-rounded">system_update</span> Atualizações
+      </button>
+      <button class="settings-tab" data-tab="settingsSystemView" type="button">
+        <span class="material-symbols-rounded">desktop_windows</span> Sistema
+      </button>
+    </aside>
+
+    <!-- CONTEÚDO -->
+    <main class="settings-content">
+
+      <!-- ABA: GERAL -->
+      <section id="settingsGeneralView" class="settings-view">
+        <h3 class="settings-section-title">Geral</h3>
+
+        <div class="settings-group">
+          <label class="settings-check-row">
+            <input type="checkbox" id="autoUpdateGithub" />
+            <div>
+              <span class="settings-check-label">Atualização Automática (GitHub)</span>
+              <span class="settings-check-hint">Verifica e baixa atualizações automaticamente do repositório oficial.</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Temas</h4>
+          <div class="settings-form-row">
+            <label for="themeSelect">Tema</label>
+            <select id="themeSelect" class="settings-select">
+              <option value="dark">Escuro</option>
+              <option value="light">Claro</option>
+            </select>
+          </div>
+          <div class="settings-form-row">
+            <label for="accentColorInput">Cor de Destaque</label>
+            <input type="color" id="accentColorInput" class="settings-color-input" value="#e53935" />
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA: PASTAS -->
+      <section id="settingsFoldersView" class="settings-view hidden">
+        <h3 class="settings-section-title">Pastas</h3>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Local de Download (Vídeos e Áudios)</h4>
+
+          <label class="settings-check-row">
+            <input type="checkbox" id="useDefaultFolderInput" />
+            <div>
+              <span class="settings-check-label">Utilizar pasta "PADRÃO" do sistema (Música e Vídeos)</span>
+            </div>
+          </label>
+
+          <div id="customFoldersGroup" class="settings-folder-list">
+            <div class="settings-folder-row">
+              <span class="settings-folder-label">Pasta de destino para Áudio (MP3)</span>
+              <div class="settings-folder-controls">
+                <input type="text" id="mp3FolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
+                <button id="mp3FolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              </div>
+            </div>
+            <div class="settings-folder-row">
+              <span class="settings-folder-label">Pasta de destino para Vídeo (MP4)</span>
+              <div class="settings-folder-controls">
+                <input type="text" id="mp4FolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
+                <button id="mp4FolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Pastas da Biblioteca</h4>
+          <div class="settings-folder-list">
+            <div class="settings-folder-row">
+              <span class="settings-folder-label">Gravação do OBS Studio</span>
+              <div class="settings-folder-controls">
+                <input type="text" id="obsFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
+                <button id="obsFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              </div>
+            </div>
+            <div class="settings-folder-row">
+              <span class="settings-folder-label">Gravação do NVIDIA Shadowplay</span>
+              <div class="settings-folder-controls">
+                <input type="text" id="shadowplayFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
+                <button id="shadowplayFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              </div>
+            </div>
+            <div class="settings-folder-row">
+              <span class="settings-folder-label">Pasta de importação de Dispositivos (BDSM)</span>
+              <div class="settings-folder-controls">
+                <input type="text" id="deviceFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
+                <button id="deviceFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Pastas Personalizadas da Biblioteca</h4>
+          <p class="settings-hint">Cadastre ou remova fontes de mídias personalizadas (Câmeras, Cartão SD, Podcast Studio, etc.).</p>
+          <button id="btnSettingsAddCustomSource" class="settings-btn-accent" type="button">
+            <span class="material-symbols-rounded">create_new_folder</span> + Nova Fonte
+          </button>
+          <div id="settingsCustomSourcesList" class="settings-custom-sources-list"></div>
+        </div>
+      </section>
+
+      <!-- ABA: ATUALIZAÇÕES -->
+      <section id="settingsUpdatesView" class="settings-view hidden">
+        <h3 class="settings-section-title">Atualizações do Sistema</h3>
+        <p class="settings-hint">Mantenha os motores de download e conversão atualizados.</p>
+
+        <div class="settings-updates-status-row">
+          <span>Versão atual: <strong id="updatesVersionDisplay">Carregando...</strong></span>
+          <label class="settings-check-inline">
+            <input type="checkbox" id="autoUpdateInput" /> Atualizar automaticamente
+          </label>
+        </div>
+
+        <div class="settings-updates-actions">
+          <button id="checkUpdatesButton" class="settings-btn-outline" type="button">
+            <span class="material-symbols-rounded">system_update</span> Verificar Atualizações
+          </button>
+          <button id="updateDepsButton" class="settings-btn-primary" type="button">
+            <span class="material-symbols-rounded">download</span> Atualizar Dependências
+          </button>
+        </div>
+
+        <p id="updateStatusText" class="settings-update-status hidden"></p>
+
+        <div id="updatesList" class="updates-list"></div>
+      </section>
+
+      <!-- ABA: SISTEMA -->
+      <section id="settingsSystemView" class="settings-view hidden">
+        <h3 class="settings-section-title">Sistema</h3>
+
+        <div class="settings-system-grid">
+          <div class="settings-system-item"><span>Versão</span><strong id="sysVersion">Carregando...</strong></div>
+          <div class="settings-system-item"><span>Empresa</span><strong>Braga Dev</strong></div>
+          <div class="settings-system-item"><span>Pastas do Aplicativo</span><strong id="sysFolders">Carregando...</strong></div>
+          <div class="settings-system-item"><span>Atualizações</span><strong>Automático via Braga Dev</strong></div>
+          <div class="settings-system-item"><span>Licenças</span><strong>MIT License - FFmpeg, yt-dlp, Node.js, Electron</strong></div>
+        </div>
+
+        <div class="settings-danger-zone">
+          <h4 class="settings-danger-title">Perigo</h4>
+          <p class="settings-danger-text">
+            Atenção: Esta ação limpa o banco de dados interno da biblioteca. Os arquivos de vídeo no disco NÃO serão excluídos, mas as marcações de favoritos e tags serão perdidas.
+          </p>
+          <button id="clearDbButton" class="settings-btn-danger" type="button">
+            <span class="material-symbols-rounded">delete_sweep</span> Limpar Banco de Dados
+          </button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- MODAL: NOVA FONTE PERSONALIZADA -->
+<div id="modalSettingsAddCustomSource" class="settings-modal-overlay hidden">
+  <div class="settings-modal">
+    <div class="settings-modal-header">
+      <h3 class="settings-modal-title">
+        <span class="material-symbols-rounded">create_new_folder</span>
+        Nova Fonte Personalizada
+      </h3>
+      <button id="btnCloseSettingsCustomSourceModal" class="settings-modal-close" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <p class="settings-modal-desc">
+      Cadastre uma pasta local ou dispositivo externo (ex: Cartão SD, HD Externo, Podcast Studio). As mídias serão indexadas automaticamente com o nome da fonte escolhida.
+    </p>
+
+    <div class="settings-modal-form">
+      <div class="settings-form-group">
+        <label class="settings-form-label" for="modalSettingsAddCustomSourceName">Nome da Fonte / Origem</label>
+        <input type="text" id="modalSettingsAddCustomSourceName" class="settings-input" placeholder="Ex: Podcast Studio, Câmera Sony, Cartão SD..." />
+      </div>
+      <div class="settings-form-group">
+        <label class="settings-form-label" for="modalSettingsAddCustomSourcePath">Caminho da Pasta</label>
+        <div class="settings-folder-controls">
+          <input type="text" id="modalSettingsAddCustomSourcePath" class="settings-input" placeholder="Selecione a pasta no seu computador..." />
+          <button id="modalSettingsAddCustomSourceSelectBtn" class="settings-btn-icon" type="button">
+            <span class="material-symbols-rounded">folder_open</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-modal-footer">
+      <button id="modalSettingsAddCustomSourceCancel" class="settings-btn-outline" type="button">Cancelar</button>
+      <button id="modalSettingsAddCustomSourceConfirm" class="settings-btn-primary" type="button">
+        <span class="material-symbols-rounded">check_circle</span> Cadastrar & Importar Mídias
+      </button>
+    </div>
+  </div>
+</div>

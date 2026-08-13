@@ -1,0 +1,450 @@
+/* ==========================================================================
+   SHELL GLOBAL - SIDEBAR, HEADER, MODAL, PLAYER, OVERLAY
+   ========================================================================== */
+
+/* --- SIDEBAR FOOTER --- */
+.sidebar-footer {
+  padding: 20px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+}
+.storage-indicators {
+  margin-bottom: 16px;
+  display: none; /* Controlado via JS (.active) */
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+.storage-indicators.active {
+  display: flex;
+}
+.sidebar-credit {
+  margin: 0;
+}
+
+/* --- GLOBAL HEADER --- */
+.global-header {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  gap: 16px;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.page-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  white-space: nowrap;
+}
+.header-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+}
+.global-media-count {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Search Wrapper Overrides (Shell specific) */
+.search-wrapper {
+  -webkit-app-region: no-drag;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  flex: 1;
+  max-width: 460px;
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.search-inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.search-inner .material-symbols-rounded {
+  color: var(--muted);
+  font-size: 18px;
+  margin-right: 8px;
+}
+.search-inner input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  width: 100%;
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  min-height: auto;
+  padding: 0;
+}
+.shortcut {
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Header Actions & Window Controls */
+.header-actions {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.win-btn .material-symbols-rounded {
+  font-size: 16px;
+}
+#win-max .material-symbols-rounded {
+  font-size: 14px;
+}
+
+/* --- INIT OVERLAY (DEPENDÊNCIAS) --- */
+.init-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(18, 18, 18, 0.95);
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+.init-overlay.active {
+  display: flex;
+}
+.init-spinner {
+  animation: spin 2s linear infinite;
+  margin-bottom: 24px;
+  color: var(--accent);
+}
+.init-title {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+}
+.init-subtitle {
+  color: var(--muted);
+  margin: 0;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+/* --- FLOATING VIDEO PLAYER --- */
+.floating-player-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.floating-player-overlay.active {
+  display: flex;
+}
+.floating-player-container {
+  background: var(--card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  max-width: 1000px;
+  max-height: 600px;
+  aspect-ratio: 16/9;
+}
+.floating-player-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.3);
+  border-bottom: 1px solid var(--line);
+}
+.floating-player-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
+}
+.floating-player-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 4px;
+  transition: 0.2s;
+}
+.floating-player-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Video Container & Elements */
+.video-container {
+  flex: 1;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+.floating-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  cursor: pointer;
+}
+.floating-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Custom Controls */
+.custom-video-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 24px 16px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 0.3s ease;
+  opacity: 1;
+}
+.custom-video-controls.idle {
+  opacity: 0;
+}
+.progress-bar-container {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  cursor: pointer;
+}
+.video-time {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: monospace;
+  width: 45px;
+  text-align: right;
+}
+.video-duration {
+  color: rgba(255,255,255,0.7);
+}
+.progress-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+/* Controls Row */
+.controls-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+.controls-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.volume-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+.control-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+.play-pause-btn .material-symbols-rounded {
+  font-size: 28px;
+}
+.mute-btn .material-symbols-rounded,
+.fullscreen-btn .material-symbols-rounded {
+  font-size: 20px;
+}
+.volume-slider {
+  width: 80px;
+  accent-color: #fff;
+  height: 4px;
+  cursor: pointer;
+  min-height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.fullscreen-btn {
+  border-radius: 4px;
+}
+
+/* --- UTILS --- */
+.hidden {
+  display: none !important;
+}
+
+/* --- GLOBAL DOWNLOAD FOOTER --- */
+.global-download-footer {
+  flex-shrink: 0;
+  position: relative;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+  animation: gdf-slide-up 0.2s ease;
+}
+
+@keyframes gdf-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* Barra de progresso ocupa toda a borda superior */
+.gdf-progress-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--line);
+}
+
+.gdf-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.3s linear;
+}
+
+/* Linha de informações compacta */
+.gdf-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 16px;
+  gap: 12px;
+}
+
+.gdf-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gdf-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.gdf-icon {
+  font-size: 15px;
+  color: var(--accent);
+  flex-shrink: 0;
+  animation: gdf-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes gdf-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.gdf-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
+.gdf-stats {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gdf-percent {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Estado: completado */
+.global-download-footer.gdf-completed .gdf-icon {
+  color: #4caf50;
+  animation: none;
+}
+.global-download-footer.gdf-completed .gdf-percent {
+  color: #4caf50;
+}
+.global-download-footer.gdf-completed .gdf-progress-fill {
+  background: #4caf50;
+}

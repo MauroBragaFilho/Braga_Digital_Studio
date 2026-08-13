@@ -1,0 +1,504 @@
+﻿/* ==========================================================================
+   HOME SCREEN - MODULAR CSS
+   ========================================================================== */
+
+/* --- CONTAINER --- */
+.home-container {
+  padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* --- SECTION TITLES --- */
+.home-section {
+  display: flex;
+  flex-direction: column;
+}
+.stats-section { margin-top: 24px; }
+.recent-section { margin-top: 24px; }
+.actions-section { margin-top: 32px; }
+.jobs-section {
+  margin-top: 32px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  color: var(--text);
+}
+.section-title-icon {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+/* --- STATS CARDS --- */
+.stats-grid {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 24px;
+  border-radius: 8px;
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.stat-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.stat-value.stat-error {
+  font-size: 12px;
+  color: var(--danger);
+  word-break: break-word;
+  max-width: 100%;
+  line-height: 1.4;
+  text-align: left;
+}
+.stat-value-accent {
+  color: var(--accent);
+}
+.stat-breakdown {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.stat-breakdown strong {
+  color: var(--text);
+}
+.stat-separator {
+  opacity: 0.5;
+}
+.stat-sync {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* --- RECORDINGS CAROUSEL --- */
+.recordings-row {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.recordings-row .empty-message {
+  color: var(--muted);
+  padding: 24px;
+  font-size: 13px;
+}
+
+.recent-carousel-card {
+  width: 256px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.recent-carousel-card:hover {
+  transform: scale(1.05);
+}
+
+.recent-carousel-thumb {
+  width: 100%;
+  height: 144px;
+  background-color: var(--bg);
+  background-size: cover;
+  background-position: center;
+  border-radius: 8px;
+  position: relative;
+  border: 1px solid var(--line);
+}
+.recent-carousel-duration {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.recent-carousel-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.recent-carousel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-carousel-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* --- QUICK ACTIONS --- */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+.qa-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px 16px;
+  gap: 8px;
+  transition: all 0.2s ease;
+  color: var(--text);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+.qa-card:hover:not([disabled]) {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(229, 57, 53, 0.15);
+}
+.qa-card[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.qa-icon {
+  font-size: 48px !important;
+  color: var(--accent) !important;
+  margin-bottom: 4px;
+}
+.qa-card strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.qa-card span {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* --- JOBS TABS --- */
+.jobs-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.job-tab {
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 4px;
+  border-radius: 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.job-tab:hover {
+  color: var(--text);
+}
+.job-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* --- JOBS TABLE --- */
+.jobs-table-container {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  min-width: 650px;
+}
+.jobs-table thead tr {
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.jobs-table th {
+  padding: 12px 16px;
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: transparent;
+}
+.jobs-table th.col-actions {
+  text-align: right;
+}
+.jobs-table td {
+  padding: 12px 16px;
+  color: var(--text);
+  border-bottom: 1px solid var(--line);
+}
+.jobs-table tr:last-child td {
+  border-bottom: none;
+}
+.jobs-table .muted-cell {
+  color: var(--muted);
+}
+
+/* --- JOB ROWS --- */
+.recent-job-row {
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.recent-job-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.job-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.job-name-cell .material-symbols-rounded {
+  color: var(--muted);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.job-name-cell .filename {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+.job-origin-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.job-origin-cell .material-symbols-rounded {
+  font-size: 14px;
+}
+.job-actions-cell {
+  text-align: right;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.job-actions-cell .material-symbols-rounded {
+  font-size: 16px;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: color 0.2s;
+}
+.job-actions-cell .material-symbols-rounded:hover {
+  color: var(--text);
+}
+
+.jobs-empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* --- FOOTER --- */
+.home-footer {
+  margin-top: 40px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  padding-bottom: 16px;
+}
+
+/* ==========================================================================
+   HOME SCREEN - RESPONSIVIDADE (MEDIA QUERIES)
+   ========================================================================== */
+
+/* --- BREAKPOINT 1: Janela média (< 1100px) --- */
+@media (max-width: 1100px) {
+  /* Stats cards empilham verticalmente */
+  .stats-grid {
+    flex-direction: column;
+  }
+  .stat-card {
+    min-width: 100%;
+  }
+  
+  /* Tabela de jobs começa a permitir scroll horizontal */
+  .jobs-table-container {
+    overflow-x: auto;
+  }
+  
+  /* Reduz espaçamentos entre seções */
+  .home-section {
+    gap: 16px;
+  }
+  .stats-section,
+  .recent-section {
+    margin-top: 16px;
+  }
+  .actions-section,
+  .jobs-section {
+    margin-top: 24px;
+  }
+}
+
+/* --- BREAKPOINT 2: Janela estreita (< 768px) --- */
+@media (max-width: 768px) {
+  /* Ações rápidas em 2 colunas */
+  .quick-actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  /* Cards de ação mais compactos */
+  .qa-card {
+    padding: 16px 12px;
+  }
+  .qa-icon {
+    font-size: 36px !important;
+  }
+  .qa-card strong {
+    font-size: 13px;
+  }
+  
+  /* Abas de jobs com scroll horizontal (em vez de wrap) */
+  .jobs-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    gap: 16px;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  .job-tab {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 12px;
+  }
+  
+  /* Carousel de gravações: cards menores */
+  .recent-carousel-card {
+    width: 200px;
+  }
+  .recent-carousel-thumb {
+    height: 112px;
+  }
+  
+  /* Section titles menores */
+  .section-title {
+    font-size: 14px;
+  }
+  
+  /* Stats values menores */
+  .stat-value {
+    font-size: 26px;
+  }
+}
+
+/* --- BREAKPOINT 3: Janela muito estreita (< 520px) --- */
+@media (max-width: 520px) {
+  /* Ações rápidas em 1 coluna */
+  .quick-actions-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  /* Stats breakdown em coluna quando não cabe */
+  .stat-breakdown {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-separator {
+    display: none;
+  }
+  
+  /* Carousel: cards ainda menores */
+  .recent-carousel-card {
+    width: 160px;
+  }
+  .recent-carousel-thumb {
+    height: 90px;
+  }
+  .recent-carousel-title {
+    font-size: 12px;
+  }
+  .recent-carousel-meta {
+    font-size: 10px;
+  }
+  
+  /* Padding interno reduzido */
+  .stat-card {
+    padding: 16px;
+  }
+}
+
+/* --- FIX ESPECÍFICO: Tabela de Jobs em janelas estreitas --- */
+/* Garante que a tabela nunca quebre o layout do app */
+.jobs-table-container {
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+/* Scrollbar sutil para a tabela quando há overflow */
+.jobs-table-container::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.jobs-table-container::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
+}
+.jobs-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* --- FIX: Carousel scroll suave com snap --- */
+.recordings-row {
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+}
+.recent-carousel-card {
+  scroll-snap-align: start;
+}
