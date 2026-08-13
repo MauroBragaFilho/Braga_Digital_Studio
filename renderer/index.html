@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Braga Digital Studio</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./shell.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="sidebar" aria-label="Navegação">
+      <div class="brand">
+        <div class="brand-mark">BDS</div>
+        <div>
+          <strong>BRAGA DIGITAL STUDIO</strong>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <button class="tab-button" data-view="home" type="button">
+          <span class="material-symbols-rounded">home</span>
+          Home
+        </button>
+        <button class="tab-button" data-view="download" type="button">
+          <span class="material-symbols-rounded">download</span>
+          Downloads
+        </button>
+        <button class="tab-button" data-view="converter" type="button">
+          <span class="material-symbols-rounded">sync</span>
+          Conversor
+        </button>
+        <button class="tab-button" data-view="montage" type="button">
+          <span class="material-symbols-rounded">movie</span>
+          Montagem de Vídeos
+        </button>
+        <button class="tab-button" data-view="silence" type="button">
+          <span class="material-symbols-rounded">graphic_eq</span>
+          Remover Silêncio
+        </button>
+        <button class="tab-button" data-view="metadata" type="button">
+          <span class="material-symbols-rounded">label</span>
+          Metadados
+        </button>
+        <button class="tab-button" data-view="library" type="button">
+          <span class="material-symbols-rounded">video_library</span>
+          Biblioteca
+        </button>
+        <button class="tab-button" data-view="projects" type="button">
+          <span class="material-symbols-rounded">folder_special</span>
+          Projetos
+        </button>
+        <button class="tab-button" data-view="upload" type="button">
+          <span class="material-symbols-rounded">cloud_upload</span>
+          Envio
+        </button>
+        <button class="tab-button" data-view="devices" type="button">
+          <span class="material-symbols-rounded">devices</span>
+          Dispositivos
+        </button>
+        <button class="tab-button" data-view="luts" type="button">
+          <span class="material-symbols-rounded">palette</span>
+          LUTs
+        </button>
+        <button class="tab-button" data-view="settings" type="button">
+          <span class="material-symbols-rounded">settings</span>
+          Configurações
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="storageIndicators" class="storage-indicators"></div>
+        <section class="tool-state">
+          <span class="state-dot" id="stateDot"></span>
+          <span id="stateText">Pronto</span>
+        </section>
+        <p class="sidebar-credit">Desenvolvido por <strong>Braga Dev</strong></p>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="global-header">
+        <div class="header-left">
+          <h1 class="page-title" id="globalPageTitle">Home</h1>
+          <div class="header-divider"></div>
+          <span id="globalMediaCount" class="global-media-count hidden">0 mídias encontradas</span>
+        </div>
+
+        <div class="search-wrapper">
+          <div class="search-inner">
+            <span class="material-symbols-rounded">search</span>
+            <input type="text" placeholder="Pesquisar por nome, codec, projeto, origem..." id="globalSearch">
+          </div>
+          <span class="shortcut">Ctrl + K</span>
+        </div>
+
+        <div class="header-actions">
+          <div class="window-controls">
+            <button id="win-min" class="win-btn" title="Minimizar"><span class="material-symbols-rounded">remove</span></button>
+            <button id="win-max" class="win-btn" title="Maximizar"><span class="material-symbols-rounded">check_box_outline_blank</span></button>
+            <button id="win-full" class="win-btn" title="Tela Cheia"><span class="material-symbols-rounded">fullscreen</span></button>
+            <button id="win-close" class="win-btn win-close-btn" title="Fechar"><span class="material-symbols-rounded">close</span></button>
+          </div>
+        </div>
+      </header>
+      <section class="content" id="dynamic-content"></section>
+      
+      <!-- Footer global de downloads ativos -->
+      <div id="globalDownloadFooter" class="global-download-footer hidden">
+        <div class="gdf-progress-track">
+          <div id="gdfProgressFill" class="gdf-progress-fill"></div>
+        </div>
+        <div class="gdf-info">
+          <div class="gdf-left">
+            <span class="material-symbols-rounded gdf-icon">downloading</span>
+            <span id="gdfTitle" class="gdf-title">Baixando mídia...</span>
+          </div>
+          <div class="gdf-right">
+            <span id="gdfStats" class="gdf-stats">--</span>
+            <span id="gdfPercent" class="gdf-percent">0%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <dialog id="playlistDialog">
+    <form method="dialog">
+      <h2>Playlist detectada</h2>
+      <p><strong>Nome:</strong> <span id="playlistName"></span></p>
+      <p><strong>Quantidade de itens:</strong> <span id="playlistCount"></span></p>
+      <menu>
+        <button value="cancel" class="secondary">Cancelar</button>
+        <button value="confirm" class="primary red">Continuar</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Overlay de Dependências Iniciais -->
+  <div id="initOverlay" class="init-overlay hidden">
+    <svg class="init-spinner" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="2" x2="12" y2="6"></line>
+      <line x1="12" y1="18" x2="12" y2="22"></line>
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+      <line x1="2" y1="12" x2="6" y2="12"></line>
+      <line x1="18" y1="12" x2="22" y2="12"></line>
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+    </svg>
+    <h2 class="init-title">Baixando componentes essenciais...</h2>
+    <p class="init-subtitle">Isso acontece apenas na primeira vez que você abre o aplicativo.</p>
+  </div>
+
+  <!-- MODAL GLOBAL BDS -->
+  <dialog id="bdsGlobalModal" class="bds-modal">
+    <div class="bds-modal-content">
+      <div class="bds-modal-header">
+        <span class="material-symbols-rounded bds-modal-icon" id="bdsModalIcon">info</span>
+        <h3 id="bdsModalTitle">Mensagem</h3>
+      </div>
+      <div class="bds-modal-body">
+        <p id="bdsModalMessage">Corpo da mensagem.</p>
+        <input type="text" id="bdsModalInput" class="bds-input hidden" autocomplete="off">
+      </div>
+      <div class="bds-modal-footer">
+        <button type="button" id="bdsModalBtnCancel" class="bds-btn-secondary hidden">Cancelar</button>
+        <button type="button" id="bdsModalBtnConfirm" class="bds-btn-primary">OK</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Floating Video Player -->
+  <div id="floatingPlayerOverlay" class="floating-player-overlay hidden">
+    <div id="floatingPlayerContainer" class="floating-player-container">
+      <!-- Header -->
+      <div id="floatingPlayerHeader" class="floating-player-header">
+        <span id="floatingPlayerTitle" class="floating-player-title">Vídeo</span>
+        <button id="floatingPlayerCloseBtn" class="floating-player-close-btn">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+      <!-- Video Content -->
+      <div id="videoContainer" class="video-container">
+        <video id="floatingVideoElement" class="floating-video" autoplay></video>
+        <img id="floatingImageElement" class="floating-image hidden" />
+        
+        <!-- Custom Controls -->
+        <div id="customVideoControls" class="custom-video-controls">
+          <!-- Progress Bar -->
+          <div class="progress-bar-container" id="progressBarContainer">
+            <span id="videoCurrentTime" class="video-time">00:00</span>
+            <div class="progress-track" id="progressTrack">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <span id="videoDuration" class="video-time video-duration">00:00</span>
+          </div>
+
+          <!-- Bottom Controls Row -->
+          <div class="controls-row">
+            <div class="controls-left">
+              <button id="btnPlayPause" class="control-btn play-pause-btn">
+                <span class="material-symbols-rounded">pause</span>
+              </button>
+              
+              <div class="volume-container">
+                <button id="btnMute" class="control-btn mute-btn">
+                  <span class="material-symbols-rounded">volume_up</span>
+                </button>
+                <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1" step="0.01" value="1">
+              </div>
+            </div>
+            
+            <div class="controls-right">
+              <button id="btnFullscreen" class="control-btn fullscreen-btn">
+                <span class="material-symbols-rounded">fullscreen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

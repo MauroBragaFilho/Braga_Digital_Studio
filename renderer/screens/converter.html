@@ -1,0 +1,234 @@
+<div class="converter-screen-container">
+  
+  <!-- 1. CABEÇALHO DA TELA -->
+  <div class="converter-header">
+    <div>
+      <p class="converter-description">Converta múltiplos arquivos de vídeo e áudio em lote com barras de progresso individuais por arquivo.</p>
+    </div>
+  </div>
+
+  <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
+  <div id="converterDebugBanner" class="converter-debug-banner hidden">
+    <div class="converter-debug-header">
+      <span class="converter-debug-title">
+        <span class="material-symbols-rounded">error</span>
+        [ERRO DETECTADO NO SISTEMA]
+      </span>
+      <button id="btnCloseDebugBanner" class="converter-debug-close-btn" type="button">Fechar Erro</button>
+    </div>
+    <pre id="converterLogOutput" class="converter-log-output"></pre>
+  </div>
+
+  <!-- 2. STEPPER BAR (PASSO A PASSO NUMERADO COM STATUS DINÂMICO) -->
+  <div class="converter-stepper">
+    
+    <!-- PASSO 1: FILA DE ARQUIVOS -->
+    <div id="step1ItemConverter" class="step-item">
+      <div id="step1BadgeConverter" class="step-badge step-badge-pending">1</div>
+      <div>
+        <div class="step-title">FILA DE ARQUIVOS</div>
+        <div id="step1SubConverter" class="step-subtitle step-text-pending">Adicione as mídias</div>
+      </div>
+    </div>
+
+    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+
+    <!-- PASSO 2: FORMATO & CODEC -->
+    <div id="step2ItemConverter" class="step-item">
+      <div id="step2BadgeConverter" class="step-badge step-badge-pending">2</div>
+      <div>
+        <div class="step-title">FORMATO & CODEC</div>
+        <div id="step2SubConverter" class="step-subtitle step-text-pending">Configurações de Saída</div>
+      </div>
+    </div>
+
+    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+
+    <!-- PASSO 3: CONVERTER & EXPORTAR -->
+    <div id="step3ItemConverter" class="step-item">
+      <div id="step3BadgeConverter" class="step-badge step-badge-pending">3</div>
+      <div>
+        <div id="step3TitleConverter" class="step-title">CONVERTER & EXPORTAR</div>
+        <div id="step3SubConverter" class="step-subtitle step-text-pending">Inicie a conversão em lote</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PAINEL PRINCIPAL EM COLUNAS -->
+  <div class="converter-main-panel">
+    
+    <!-- COLUNA PRINCIPAL (ESQUERDA/CENTRO): TABELA DE CONVERSÃO COM BARRA EM UMA LINHA -->
+    <div class="converter-content-panel">
+      
+      <!-- Cabeçalho da Tabela & Botões em Uma Linha -->
+      <div class="converter-panel-header">
+        <div class="converter-title-group">
+          <span>ARQUIVOS SELECIONADOS (<span id="converterMainCount">0</span>)</span>
+        </div>
+
+        <div class="converter-action-group">
+          <button id="btnAddConverterFiles" class="converter-btn converter-btn-primary" type="button">
+            <span class="material-symbols-rounded">add</span>
+            Adicionar
+          </button>
+
+          <button id="btnImportConverterFromLibrary" class="converter-btn converter-btn-secondary" type="button">
+            <span class="material-symbols-rounded">video_library</span>
+            Biblioteca
+          </button>
+          
+          <button id="btnAddConverterFolder" class="converter-btn converter-btn-secondary" type="button">
+            <span class="material-symbols-rounded">folder</span>
+            Pasta
+          </button>
+
+          <button id="btnClearConverterQueue" class="converter-btn converter-btn-secondary" type="button">
+            <span class="material-symbols-rounded">delete_sweep</span>
+            Limpar Fila
+          </button>
+
+          <select id="selConverterSortOrder" class="converter-sort-select">
+            <option value="default">Por Importação</option>
+            <option value="name_asc">Por Nome (A-Z)</option>
+            <option value="duration_desc">Por Duração (Maior)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- TABELA DE CONVERSÃO COM BARRA DE PROGRESSO INDIVIDUAL -->
+      <div class="converter-table-container">
+        <table class="converter-table">
+          <thead>
+            <tr class="converter-table-head">
+              <th>#</th>
+              <th>VÍDEO / ÁUDIO</th>
+              <th>FORMATO ATUAL</th>
+              <th>FORMATO SAÍDA</th>
+              <th>PROGRESSO</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="converterMainBody">
+            <!-- Populado via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé da Tabela -->
+      <div class="converter-footer">
+        <div>Duração total dos arquivos: <strong id="converterTotalDuration">—</strong></div>
+      </div>
+    </div>
+
+    <!-- COLUNA DIREITA: CONFIGURAÇÕES DE CONVERSÃO -->
+    <div class="converter-sidebar">
+      
+      <div class="converter-config-panel">
+        <h3 class="converter-config-title">PARÂMETROS DE CONVERSÃO</h3>
+        
+        <!-- FORMATO DE SAÍDA -->
+        <div class="converter-config-group">
+          <label class="converter-label">Formato de Saída</label>
+          <select id="selConverterOutFormat" class="converter-select">
+            <option value="mp4">MP4 (Vídeo)</option>
+            <option value="mp3">MP3 (Áudio)</option>
+          </select>
+        </div>
+
+        <!-- CODEC DE VÍDEO -->
+        <div id="converterCodecContainer" class="converter-config-group">
+          <label class="converter-label">Codec de Vídeo</label>
+          <select id="selConverterCodec" class="converter-select">
+            <option value="libx264">H.264 (Maior Compatibilidade)</option>
+            <option value="libx265">H.265 / HEVC (Menor Tamanho)</option>
+          </select>
+        </div>
+
+        <!-- RESOLUÇÃO DA SAÍDA -->
+        <div id="converterResolutionContainer" class="converter-config-group">
+          <label class="converter-label">Resolução de Vídeo</label>
+          <select id="selConverterResolution" class="converter-select">
+            <option value="original">Original da Mídia</option>
+            <option value="2160">4K Ultra HD (2160p)</option>
+            <option value="1440">2K Quad HD (1440p)</option>
+            <option value="1080">Full HD (1080p)</option>
+            <option value="720">HD (720p)</option>
+            <option value="480">SD (480p)</option>
+          </select>
+        </div>
+
+        <!-- QUALIDADE DO VÍDEO (CRF / BITRATE) -->
+        <div id="converterVideoQualityContainer" class="converter-config-group">
+          <label class="converter-label">Qualidade do Vídeo</label>
+          <select id="selConverterVideoQuality" class="converter-select">
+            <option value="crf-18">Alta (CRF 18 — Quase sem perdas)</option>
+            <option value="crf-23" selected>Padrão (CRF 23 — Balanceado)</option>
+            <option value="crf-28">Compacto (CRF 28 — Menor tamanho)</option>
+            <option value="bitrate-50000k">Ultra HD (50 Mbps — 4K)</option>
+            <option value="bitrate-20000k">Alta Definição (20 Mbps — 1080p)</option>
+            <option value="bitrate-8000k">HD (8 Mbps — 720p)</option>
+            <option value="bitrate-4000k">SD (4 Mbps — 480p)</option>
+          </select>
+        </div>
+
+        <!-- VELOCIDADE DE CODIFICAÇÃO (PRESET) -->
+        <div id="converterPresetContainer" class="converter-config-group">
+          <label class="converter-label">Velocidade de Codificação</label>
+          <select id="selConverterPreset" class="converter-select">
+            <option value="ultrafast">Ultra Rápido (Menor Compressão)</option>
+            <option value="fast">Rápido</option>
+            <option value="medium" selected>Médio (Recomendado)</option>
+            <option value="slow">Lento (Melhor Compressão)</option>
+          </select>
+        </div>
+
+        <!-- BITRATE DE ÁUDIO -->
+        <div class="converter-config-group">
+          <label class="converter-label">Qualidade do Áudio</label>
+          <select id="selConverterAudioBitrate" class="converter-select">
+            <option value="128k">128 kbps (Padrão)</option>
+            <option value="192k" selected>192 kbps (Alta Qualidade)</option>
+            <option value="320k">320 kbps (Qualidade Máxima)</option>
+          </select>
+        </div>
+
+        <!-- PASTA DE DESTINO DA CONVERSÃO -->
+        <div class="converter-config-group">
+          <label class="converter-label">Pasta de Destino</label>
+          <div class="converter-input-group">
+            <input type="text" id="outConverterFolder" class="converter-input" placeholder="Selecione uma pasta de destino..." />
+            <button id="btnSelectConverterDestFolder" title="Selecionar Pasta" class="converter-icon-btn" type="button">
+              <span class="material-symbols-rounded">folder_open</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BOTÃO PRINCIPAL DE PROCESSAMENTO -->
+        <div class="converter-start-group">
+          <button id="btnStartConverterQueue" class="converter-btn converter-btn-start" type="button">
+            <span class="material-symbols-rounded">sync</span>
+            Converter Todos os Arquivos
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MODAL PARA SELEÇÃO DE BIBLIOTECA DA CONVERSÃO -->
+  <div id="converterLibraryModal" class="converter-modal-overlay hidden">
+    <div class="converter-modal">
+      <div class="converter-modal-header">
+        <h3>Importar da Biblioteca</h3>
+        <button id="btnCloseConverterLibModal" class="converter-modal-close-btn" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <p class="converter-modal-text">Escolha de qual fonte ou pasta da biblioteca você deseja carregar os arquivos:</p>
+
+      <div id="converterLibModalList" class="converter-modal-options">
+        <!-- Populado dinamicamente via JS -->
+      </div>
+    </div>
+  </div>
+</div>

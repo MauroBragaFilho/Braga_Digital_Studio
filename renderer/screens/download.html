@@ -1,0 +1,112 @@
+<div class="downloads-screen-container">
+
+  <!-- CABEÇALHO -->
+  <header class="downloads-header">
+    <p class="downloads-description">
+      Baixe vídeos e áudios com suporte nativo a YouTube, Spotify, Vimeo, TikTok e centenas de sites.
+    </p>
+  </header>
+
+  <!-- ENTRADA DE URL -->
+  <section class="url-input-row" aria-label="Adicionar mídia">
+    <span class="material-symbols-rounded url-input-icon">link</span>
+
+    <input
+      id="urlInput"
+      type="url"
+      class="url-input-field"
+      placeholder="Cole a URL do vídeo, playlist, álbum ou música aqui..."
+      autocomplete="off"
+    />
+
+    <button id="metadataButton" type="button" class="url-add-btn" title="Adicionar à fila de download">
+      <span class="material-symbols-rounded">add_circle</span>
+      Adicionar à Fila
+    </button>
+  </section>
+
+  <!-- FILA DE DOWNLOAD -->
+  <section class="downloads-queue-section" aria-label="Fila de download">
+
+    <div class="queue-header">
+      <div class="queue-title-group">
+        <span class="material-symbols-rounded queue-title-icon">queue_music</span>
+        <span class="queue-title">FILA DE DOWNLOAD</span>
+      </div>
+
+      <div class="queue-controls">
+        <button id="btnStartQueue" type="button" class="queue-btn queue-btn-start">
+          <span class="material-symbols-rounded">play_arrow</span>
+          Iniciar fila
+        </button>
+
+        <button id="btnQueueAllMp3" type="button" class="queue-btn queue-btn-info">
+          <span class="material-symbols-rounded">audiotrack</span>
+          Toda Fila MP3
+        </button>
+
+        <button id="btnQueueAllMp4" type="button" class="queue-btn queue-btn-info">
+          <span class="material-symbols-rounded">movie</span>
+          Toda Fila MP4
+        </button>
+
+        <button id="btnPauseQueue" type="button" class="queue-btn queue-btn-pause">
+          <span class="material-symbols-rounded">pause</span>
+          Pausar
+        </button>
+
+        <button id="btnClearCompleted" type="button" class="queue-btn queue-btn-secondary">
+          <span class="material-symbols-rounded">cleaning_services</span>
+          Limpar concluídos
+        </button>
+
+        <button id="btnClearAll" type="button" class="queue-btn queue-btn-danger">
+          <span class="material-symbols-rounded">delete_forever</span>
+          Limpar Fila
+        </button>
+      </div>
+    </div>
+
+    <!-- CONTADORES -->
+    <div class="queue-metrics">
+      <div class="metric-card">
+        <div class="metric-label">TOTAL</div>
+        <div id="metricTotal" class="metric-value">0</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label metric-label-warning">AGUARDANDO</div>
+        <div id="metricQueued" class="metric-value metric-value-warning">0</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label metric-label-active">ATIVA</div>
+        <div id="metricActive" class="metric-value metric-value-active">0</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label metric-label-success">CONCLUÍDA</div>
+        <div id="metricCompleted" class="metric-value metric-value-success">0</div>
+      </div>
+    </div>
+
+    <!-- DOWNLOAD ATIVO (preenchido dinamicamente pelo download.js) -->
+    <div id="activeDownloadSection" class="active-download-section hidden">
+      <div class="active-download-header">
+        <span class="material-symbols-rounded">downloading</span>
+        DOWNLOAD ATIVO
+      </div>
+      <div id="activeDownloadContent" class="active-download-content">
+        <!-- Injetado dinamicamente -->
+      </div>
+    </div>
+
+    <!-- LISTA DE DOWNLOADS (preenchida dinamicamente pelo download.js) -->
+    <div id="downloadQueueContainer" class="download-queue-list">
+      <div class="queue-empty-state">
+        Nenhum download na fila.<br />
+        Adicione uma URL acima para começar.
+      </div>
+    </div>
+  </section>
+</div>

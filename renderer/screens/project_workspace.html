@@ -1,0 +1,97 @@
+<div class="ws-container">
+  
+  <!-- LEFTPANE: LIBRARY -->
+  <aside class="ws-pane ws-lib-pane">
+    <div class="ws-pane-header">
+      <div class="ws-pane-header-row">
+        <h3 class="ws-pane-title">Biblioteca Base</h3>
+        <button id="wsBtnReloadLib" class="ws-icon-btn-plain" type="button" title="Recarregar biblioteca">
+          <span class="material-symbols-rounded">refresh</span>
+        </button>
+      </div>
+      <input type="text" id="wsLibSearch" class="ws-search-input" placeholder="Pesquisar..." autocomplete="off" />
+    </div>
+    
+    <div id="wsLibContent" class="ws-lib-content">
+        <!-- Lista de arquivos da biblioteca (Draggable) -->
+    </div>
+  </aside>
+
+  <!-- CENTER PANE: BINS -->
+  <main class="ws-pane ws-bins-pane">
+    <div class="ws-center-header">
+      <h3 id="wsProjectName" class="ws-center-title">Projeto</h3>
+      
+      <div class="ws-center-actions">
+        <button id="wsBtnAutoImport" class="ws-btn-outline" type="button" title="Importar Estrutura de Pastas do Windows">
+          <span class="material-symbols-rounded">account_tree</span> Auto-Organizar
+        </button>
+        <button id="wsBtnNewBin" class="ws-btn-accent" type="button">
+          <span class="material-symbols-rounded">create_new_folder</span> Novo Bin
+        </button>
+      </div>
+    </div>
+    
+    <div id="wsBinsTree" class="ws-bins-tree">
+      <!-- Árvore de Bins renderizada via JS -->
+    </div>
+  </main>
+
+  <!-- RIGHT PANE: INSPECTOR & EXPORT -->
+  <aside class="ws-pane ws-inspector-pane">
+    
+    <div class="ws-back-wrapper">
+        <button id="wsBtnBack" class="ws-btn-back" type="button">
+            <span class="material-symbols-rounded">arrow_back</span> Voltar para Projetos
+        </button>
+    </div>
+
+    <div class="ws-inspector-section">
+      
+        <!-- Seção: Detalhes da Seleção -->
+        <h4 class="ws-section-title">Item Selecionado</h4>
+        
+        <div id="wsNoSelection" class="ws-empty-state">
+            Nenhum bin ou mídia selecionado
+        </div>
+
+        <div id="wsSelectionDetails" class="ws-selection-details hidden">
+            <div class="ws-field-group">
+                <label class="ws-field-label">Nome</label>
+                <input type="text" id="wsInputItemName" class="ws-field-input" />
+            </div>
+            
+            <div id="wsMediaPreview" class="ws-media-preview hidden">
+                <div id="wsMediaThumb" class="ws-media-thumb"></div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Caminho</span>
+                    <span id="wsMediaPath" class="ws-media-detail-value ws-media-detail-value--path"></span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Tamanho</span>
+                    <span id="wsMediaSize" class="ws-media-detail-value"></span>
+                </div>
+            </div>
+
+            <div class="ws-item-actions">
+                <button id="wsBtnSaveItem" class="ws-btn-save" type="button">Salvar</button>
+                <button id="wsBtnDeleteItem" class="ws-btn-delete" type="button">Excluir</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Seção: Templates de Exportação -->
+    <div class="ws-export-section">
+        <h4 class="ws-section-title">Templates de Exportação</h4>
+        
+        <button id="wsBtnExportPremiere" class="ws-btn-export-premiere" type="button">
+            <img src="./assets/premiere-icon.svg" class="ws-export-icon" onerror="this.style.display='none'"/>
+            Adobe Premiere Pro (XML)
+        </button>
+        <p class="ws-export-desc">Gera um arquivo FCP 7 XML preservando a estrutura de pastas e vínculos originais.</p>
+    </div>
+
+  </aside>
+
+</div>

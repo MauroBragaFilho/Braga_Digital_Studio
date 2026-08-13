@@ -1,0 +1,108 @@
+<div class="home-container">
+  <!-- Estatísticas -->
+  <section class="home-section stats-section">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total de Mídias</div>
+        <div id="statTotalMedia" class="stat-value">0</div>
+        <div id="statMediaBreakdown" class="stat-breakdown">
+          <span><strong id="statCountVideos">0</strong> vídeos</span>
+          <span class="stat-separator">•</span>
+          <span><strong id="statCountAudios">0</strong> áudios</span>
+          <span class="stat-separator">•</span>
+          <span><strong id="statCountPhotos">0</strong> fotos</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Espaço Ocupado</div>
+        <div id="statTotalSize" class="stat-value stat-value-accent">0 GB</div>
+        <div class="stat-sync">
+          Última Sincronização: <span id="statLastSync">-</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gravações Recentes -->
+  <section class="home-section recent-section">
+    <h2 class="section-title">
+      <span class="material-symbols-rounded section-title-icon">add_box</span>
+      Gravações Recentes
+    </h2>
+    <div class="recordings-row" id="recentRecordings">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- Ações Rápidas -->
+  <section class="home-section actions-section">
+    <h2 class="section-title">
+      <span class="material-symbols-rounded section-title-icon">bolt</span>
+      Ações Rápidas
+    </h2>
+    <div class="quick-actions-grid">
+      <button class="qa-card" data-target="download" type="button">
+        <span class="material-symbols-rounded qa-icon">download</span>
+        <strong>Downloads</strong>
+        <span>Baixe vídeos e áudios</span>
+      </button>
+      <button class="qa-card" data-target="converter" type="button">
+        <span class="material-symbols-rounded qa-icon">sync</span>
+        <strong>Conversão</strong>
+        <span>Converta arquivos de mídia</span>
+      </button>
+      <button class="qa-card" data-target="montage" type="button">
+        <span class="material-symbols-rounded qa-icon">movie</span>
+        <strong>Montagem</strong>
+        <span>Montagem de Vídeos</span>
+      </button>
+      <button class="qa-card" data-target="silence" type="button">
+        <span class="material-symbols-rounded qa-icon">graphic_eq</span>
+        <strong>Remover Silêncio</strong>
+        <span>Cortes Inteligentes</span>
+      </button>
+      <button class="qa-card" data-target="settings" type="button">
+        <span class="material-symbols-rounded qa-icon">settings</span>
+        <strong>Configurações</strong>
+        <span>Opções do Sistema</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Últimos Trabalhos -->
+  <section class="home-section jobs-section">
+    <h2 class="section-title">Últimos Trabalhos</h2>
+    
+    <div class="jobs-tabs">
+      <button class="job-tab active" type="button">Recentes</button>
+      <button class="job-tab" type="button">Convertidos</button>
+      <button class="job-tab" type="button">Downloads</button>
+      <button class="job-tab" type="button">Importados</button>
+      <button class="job-tab" type="button">Favoritos</button>
+    </div>
+
+    <div class="jobs-table-container">
+      <table class="jobs-table">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Tipo</th>
+            <th>Origem</th>
+            <th>Duração</th>
+            <th>Resolução</th>
+            <th>Data</th>
+            <th>Tamanho</th>
+            <th class="col-actions">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="recentJobsTable">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="home-footer">
+    © 2026 Braga Digital Studio. Todos os direitos reservados.
+  </footer>
+</div>

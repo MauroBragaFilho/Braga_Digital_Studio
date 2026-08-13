@@ -1,0 +1,254 @@
+<div class="library-container">
+  
+  <!-- Left Sidebar: Filters -->
+  <aside class="library-filters">
+    <div class="filters-header">
+      <h2 class="filters-title">Filtros</h2>
+      <button id="btnLimparFiltros" class="filters-clear-btn">Limpar</button>
+    </div>
+    
+    <div id="filterFavoritesContainer" class="filter-group"></div>
+    <div class="filters-divider"></div>
+    
+    <div id="filterOriginsContainer" class="filter-group"></div>
+    <div id="filterAlbumsContainer" class="filter-group"></div>
+    <div id="filterTypesContainer" class="filter-group"></div>
+    <div id="filterResContainer" class="filter-group"></div>
+    <div id="filterFpsContainer" class="filter-group"></div>
+    <div id="filterDateContainer" class="filter-group"></div>
+    <div id="filterProjectsContainer" class="filter-group"></div>
+    <div id="filterTagsContainer" class="filter-group"></div>
+  </aside>
+
+  <!-- Main Library Area -->
+  <main class="library-main">
+    
+    <!-- Topbar -->
+    <header class="library-topbar">
+      <div class="topbar-left">
+        <button id="btnViewGrid" class="lib-view-btn active" title="Visualização em Grade" type="button">
+          <span class="material-symbols-rounded">grid_view</span>
+        </button>
+        <button id="btnViewList" class="lib-view-btn" title="Visualização em Lista" type="button">
+          <span class="material-symbols-rounded">view_list</span>
+        </button>
+        
+        <div class="sort-controls">
+          <span class="sort-label">Ordenar por:</span>
+          <select id="selectSort" class="sort-select">
+            <option value="recorded_at">Data de gravação</option>
+            <option value="imported_at">Data de importação</option>
+            <option value="filesize">Tamanho</option>
+          </select>
+          <span id="btnSortOrder" class="sort-order-btn material-symbols-rounded" title="Inverter Ordem">arrow_downward</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <!-- Bulk Actions Container -->
+        <div id="libActionBar" class="bulk-actions-bar hidden">
+          <div class="bulk-count" id="libSelectedCount">0 selecionado</div>
+          <button class="secondary bulk-btn" id="btnActionFavorite" title="Favoritar" type="button">
+            <span class="material-symbols-rounded">star_border</span>
+          </button>
+          <button class="secondary bulk-btn" id="btnActionRename" title="Renomear" type="button">
+            <span class="material-symbols-rounded">edit</span>
+          </button>
+          <button class="secondary bulk-btn" id="btnActionTags" title="Adicionar Tags" type="button">
+            <span class="material-symbols-rounded">label</span>
+          </button>
+          <button class="secondary bulk-btn" id="btnActionProject" title="Vincular Projeto" type="button">
+            <span class="material-symbols-rounded">create_new_folder</span>
+          </button>
+          <button class="secondary bulk-btn" id="btnActionMove" title="Mover Arquivos" type="button">
+            <span class="material-symbols-rounded">drive_file_move</span>
+          </button>
+          <button class="secondary danger bulk-btn" id="btnActionDelete" title="Excluir Permanentemente" type="button">
+            <span class="material-symbols-rounded">delete</span>
+          </button>
+        </div>
+
+        <button id="btnReloadLibrary" class="topbar-icon-btn" title="Recarregar Biblioteca" type="button">
+          <span class="material-symbols-rounded">refresh</span>
+        </button>
+        <button id="btnAddCustomSourceBtn" class="btn-add-source" type="button">
+          <span class="material-symbols-rounded">create_new_folder</span>
+          + Nova Fonte
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Area -->
+    <div id="libContentArea" class="library-content-area">
+      <!-- JS injetará o grid ou a lista aqui -->
+    </div>
+  </main>
+
+  <!-- Right Sidebar: Inspector -->
+  <aside id="libraryInspector" class="library-inspector hidden">
+    <div id="inspectorThumbnail" class="inspector-thumbnail">
+      <button id="closeInspectorBtn" class="inspector-close-btn" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+      <button id="btnPlayMedia" class="inspector-play-btn" type="button">
+        <span class="material-symbols-rounded">play_arrow</span>
+      </button>
+      <div id="inspectorThumbDuration" class="inspector-duration">00:00</div>
+    </div>
+
+    <!-- Inspector Content: Detalhes -->
+    <div class="inspector-body">
+      <div class="inspector-details">
+        
+        <div class="inspector-row">
+          <span class="inspector-label">Nome</span>
+          <div class="inspector-value inspector-value-name">
+            <input type="text" id="inspectorTitleEdit" class="inspector-edit-input hidden">
+            <span id="inspectorTitle" class="inspector-title-text" title="Clique para renomear">-</span>
+          </div>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Origem</span>
+          <div class="inspector-value inspector-value-origin">
+            <span id="inspectorOriginIcon" class="material-symbols-rounded inspector-origin-icon">computer</span>
+            <span id="inspectorOrigin">-</span>
+          </div>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Caminho</span>
+          <div class="inspector-value inspector-value-path">
+            <span id="inspectorPath" class="inspector-path-text">-</span>
+            <span class="material-symbols-rounded inspector-copy-btn" title="Copiar caminho">content_copy</span>
+          </div>
+        </div>
+
+        <div class="inspector-row inspector-row-bordered">
+          <span class="inspector-label">Favorito</span>
+          <span id="inspectorFavStar" class="material-symbols-rounded inspector-fav-star">star</span>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Projeto</span>
+          <div class="inspector-value inspector-value-project">
+            <span id="inspectorProject" class="inspector-project-text">Gameplay GTA V</span>
+            <span class="material-symbols-rounded">folder</span>
+          </div>
+        </div>
+
+        <div class="inspector-row inspector-row-bordered">
+          <span class="inspector-label">Tags</span>
+          <div class="inspector-value inspector-value-tags">
+            <div id="inspectorTags" class="inspector-tags-container">
+              <span class="material-symbols-rounded inspector-add-tag" id="btnAddTag">add</span>
+            </div>
+            <input type="text" id="inspectorTagEdit" class="inspector-tag-input hidden" placeholder="Nova tag...">
+          </div>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Data de Gravação</span>
+          <span id="inspectorRecordDate" class="inspector-value">-</span>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Data de Importação</span>
+          <span id="inspectorDate" class="inspector-value">-</span>
+        </div>
+
+        <div id="rowDuration" class="inspector-row">
+          <span class="inspector-label">Duração</span>
+          <span id="inspectorDuration" class="inspector-value">-</span>
+        </div>
+
+        <div id="rowRes" class="inspector-row">
+          <span class="inspector-label">Resolução</span>
+          <span id="inspectorRes" class="inspector-value">-</span>
+        </div>
+
+        <div id="rowFps" class="inspector-row">
+          <span class="inspector-label">FPS</span>
+          <span id="inspectorFps" class="inspector-value">-</span>
+        </div>
+
+        <div id="rowVCodec" class="inspector-row">
+          <span class="inspector-label">Codec de Vídeo</span>
+          <span id="inspectorVCodec" class="inspector-value">-</span>
+        </div>
+
+        <div id="rowACodec" class="inspector-row">
+          <span class="inspector-label">Codec de Áudio</span>
+          <span id="inspectorACodec" class="inspector-value">-</span>
+        </div>
+        
+        <div id="rowVBitrate" class="inspector-row">
+          <span class="inspector-label">Bitrate de Vídeo</span>
+          <span id="inspectorVBitrate" class="inspector-value">-</span>
+        </div>
+
+        <div id="rowABitrate" class="inspector-row">
+          <span class="inspector-label">Bitrate de Áudio</span>
+          <span id="inspectorABitrate" class="inspector-value">-</span>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Tamanho</span>
+          <span id="inspectorSize" class="inspector-value">-</span>
+        </div>
+
+        <div class="inspector-row">
+          <span class="inspector-label">Status</span>
+          <div class="inspector-value inspector-value-status">
+            <div class="status-dot-green"></div>
+            Disponível
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- MODAL DE CADASTRO DE FONTE PERSONALIZADA -->
+<div id="modalAddCustomSource" class="lib-modal-overlay hidden">
+  <div class="lib-modal">
+    <div class="lib-modal-header">
+      <h3 class="lib-modal-title">
+        <span class="material-symbols-rounded lib-modal-icon">create_new_folder</span>
+        Nova Fonte Personalizada
+      </h3>
+      <button id="btnCloseCustomSourceModal" class="lib-modal-close-btn" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <p class="lib-modal-description">
+      Cadastre uma pasta local ou dispositivo externo (ex: Cartão SD, HD Externo, Podcast Studio). As mídias serão indexadas automaticamente com o nome da fonte escolhida.
+    </p>
+
+    <div class="lib-modal-form">
+      <div class="lib-form-group">
+        <label class="lib-form-label">Nome da Fonte / Origem</label>
+        <input type="text" id="inputCustomSourceName" class="lib-form-input" placeholder="Ex: Podcast Studio, Câmera Sony, Cartão SD..." />
+      </div>
+
+      <div class="lib-form-group">
+        <label class="lib-form-label">Caminho da Pasta</label>
+        <div class="lib-form-input-group">
+          <input type="text" id="inputCustomSourcePath" class="lib-form-input" placeholder="Selecione a pasta no seu computador..." />
+          <button id="btnBrowseCustomSourceFolder" class="lib-form-icon-btn" type="button">
+            <span class="material-symbols-rounded">folder_open</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="lib-modal-footer">
+      <button id="btnCancelAddCustomSource" class="lib-btn-cancel" type="button">Cancelar</button>
+      <button id="btnConfirmAddCustomSource" class="lib-btn-confirm" type="button">
+        <span class="material-symbols-rounded">check_circle</span>
+        Cadastrar & Importar Mídias
+      </button>
+    </div>
+  </div>
+</div>
