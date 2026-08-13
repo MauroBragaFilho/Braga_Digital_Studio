@@ -1,4 +1,4 @@
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const ImportWorker = require('./ImportWorker');
 
 class ImportQueue {

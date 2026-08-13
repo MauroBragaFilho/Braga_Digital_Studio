@@ -1,4 +1,4 @@
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const puppeteer = require('puppeteer-core');
 const { BrowserWindow } = require('electron');
 

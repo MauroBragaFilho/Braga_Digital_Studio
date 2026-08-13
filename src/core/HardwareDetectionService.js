@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const logger = require('../../services/logService');
+const logger = require('../services/logService');
 
 class HardwareDetectionService {
   constructor() {

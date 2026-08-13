@@ -1,8 +1,8 @@
-﻿const dbManager = require('../database/database');
+const dbManager = require('../database/database');
 
 class LibraryQueryService {
     /**
-     * Retorna estatÃ­sticas gerais da biblioteca
+     * Retorna estatísticas gerais da biblioteca
      */
     static getStats() {
         const db = dbManager.get();
@@ -30,7 +30,7 @@ class LibraryQueryService {
     }
 
     /**
-     * Busca mÃ­dias com base em filtros complexos e termo de busca em linguagem natural
+     * Busca mídias com base em filtros complexos e termo de busca em linguagem natural
      * @param {Object} options 
      */
     static searchMedia({ query = '', types = [], origins = [], albums = [], resolutions = [], fps = [], dates = [], projects = [], tags = [], favorites = false, sort = 'recorded_at', order = 'DESC', limit = 100 }) {
@@ -46,7 +46,7 @@ class LibraryQueryService {
             parsed.types.forEach(t => finalTypes.add(t));
         }
 
-        // JOINs base â€” reutilizados em SELECT e COUNT
+        // JOINs base — reutilizados em SELECT e COUNT
         const joins = `FROM media m
             LEFT JOIN projects p ON m.project_id = p.id
             LEFT JOIN libraries l ON m.library_id = l.id
@@ -71,7 +71,7 @@ class LibraryQueryService {
             filterParams.push(...tags);
         }
 
-        // Busca SemÃ¢ntica + multi-campo
+        // Busca Semântica + multi-campo
         if (query) {
             const searchTerms = parsed.synonyms && parsed.synonyms.length > 0 ? parsed.synonyms : [query];
             const termConditions = searchTerms.map(term => {
@@ -116,12 +116,12 @@ class LibraryQueryService {
             filterSql += ' AND m.favorite = 1';
         }
 
-        // COUNT â€” exatamente os mesmos filtros, sem ORDER/LIMIT
+        // COUNT — exatamente os mesmos filtros, sem ORDER/LIMIT
         const countSql = `SELECT COUNT(DISTINCT m.id) as total ${joins} ${filterSql}`;
         const countRow = db.prepare(countSql).get(...filterParams);
         const totalCount = countRow ? (countRow.total || 0) : 0;
 
-        // SELECT â€” mesmos filtros + ORDER BY + LIMIT
+        // SELECT — mesmos filtros + ORDER BY + LIMIT
         const safeOrder = order === 'ASC' ? 'ASC' : 'DESC';
         let orderClause = `ORDER BY COALESCE(m.recorded_at, m.imported_at) ${safeOrder}`;
         if (sort === 'filesize') orderClause = `ORDER BY m.filesize ${safeOrder}`;
@@ -136,7 +136,7 @@ class LibraryQueryService {
 
     
     /**
-     * Retorna os Ãºltimos adicionados
+     * Retorna os últimos adicionados
      */
     static getRecentMedia(limit = 10) {
         const db = dbManager.get();
@@ -144,7 +144,7 @@ class LibraryQueryService {
     }
 
     /**
-     * Retorna as opÃ§Ãµes e contagens dinÃ¢micas para os filtros
+     * Retorna as opções e contagens dinâmicas para os filtros
      */
     static getFilterOptions() {
         const db = dbManager.get();

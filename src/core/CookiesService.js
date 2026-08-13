@@ -1,4 +1,4 @@
-const logger = require('../../services/logService');
+const logger = require('../services/logService');
 const { session } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');

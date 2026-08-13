@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const BdsmClient = require('./BdsmClient');
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const { EventEmitter } = require('events');
 
 class LutSyncService extends EventEmitter {

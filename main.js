@@ -73,17 +73,17 @@ const paths = {
 };
 process.env.BMD_LOGS_DIR = paths.logsDir;
 
-const DownloadService = require('./services/downloadService');
-const HistoryService = require('./services/historyService');
-const ThumbnailService = require('./services/thumbnailService');
-const ConverterService = require('./services/converterService');
-const UpdateService = require('./services/updateService');
-const logger = require('./services/logService');
-const metadataService = require('./services/metadataService');
+const DownloadService = require('./src/services/downloadService');
+const HistoryService = require('./src/services/historyService');
+const ThumbnailService = require('./src/services/thumbnailService');
+const ConverterService = require('./src/services/converterService');
+const UpdateService = require('./src/services/updateService');
+const logger = require('./src/services/logService');
+const metadataService = require('./src/services/metadataService');
 const MtpService = require('./src/core/MtpService');
 const UsbService = require('./src/core/UsbService');
 const UploadService = require('./src/core/UploadService');
-const sonyCameraService = require('./services/sonyCameraService');
+const sonyCameraService = require('./src/services/sonyCameraService');
 
 const projectService = require('./src/core/projects/ProjectService');
 const PremiereExporter = require('./src/core/projects/PremiereExporter');
@@ -227,11 +227,12 @@ app.whenReady().then(async () => {
   converterService = new ConverterService({ paths, getSettings: loadSettings, historyService});
   thumbnailService = new ThumbnailService({ paths, getSettings: loadSettings });
   updateService = new UpdateService({ paths });
-  const MontageService = require('./services/montageService');
+  const MontageService = require('./src/services/montageService');
   const montageService = new MontageService({ paths });
-  const SilenceService = require('./services/silenceService');
+
+  const SilenceService = require('./src/services/silenceService');
   const silenceService = new SilenceService({ paths });
-  const MetadataService = require('./services/metadataService');
+  const MetadataService = require('./src/services/metadataService');
   const metadataService = new MetadataService({ paths });
 
   // Inicializar Serviços de Descoberta

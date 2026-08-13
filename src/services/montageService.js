@@ -2,177 +2,187 @@ const EventEmitter = require('node:events');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const { v4: uuidv4 } = require('uuid');
+const logger = require('./logService');
+const hardwareDetection = require('../core/HardwareDetectionService');
 
 class MontageService extends EventEmitter {
   constructor({ paths }) {
     super();
     this.paths = paths;
-    this.queue = [];
-    this.currentJob = null;
     this.currentProcess = null;
     this.cancelRequested = false;
+    this.running = false;
   }
 
-  getQueue() {
-    return this.queue;
+  isRunning() {
+    return this.running;
   }
 
   async probeFile(filePath) {
     const ffprobe = path.join(this.paths.dataDir, 'ffprobe.exe');
-    if (!fs.existsSync(ffprobe)) throw new Error('ffprobe.exe não encontrado.');
+    if (!fs.existsSync(ffprobe)) {
+      throw new Error('ffprobe.exe não encontrado.');
+    }
 
     return new Promise((resolve, reject) => {
-      const child = spawn(ffprobe, ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath], { windowsHide: true });
+      const child = spawn(
+        ffprobe,
+        [
+          '-v', 'error',
+          '-print_format', 'json',
+          '-show_format',
+          '-show_streams',
+          filePath
+        ],
+        { windowsHide: true }
+      );
+
       let stdout = '';
       let stderr = '';
 
       child.stdout.on('data', chunk => stdout += chunk.toString('utf8'));
       child.stderr.on('data', chunk => stderr += chunk.toString('utf8'));
+
       child.on('error', reject);
       child.on('close', code => {
-        if (code !== 0) return reject(new Error(stderr || 'Erro no ffprobe.'));
+        if (code !== 0) {
+          return reject(new Error(stderr || 'Erro ao ler arquivo com ffprobe.'));
+        }
         try {
           const data = JSON.parse(stdout);
           const videoStream = data.streams.find(s => s.codec_type === 'video');
+          
           let duration = parseFloat(data.format?.duration || 0);
-          if (duration === 0 && videoStream?.duration) duration = parseFloat(videoStream.duration);
-          resolve({ filename: path.basename(filePath), duration });
-        } catch (e) {
-          reject(e);
+          if (duration === 0 && videoStream?.duration) {
+              duration = parseFloat(videoStream.duration);
+          }
+
+          let fps = 0;
+          if (videoStream && videoStream.r_frame_rate) {
+            const [num, den] = videoStream.r_frame_rate.split('/');
+            if (den && num) {
+              fps = parseFloat(num) / parseFloat(den);
+            }
+          }
+
+          resolve({
+            duration: Number.isFinite(duration) ? duration : 0,
+            width: videoStream?.width || 0,
+            height: videoStream?.height || 0,
+            fps: Number.isFinite(fps) ? fps : 0,
+            hasAudio: data.streams.some(s => s.codec_type === 'audio')
+          });
+        } catch (err) {
+          reject(new Error(`Falha ao ler JSON do ffprobe: ${err.message}`));
         }
       });
     });
   }
 
-  async testEncoder(encoder) {
-    const ffmpeg = path.join(this.paths.dataDir, 'ffmpeg.exe');
-    return new Promise(resolve => {
-      const child = spawn(ffmpeg, ['-f', 'lavfi', '-i', 'nullsrc=s=128x128:d=1', '-c:v', encoder, '-f', 'null', '-'], { windowsHide: true });
-      child.on('close', code => resolve(code === 0));
-    });
-  }
 
-  async detectEncoder(codecChoice) {
-    if (codecChoice === 'H.264') {
-      if (await this.testEncoder('h264_nvenc')) return 'h264_nvenc';
-      if (await this.testEncoder('h264_qsv')) return 'h264_qsv';
-      if (await this.testEncoder('h264_amf')) return 'h264_amf';
-      return 'libx264';
-    }
-    if (codecChoice === 'H.265' || codecChoice === 'HEVC') {
-      if (await this.testEncoder('hevc_nvenc')) return 'hevc_nvenc';
-      if (await this.testEncoder('hevc_qsv')) return 'hevc_qsv';
-      if (await this.testEncoder('hevc_amf')) return 'hevc_amf';
-      return 'libx265';
-    }
-    return 'libx264';
-  }
 
-  getQualitySettings(encoder, quality) {
-    let cqArg = '-crf';
-    let isHw = !encoder.startsWith('lib');
-    if (encoder.includes('nvenc')) cqArg = '-cq';
-    if (encoder.includes('qsv')) cqArg = '-global_quality';
+  async enqueueMontage(config) {
+    if (this.running) {
+      throw new Error('Já existe um processo de montagem em andamento.');
+    }
+
+    const items = config.items || [];
+    if (items.length === 0) {
+      throw new Error('Nenhum vídeo principal foi fornecido para a montagem.');
+    }
+
+    const destFolder = config.destFolder || path.join(require('os').homedir(), 'Videos', 'Montagem');
+    if (!fs.existsSync(destFolder)) {
+      fs.mkdirSync(destFolder, { recursive: true });
+    }
+
+    const totalCount = items.length;
+    logger.info('montage:batch-start', { totalCount, destFolder });
     
-    let crfVal = '23';
-    if (quality === 'Baixa') crfVal = '28';
-    if (quality === 'Alta') crfVal = '18';
-    if (quality === 'Muito Alta') crfVal = '14';
-
-    const args = [];
-    if (isHw) {
-        if (encoder.includes('nvenc')) args.push('-preset', 'p5', '-cq', crfVal);
-        else if (encoder.includes('qsv')) args.push('-preset', 'medium', '-global_quality', crfVal);
-        else if (encoder.includes('amf')) args.push('-quality', 'quality');
-    } else {
-        args.push('-preset', 'medium', '-crf', crfVal);
-    }
-    return args;
-  }
-
-  enqueueMontage(config) {
-    const job = {
-      id: uuidv4(),
-      config,
-      status: 'PENDING', // PENDING, PROCESSING, DONE, ERROR
-      progress: 0,
-      createdAt: Date.now()
-    };
-    
-    this.queue.push(job);
-    this._broadcastQueue();
-    this._processNext();
-    return job.id;
-  }
-
-  cancelJob(id) {
-    const job = this.queue.find(j => j.id === id);
-    if (!job) return;
-
-    if (job.status === 'PENDING') {
-      this.queue = this.queue.filter(j => j.id !== id);
-      this._broadcastQueue();
-    } else if (job.status === 'PROCESSING' && this.currentJob && this.currentJob.id === id) {
-      this.cancelRequested = true;
-      if (this.currentProcess) {
-        this.currentProcess.kill('SIGTERM'); // Isso parará o FFmpeg e lançará erro no loop
-      }
-    }
-  }
-
-  removeJob(id) {
-    this.queue = this.queue.filter(j => j.id !== id);
-    this._broadcastQueue();
-  }
-
-  clearQueue() {
-    this.queue = this.queue.filter(j => j.status === 'PENDING' || j.status === 'PROCESSING');
-    this._broadcastQueue();
-  }
-
-  _broadcastQueue() {
-    this.emit('queue-updated', this.queue);
-  }
-
-  async _processNext() {
-    if (this.currentJob) return; // Já está rodando
-
-    const nextJob = this.queue.find(j => j.status === 'PENDING');
-    if (!nextJob) return; // Fila vazia
-
-    this.currentJob = nextJob;
-    this.currentJob.status = 'PROCESSING';
+    this.running = true;
     this.cancelRequested = false;
-    this._broadcastQueue();
 
     try {
-      await this._runMontage(nextJob);
-      nextJob.status = 'DONE';
-      nextJob.progress = 100;
+      for (let i = 0; i < totalCount; i++) {
+        if (this.cancelRequested) break;
+
+        const item = items[i];
+        const rawName = item.name || `Video_${i + 1}`;
+        const baseName = rawName.replace(/\.[^/.]+$/, ''); // Remove extensão
+        const pct = item.pctUsed || 100;
+        const ext = (config.format || 'mp4').toLowerCase();
+        
+        // Nome no formato solicitado: "(nome do vídeo principal) + (porcentagem do vídeo)"
+        const outputFileName = `${baseName} - ${pct}%.${ext}`;
+        const outputPath = path.join(destFolder, outputFileName);
+
+        const mainCutDuration = item.finalDurationSeconds || Math.round(((item.durationSeconds || 1800) * pct) / 100);
+
+        const singleConfig = {
+          introPath: config.introPath,
+          mainPath: item.path,
+          outroPath: config.outroPath,
+          mainCutStart: 0,
+          mainCutDuration: mainCutDuration,
+          resolution: config.resolution || '1080p',
+          fps: config.fps || '30',
+          codec: config.codec || 'H.264',
+          quality: config.quality || 'Alta',
+          outputPath: outputPath,
+          totalDuration: mainCutDuration
+        };
+
+        this.currentBatchItem = { currentFile: i + 1, totalFiles: totalCount, fileName: outputFileName };
+
+        this.emit('progress', {
+          currentFile: i + 1,
+          totalFiles: totalCount,
+          percent: 0,
+          fileName: outputFileName
+        });
+
+        this.emit('log', `Processando arquivo [${i + 1}/${totalCount}]: ${outputFileName}`);
+        await this.runSingleRender(singleConfig);
+      }
+
+      this.emit('finished', { status: 'batch-success', total: totalCount });
+      return { ok: true, count: totalCount };
     } catch (err) {
-      nextJob.status = 'ERROR';
-      nextJob.error = err.message;
-      this.emit('log', `\nErro: ${err.message}\n`);
+      logger.error('montage:batch-error', { error: err.message });
+      this.emit('finished', { status: 'error', error: err.message });
+      throw err;
     } finally {
-      this.currentJob = null;
+      this.running = false;
       this.currentProcess = null;
-      this._broadcastQueue();
-      this._processNext(); // Continua a fila
+      this.currentBatchItem = null;
     }
   }
 
-  async _runMontage(job) {
-    const ffmpeg = path.join(this.paths.dataDir, 'ffmpeg.exe');
-    const { introPath, mainPath, outroPath, percentCut, resolution, fps, codec, quality, outputPath } = job.config;
+  async startMontage(config) {
+    if (this.running) {
+      throw new Error('Já existe um processo em andamento.');
+    }
+    this.running = true;
+    this.cancelRequested = false;
 
-    // Calcular duração real do vídeo principal para a porcentagem exata
-    const probe = await this.probeFile(mainPath);
-    const baseDuration = probe.duration;
-    
-    // Calcula o corte em segundos
-    const cutDuration = baseDuration * (percentCut / 100);
-    const cutStart = (baseDuration - cutDuration) / 2;
+    try {
+      await this.runSingleRender(config);
+      this.emit('finished', { status: 'success' });
+      return { ok: true };
+    } catch (err) {
+      this.emit('finished', { status: 'error', error: err.message });
+      throw err;
+    } finally {
+      this.running = false;
+      this.currentProcess = null;
+    }
+  }
+
+  async runSingleRender(config) {
+    const ffmpeg = path.join(this.paths.dataDir, 'ffmpeg.exe');
+    if (!fs.existsSync(ffmpeg)) throw new Error('ffmpeg.exe não encontrado.');
+
+    const { introPath, mainPath, outroPath, mainCutStart, mainCutDuration, resolution, fps, codec, quality, outputPath, totalDuration } = config;
 
     const resMap = {
         '720p': { w: 1280, h: 720 },
@@ -181,15 +191,12 @@ class MontageService extends EventEmitter {
         '2160p': { w: 3840, h: 2160 }
     };
     const targetRes = resMap[resolution] || resMap['1080p'];
-    const targetEncoder = await this.detectEncoder(codec);
-    const qualityArgs = this.getQualitySettings(targetEncoder, quality);
+    
+    // Detect encoder
+    const targetEncoder = await hardwareDetection.detectEncoder(ffmpeg, codec);
+    const qualityArgs = hardwareDetection.getQualitySettings(targetEncoder, quality);
 
-    // Calcular totalDuration para barra de progresso (precisa do probe intro/outro pra ser exato, mas se n tiver pega por cima)
-    let introDur = 0, outroDur = 0;
-    if(introPath && fs.existsSync(introPath)) introDur = (await this.probeFile(introPath)).duration;
-    if(outroPath && fs.existsSync(outroPath)) outroDur = (await this.probeFile(outroPath)).duration;
-    const totalDuration = introDur + cutDuration + outroDur;
-
+    // Building the Filtergraph
     let filterParts = [];
     let concatVideoInputs = [];
     let concatAudioInputs = [];
@@ -203,22 +210,28 @@ class MontageService extends EventEmitter {
         inputFiles.push(filePath);
         inputIndex++;
         
-        let vFilter = '', aFilter = '';
+        let vFilter = '';
+        let aFilter = '';
+        
         if (isMain) {
-            vFilter = `[${currentIdx}:v]trim=start=${cutStart}:duration=${cutDuration},setpts=PTS-STARTPTS[v${currentIdx}_trim];[v${currentIdx}_trim]`;
-            aFilter = `[${currentIdx}:a]atrim=start=${cutStart}:duration=${cutDuration},asetpts=PTS-STARTPTS[a${currentIdx}_trim];[a${currentIdx}_trim]`;
+            vFilter = `[${currentIdx}:v]trim=start=${mainCutStart}:duration=${mainCutDuration},setpts=PTS-STARTPTS[v${currentIdx}_trim];[v${currentIdx}_trim]`;
+            aFilter = `[${currentIdx}:a]atrim=start=${mainCutStart}:duration=${mainCutDuration},asetpts=PTS-STARTPTS[a${currentIdx}_trim];[a${currentIdx}_trim]`;
         } else {
             vFilter = `[${currentIdx}:v]`;
             aFilter = `[${currentIdx}:a]`;
         }
         
         vFilter += `scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=decrease,pad=${targetRes.w}:${targetRes.h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
-        if (fps !== 'Manter original') vFilter += `,fps=${fps}`;
+        if (fps !== 'Manter original') {
+            vFilter += `,fps=${fps}`;
+        }
         vFilter += `[vout${currentIdx}]`;
         
         aFilter += `aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[aout${currentIdx}]`;
         
-        filterParts.push(vFilter, aFilter);
+        filterParts.push(vFilter);
+        filterParts.push(aFilter);
+        
         concatVideoInputs.push(`[vout${currentIdx}]`);
         concatAudioInputs.push(`[aout${currentIdx}]`);
     };
@@ -227,54 +240,95 @@ class MontageService extends EventEmitter {
     processInput(mainPath, true);
     processInput(outroPath, false);
 
+    if (inputIndex === 0) throw new Error("Nenhum arquivo válido fornecido.");
+
     const numInputs = concatVideoInputs.length;
     let concatStr = '';
-    for (let i = 0; i < numInputs; i++) concatStr += `${concatVideoInputs[i]}${concatAudioInputs[i]}`;
+    for (let i = 0; i < numInputs; i++) {
+        concatStr += `${concatVideoInputs[i]}${concatAudioInputs[i]}`;
+    }
     concatStr += `concat=n=${numInputs}:v=1:a=1[vfinal][afinal]`;
     filterParts.push(concatStr);
 
+    const filterComplex = filterParts.join(';');
+
     let args = ['-y'];
     inputFiles.forEach(f => args.push('-i', f));
-    args.push('-filter_complex', filterParts.join(';'));
+    
+    args.push('-filter_complex', filterComplex);
     args.push('-map', '[vfinal]', '-map', '[afinal]');
-    args.push('-c:v', targetEncoder, ...qualityArgs);
-    args.push('-c:a', 'aac', '-b:a', '192k', '-progress', 'pipe:1', '-nostats');
+    args.push('-c:v', targetEncoder);
+    args.push(...qualityArgs);
+    args.push('-c:a', 'aac', '-b:a', '192k');
+    args.push('-progress', 'pipe:1', '-nostats');
     args.push(outputPath);
 
-    return new Promise((resolve, reject) => {
-      this.currentProcess = spawn(ffmpeg, args, { windowsHide: true });
-      
-      this.currentProcess.stdout.on('data', chunk => {
-        const lines = chunk.toString().split('\n');
-        let currentOutTimeUs = 0;
-        let speed = '';
-        let currentFps = '';
+    logger.info('montage:start-single', { encoder: targetEncoder, resolution, inputs: inputIndex });
 
-        lines.forEach(line => {
-          if (line.startsWith('out_time_ms=')) currentOutTimeUs = parseInt(line.split('=')[1]);
-          if (line.startsWith('speed=')) speed = line.split('=')[1].trim();
-          if (line.startsWith('fps=')) currentFps = line.split('=')[1].trim();
+    return new Promise((resolve, reject) => {
+        const child = spawn(ffmpeg, args, { windowsHide: true });
+        this.currentProcess = child;
+        
+        let stderr = '';
+
+        child.stdout.on('data', (chunk) => {
+            const text = chunk.toString('utf8');
+            const outTimeMatch = text.match(/out_time_ms=(\d+)/);
+            const speedMatch = text.match(/speed=\s*([\d.]+)x/);
+            const fpsMatch = text.match(/fps=\s*([\d.]+)/);
+
+            if (outTimeMatch && totalDuration > 0) {
+                const currentSec = Number(outTimeMatch[1]) / 1000000;
+                const percent = Math.min(100, (currentSec / totalDuration) * 100);
+                
+                this.emit('progress', {
+                    percent,
+                    currentFile: this.currentBatchItem ? this.currentBatchItem.currentFile : 1,
+                    totalFiles: this.currentBatchItem ? this.currentBatchItem.totalFiles : 1,
+                    speed: speedMatch ? `${speedMatch[1]}x` : '',
+                    fps: fpsMatch ? fpsMatch[1] : ''
+                });
+            }
         });
 
-        if (currentOutTimeUs > 0) {
-          const currentOutTimeS = currentOutTimeUs / 1000000;
-          let percent = (currentOutTimeS / totalDuration) * 100;
-          if (percent > 100) percent = 100;
-          
-          this.currentJob.progress = percent;
-          this._broadcastQueue();
-        }
-      });
+        child.stderr.on('data', (chunk) => {
+            const text = chunk.toString('utf8');
+            stderr += text;
+            this.emit('log', text);
+        });
 
-      this.currentProcess.stderr.on('data', chunk => {
-        this.emit('log', chunk.toString());
-      });
+        child.on('error', reject);
+        child.on('close', (code) => {
+            if (this.cancelRequested) {
+                return resolve();
+            }
+            if (code === 0) {
+                return resolve();
+            }
+            reject(new Error(`FFmpeg finalizou com código ${code}`));
+        });
+    });
+  }
 
-      this.currentProcess.on('close', code => {
-        if (this.cancelRequested) return reject(new Error('Cancelado pelo usuário'));
-        if (code !== 0) return reject(new Error('Processo terminou com código ' + code));
+  async cancelMontage() {
+    this.cancelRequested = true;
+    if (!this.currentProcess) return { ok: true };
+    
+    await this.killProcessTree(this.currentProcess.pid);
+    return { ok: true };
+  }
+
+  async killProcessTree(pid) {
+    return new Promise((resolve) => {
+      if (!pid) return resolve();
+      if (process.platform === 'win32') {
+        const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+        killer.on('close', () => resolve());
+        killer.on('error', () => resolve());
+      } else {
+        try { process.kill(pid, 'SIGTERM'); } catch {}
         resolve();
-      });
+      }
     });
   }
 }

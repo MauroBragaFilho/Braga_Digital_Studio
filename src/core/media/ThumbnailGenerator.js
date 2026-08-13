@@ -1,4 +1,4 @@
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const { execFile } = require('child_process');
 const util = require('util');
 const path = require('path');

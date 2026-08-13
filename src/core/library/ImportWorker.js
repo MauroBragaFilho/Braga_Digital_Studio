@@ -1,4 +1,4 @@
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const dbManager = require('../database/database');

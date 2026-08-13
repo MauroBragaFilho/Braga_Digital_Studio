@@ -1,4 +1,4 @@
-const logger = require('../../../services/logService');
+const logger = require('../../services/logService');
 const FolderWatcher = require('./FolderWatcher');
 const dbManager = require('../database/database');
 const EventBus = require('../EventBus');
