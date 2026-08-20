@@ -3,8 +3,9 @@
   "version": "1.0.2",
   "description": "Braga Digital Studio desktop app built with Electron, Node.js and SQLite.",
   "main": "main.js",
-  "author": "oBraga",
-  "license": "MIT",
+  "author": "Mauro Braga",
+  "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
     "prebuild": "npm version patch --no-git-tag-version",
