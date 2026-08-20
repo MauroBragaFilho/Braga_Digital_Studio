@@ -132,3 +132,81 @@ CREATE TABLE IF NOT EXISTS download_queue (
     completed_at DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS project_sequences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT 'Sequência Principal',
+    timebase REAL DEFAULT 29.97,
+    sample_rate INTEGER DEFAULT 48000,
+    width INTEGER DEFAULT 1920,
+    height INTEGER DEFAULT 1080,
+    duration REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS timeline_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sequence_id INTEGER NOT NULL,
+    track_type TEXT NOT NULL, /* 'video' ou 'audio' */
+    track_index INTEGER NOT NULL, /* 1, 2, 3... */
+    name TEXT,
+    muted INTEGER DEFAULT 0,
+    locked INTEGER DEFAULT 0,
+    solo INTEGER DEFAULT 0,
+    FOREIGN KEY(sequence_id) REFERENCES project_sequences(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS timeline_clips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id INTEGER NOT NULL,
+    project_media_id INTEGER,
+    media_id INTEGER,
+    name TEXT,
+    start_time REAL NOT NULL DEFAULT 0.0,
+    end_time REAL NOT NULL DEFAULT 0.0,
+    in_point REAL DEFAULT 0.0,
+    out_point REAL DEFAULT 0.0,
+    color TEXT,
+    FOREIGN KEY(track_id) REFERENCES timeline_tracks(id) ON DELETE CASCADE,
+    FOREIGN KEY(project_media_id) REFERENCES project_media(id) ON DELETE SET NULL,
+    FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_markers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    sequence_id INTEGER,
+    clip_id INTEGER,
+    time REAL NOT NULL DEFAULT 0.0,
+    type TEXT DEFAULT 'highlight', /* highlight, cut, important, note, music */
+    color TEXT DEFAULT '#f59e0b',
+    label TEXT,
+    comment TEXT,
+    target TEXT DEFAULT 'timeline', /* 'timeline' ou 'clip' */
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(sequence_id) REFERENCES project_sequences(id) ON DELETE CASCADE,
+    FOREIGN KEY(clip_id) REFERENCES timeline_clips(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sync_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    master_media_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sync_group_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sync_group_id INTEGER NOT NULL,
+    media_id INTEGER NOT NULL,
+    offset_seconds REAL DEFAULT 0.0,
+    FOREIGN KEY(sync_group_id) REFERENCES sync_groups(id) ON DELETE CASCADE,
+    FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+);
+
+

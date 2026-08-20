@@ -12,6 +12,7 @@
     "build:portable": "electron-builder --win portable"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "bonjour-service": "^1.4.4",
     "chokidar": "^5.0.0",
     "express": "^5.2.1",

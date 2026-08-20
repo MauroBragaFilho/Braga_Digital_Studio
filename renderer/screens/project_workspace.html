@@ -1,5 +1,62 @@
 <div class="ws-container">
-  
+
+  <div class="ws-project-header">
+    <button id="wsBtnBack" class="ws-btn-back ws-btn-back--icon" type="button" title="Voltar para Projetos">
+      <span class="material-symbols-rounded">arrow_back</span>
+    </button>
+
+    <div id="wsCoverWrapper" class="ws-cover-wrapper" title="Clique para escolher a capa do projeto">
+      <div id="wsCoverImg" class="ws-cover-img empty">
+        <span class="material-symbols-rounded">image</span>
+      </div>
+      <span class="material-symbols-rounded ws-cover-edit-icon">photo_camera</span>
+    </div>
+
+    <div class="ws-header-info">
+      <h2 id="wsProjectName" class="ws-header-title">Projeto</h2>
+      <select id="wsProjectStatus" class="ws-status-select" title="Status do projeto">
+        <option value="Ativo">Ativo</option>
+        <option value="Em Pausa">Em Pausa</option>
+        <option value="Concluído">Concluído</option>
+        <option value="Arquivado">Arquivado</option>
+      </select>
+    </div>
+
+    <div id="wsProjectSummary" class="ws-project-summary">
+      <span class="ws-summary-item" title="Vídeos">
+        <span class="material-symbols-rounded">movie</span> <b id="wsSummaryVideos">0</b>
+      </span>
+      <span class="ws-summary-item" title="Áudios">
+        <span class="material-symbols-rounded">mic</span> <b id="wsSummaryAudios">0</b>
+      </span>
+      <span class="ws-summary-item ws-summary-ok" title="Sincronizados">
+        <span class="material-symbols-rounded">check_circle</span> <b id="wsSummarySynced">0</b>
+      </span>
+      <span class="ws-summary-item ws-summary-warn" title="Pendentes de sincronização">
+        <span class="material-symbols-rounded">warning</span> <b id="wsSummaryPending">0</b>
+      </span>
+    </div>
+
+    <div class="ws-header-actions">
+      <button id="wsBtnSaveProject" class="ws-btn-outline" type="button" title="Salvar alterações do projeto (nome, status, capa)">
+        <span class="material-symbols-rounded">save</span> Salvar
+      </button>
+      <button id="wsBtnExportBdspro" class="ws-btn-accent" type="button" title="Exportar pacote .bdspro do projeto">
+        <span class="material-symbols-rounded">inventory_2</span> Exportar .bdspro
+      </button>
+    </div>
+  </div>
+
+  <!-- FASE H: BANNER DE ARQUIVOS NÃO ENCONTRADOS -->
+  <div id="wsMissingBanner" class="ws-missing-banner hidden">
+    <span class="material-symbols-rounded">link_off</span>
+    <span id="wsMissingBannerText">0 arquivo(s) não encontrado(s) neste projeto.</span>
+    <button id="wsBtnRelinkFolder" class="ws-btn-relink" type="button">
+      <span class="material-symbols-rounded">folder_open</span> Localizar Pasta
+    </button>
+  </div>
+
+  <div class="ws-top-row">
   <!-- LEFTPANE: LIBRARY -->
   <aside class="ws-pane ws-lib-pane">
     <div class="ws-pane-header">
@@ -17,34 +74,131 @@
     </div>
   </aside>
 
-  <!-- CENTER PANE: BINS -->
+  <!-- CENTER PANE: BINS + SOURCE MONITOR -->
   <main class="ws-pane ws-bins-pane">
     <div class="ws-center-header">
-      <h3 id="wsProjectName" class="ws-center-title">Projeto</h3>
+      <h3 class="ws-center-title">Pastas do Projeto</h3>
       
       <div class="ws-center-actions">
+        <button id="wsBtnImportLibrary" class="ws-btn-outline" type="button" title="Adicionar mídias já existentes no banco de dados/biblioteca">
+          <span class="material-symbols-rounded">video_library</span> Da Biblioteca
+        </button>
+        <button id="wsBtnImportFiles" class="ws-btn-accent" type="button" title="Importar arquivos do computador para a Pasta selecionada">
+          <span class="material-symbols-rounded">upload_file</span> Do Computador
+        </button>
+        <button id="wsBtnSyncAudio" class="ws-btn-outline" type="button" title="Sincronizar mídias selecionadas por áudio (Ctrl+clique para selecionar várias)">
+          <span class="material-symbols-rounded">graphic_eq</span> Sincronizar por Áudio
+        </button>
         <button id="wsBtnAutoImport" class="ws-btn-outline" type="button" title="Importar Estrutura de Pastas do Windows">
           <span class="material-symbols-rounded">account_tree</span> Auto-Organizar
         </button>
         <button id="wsBtnNewBin" class="ws-btn-accent" type="button">
-          <span class="material-symbols-rounded">create_new_folder</span> Novo Bin
+          <span class="material-symbols-rounded">create_new_folder</span> Nova Pasta
         </button>
       </div>
     </div>
-    
+
+    <div class="ws-center-tabs">
+      <button id="wsTabBins" class="ws-center-tab active" type="button">
+        <span class="material-symbols-rounded">folder_open</span> Pastas
+      </button>
+      <button id="wsTabMonitor" class="ws-center-tab" type="button">
+        <span class="material-symbols-rounded">movie</span> Source Monitor
+      </button>
+      <button id="wsTabSync" class="ws-center-tab" type="button">
+        <span class="material-symbols-rounded">graphic_eq</span> Sync Groups
+      </button>
+      <span id="wsSyncSelectionHint" class="ws-sync-hint"></span>
+    </div>
+
+    <div id="wsMediaFilterRow" class="ws-media-filter-row">
+      <button class="ws-media-filter active" data-filter="all" type="button">Todos</button>
+      <button class="ws-media-filter" data-filter="video" type="button">Vídeos</button>
+      <button class="ws-media-filter" data-filter="audio" type="button">Áudios</button>
+    </div>
+
     <div id="wsBinsTree" class="ws-bins-tree">
-      <!-- Árvore de Bins renderizada via JS -->
+      <!-- Árvore de Pastas renderizada via JS -->
+    </div>
+
+    <!-- FASE D/E: SYNC GROUPS -->
+    <div id="wsSyncPanel" class="ws-sync-panel hidden">
+      <div id="wsSyncGroupsList" class="ws-sync-groups-list">
+        <!-- Lista de Sync Groups renderizada via JS -->
+      </div>
+      <div id="wsSyncGroupDetail" class="ws-sync-group-detail">
+        <div class="ws-empty-state">Selecione um Sync Group à esquerda, ou crie um pelo botão "Sincronizar por Áudio".</div>
+      </div>
+    </div>
+
+    <div id="wsDropOverlay" class="ws-drop-overlay hidden">
+      <span class="material-symbols-rounded" style="font-size: 40px;">upload_file</span>
+      <p>Solte os arquivos aqui para importar para o projeto</p>
+    </div>
+
+    <!-- SOURCE MONITOR (Decupagem) -->
+    <div id="wsSourceMonitor" class="ws-source-monitor hidden">
+      <div class="ws-monitor-empty" id="wsMonitorEmpty">
+        <span class="material-symbols-rounded" style="font-size: 40px;">movie</span>
+        <p>Selecione uma mídia de vídeo ou áudio na árvore de Pastas para decupar.</p>
+      </div>
+
+      <div id="wsMonitorPlayer" class="ws-monitor-player hidden">
+        <div class="ws-monitor-video-wrap">
+          <video id="wsVideoEl" class="ws-monitor-video"></video>
+          <audio id="wsAudioEl" class="ws-monitor-audio"></audio>
+          <div id="wsAudioOnlyIcon" class="ws-audio-only-icon hidden">
+            <span class="material-symbols-rounded" style="font-size: 56px;">audiotrack</span>
+          </div>
+        </div>
+
+        <div class="ws-monitor-timecodes">
+          <span id="wsTcCurrent" class="ws-tc-current">00:00:00:00</span>
+          <span id="wsMonitorFileName" class="ws-monitor-filename"></span>
+          <span id="wsTcDuration" class="ws-tc-duration">00:00:00:00</span>
+        </div>
+
+        <input type="range" id="wsScrubber" class="ws-scrubber" min="0" max="1000" value="0" step="1" />
+
+        <div id="wsWaveformsContainer" class="ws-waveforms-container" style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+          <canvas id="wsWaveformCanvas" class="ws-waveform-canvas" height="44"></canvas>
+        </div>
+
+        <div class="ws-monitor-io-bar">
+          <div class="ws-io-track">
+            <div id="wsIoRange" class="ws-io-range"></div>
+          </div>
+        </div>
+
+        <div class="ws-monitor-controls">
+          <button id="wsBtnMarkIn" class="ws-monitor-btn" type="button" title="Marcar In (I)">
+            <span class="material-symbols-rounded">first_page</span> In
+          </button>
+          <button id="wsBtnFrameBack" class="ws-monitor-btn-icon" type="button" title="Voltar frame (J)">
+            <span class="material-symbols-rounded">fast_rewind</span>
+          </button>
+          <button id="wsBtnPlayPause" class="ws-monitor-btn-icon ws-monitor-btn-play" type="button" title="Play/Pause (Espaço/K)">
+            <span class="material-symbols-rounded" id="wsPlayIcon">play_arrow</span>
+          </button>
+          <button id="wsBtnFrameFwd" class="ws-monitor-btn-icon" type="button" title="Avançar frame (L)">
+            <span class="material-symbols-rounded">fast_forward</span>
+          </button>
+          <button id="wsBtnMarkOut" class="ws-monitor-btn" type="button" title="Marcar Out (O)">
+            <span class="material-symbols-rounded">last_page</span> Out
+          </button>
+        </div>
+
+        <div class="ws-monitor-io-labels">
+          <span>In: <b id="wsInLabel">--:--:--:--</b></span>
+          <span>Duração selecionada: <b id="wsSelDurationLabel">--:--:--:--</b></span>
+          <span>Out: <b id="wsOutLabel">--:--:--:--</b></span>
+        </div>
+      </div>
     </div>
   </main>
 
   <!-- RIGHT PANE: INSPECTOR & EXPORT -->
   <aside class="ws-pane ws-inspector-pane">
-    
-    <div class="ws-back-wrapper">
-        <button id="wsBtnBack" class="ws-btn-back" type="button">
-            <span class="material-symbols-rounded">arrow_back</span> Voltar para Projetos
-        </button>
-    </div>
 
     <div class="ws-inspector-section">
       
@@ -52,13 +206,18 @@
         <h4 class="ws-section-title">Item Selecionado</h4>
         
         <div id="wsNoSelection" class="ws-empty-state">
-            Nenhum bin ou mídia selecionado
+            Nenhuma pasta ou mídia selecionada
         </div>
 
         <div id="wsSelectionDetails" class="ws-selection-details hidden">
             <div class="ws-field-group">
                 <label class="ws-field-label">Nome</label>
                 <input type="text" id="wsInputItemName" class="ws-field-input" />
+            </div>
+
+            <div id="wsInspectorTabs" class="ws-inspector-tabs hidden">
+                <button id="wsInspTabInfo" class="ws-insp-tab active" type="button">Info</button>
+                <button id="wsInspTabMeta" class="ws-insp-tab" type="button">Metadados BDSM</button>
             </div>
             
             <div id="wsMediaPreview" class="ws-media-preview hidden">
@@ -71,6 +230,42 @@
                     <span class="ws-media-detail-label">Tamanho</span>
                     <span id="wsMediaSize" class="ws-media-detail-value"></span>
                 </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Duração</span>
+                    <span id="wsMediaDuration" class="ws-media-detail-value"></span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Resolução</span>
+                    <span id="wsMediaRes" class="ws-media-detail-value"></span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">FPS</span>
+                    <span id="wsMediaFps" class="ws-media-detail-value"></span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Codecs</span>
+                    <span id="wsMediaCodecs" class="ws-media-detail-value"></span>
+                </div>
+            </div>
+
+            <div id="wsMediaMeta" class="ws-media-meta hidden">
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Câmera</span>
+                    <span id="wsMetaCamera" class="ws-media-detail-value">—</span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Perfil de Imagem</span>
+                    <span id="wsMetaProfile" class="ws-media-detail-value">—</span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">LUT Recomendado</span>
+                    <span id="wsMetaLut" class="ws-media-detail-value">—</span>
+                </div>
+                <div class="ws-media-detail-row">
+                    <span class="ws-media-detail-label">Gravado em</span>
+                    <span id="wsMetaRecordedAt" class="ws-media-detail-value">—</span>
+                </div>
+                <p class="ws-meta-hint">Metadados BDSM (câmera/LUT/timecode original) são preenchidos automaticamente ao importar do app Braga Digital Studio Mobile.</p>
             </div>
 
             <div class="ws-item-actions">
@@ -83,15 +278,59 @@
 
     <!-- Seção: Templates de Exportação -->
     <div class="ws-export-section">
-        <h4 class="ws-section-title">Templates de Exportação</h4>
-        
-        <button id="wsBtnExportPremiere" class="ws-btn-export-premiere" type="button">
+        <h4 class="ws-section-title">Gerar Sequência</h4>
+
+        <button id="wsBtnExportSequencePremiere" class="ws-btn-export-premiere ws-btn-export-premiere--primary" type="button" title="Gera uma sequência com tracks/offsets a partir dos Sync Groups">
             <img src="./assets/premiere-icon.svg" class="ws-export-icon" onerror="this.style.display='none'"/>
-            Adobe Premiere Pro (XML)
+            Gerar Sequência para Premiere
         </button>
-        <p class="ws-export-desc">Gera um arquivo FCP 7 XML preservando a estrutura de pastas e vínculos originais.</p>
+        <p class="ws-export-desc">Usa os Sync Groups já calculados para montar tracks de vídeo/áudio posicionadas pelo offset e exportar em XML.</p>
+
+        <button id="wsBtnExportPremiere" class="ws-btn-export-premiere" type="button" title="Exporta apenas a estrutura de Pastas e os arquivos, sem sequência/offsets">
+            <span class="material-symbols-rounded">folder_zip</span>
+            Exportar Pastas (XML simples)
+        </button>
+        <p class="ws-export-desc">Gera um arquivo FCP 7 XML preservando a estrutura de pastas e vínculos originais, sem posicionamento no tempo.</p>
     </div>
 
   </aside>
+
+  </div>
+
+  <!-- MODAL: IMPORTAR DA BIBLIOTECA -->
+  <div id="wsImportLibraryModal" class="ws-modal-overlay hidden">
+    <div class="ws-modal-box">
+      <div class="ws-modal-header">
+        <h3>Importar da Biblioteca</h3>
+        <button id="wsBtnCloseImportModal" class="ws-icon-btn-plain" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+      <input type="text" id="wsImportModalSearch" class="ws-search-input" placeholder="Pesquisar na biblioteca..." autocomplete="off" />
+      <div id="wsImportModalList" class="ws-import-modal-list"></div>
+      <div class="ws-modal-footer">
+        <span id="wsImportModalCount" class="ws-import-modal-count">0 selecionado(s)</span>
+        <button id="wsBtnConfirmImportLibrary" class="ws-btn-accent" type="button">Adicionar ao Projeto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FASE H: MODAL DE RELINK (ARQUIVOS NÃO ENCONTRADOS) -->
+  <div id="wsRelinkModal" class="ws-modal-overlay hidden">
+    <div class="ws-modal-box ws-relink-modal-box">
+      <div class="ws-modal-header">
+        <h3>Reconectar Arquivos</h3>
+        <button id="wsBtnCloseRelinkModal" class="ws-icon-btn-plain" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+      <p class="ws-relink-hint">Verificamos a pasta selecionada e tentamos casar cada arquivo ausente por nome, extensão e tamanho. Revise os resultados antes de confirmar.</p>
+      <div id="wsRelinkList" class="ws-relink-list"></div>
+      <div class="ws-modal-footer">
+        <span id="wsRelinkCount" class="ws-import-modal-count">0 de 0 resolvido(s)</span>
+        <button id="wsBtnConfirmRelink" class="ws-btn-accent" type="button">Aplicar Reconexão</button>
+      </div>
+    </div>
+  </div>
 
 </div>

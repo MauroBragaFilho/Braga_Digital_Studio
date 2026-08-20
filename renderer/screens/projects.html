@@ -6,10 +6,16 @@
     <!-- Topbar -->
     <header class="proj-topbar">
       <h2 class="proj-topbar-title">Meus Projetos</h2>
-      <button id="btnNewProject" class="proj-btn-primary">
-        <span class="material-symbols-rounded">add</span>
-        Novo Projeto
-      </button>
+      <div class="proj-topbar-actions">
+        <button id="btnImportBdspro" class="proj-btn-secondary">
+          <span class="material-symbols-rounded">file_open</span>
+          Importar .bdspro
+        </button>
+        <button id="btnNewProject" class="proj-btn-primary">
+          <span class="material-symbols-rounded">add</span>
+          Novo Projeto
+        </button>
+      </div>
     </header>
 
     <!-- Content Area -->
@@ -74,7 +80,7 @@
         </div>
 
         <div class="proj-detail-row proj-detail-row--divider">
-          <span class="proj-detail-label">Qtd. de Vídeos</span>
+          <span class="proj-detail-label">Qtd. de Mídias</span>
           <span id="inspectorProjCount" class="proj-detail-value">-</span>
         </div>
 
@@ -86,7 +92,10 @@
         <!-- Buttons -->
         <div class="proj-inspector-actions">
             <button id="btnOpenProject" class="proj-btn-accent">
-                <span class="material-symbols-rounded">folder_open</span> Abrir Projeto
+                <span class="material-symbols-rounded">folder_open</span> Abrir Workspace
+            </button>
+            <button id="btnExportBdspro" class="proj-btn-secondary">
+                <span class="material-symbols-rounded">archive</span> Exportar .bdspro
             </button>
             <button id="btnEditProject" class="proj-btn-secondary">
                 <span class="material-symbols-rounded">edit</span> Editar Propriedades
@@ -154,6 +163,73 @@
     <div class="proj-form-actions">
       <button id="btnCancelProjForm" class="proj-btn-outline">Cancelar</button>
       <button id="btnSaveProjForm" class="proj-btn-accent-sm">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Importação e Reconexão de Pacote .bdspro -->
+<div id="modalRelinkBdspro" class="proj-modal-overlay">
+  <div class="proj-modal proj-modal--large">
+    <div class="proj-modal-header">
+      <h3 class="proj-modal-title">
+        <span class="material-symbols-rounded" style="color: var(--accent);">archive</span>
+        Importar Projeto BDS (.bdspro)
+      </h3>
+      <button id="btnCloseRelinkModal" class="proj-modal-close-btn">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <div class="relink-summary-card">
+      <div id="relinkProjectCover" class="relink-proj-cover"></div>
+      <div class="relink-proj-info">
+        <h4 id="relinkProjectName" class="relink-proj-title">-</h4>
+        <div id="relinkProjectDesc" class="relink-proj-desc">-</div>
+        <div class="relink-stats-pills">
+          <span id="pillTotalMedia" class="relink-pill">0 mídias</span>
+          <span id="pillMissingMedia" class="relink-pill relink-pill--warning">0 ausentes</span>
+          <span id="pillTracksCount" class="relink-pill">Timeline pronta</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerta de mídias ausentes -->
+    <div id="relinkMissingAlert" class="relink-alert-box hidden">
+      <div class="relink-alert-content">
+        <span class="material-symbols-rounded" style="color: #f59e0b; font-size: 24px;">warning</span>
+        <div>
+          <div class="relink-alert-title">Mídias não encontradas nos caminhos originais</div>
+          <div class="relink-alert-desc">Os arquivos de vídeo/áudio foram movidos ou o projeto veio de outro computador. Selecione a pasta onde estão os arquivos para reconectá-los automaticamente.</div>
+        </div>
+      </div>
+      <button id="btnSelectRelinkFolder" class="proj-btn-primary">
+        <span class="material-symbols-rounded">folder_open</span>
+        Localizar Pasta de Mídias
+      </button>
+    </div>
+
+    <!-- Tabela de status das mídias -->
+    <div class="relink-table-container">
+      <table class="relink-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Arquivo</th>
+            <th>Caminho Original / Reconectado</th>
+            <th>Confiança</th>
+          </tr>
+        </thead>
+        <tbody id="relinkMediaTableBody">
+          <!-- Linhas injetadas dinamicamente -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="proj-form-actions">
+      <button id="btnCancelRelink" class="proj-btn-outline">Cancelar</button>
+      <button id="btnConfirmImportBdspro" class="proj-btn-accent-sm">
+        <span class="material-symbols-rounded">check</span> Confirmar Importação
+      </button>
     </div>
   </div>
 </div>

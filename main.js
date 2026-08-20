@@ -11,24 +11,49 @@ function parseCubeFile(filePath) {
 
   let size = null;
   let lutData = [];
+  let title = null;
+  let domainMin = null;
+  let domainMax = null;
+  const headerLines = [];
 
   for (const line of lines) {
     const trimmedLine = line.trim();
 
     if (trimmedLine.startsWith('#') || trimmedLine === '') {
+      if (trimmedLine !== '') headerLines.push(trimmedLine);
       continue; // Comentários ou linhas vazias
     }
 
     if (trimmedLine.startsWith('TITLE')) {
-      // Poderia extrair o título se necessário
+      headerLines.push(trimmedLine);
+      // Extrai o título entre aspas, se existir
+      const titleMatch = trimmedLine.match(/TITLE\s+"?([^"]*)"?/);
+      if (titleMatch) {
+        title = titleMatch[1].trim();
+      }
       continue;
     }
 
     if (trimmedLine.startsWith('LUT_3D_SIZE')) {
+      headerLines.push(trimmedLine);
       const sizeMatch = trimmedLine.match(/LUT_3D_SIZE\s+(\d+)/);
       if (sizeMatch) {
         size = parseInt(sizeMatch[1], 10);
       }
+      continue;
+    }
+
+    if (trimmedLine.startsWith('DOMAIN_MIN')) {
+      headerLines.push(trimmedLine);
+      const parts = trimmedLine.split(/\s+/).slice(1).map(parseFloat);
+      if (parts.length === 3) domainMin = parts;
+      continue;
+    }
+
+    if (trimmedLine.startsWith('DOMAIN_MAX')) {
+      headerLines.push(trimmedLine);
+      const parts = trimmedLine.split(/\s+/).slice(1).map(parseFloat);
+      if (parts.length === 3) domainMax = parts;
       continue;
     }
 
@@ -52,7 +77,94 @@ function parseCubeFile(filePath) {
 
   return {
     size,
-    data: lutData
+    data: lutData,
+    title,
+    domainMin,
+    domainMax,
+    headerLines,
+    totalEntries: lutData.length,
+    preview: lutData.slice(0, 100)
+  };
+}
+// --- FIM DA NOVA FUNÇÃO ---
+
+// --- NOVA FUNÇÃO: Parse apenas do cabeçalho/metadados (sem carregar todos os dados) ---
+function parseCubeHeader(filePath) {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split(/\r?\n/);
+
+  let size = null;
+  let title = null;
+  let domainMin = null;
+  let domainMax = null;
+  const headerLines = [];
+  const preview = [];
+  const PREVIEW_LIMIT = 100;
+  let totalEntries = 0;
+  let dataStarted = false;
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+
+    if (trimmedLine === '') continue;
+
+    if (trimmedLine.startsWith('#')) {
+      headerLines.push(trimmedLine);
+      continue;
+    }
+
+    if (trimmedLine.startsWith('TITLE')) {
+      headerLines.push(trimmedLine);
+      const titleMatch = trimmedLine.match(/TITLE\s+"?([^"]*)"?/);
+      if (titleMatch) title = titleMatch[1].trim();
+      continue;
+    }
+
+    if (trimmedLine.startsWith('LUT_3D_SIZE')) {
+      headerLines.push(trimmedLine);
+      const sizeMatch = trimmedLine.match(/LUT_3D_SIZE\s+(\d+)/);
+      if (sizeMatch) size = parseInt(sizeMatch[1], 10);
+      continue;
+    }
+
+    if (trimmedLine.startsWith('DOMAIN_MIN')) {
+      headerLines.push(trimmedLine);
+      const parts = trimmedLine.split(/\s+/).slice(1).map(parseFloat);
+      if (parts.length === 3) domainMin = parts;
+      continue;
+    }
+
+    if (trimmedLine.startsWith('DOMAIN_MAX')) {
+      headerLines.push(trimmedLine);
+      const parts = trimmedLine.split(/\s+/).slice(1).map(parseFloat);
+      if (parts.length === 3) domainMax = parts;
+      continue;
+    }
+
+    // A partir daqui, assumimos que são dados RGB
+    if (size && !isNaN(size)) {
+      dataStarted = true;
+      const rgbValues = trimmedLine.split(/\s+/).map(parseFloat);
+      if (rgbValues.length === 3 && rgbValues.every(v => !isNaN(v))) {
+        totalEntries++;
+        if (preview.length < PREVIEW_LIMIT) {
+          preview.push(rgbValues);
+        }
+      }
+    }
+  }
+
+    return {
+    title,
+    size,
+    domainMin,
+    domainMax,
+    headerLines,
+    // Usa a contagem real de linhas de dados válidas encontradas no arquivo.
+    // (size^3 seria o valor "esperado", mas usar o valor contado detecta
+    // arquivos truncados/corrompidos, cujo total pode divergir de size^3.)
+    totalEntries,
+    preview
   };
 }
 // --- FIM DA NOVA FUNÇÃO ---
@@ -60,17 +172,22 @@ function parseCubeFile(filePath) {
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
+const { appPaths } = require('./src/infrastructure/filesystem/AppPaths');
+const { PathGuard } = require('./src/infrastructure/filesystem/PathGuard');
+const { externalTools } = require('./src/infrastructure/external-tools/ExternalToolsManager');
+const { ffmpegTool } = require('./src/infrastructure/external-tools/adapters/FfmpegTool');
+const { ffprobeTool } = require('./src/infrastructure/external-tools/adapters/FfprobeTool');
+
 const isPackaged = app.isPackaged;
 const appRoot = isPackaged ? process.resourcesPath : __dirname;
 const writableRoot = isPackaged ? app.getPath('userData') : __dirname;
-const paths = {
-  appRoot,
-  dataDir: path.join(writableRoot, 'data'),
-  configDir: path.join(writableRoot, 'config'),
-  databaseDir: path.join(writableRoot, 'database'),
-  logsDir: path.join(writableRoot, 'logs'),
-  lutsDir: path.join(writableRoot, 'data', 'LUTs')
-};
+
+// Inicializa AppPaths e ExternalToolsManager (Sprint 1 + 2)
+appPaths.init(writableRoot, appRoot);
+appPaths.ensureDirectories();
+externalTools.init(appPaths.dataDir);
+
+const paths = appPaths.toPlainObject();
 process.env.BMD_LOGS_DIR = paths.logsDir;
 
 const DownloadService = require('./src/services/downloadService');
@@ -86,8 +203,21 @@ const UploadService = require('./src/core/UploadService');
 const sonyCameraService = require('./src/services/sonyCameraService');
 
 const projectService = require('./src/core/projects/ProjectService');
+const SequenceBuilder = require('./src/core/projects/SequenceBuilder');
+const sequenceBuilder = new SequenceBuilder(projectService);
 const PremiereExporter = require('./src/core/projects/PremiereExporter');
-const premiereExporter = new PremiereExporter(projectService);
+const premiereExporter = new PremiereExporter(projectService, sequenceBuilder);
+const BdsproPackageService = require('./src/core/projects/BdsproPackageService');
+const bdsproPackageService = new BdsproPackageService(projectService);
+const WaveformService = require('./src/core/projects/WaveformService');
+const waveformService = new WaveformService({
+  ffmpegPath: ffmpegTool.resolve({ mustExist: false }),
+  cacheDir: appPaths.waveformsDir
+});
+const AudioSyncService = require('./src/core/projects/AudioSyncService');
+const audioSyncService = new AudioSyncService({
+  ffmpegPath: ffmpegTool.resolve({ mustExist: false })
+});
 
 const deviceDiscoveryService = require('./src/core/devices/DeviceDiscoveryService');
 const BdsmClient = require('./src/core/devices/BdsmClient');
@@ -111,12 +241,49 @@ ipcMain.handle('luts:parse', async (event, filePath) => {
 });
 
 // --- HANDLER LEGADO (leitura bruta) ---
+// ✅ CORREÇÃO (bug 2): antes lia o arquivo inteiro com fs.readFileSync e mandava a string
+// completa pela ponte IPC, mesmo para .cube enormes (LUTs 129³ chegam a dezenas de MB / 2M+
+// linhas). Agora aplicamos um teto de bytes: se o arquivo ultrapassar o limite, lemos apenas
+// o começo (via file descriptor, sem materializar o arquivo inteiro em memória) e sinalizamos
+// truncated:true para o frontend avisar o usuário, em vez de travar a UI com um payload gigante.
+const RAW_CONTENT_MAX_BYTES = 2 * 1024 * 1024; // 2MB
+
 ipcMain.handle('luts:load', async (event, filePath) => {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return { rawContent: content };
+    const stats = fs.statSync(filePath);
+
+    if (stats.size <= RAW_CONTENT_MAX_BYTES) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return { rawContent: content, truncated: false, totalBytes: stats.size };
+    }
+
+    // Arquivo grande: lê somente o primeiro bloco, sem carregar tudo em memória.
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(RAW_CONTENT_MAX_BYTES);
+      const bytesRead = fs.readSync(fd, buffer, 0, RAW_CONTENT_MAX_BYTES, 0);
+      const content = buffer.toString('utf-8', 0, bytesRead);
+      return { rawContent: content, truncated: true, totalBytes: stats.size };
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch (error) {
     console.error("Erro ao ler LUT:", error);
+    throw error;
+  }
+});
+
+// --- HANDLER: Leitura rápida do cabeçalho/metadados do .cube (sem carregar todos os dados) ---
+ipcMain.handle('luts:getHeader', async (event, filePath) => {
+  try {
+    const header = parseCubeHeader(filePath);
+    return {
+      path: filePath,
+      name: path.basename(filePath),
+      ...header
+    };
+  } catch (error) {
+    console.error("Erro ao ler cabeçalho da LUT:", error);
     throw error;
   }
 });
@@ -155,7 +322,8 @@ const defaultSettings = {
   cookiesFile: path.join(paths.dataDir, 'cookies.txt'),
   useYoutubeAccount: false,
   theme: 'dark',
-  accentColor: '#e53935'
+  accentColor: '#e53935',
+  lutPreviewImage: ''
 };
 
 function loadSettings() {
@@ -306,9 +474,9 @@ app.whenReady().then(async () => {
     // Recarrega
     libs = libManager.list();
 
-    const ffprobePath = path.join(paths.dataDir, 'ffprobe.exe');
-    const ffmpegPath = path.join(paths.dataDir, 'ffmpeg.exe');
-    const thumbnailsDir = path.join(paths.dataDir, 'Thumbnails');
+    const ffprobePath = ffprobeTool.resolve({ mustExist: false });
+    const ffmpegPath = ffmpegTool.resolve({ mustExist: false });
+    const thumbnailsDir = appPaths.thumbnailsDir;
 
     importQueue = new ImportQueue({ ffprobePath, ffmpegPath, thumbnailsDir });
     watcherService = new LibraryWatcherService(importQueue);
@@ -316,12 +484,18 @@ app.whenReady().then(async () => {
     // Inicia o monitoramento automático das pastas
     watcherService.startAll();
 
-    // FTP Server for Sony a6000
-    const ftpService = require('./src/services/ftpService');
-    const ftpRoot = settings.deviceFolder 
-      ? path.join(settings.deviceFolder, 'Transferencias Wi-Fi (FTP)') 
-      : path.join(paths.dataDir, 'Transferencias Wi-Fi (FTP)');
-    ftpService.start(ftpRoot);
+    // ⚠️ SERVIÇO DESATIVADO TEMPORARIAMENTE (FTP Server for Sony a6000)
+    // Motivo: o serviço de FTP não está disponível/estável no momento e foi desligado
+    // por decisão de produto até que seja revisado.
+    // O código abaixo está preservado e funcional — para reativar, basta descomentar
+    // o bloco (o serviço já é interrompido corretamente em `app.on('before-quit', ...)`,
+    // veja a anotação equivalente mais abaixo).
+    //
+    // const ftpService = require('./src/services/ftpService');
+    // const ftpRoot = settings.deviceFolder
+    //   ? path.join(settings.deviceFolder, 'Transferencias Wi-Fi (FTP)')
+    //   : path.join(paths.dataDir, 'Transferencias Wi-Fi (FTP)');
+    // ftpService.start(ftpRoot);
 
 
 
@@ -438,7 +612,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('metadata:save', (_, config) => metadataService.saveMetadata(config));
   ipcMain.handle('metadata:cancel', () => metadataService.cancel());
 
-  require('./src/ipc/projectHandlers')(projectService, premiereExporter);
+  require('./src/ipc/projectHandlers')(projectService, premiereExporter, bdsproPackageService, paths, waveformService, audioSyncService, sequenceBuilder);
 
   // Handlers de LUTs
   ipcMain.handle('luts:get', async () => {
@@ -489,6 +663,7 @@ app.whenReady().then(async () => {
 
       ipcMain.handle('luts:rename', async (_, oldPath, newName) => {
       try {
+        PathGuard.assertWithin(paths.lutsDir, oldPath);
         if (!fs.existsSync(oldPath)) return false;
         
         let finalName = newName;
@@ -498,6 +673,7 @@ app.whenReady().then(async () => {
         
         const dir = path.dirname(oldPath);
         const newPath = path.join(dir, finalName);
+        PathGuard.assertWithin(paths.lutsDir, newPath);
         
         if (fs.existsSync(newPath)) {
           throw new Error('Já existe um arquivo com esse nome.');
@@ -513,6 +689,7 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('luts:delete', async (_, filePath) => {
     try {
+      PathGuard.assertWithin(paths.lutsDir, filePath);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
         return true;
@@ -529,10 +706,9 @@ app.whenReady().then(async () => {
 
   // Verificação de primeira inicialização
   const checkInitialDependencies = async () => {
-    const exes = ['ffmpeg.exe', 'ffprobe.exe', 'yt-dlp.exe', 'spotify-dlp.exe'];
-    const missing = exes.some(exe => !fs.existsSync(path.join(paths.dataDir, exe)));
+    const missingTools = externalTools.getMissing();
     
-    if (missing) {
+    if (missingTools.length > 0) {
       logger.info('Primeira inicialização detectada. Baixando dependências...');
       mainWindow?.webContents.send('dependencies:downloading');
       
@@ -569,13 +745,42 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
-  if (downloadService?.isRunning()) {
-    await downloadService.cancelDownload('Aplicativo encerrado');
+  try {
+    if (downloadService) {
+      if (typeof downloadService.pause === 'function') {
+        downloadService.pause();
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao pausar downloads no encerramento:', err);
   }
-  if (converterService?.isRunning()) {
-    await converterService.cancelCurrent();
+
+  try {
+    if (converterService && typeof converterService.isRunning === 'function' && converterService.isRunning()) {
+      await converterService.cancelCurrent();
+    }
+  } catch (err) {
+    console.error('Erro ao cancelar conversões no encerramento:', err);
   }
-  require('./src/services/ftpService').stop();
+  try {
+    watcherService?.stopAll();
+  } catch (err) {
+    console.error('Erro ao parar watchers:', err);
+  }
+  try {
+    deviceDiscoveryService?.stop();
+  } catch (err) {
+    console.error('Erro ao parar DeviceDiscoveryService:', err);
+  }
+  try {
+    sonyCameraService?.disconnect?.();
+  } catch (err) {
+    console.error('Erro ao desconectar SonyCameraService:', err);
+  }
+  // ⚠️ SERVIÇO DESATIVADO TEMPORARIAMENTE (ver anotação em app.whenReady, junto ao
+  // ftpService.start). Como o serviço não é mais iniciado, chamar stop() aqui é
+  // inofensivo mas desnecessário — deixado comentado para reativar junto com o start.
+  // require('./src/services/ftpService').stop();
 });
 
 function registerIpc() {
@@ -586,8 +791,8 @@ function registerIpc() {
     // Re-sincronizar bibliotecas e monitoramento se estiverem inicializados
     if (libManager && watcherService) {
       const dbManager = require('./src/core/database/database');
+      const libs = libManager.list();
       const syncLibrary = (name, type, folderPath) => {
-        const libs = libManager.list();
         const existing = libs.find(l => l.type === type);
         if (existing) {
           if (existing.path !== folderPath) {
@@ -702,8 +907,8 @@ function registerIpc() {
   const UploadScannerService = require('./src/core/uploads/UploadScannerService');
   const uploadScannerService = new UploadScannerService({
     paths,
-    ffprobePath: path.join(paths.dataDir, 'ffprobe.exe'),
-    ffmpegPath: path.join(paths.dataDir, 'ffmpeg.exe')
+    ffprobePath: ffprobeTool.resolve({ mustExist: false }),
+    ffmpegPath: ffmpegTool.resolve({ mustExist: false })
   });
 
   ipcMain.handle('upload:scanDirectory', async (_, customDir) => {

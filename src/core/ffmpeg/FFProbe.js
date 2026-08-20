@@ -31,8 +31,10 @@ class FFProbe {
             let bitrate = data.format?.bit_rate ? parseInt(data.format.bit_rate, 10) : 0;
 
             let width = 0, height = 0, fps = 0, video_codec = null, audio_codec = null;
+            const audio_streams = [];
 
             if (data.streams) {
+                let audioIndex = 0;
                 for (const stream of data.streams) {
                     if (stream.codec_type === 'video') {
                         width = stream.width || width;
@@ -43,7 +45,16 @@ class FFProbe {
                             fps = den && den !== '0' ? parseFloat(num) / parseFloat(den) : 0;
                         }
                     } else if (stream.codec_type === 'audio') {
-                        audio_codec = stream.codec_name || audio_codec;
+                        if (!audio_codec) audio_codec = stream.codec_name || null;
+                        audio_streams.push({
+                            index: audioIndex,
+                            stream_index: stream.index,
+                            codec_name: stream.codec_name,
+                            channels: stream.channels || 2,
+                            sample_rate: stream.sample_rate ? parseInt(stream.sample_rate, 10) : 48000,
+                            title: stream.tags?.title || stream.tags?.handler_name || `Audio Track ${audioIndex + 1}`
+                        });
+                        audioIndex++;
                     }
                 }
             }
@@ -61,6 +72,7 @@ class FFProbe {
                 fps: parseFloat(fps.toFixed(2)),
                 video_codec,
                 audio_codec,
+                audio_streams,
                 bitrate,
                 creation_time
             };

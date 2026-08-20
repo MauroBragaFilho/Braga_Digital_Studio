@@ -113,6 +113,7 @@ export async function initScreen() {
   }
 
   setupCustomSourceModal();
+  setupAddToProjectModal();
   setupDelegatedMediaClicks();
   await loadFilterOptions();
   fetchMedia();
@@ -669,7 +670,7 @@ function openInspector(media) {
     }
   }
 
-  setEl('inspectorProject', 'Projeto (Em breve)');
+  setEl('inspectorProject', media.project_name ? media.project_name : 'Nenhum (Vincular)');
 
   loadMediaTags(media.id);
   
@@ -803,6 +804,17 @@ function bindInspectorEvents() {
     });
   }
 
+  // Vincular Projeto pelo Inspetor
+  const inspectorProjectEl = document.querySelector('.inspector-value-project');
+  if (inspectorProjectEl) {
+    inspectorProjectEl.style.cursor = 'pointer';
+    inspectorProjectEl.addEventListener('click', () => {
+      if (currentInspectorMedia) {
+        openAddToProjectModal([currentInspectorMedia.id]);
+      }
+    });
+  }
+
   // Bulk Actions
   const btnDeleteBulk = document.getElementById('btnActionDelete');
   if (btnDeleteBulk) {
@@ -831,9 +843,8 @@ function bindInspectorEvents() {
       
       if (window.bds && window.bds.toggleFavoriteBulk) {
         await window.bds.toggleFavoriteBulk(ids, isFav);
+        fetchMedia();
       }
-      fetchMedia();
-      loadFilterOptions();
     });
   }
 
@@ -842,7 +853,7 @@ function bindInspectorEvents() {
     btnRenameBulk.addEventListener('click', async () => {
       if (selectedIds.size === 0) return;
       const ids = Array.from(selectedIds);
-      const baseName = await window.bdsModal.prompt(`Digite o novo Nome Base para os ${ids.length} arquivos selecionados:`, 'Novo Nome');
+      const baseName = await window.bdsModal.prompt(`Renomear ${ids.length} arquivo(s) em lote.\nInforme o novo nome base:`);
       if (baseName && baseName.trim() && window.bds && window.bds.renameMediaBulk) {
         await window.bds.renameMediaBulk(ids, baseName.trim());
         fetchMedia();
@@ -855,14 +866,11 @@ function bindInspectorEvents() {
     btnTagsBulk.addEventListener('click', async () => {
       if (selectedIds.size === 0) return;
       const ids = Array.from(selectedIds);
-      const tagName = await window.bdsModal.prompt(`Digite a tag a ser adicionada nos ${ids.length} arquivos:`);
+      const tagName = await window.bdsModal.prompt(`Adicionar Tag a ${ids.length} arquivo(s):\nInforme o nome da tag:`);
       if (tagName && tagName.trim() && window.bds && window.bds.addMediaTagBulk) {
         await window.bds.addMediaTagBulk(ids, tagName.trim());
         fetchMedia();
         loadFilterOptions();
-        if (ids.length === 1 && currentInspectorMedia) {
-           loadMediaTags(ids[0]);
-        }
       }
     });
   }
@@ -872,10 +880,13 @@ function bindInspectorEvents() {
     btnMoveBulk.addEventListener('click', async () => {
       if (selectedIds.size === 0) return;
       const ids = Array.from(selectedIds);
-      if (window.bds && window.bds.selectFolder) {
-        const folder = await window.bds.selectFolder();
-        if (folder && window.bds && window.bds.moveMediaBulk) {
+      const folder = await window.bds.selectFolder();
+      if (folder && window.bds && window.bds.moveMediaBulk) {
+        const conf = await window.bdsModal.confirm(`Mover ${ids.length} arquivo(s) para a pasta:\n${folder}?`);
+        if (conf) {
           await window.bds.moveMediaBulk(ids, folder);
+          selectedIds.clear();
+          updateSelectionVisuals();
           fetchMedia();
         }
       }
@@ -884,16 +895,151 @@ function bindInspectorEvents() {
 
   const btnProjectBulk = document.getElementById('btnActionProject');
   if (btnProjectBulk) {
-    btnProjectBulk.addEventListener('click', async () => {
+    btnProjectBulk.addEventListener('click', () => {
       if (selectedIds.size === 0) return;
-      const ids = Array.from(selectedIds);
-      const projIdStr = await window.bdsModal.prompt(`Digite o ID numérico do Projeto (ou deixe vazio para remover):`);
-      if (projIdStr !== null && window.bds && window.bds.setProjectBulk) {
-        const projId = parseInt(projIdStr) || null;
-        await window.bds.setProjectBulk(ids, projId);
-        fetchMedia();
+      openAddToProjectModal(Array.from(selectedIds));
+    });
+  }
+}
+
+// --- MODAL DE ADICIONAR MÍDIAS AO PROJETO ---
+let pendingAddToProjectMediaIds = [];
+
+function setupAddToProjectModal() {
+  const modal = document.getElementById('modalAddToProject');
+  const btnClose = document.getElementById('btnCloseAddToProjectModal');
+  const btnCancel = document.getElementById('btnCancelAddToProject');
+  const btnConfirm = document.getElementById('btnConfirmAddToProject');
+  const selectProj = document.getElementById('selectTargetProject');
+  const selectBin = document.getElementById('selectTargetBin');
+  const btnNewBin = document.getElementById('btnCreateBinInModal');
+
+  const closeModal = () => {
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('active');
+      pendingAddToProjectMediaIds = [];
+    }
+  };
+
+  if (btnClose) btnClose.addEventListener('click', closeModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
+
+  if (selectProj) {
+    selectProj.addEventListener('change', async () => {
+      const projId = selectProj.value ? parseInt(selectProj.value, 10) : null;
+      await loadBinsForProject(projId);
+    });
+  }
+
+  if (btnNewBin) {
+    btnNewBin.addEventListener('click', async () => {
+      const projId = selectProj.value ? parseInt(selectProj.value, 10) : null;
+      if (!projId) {
+        window.bdsModal.alert('Selecione primeiro um projeto de destino.');
+        return;
+      }
+      const binName = await window.bdsModal.prompt('Nome da nova pasta (Bin):');
+      if (binName && binName.trim()) {
+        try {
+          const newBinId = await window.bds.createProjectBin(projId, null, binName.trim());
+          await loadBinsForProject(projId);
+          if (selectBin) selectBin.value = newBinId;
+        } catch (e) {
+          console.error(e);
+          window.bdsModal.alert('Erro ao criar pasta no projeto.');
+        }
       }
     });
+  }
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener('click', async () => {
+      const projId = selectProj.value ? parseInt(selectProj.value, 10) : null;
+      if (!projId) {
+        window.bdsModal.alert('Selecione um projeto de destino.');
+        return;
+      }
+      const binId = selectBin.value ? parseInt(selectBin.value, 10) : null;
+      
+      try {
+        const addedCount = await window.bds.addProjectMediaBulk(projId, binId, pendingAddToProjectMediaIds);
+        closeModal();
+        selectedIds.clear();
+        updateSelectionVisuals();
+        fetchMedia();
+        loadFilterOptions();
+        window.bdsModal.alert(`${addedCount} mídia(s) adicionada(s) ao projeto com sucesso!`);
+      } catch (e) {
+        console.error('Erro ao adicionar mídias ao projeto:', e);
+        window.bdsModal.alert('Erro ao vincular mídias ao projeto.');
+      }
+    });
+  }
+}
+
+async function loadBinsForProject(projectId) {
+  const selectBin = document.getElementById('selectTargetBin');
+  if (!selectBin) return;
+  selectBin.innerHTML = '<option value="">Raiz do Projeto (Sem pasta)</option>';
+  if (!projectId) return;
+
+  try {
+    const bins = await window.bds.getProjectBins(projectId);
+    (bins || []).forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = `📁 ${b.name}`;
+      selectBin.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Erro ao listar bins do projeto:', e);
+  }
+}
+
+async function openAddToProjectModal(mediaIds = []) {
+  if (!mediaIds || mediaIds.length === 0) return;
+  pendingAddToProjectMediaIds = mediaIds;
+
+  const modal = document.getElementById('modalAddToProject');
+  const summary = document.getElementById('addToProjectSummary');
+  const selectProj = document.getElementById('selectTargetProject');
+  const selectBin = document.getElementById('selectTargetBin');
+
+  if (!modal || !selectProj) return;
+
+  if (summary) {
+    summary.textContent = `Adicionar ${mediaIds.length} mídia(s) selecionada(s) como referências no projeto escolhido.`;
+  }
+
+  selectProj.innerHTML = '<option value="">Selecione um projeto...</option>';
+  if (selectBin) selectBin.innerHTML = '<option value="">Raiz do Projeto (Sem pasta)</option>';
+
+  try {
+    const projects = await window.bds.listProjects();
+    if (!projects || projects.length === 0) {
+      selectProj.innerHTML = '<option value="">Nenhum projeto encontrado</option>';
+      window.bdsModal.alert('Nenhum projeto encontrado. Crie um projeto primeiro na tela de Projetos.');
+      return;
+    }
+
+    projects.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${p.status || 'Ativo'})`;
+      selectProj.appendChild(opt);
+    });
+
+    if (projects.length === 1) {
+      selectProj.value = projects[0].id;
+      await loadBinsForProject(projects[0].id);
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('active');
+  } catch (e) {
+    console.error('Erro ao carregar projetos:', e);
+    window.bdsModal.alert('Erro ao carregar lista de projetos.');
   }
 }
 

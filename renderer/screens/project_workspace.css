@@ -1,15 +1,173 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    PROJECT WORKSPACE SCREEN - MODULAR CSS
    ========================================================================== */
 
 /* --- CONTAINER PRINCIPAL --- */
 .ws-container {
   display: flex;
-  height: calc(100% + 48px);
-  margin: -24px;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   font-family: 'Inter', sans-serif;
   background: var(--bg);
+  box-sizing: border-box;
+}
+
+/* --- CABEÇALHO DO PROJETO --- */
+.ws-project-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.ws-btn-back.ws-btn-back--icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.ws-cover-wrapper {
+  position: relative;
+  width: 56px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--line);
+}
+
+.ws-cover-img {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  background-color: #14161a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.ws-cover-img.empty .material-symbols-rounded {
+  font-size: 18px;
+}
+
+.ws-cover-img:not(.empty) .material-symbols-rounded {
+  display: none;
+}
+
+.ws-cover-edit-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 16px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.ws-cover-wrapper:hover .ws-cover-edit-icon {
+  opacity: 1;
+}
+
+.ws-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.ws-header-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.ws-status-select {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ws-project-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0 10px;
+}
+
+.ws-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ws-summary-item .material-symbols-rounded {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.ws-summary-item.ws-summary-ok .material-symbols-rounded {
+  color: #22c55e;
+}
+
+.ws-summary-item.ws-summary-warn .material-symbols-rounded {
+  color: #f59e0b;
+}
+
+.ws-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ws-btn-outline.ws-btn-dirty {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ws-top-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* --- PANE GERAL --- */
@@ -17,25 +175,34 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ws-lib-pane {
-  width: 320px;
-  min-width: 320px;
+  width: 280px;
+  min-width: 240px;
+  max-width: 320px;
+  flex-shrink: 0;
   border-right: 1px solid var(--line);
 }
 
 .ws-bins-pane {
   flex: 1;
+  min-width: 0;
   position: relative;
   background: #16181d;
+  overflow: hidden;
 }
 
 .ws-inspector-pane {
-  width: 320px;
-  min-width: 320px;
+  width: 300px;
+  min-width: 260px;
+  max-width: 340px;
+  flex-shrink: 0;
   background: var(--card);
   border-left: 1px solid var(--line);
+  overflow-y: auto;
 }
 
 /* --- PANE HEADER (Biblioteca) --- */
@@ -96,6 +263,7 @@
 
 .ws-lib-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
@@ -105,24 +273,28 @@
 
 /* --- CENTER HEADER (Bins) --- */
 .ws-center-header {
-  padding: 16px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   background: var(--bg);
+  flex-wrap: wrap;
 }
 
 .ws-center-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   margin: 0;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .ws-center-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .ws-btn-outline {
@@ -173,6 +345,7 @@
 
 .ws-bins-tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px;
   position: relative;
@@ -180,11 +353,6 @@
 }
 
 /* --- INSPECTOR PANE --- */
-.ws-back-wrapper {
-  padding: 16px;
-  border-bottom: 1px solid var(--line);
-}
-
 .ws-btn-back {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
@@ -359,6 +527,17 @@
   filter: brightness(1.1);
 }
 
+.ws-btn-export-premiere--primary {
+  background: #4c2b82;
+  border-color: #8b5cf6;
+  color: #f3e8ff;
+  margin-bottom: 4px;
+}
+
+.ws-btn-export-premiere .material-symbols-rounded {
+  font-size: 18px;
+}
+
 .ws-export-icon {
   width: 20px;
   height: 20px;
@@ -461,6 +640,39 @@
   border-color: var(--accent);
 }
 
+/* --- FASE: Grupo "Sem Pasta" (mídias do projeto fora de qualquer pasta) --- */
+.ws-unfiled-header {
+  cursor: default;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.ws-unfiled-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ws-unfiled-header.drag-over {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: var(--accent);
+}
+
+.ws-unfiled-count {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ws-unfiled-group {
+  margin-bottom: 4px;
+}
+
 .ws-bin-header.drag-over {
   background: rgba(59, 130, 246, 0.2);
   border-color: #3b82f6;
@@ -506,7 +718,798 @@
   border-color: var(--accent);
 }
 
+.ws-bin-media.sync-selected {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: #f59e0b;
+  color: var(--text);
+}
+
 /* --- UTILS --- */
 .hidden {
   display: none !important;
+}
+
+/* ==========================================================================
+   FASE 4 — TABS DO CENTRO (Bins / Source Monitor)
+   ========================================================================== */
+.ws-center-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.ws-center-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.ws-center-tab .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.ws-center-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ws-center-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.ws-sync-hint {
+  margin-left: auto;
+  align-self: center;
+  font-size: 11px;
+  color: var(--muted);
+  padding-right: 4px;
+}
+
+/* ==========================================================================
+   FASE C — FILTRO DE TIPO DE MÍDIA (Todos / Vídeos / Áudios)
+   ========================================================================== */
+.ws-media-filter-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.ws-media-filter {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.ws-media-filter:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ws-media-filter.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.ws-bin-media-sync-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 14px !important;
+  display: flex;
+  align-items: center;
+}
+
+.ws-bin-media-sync-badge.synced {
+  color: #22c55e;
+}
+
+.ws-bin-media-sync-badge.pending {
+  color: #f59e0b;
+}
+
+/* ==========================================================================
+   FASE D — SYNC GROUPS (lista + detalhe)
+   ========================================================================== */
+.ws-sync-panel {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ws-sync-groups-list {
+  width: 220px;
+  min-width: 220px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  background: #16181d;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ws-sync-group-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ws-sync-group-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ws-sync-group-item.selected {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.ws-sync-group-item-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-sync-group-item-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.ws-sync-group-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ws-sync-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ws-sync-detail-name-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 160px;
+}
+
+.ws-sync-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ws-sync-items-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-sync-items-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.ws-sync-items-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ws-sync-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.ws-sync-master-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 16px !important;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ws-sync-master-btn.is-master {
+  color: #f59e0b;
+}
+
+.ws-sync-item-remove-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 16px !important;
+}
+
+.ws-sync-item-remove-btn:hover {
+  color: #ef4444;
+}
+
+.ws-sync-confidence-low {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+.ws-sync-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-btn-delete-outline {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.ws-btn-delete-outline:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* ==========================================================================
+   FASE E — VISUALIZAÇÃO GRÁFICA DA SINCRONIZAÇÃO
+   ========================================================================== */
+.ws-sync-viz-wrapper {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101215;
+  overflow: hidden;
+}
+
+.ws-sync-viz-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-sync-viz-canvas {
+  display: block;
+  width: 100%;
+}
+
+.ws-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(10, 12, 16, 0.85);
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-weight: 600;
+  z-index: 50;
+  pointer-events: none;
+  margin: 8px;
+}
+
+.ws-bins-pane {
+  position: relative;
+}
+
+/* ==========================================================================
+   FASE 4 — SOURCE MONITOR (Decupagem)
+   ========================================================================== */
+.ws-source-monitor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #101215;
+}
+
+.ws-monitor-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 24px;
+}
+
+.ws-monitor-player {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  gap: 10px;
+  overflow: auto;
+}
+
+.ws-monitor-video-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 220px;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ws-monitor-video {
+  max-width: 100%;
+  max-height: 100%;
+  outline: none;
+}
+
+.ws-monitor-audio {
+  display: none;
+}
+
+.ws-audio-only-icon {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ws-monitor-timecodes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-tc-current,
+.ws-tc-duration {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 14px;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.ws-tc-duration {
+  color: var(--muted);
+}
+
+.ws-monitor-filename {
+  flex: 1;
+  text-align: center;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 12px;
+}
+
+.ws-scrubber {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ws-waveform-canvas {
+  width: 100%;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+}
+
+.ws-monitor-io-bar {
+  width: 100%;
+}
+
+.ws-io-track {
+  position: relative;
+  height: 8px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ws-io-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.ws-monitor-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.ws-monitor-btn,
+.ws-monitor-btn-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ws-monitor-btn {
+  padding: 8px 14px;
+}
+
+.ws-monitor-btn-icon {
+  padding: 8px 10px;
+}
+
+.ws-monitor-btn:hover,
+.ws-monitor-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--accent);
+}
+
+.ws-monitor-btn-play {
+  padding: 10px 16px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0c0f;
+}
+
+.ws-monitor-btn-play:hover {
+  filter: brightness(1.1);
+}
+
+.ws-monitor-io-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.ws-monitor-io-labels b {
+  color: var(--text);
+}
+
+/* ==========================================================================
+   FASE 4 — INSPETOR: TABS INFO / METADADOS BDSM
+   ========================================================================== */
+.ws-inspector-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: 4px 0 8px 0;
+}
+
+.ws-insp-tab {
+  flex: 1;
+  padding: 8px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ws-insp-tab:hover {
+  color: var(--text);
+}
+
+.ws-insp-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.ws-media-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ws-meta-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* ==========================================================================
+   MODAL: IMPORTAR DA BIBLIOTECA
+   ========================================================================== */
+.ws-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.ws-modal-box {
+  width: 520px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  gap: 10px;
+}
+
+.ws-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ws-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.ws-import-modal-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 200px;
+  max-height: 50vh;
+}
+
+.ws-import-modal-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.ws-import-modal-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-import-modal-item.checked {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.ws-import-modal-item .ws-import-thumb {
+  width: 32px;
+  height: 22px;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.06);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+.ws-import-modal-item .ws-import-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.ws-import-modal-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ==========================================================================
+   FASE H — BANNER E MODAL DE RELINK (ARQUIVOS NÃO ENCONTRADOS)
+   ========================================================================== */
+.ws-missing-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ws-missing-banner .material-symbols-rounded {
+  font-size: 18px;
+}
+
+.ws-btn-relink {
+  margin-left: auto;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #f59e0b;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-btn-relink:hover {
+  background: rgba(245, 158, 11, 0.28);
+}
+
+.ws-relink-modal-box {
+  width: 560px;
+  max-width: 92vw;
+}
+
+.ws-relink-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 4px 0;
+}
+
+.ws-relink-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.ws-relink-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ws-relink-row-icon {
+  font-size: 18px !important;
+  flex-shrink: 0;
+}
+
+.ws-relink-row-icon.resolved { color: #22c55e; }
+.ws-relink-row-icon.uncertain { color: #f59e0b; }
+.ws-relink-row-icon.unresolved { color: var(--muted); }
+
+.ws-relink-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-relink-row-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-relink-row-status {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-relink-row-status.resolved { color: #22c55e; }
+.ws-relink-row-status.uncertain { color: #f59e0b; }
+
+.ws-relink-row-pick {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-relink-row-pick:hover {
+  background: rgba(255, 255, 255, 0.1);
 }

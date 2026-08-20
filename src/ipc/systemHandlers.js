@@ -1,4 +1,5 @@
 const { ipcMain } = require('electron');
+const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 
 module.exports = function registerSystemHandlers(paths) {
   ipcMain.handle('system:exportCookies', async (event, domain, outputPath) => {
@@ -10,23 +11,32 @@ module.exports = function registerSystemHandlers(paths) {
     require('electron').shell.openPath(itemPath);
   });
 
+  ipcMain.handle('system:getVideosPath', () => {
+    return appPaths.videosDir;
+  });
+
+  ipcMain.handle('system:getDownloadsPath', () => {
+    return appPaths.downloadsDir;
+  });
+
   ipcMain.handle('system:getStorageInfo', async () => {
     const fs = require('fs/promises');
     try {
-      const [statsC, statsD] = await Promise.all([
-        fs.statfs('C:\\').catch(() => null),
-        fs.statfs('D:\\').catch(() => null)
-      ]);
+      const rootsToCheck = process.platform === 'win32'
+        ? [appPaths.systemRoot, 'D:\\']
+        : [appPaths.systemRoot];
+
+      const statsList = await Promise.all(
+        rootsToCheck.map(root => fs.statfs(root).catch(() => null))
+      );
 
       let totalPC = 0;
       let freePC = 0;
-      if (statsC) {
-        totalPC += statsC.blocks * statsC.bsize;
-        freePC += statsC.bavail * statsC.bsize;
-      }
-      if (statsD) {
-        totalPC += statsD.blocks * statsD.bsize;
-        freePC += statsD.bavail * statsD.bsize;
+      for (const stats of statsList) {
+        if (stats) {
+          totalPC += stats.blocks * stats.bsize;
+          freePC += stats.bavail * stats.bsize;
+        }
       }
 
       const usedPC = totalPC - freePC;

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Conjunto para gerenciar ouvintes e evitar vazamentos de memória
 const listeners = new Set();
@@ -19,6 +19,8 @@ const api = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getVideosPath: () => ipcRenderer.invoke('system:getVideosPath'),
+  getDownloadsPath: () => ipcRenderer.invoke('system:getDownloadsPath'),
 
   // Controles de Janela
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
@@ -211,6 +213,8 @@ const api = {
   renameLut: (oldPath, newName) => ipcRenderer.invoke('luts:rename', oldPath, newName),
   parseLutCube: (filePath) => ipcRenderer.invoke('luts:parse', filePath), // <-- Novo!
   onLutParsed: (cb) => registerListener('luts:parsed', cb), // <-- Se for emitir evento (opcional, o invoke já retorna)
+  getLutHeader: (filePath) => ipcRenderer.invoke('luts:getHeader', filePath), // <-- Novo! Metadados/cabeçalho do .cube
+  getLutRaw: (filePath) => ipcRenderer.invoke('luts:load', filePath), // <-- Conteúdo bruto do .cube (reaproveita handler existente)
 
   // Projetos
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -223,10 +227,62 @@ const api = {
   updateProjectBin: (id, name, parentId) => ipcRenderer.invoke('projects:updateBin', id, name, parentId),
   deleteProjectBin: (id) => ipcRenderer.invoke('projects:deleteBin', id),
   getProjectMedia: (projectId) => ipcRenderer.invoke('projects:getMedia', projectId),
+  getProjectMediaById: (pmId) => ipcRenderer.invoke('projects:getMediaById', pmId),
   addProjectMedia: (projectId, binId, mediaId, customName) => ipcRenderer.invoke('projects:addMedia', projectId, binId, mediaId, customName),
+  addProjectMediaBulk: (projectId, binId, mediaIds) => ipcRenderer.invoke('projects:addMediaBulk', projectId, binId, mediaIds),
+  importFilesToProjectBin: (projectId, binId) => ipcRenderer.invoke('projects:importFilesToBin', { projectId, binId }),
+  importDroppedFilesToProjectBin: (projectId, binId, filePaths) => ipcRenderer.invoke('projects:importDroppedFilesToBin', { projectId, binId, filePaths }),
+  onProjectImportProgress: (cb) => registerListener('projects:importProgress', cb),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   removeProjectMedia: (pmId) => ipcRenderer.invoke('projects:removeMedia', pmId),
+
   moveProjectMedia: (pmId, newBinId) => ipcRenderer.invoke('projects:moveMedia', pmId, newBinId),
+  getProjectFullModel: (projectId) => ipcRenderer.invoke('projects:getFullModel', projectId),
+  getProjectSequences: (projectId) => ipcRenderer.invoke('projects:getSequences', projectId),
+  getOrCreateDefaultSequence: (projectId) => ipcRenderer.invoke('projects:getOrCreateDefaultSequence', projectId),
+  createProjectSequence: (projectId, name, timebase, width, height) => ipcRenderer.invoke('projects:createSequence', projectId, name, timebase, width, height),
+  updateProjectSequence: (id, data) => ipcRenderer.invoke('projects:updateSequence', id, data),
+  deleteProjectSequence: (id) => ipcRenderer.invoke('projects:deleteSequence', id),
+  getProjectTracks: (sequenceId) => ipcRenderer.invoke('projects:getTracks', sequenceId),
+  createProjectTrack: (sequenceId, trackType, trackIndex, name) => ipcRenderer.invoke('projects:createTrack', sequenceId, trackType, trackIndex, name),
+  updateProjectTrack: (id, data) => ipcRenderer.invoke('projects:updateTrack', id, data),
+  deleteProjectTrack: (id) => ipcRenderer.invoke('projects:deleteTrack', id),
+  getProjectClips: (trackId) => ipcRenderer.invoke('projects:getClips', trackId),
+  addProjectClip: (trackId, data) => ipcRenderer.invoke('projects:addClip', trackId, data),
+  updateProjectClip: (id, data) => ipcRenderer.invoke('projects:updateClip', id, data),
+  deleteProjectClip: (id) => ipcRenderer.invoke('projects:deleteClip', id),
+  getProjectMarkers: (projectId, sequenceId) => ipcRenderer.invoke('projects:getMarkers', projectId, sequenceId),
+  addProjectMarker: (data) => ipcRenderer.invoke('projects:addMarker', data),
+  deleteProjectMarker: (id) => ipcRenderer.invoke('projects:deleteMarker', id),
+  getProjectSyncGroups: (projectId) => ipcRenderer.invoke('projects:getSyncGroups', projectId),
+  createProjectSyncGroup: (projectId, name, masterMediaId, items) => ipcRenderer.invoke('projects:createSyncGroup', projectId, name, masterMediaId, items),
+  updateProjectSyncGroup: (id, data) => ipcRenderer.invoke('projects:updateSyncGroup', id, data),
+  deleteProjectSyncGroup: (id) => ipcRenderer.invoke('projects:deleteSyncGroup', id),
+  removeProjectSyncGroupItem: (itemId) => ipcRenderer.invoke('projects:removeSyncGroupItem', itemId),
+
+  // --- FASE H: Relink de mídia ausente ---
+  getMissingProjectMedia: (projectId) => ipcRenderer.invoke('projects:getMissingMedia', projectId),
+  relinkMedia: (mediaId, newFilepath) => ipcRenderer.invoke('projects:relinkMedia', mediaId, newFilepath),
+  exportBdspro: (projectId, outputPath) => ipcRenderer.invoke('projects:exportBdspro', projectId, outputPath),
+  inspectBdspro: (bdsproPath) => ipcRenderer.invoke('projects:inspectBdspro', bdsproPath),
+  scanRelinkFolder: (folderPath) => ipcRenderer.invoke('projects:scanRelinkFolder', folderPath),
+  matchMissingMedia: (missingList, scannedFiles) => ipcRenderer.invoke('projects:matchMissingMedia', missingList, scannedFiles),
+  importBdspro: (bdsproPath, relinkMap) => ipcRenderer.invoke('projects:importBdspro', bdsproPath, relinkMap),
   exportProjectPremiere: (projectId, outputPath) => ipcRenderer.invoke('projects:exportPremiere', projectId, outputPath),
+  exportProjectSequencePremiere: (projectId, outputPath) => ipcRenderer.invoke('projects:exportSequencePremiere', projectId, outputPath),
+  getProjectSequenceModel: (projectId) => ipcRenderer.invoke('projects:getSequenceModel', projectId),
+
+  // Waveforms (Fase 5)
+  getMediaWaveform: (params) => ipcRenderer.invoke('projects:getWaveform', params),
+  probeAudioStreams: (filePath) => ipcRenderer.invoke('projects:probeAudioStreams', filePath),
+  hasWaveformCache: (uuid, streamIndex) => ipcRenderer.invoke('projects:hasWaveformCache', uuid, streamIndex),
+  deleteWaveformCache: (uuid, streamIndex) => ipcRenderer.invoke('projects:deleteWaveformCache', uuid, streamIndex),
+
+  // Sincronização por Áudio (Fase 6)
+  runAudioSync: (params) => ipcRenderer.invoke('projects:runAudioSync', params),
+  onAudioSyncProgress: (cb) => registerListener('projects:audioSyncProgress', cb),
+
+
 
   // BDSM
   onBdsmDeviceAdded: (callback) => ipcRenderer.on('bdsm:device_added', (e, device) => callback(device)),
