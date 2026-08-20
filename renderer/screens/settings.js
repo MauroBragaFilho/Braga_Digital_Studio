@@ -313,7 +313,7 @@ async function updateDependencies() {
 
   btn.disabled = true;
   btn.innerText = 'ATUALIZANDO...';
-  showStatus('Baixando atualizações em segundo plano...', 'loading');
+  showStatus('Baixando atualizações', 'loading');
 
   try {
     await window.bds.updateAllDependencies();
