@@ -43,6 +43,18 @@ export async function initScreen() {
     }
   }
 
+  // Inicializa pasta de destino padrão dinamicamente via backend
+  const outFolderInput = document.getElementById('outSilenceFolder');
+  if (outFolderInput && !outFolderInput.value) {
+    try {
+      const videosDir = (await window.bds?.getVideosPath?.()) || '';
+      if (videosDir) {
+        const sep = videosDir.includes('\\') ? '\\' : '/';
+        outFolderInput.value = (videosDir.endsWith('/') || videosDir.endsWith('\\')) ? `${videosDir}RemoverSilencio` : `${videosDir}${sep}RemoverSilencio`;
+      }
+    } catch (_) {}
+  }
+
   // Fila inicial de remoção de silêncio começa VAZIA por padrão
   silenceList = [];
 
@@ -411,7 +423,13 @@ function bindSilenceEvents() {
     const threshold = parseInt(document.getElementById('numSensitivity')?.value || '-30', 10);
     const minDuration = parseFloat(document.getElementById('numMinDuration')?.value || '0.5');
     const mode = document.getElementById('selSilenceMode')?.value || 'remove';
-    const outFolder = document.getElementById('outSilenceFolder')?.value || 'C:\\Users\\mauri\\Videos\\RemoverSilencio';
+    let defaultOut = '';
+    try {
+      const vDir = (await window.bds?.getVideosPath?.()) || '';
+      const sep = vDir.includes('\\') ? '\\' : '/';
+      defaultOut = (vDir.endsWith('/') || vDir.endsWith('\\')) ? `${vDir}RemoverSilencio` : `${vDir}${sep}RemoverSilencio`;
+    } catch (_) {}
+    const outFolder = document.getElementById('outSilenceFolder')?.value || defaultOut;
 
     const processConfig = {
       files: silenceList.map(item => item.path),
@@ -477,7 +495,7 @@ function setupSilenceIPCListeners() {
         renderSilenceTable();
         updateSilenceStepperVisuals();
 
-        const outFolder = document.getElementById('outSilenceFolder')?.value || 'C:\\Users\\mauri\\Videos\\RemoverSilencio';
+        const outFolder = document.getElementById('outSilenceFolder')?.value || 'RemoverSilencio';
         const threshold = document.getElementById('numSensitivity')?.value || '-30';
 
         let msg = `Processamento concluído com sucesso em:\n${outFolder}`;

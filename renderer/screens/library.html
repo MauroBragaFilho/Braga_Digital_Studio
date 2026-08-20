@@ -252,3 +252,51 @@
     </div>
   </div>
 </div>
+
+<!-- MODAL DE ADICIONAR MÍDIAS AO PROJETO -->
+<div id="modalAddToProject" class="lib-modal-overlay hidden">
+  <div class="lib-modal">
+    <div class="lib-modal-header">
+      <h3 class="lib-modal-title">
+        <span class="material-symbols-rounded lib-modal-icon" style="color: var(--accent);">folder_special</span>
+        Adicionar ao Projeto
+      </h3>
+      <button id="btnCloseAddToProjectModal" class="lib-modal-close-btn" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <p id="addToProjectSummary" class="lib-modal-description">
+      Selecione o projeto e a pasta de destino para adicionar as mídias selecionadas como referências.
+    </p>
+
+    <div class="lib-modal-form">
+      <div class="lib-form-group">
+        <label class="lib-form-label">Projeto de Destino</label>
+        <select id="selectTargetProject" class="lib-form-input">
+          <option value="">Carregando projetos...</option>
+        </select>
+      </div>
+
+      <div class="lib-form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label class="lib-form-label" style="margin-bottom: 0;">Pasta do Projeto (Bin)</label>
+          <button id="btnCreateBinInModal" class="lib-btn-link" type="button" style="font-size: 11px; background: none; border: none; color: var(--accent); cursor: pointer;">
+            + Nova Pasta
+          </button>
+        </div>
+        <select id="selectTargetBin" class="lib-form-input">
+          <option value="">Raiz do Projeto (Sem pasta)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="lib-modal-footer">
+      <button id="btnCancelAddToProject" class="lib-btn-cancel" type="button">Cancelar</button>
+      <button id="btnConfirmAddToProject" class="lib-btn-confirm" type="button">
+        <span class="material-symbols-rounded">check</span>
+        Adicionar Mídias
+      </button>
+    </div>
+  </div>
+</div>

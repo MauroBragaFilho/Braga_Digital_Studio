@@ -67,7 +67,7 @@ class MediaImporter {
             const existing = db.prepare('SELECT id FROM media WHERE hash = ?').get(hash);
             if (existing) {
                 logger.info(`[MediaImporter] Arquivo ignorado (já existe): ${path.basename(filePath)}`);
-                return;
+                return { id: existing.id, created: false };
             }
 
             // 2. Coleta Metadados usando FFProbe
@@ -94,7 +94,7 @@ class MediaImporter {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
-            stmt.run(
+            const info2 = stmt.run(
                 library.id,
                 fileUuid,
                 library.type,
@@ -114,6 +114,7 @@ class MediaImporter {
             );
 
             logger.info(`[MediaImporter] Arquivo importado: ${filename}`);
+            return { id: info2.lastInsertRowid, created: true };
 
         } catch (error) {
             logger.error(`[MediaImporter] Falha ao importar ${filePath}: ${error.stack || error.message || error}`);

@@ -64,11 +64,12 @@
       <div id="inspectorContent" class="inspector-content">
         <!-- COMPONENTE ANTES/DEPOIS -->
         <div class="lut-slider-container" id="lutSliderContainer">
-          <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" draggable="false">
+          <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" id="lutSliderBaseImg" draggable="false">
           <div class="lut-slider-label lut-slider-label-before">ANTES</div>
           
           <div class="lut-slider-overlay" id="lutSliderOverlay">
             <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-target" id="lutSliderTargetImg" draggable="false">
+            <canvas id="lutSliderCanvas" class="lut-slider-canvas hidden"></canvas>
             <div class="lut-slider-label lut-slider-label-after">DEPOIS</div>
           </div>
           
@@ -88,6 +89,30 @@
           <div class="detail-row"><span class="detail-label">Tipo</span><span id="insType" class="detail-value">--</span></div>
           <div class="detail-row"><span class="detail-label">Tamanho</span><span id="insSize" class="detail-value">--</span></div>
           <div class="detail-row"><span class="detail-label">Data de criação</span><span id="insDate" class="detail-value">--</span></div>
+        </div>
+
+        <!-- SEÇÃO: ARQUIVO .cube -->
+        <div class="inspector-section" id="insCubeSection" style="display:none">
+          <h3 class="inspector-section-title">ARQUIVO .CUBE</h3>
+
+          <!-- Metadados do cabeçalho -->
+          <div class="cube-header-block" id="insCubeHeader">
+            <div class="cube-meta-row"><span class="cube-meta-label">Título</span><span id="insTitle" class="cube-meta-value">—</span></div>
+            <div class="cube-meta-row"><span class="cube-meta-label">Tamanho 3D</span><span id="insLutSize" class="cube-meta-value">—</span></div>
+            <div class="cube-meta-row"><span class="cube-meta-label">Entradas</span><span id="insLutEntries" class="cube-meta-value">—</span></div>
+            <div class="cube-meta-row"><span class="cube-meta-label">Domínio</span><span id="insLutDomain" class="cube-meta-value">—</span></div>
+          </div>
+
+          <!-- Preview das primeiras entradas RGB -->
+          <div class="cube-preview-label">Primeiras entradas RGB</div>
+          <div class="cube-rgb-table" id="insCubeRgbTable">
+            <!-- Preenchido via JS -->
+          </div>
+
+          <!-- Botão para ver o arquivo completo -->
+          <button class="lut-btn-outline lut-btn-full-width" id="btnViewCubeRaw" style="margin-top: 10px;">
+            VER ARQUIVO .CUBE COMPLETO <span class="material-symbols-rounded">code</span>
+          </button>
         </div>
 
         <div class="inspector-section inspector-actions-section">
@@ -132,11 +157,12 @@
     </button>
     
     <div class="lut-slider-container lut-slider-fullscreen" id="fsSliderContainer">
-      <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" draggable="false">
+      <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" id="fsSliderBaseImg" draggable="false">
       <div class="lut-slider-label lut-slider-label-before">ANTES</div>
       
       <div class="lut-slider-overlay" id="fsSliderOverlay">
         <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-target" id="fsSliderTargetImg" draggable="false">
+        <canvas id="fsSliderCanvas" class="lut-slider-canvas hidden"></canvas>
         <div class="lut-slider-label lut-slider-label-after">DEPOIS</div>
       </div>
       
@@ -145,6 +171,19 @@
           <span class="material-symbols-rounded">code</span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Conteúdo .cube completo -->
+  <div id="lutCubeRawModal" class="lut-cube-raw-modal hidden">
+    <div class="lut-cube-raw-inner">
+      <div class="lut-cube-raw-header">
+        <span id="cubeRawModalTitle" class="lut-cube-raw-title"></span>
+        <button id="btnCloseCubeRaw" class="lut-icon-btn lut-icon-btn-small">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+      <pre id="cubeRawContent" class="lut-cube-raw-content"></pre>
     </div>
   </div>
 </div>

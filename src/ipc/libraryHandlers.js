@@ -1,6 +1,7 @@
 const { ipcMain, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 
 module.exports = function registerLibraryHandlers(paths, watcherService) {
   const LibraryQueryService = require('../core/library/LibraryQueryService');
@@ -41,7 +42,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
       lib = { id: info.lastInsertRowid, name, type: name, path: folderPath };
     }
 
-    const importer = new MediaImporter({ ffprobePath: path.join(paths.dataDir, 'ffprobe.exe') });
+    const importer = new MediaImporter({ ffprobePath: ffprobeTool.resolve() });
     await importer.importLibrary(lib);
 
     EventBus.emit('MEDIA_IMPORTED', { source: name });
@@ -68,7 +69,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
 
     let lib = db.prepare('SELECT * FROM libraries WHERE id = ? OR name = ?').get(id, name);
     if (lib) {
-      const importer = new MediaImporter({ ffprobePath: path.join(paths.dataDir, 'ffprobe.exe') });
+      const importer = new MediaImporter({ ffprobePath: ffprobeTool.resolve() });
       await importer.importLibrary(lib);
     }
 
@@ -181,9 +182,8 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     }
     db.exec('BEGIN TRANSACTION');
     try {
-        const insert = db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (?, ?)');
         for (const id of ids) {
-            insert.run(id, tag.id);
+            db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (?, ?)').run(id, tag.id);
         }
         db.exec('COMMIT');
     } catch (e) {

@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    LUTS SCREEN - MODULAR CSS (Refatorado)
    ========================================================================== */
 
@@ -68,15 +68,17 @@
 }
 
 .luts-search-input {
-  /* Usa estilos globais de input */
-  width: 200px; /* Ajuste específico */
+  width: 200px;
+  padding-left: 34px !important;
 }
 
 .luts-search-icon {
   position: absolute;
   left: 10px;
-  font-size: 16px;
+  font-size: 18px;
   color: var(--muted);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .luts-filters {
@@ -87,18 +89,20 @@
 }
 
 .lut-select {
-  /* Usa estilos globais de select */
-  width: auto; /* Ajuste específico */
-  padding: 8px 30px 8px 12px; /* Ajuste para ícone dropdown */
+  width: auto;
+  min-width: 140px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding: 8px 32px 8px 12px;
   background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23999999%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px top 50%;
-  background-size: 8px auto;
+  background-position: right 10px center;
+  background-size: 10px auto;
 }
 
 /* --- BUTTONS (Padrão global aplicado) --- */
 .lut-btn-primary {
-  /* Usa estilos globais de .primary */
   background: var(--accent);
   color: var(--text);
   border: none;
@@ -123,7 +127,6 @@
 }
 
 .lut-btn-outline {
-  /* Usa estilos globais de .secondary */
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--line);
@@ -150,7 +153,6 @@
 .lut-btn-full-width { width: 100%; justify-content: center; }
 
 .lut-icon-btn {
-  /* Usa estilos globais de .icon-button ou .win-btn */
   background: transparent;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -167,7 +169,6 @@
 .lut-icon-btn.lut-icon-btn-small { width: 24px; height: 24px; border: none; }
 
 .lut-view-mode-btn {
-  /* Usa estilos globais de .icon-button */
   background: transparent;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -191,7 +192,7 @@
   overflow: hidden;
 }
 
-/* --- GRID --- */
+/* --- GRID AREA --- */
 .luts-grid-area {
   flex: 1;
   display: flex;
@@ -210,6 +211,66 @@
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
   padding-bottom: 24px;
+  transition: gap 0.2s ease;
+}
+
+/* Modo Compacto */
+.luts-grid-area.view-compact .luts-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+/* Modo Lista */
+.luts-grid-area.view-list .luts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.luts-grid-area.view-list .lut-card {
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+  padding: 8px;
+}
+
+.luts-grid-area.view-list .lut-card-img {
+  width: 80px;
+  height: 45px;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.luts-grid-area.view-list .lut-card-body {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+}
+
+.luts-grid-area.view-list .lut-card-info {
+  flex: 1;
+}
+
+.luts-grid-area.view-list .lut-card-title {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.luts-grid-area.view-list .lut-card-meta {
+  font-size: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.luts-grid-area.view-list .lut-badge-3d {
+  top: 8px;
+  right: 8px;
+}
+
+.luts-grid-area.view-list .lut-checkbox {
+  top: 8px;
+  left: 8px;
 }
 
 /* --- CARD --- */
@@ -275,7 +336,7 @@
   width: 20px;
   height: 20px;
   background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255,255,255,0.3);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -327,7 +388,7 @@
 .inspector-content::-webkit-scrollbar-track { background: transparent; }
 .inspector-content::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
 
-/* --- COMPONENTE BEFORE/AFTER SLIDER (CORRIGIDO) --- */
+/* --- COMPONENTE BEFORE/AFTER SLIDER --- */
 .lut-slider-container {
   position: relative;
   width: 100%;
@@ -337,6 +398,7 @@
   margin-bottom: 16px;
   user-select: none;
   border: 1px solid var(--line);
+  background: var(--card-2);
 }
 
 .lut-slider-fullscreen {
@@ -348,19 +410,28 @@
   border: none;
 }
 
-.lut-slider-img {
+.lut-slider-img,
+.lut-slider-canvas {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.lut-slider-img-base {
-  /* Imagem base (ANTES) */
+/* O canvas real (com a LUT aplicada) e a imagem "DEPOIS" cru precisam
+   ocupar exatamente o mesmo espaço, sobrepostos, dentro do overlay —
+   caso contrário ficam empilhados verticalmente e o canvas (que é o
+   segundo elemento) acaba cortado pelo overflow:hidden do overlay,
+   nunca aparecendo mesmo depois de a LUT ser aplicada. */
+.lut-slider-overlay .lut-slider-img,
+.lut-slider-overlay .lut-slider-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
-.lut-slider-img-target {
-  /* Imagem com LUT (DEPOIS) */
+.lut-slider-canvas.hidden {
+  display: none !important;
 }
 
 .lut-slider-overlay {
@@ -370,7 +441,6 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* ✅ CORREÇÃO: Usando clip-path */
   clip-path: inset(0 0 0 50%);
 }
 
@@ -420,9 +490,9 @@
 .inspector-header-info {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start; /* Alinha o badge ao topo */
+  align-items: flex-start;
   margin-bottom: 20px;
-  position: relative; /* ✅ Essencial para que o badge absoluto funcione dentro dele */
+  position: relative;
 }
 
 .inspector-name {
@@ -431,14 +501,14 @@
   font-weight: 700;
   color: var(--text);
   word-break: break-all;
-  flex: 1; /* Ocupa o máximo de espaço possível */
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .lut-badge-3d {
-   position: absolute;
+  position: absolute;
   top: 10px;
   right: 10px;
   background: rgba(0, 0, 0, 0.6);
@@ -451,7 +521,6 @@
   border: 1px solid rgba(255,255,255,0.1);
   align-self: flex-start;
 }
-
 
 .lut-badge {
   background: var(--accent-light);
@@ -506,6 +575,179 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* --- ARQUIVO .CUBE (Inspector) --- */
+.cube-header-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.cube-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.cube-meta-label {
+  color: var(--muted);
+}
+
+.cube-meta-value {
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.cube-preview-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.cube-rgb-table {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-2);
+}
+
+.cube-rgb-row {
+  display: grid;
+  grid-template-columns: 32px 18px 1fr 1fr 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  border-bottom: 1px solid var(--line);
+}
+
+.cube-rgb-row:last-child {
+  border-bottom: none;
+}
+
+.cube-rgb-index {
+  color: var(--muted);
+}
+
+.cube-rgb-value {
+  color: var(--text);
+  text-align: right;
+}
+
+.cube-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+.cube-rgb-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* --- MODAL: Arquivo .cube completo --- */
+.lut-cube-raw-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.lut-cube-raw-modal.hidden {
+  display: none;
+}
+
+.lut-cube-raw-inner {
+  width: 720px;
+  max-width: 90vw;
+  max-height: 80vh;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.lut-cube-raw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lut-cube-raw-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lut-cube-raw-content {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre;
+}
+
+.cube-line-comment {
+  color: var(--muted);
+}
+
+.cube-line-directive {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cube-line-data {
+  color: var(--text);
+}
+
+.cube-meta-value-warning {
+  color: #ffb020 !important;
+}
+
+.cube-raw-truncated-notice {
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid rgba(255, 176, 32, 0.4);
+  color: #ffb020;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin-bottom: 10px;
 }
 
 /* --- FOOTER --- */
@@ -586,169 +828,11 @@
 /* --- UTILS --- */
 .hidden { display: none !important; }
 
-/* --- GRID --- */
-.luts-grid-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  padding-right: 8px;
-}
-
-.luts-grid-area::-webkit-scrollbar { width: 6px; }
-.luts-grid-area::-webkit-scrollbar-track { background: transparent; }
-.luts-grid-area::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
-.luts-grid-area::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-
-.luts-grid {
-  display: grid; /* Padrão para Grade */
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-  padding-bottom: 24px;
-  transition: gap 0.2s ease;
-}
-
-/* Modo Compacto: Grade com cards menores e mais densos */
-.luts-grid-area.view-compact .luts-grid {
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); /* Cards menores */
-  gap: 10px; /* Menor espaço */
-}
-
-/* Modo Lista: Transforma o grid em uma lista vertical */
-.luts-grid-area.view-list .luts-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px; /* Espaçamento menor entre itens de lista */
-}
-
-.luts-grid-area.view-list .lut-card {
-  width: 100%; /* Card ocupa toda a largura */
-  flex-direction: row; /* Imagem e info lado a lado */
-  align-items: center;
-  padding: 8px;
-}
-
-.luts-grid-area.view-list .lut-card-img {
-  width: 80px; /* Tamanho fixo para miniatura */
-  height: 45px; /* Proporção 16:9 */
-  flex-shrink: 0;
-  margin-right: 12px;
-}
-
-.luts-grid-area.view-list .lut-card-body {
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 0;
-}
-
-.luts-grid-area.view-list .lut-card-info {
-  flex: 1;
-}
-
-.luts-grid-area.view-list .lut-card-title {
-  font-size: 14px; /* Pode ser maior em modo lista */
-  margin-bottom: 4px;
-}
-
-.luts-grid-area.view-list .lut-card-meta {
-  font-size: 10px; /* Menor texto */
-  display: flex;
-  gap: 6px;
-}
-
-.luts-grid-area.view-list .lut-badge-3d {
-  top: 8px; /* Ajusta posição do badge */
-  right: 8px;
-}
-
-.luts-grid-area.view-list .lut-checkbox {
-  top: 8px; /* Ajusta posição do checkbox */
-  left: 8px;
-}
-
-/* --- CARD --- */
-.lut-card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: 0.2s;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-.lut-card:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
-.lut-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-
-.lut-card-img {
-  width: 100%;
-  aspect-ratio: 16/10;
-  object-fit: cover;
-  border-bottom: 1px solid var(--line);
-  filter: brightness(0.9);
-  transition: 0.3s;
-}
-.lut-card:hover .lut-card-img { filter: brightness(1.1); }
-
-.lut-card-body {
-  padding: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.lut-card-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-}
-
-.lut-card-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lut-card-meta {
-  font-size: 11px;
-  color: var(--muted);
-  display: flex;
-  gap: 8px;
-}
-
-.lut-checkbox {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 20px;
-  height: 20px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: 0.2s;
-}
-.lut-card:hover .lut-checkbox { opacity: 1; }
-.lut-card.selected .lut-checkbox { opacity: 1; background: var(--accent); border-color: var(--accent); }
-.lut-checkbox .material-symbols-rounded { font-size: 14px; color: #fff; opacity: 0; }
-.lut-card.selected .lut-checkbox .material-symbols-rounded { opacity: 1; }
-
-/* Adicione ao final do seu luts.css ou onde fizer sentido */
 .luts-loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100px; /* Ajuste conforme necessário */
+  height: 100px;
   color: var(--muted);
   font-style: italic;
 }
@@ -757,14 +841,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100px; /* Ajuste conforme necessário */
+  height: 100px;
   color: var(--danger);
   font-weight: 600;
   text-align: center;
   padding: 20px;
 }
 
-/* Animação de loading para o botão */
 .lut-icon-btn.loading .material-symbols-rounded {
   animation: spin 1s linear infinite;
 }

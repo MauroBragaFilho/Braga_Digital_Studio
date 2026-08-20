@@ -4,6 +4,9 @@ const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const logger = require('./logService');
 const hardwareDetection = require('../core/HardwareDetectionService');
+const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
+const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
+const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 
 class MontageService extends EventEmitter {
   constructor({ paths }) {
@@ -19,10 +22,7 @@ class MontageService extends EventEmitter {
   }
 
   async probeFile(filePath) {
-    const ffprobe = path.join(this.paths.dataDir, 'ffprobe.exe');
-    if (!fs.existsSync(ffprobe)) {
-      throw new Error('ffprobe.exe não encontrado.');
-    }
+    const ffprobe = ffprobeTool.resolve();
 
     return new Promise((resolve, reject) => {
       const child = spawn(
@@ -179,8 +179,7 @@ class MontageService extends EventEmitter {
   }
 
   async runSingleRender(config) {
-    const ffmpeg = path.join(this.paths.dataDir, 'ffmpeg.exe');
-    if (!fs.existsSync(ffmpeg)) throw new Error('ffmpeg.exe não encontrado.');
+    const ffmpeg = ffmpegTool.resolve();
 
     const { introPath, mainPath, outroPath, mainCutStart, mainCutDuration, resolution, fps, codec, quality, outputPath, totalDuration } = config;
 
@@ -319,17 +318,8 @@ class MontageService extends EventEmitter {
   }
 
   async killProcessTree(pid) {
-    return new Promise((resolve) => {
-      if (!pid) return resolve();
-      if (process.platform === 'win32') {
-        const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
-        killer.on('close', () => resolve());
-        killer.on('error', () => resolve());
-      } else {
-        try { process.kill(pid, 'SIGTERM'); } catch {}
-        resolve();
-      }
-    });
+    if (!pid) return;
+    processRunner.cancel(pid);
   }
 }
 

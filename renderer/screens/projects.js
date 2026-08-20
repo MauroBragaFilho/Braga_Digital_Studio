@@ -254,6 +254,216 @@ function setupEventListeners() {
     document.getElementById('btnOpenProject')?.addEventListener('click', () => {
         if (selectedProjectId) openProjectWorkspace(selectedProjectId);
     });
+
+    // --- Exportar .bdspro ---
+    document.getElementById('btnExportBdspro')?.addEventListener('click', async () => {
+        if (!selectedProjectId) return;
+        const proj = projectsList.find(p => p.id === selectedProjectId);
+        if (!proj) return;
+
+        try {
+            const folderRes = await window.bds.selectFolder();
+            if (folderRes && folderRes.filePaths && folderRes.filePaths.length > 0) {
+                const destFolder = folderRes.filePaths[0];
+                const sanitizedName = (proj.name || 'Projeto').replace(/[\\/:*?"<>|]/g, '_');
+                const outputPath = `${destFolder}\\${sanitizedName}.bdspro`;
+                
+                setAppStatus('Exportando pacote .bdspro...', 'info');
+                const result = await window.bds.exportBdspro(selectedProjectId, outputPath);
+                if (result && result.success) {
+                    setAppStatus(`Projeto "${proj.name}" exportado com sucesso!`, 'success');
+                    window.bdsModal.alert(`Pacote .bdspro exportado com sucesso!\n\nSalvo em: ${result.filePath}`);
+                }
+            }
+        } catch (e) {
+            console.error('Erro ao exportar .bdspro:', e);
+            setAppStatus('Erro ao exportar pacote .bdspro', 'error');
+            window.bdsModal.alert(`Erro ao exportar projeto .bdspro: ${e.message || e}`);
+        }
+    });
+
+    // --- Importar .bdspro ---
+    document.getElementById('btnImportBdspro')?.addEventListener('click', async () => {
+        try {
+            const fileRes = await window.bds.selectFile({
+                properties: ['openFile'],
+                filters: [{ name: 'Pacote de Projeto BDS (*.bdspro)', extensions: ['bdspro'] }]
+            });
+
+            if (fileRes && fileRes.filePaths && fileRes.filePaths.length > 0) {
+                const bdsproPath = fileRes.filePaths[0];
+                setAppStatus('Inspecionando pacote .bdspro...', 'info');
+                const inspectData = await window.bds.inspectBdspro(bdsproPath);
+                openRelinkModal(bdsproPath, inspectData);
+            }
+        } catch (e) {
+            console.error('Erro ao abrir .bdspro:', e);
+            setAppStatus('Erro ao ler pacote .bdspro', 'error');
+            window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${e.message || e}`);
+        }
+    });
+
+    setupRelinkModalListeners();
+}
+
+// --- CONTROLE DO MODAL DE RELINK / IMPORTAÇÃO ---
+let currentRelinkContext = null;
+
+function openRelinkModal(bdsproPath, data) {
+    currentRelinkContext = {
+        bdsproPath,
+        data,
+        relinkMap: {},
+        missingList: data.missingFiles || [],
+        matches: []
+    };
+
+    const modal = document.getElementById('modalRelinkBdspro');
+    if (!modal) return;
+
+    // Popula informações gerais
+    const meta = data.metadata || {};
+    document.getElementById('relinkProjectName').textContent = meta.name || 'Projeto BDS';
+    document.getElementById('relinkProjectDesc').textContent = meta.description || 'Sem descrição';
+
+    const coverEl = document.getElementById('relinkProjectCover');
+    if (meta.cover_path && !meta.cover_relative_path) {
+        coverEl.style.backgroundImage = `url('file:///${meta.cover_path.replace(/\\/g, '/')}')`;
+    } else {
+        coverEl.style.backgroundImage = 'none';
+    }
+
+    // Pills de status
+    document.getElementById('pillTotalMedia').textContent = `${data.totalMedia} mídias`;
+    
+    const pillMissing = document.getElementById('pillMissingMedia');
+    pillMissing.textContent = `${data.missingMediaCount} ausentes`;
+    if (data.missingMediaCount > 0) {
+        pillMissing.className = 'relink-pill relink-pill--warning';
+    } else {
+        pillMissing.className = 'relink-pill relink-pill--success';
+        pillMissing.textContent = 'Mídias 100% OK';
+    }
+
+    const alertBox = document.getElementById('relinkMissingAlert');
+    if (data.missingMediaCount > 0) {
+        alertBox.classList.remove('hidden');
+    } else {
+        alertBox.classList.add('hidden');
+    }
+
+    renderRelinkTable();
+    modal.classList.add('open');
+}
+
+function renderRelinkTable() {
+    const tbody = document.getElementById('relinkMediaTableBody');
+    if (!tbody || !currentRelinkContext) return;
+    tbody.innerHTML = '';
+
+    const allMedia = currentRelinkContext.data.projectData?.media || [];
+    if (allMedia.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--muted); padding: 20px;">Nenhuma mídia registrada no projeto.</td></tr>';
+        return;
+    }
+
+    allMedia.forEach(m => {
+        const origPath = m.original_path || m.filepath;
+        const isMissingInitial = currentRelinkContext.data.missingFiles.some(mf => mf.original_path === origPath);
+        const relinkedPath = currentRelinkContext.relinkMap[origPath] || currentRelinkContext.relinkMap[m.filename];
+        
+        let statusBadge = '';
+        let displayPath = origPath;
+        let confidenceText = '-';
+
+        if (!isMissingInitial) {
+            statusBadge = '<span class="relink-badge-ok"><span class="material-symbols-rounded">check_circle</span> Conectado</span>';
+            confidenceText = '100%';
+        } else if (relinkedPath) {
+            statusBadge = '<span class="relink-badge-relinked"><span class="material-symbols-rounded">link</span> Reconectado</span>';
+            displayPath = relinkedPath;
+            const matchInfo = currentRelinkContext.matches.find(match => match.missing.original_path === origPath);
+            confidenceText = matchInfo ? `${matchInfo.confidence}%` : 'Manual';
+        } else {
+            statusBadge = '<span class="relink-badge-missing"><span class="material-symbols-rounded">error</span> Não encontrado</span>';
+            confidenceText = '0%';
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${statusBadge}</td>
+            <td style="font-weight: 600;">${escapeHtml(m.filename || 'Sem nome')}</td>
+            <td style="color: var(--muted); font-size: 11px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</td>
+            <td style="text-align: center;">${confidenceText}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function setupRelinkModalListeners() {
+    const modal = document.getElementById('modalRelinkBdspro');
+    if (!modal) return;
+
+    document.getElementById('btnCloseRelinkModal')?.addEventListener('click', () => {
+        modal.classList.remove('open');
+        currentRelinkContext = null;
+    });
+
+    document.getElementById('btnCancelRelink')?.addEventListener('click', () => {
+        modal.classList.remove('open');
+        currentRelinkContext = null;
+    });
+
+    // Localizar Pasta de Mídias
+    document.getElementById('btnSelectRelinkFolder')?.addEventListener('click', async () => {
+        if (!currentRelinkContext) return;
+        try {
+            const folderRes = await window.bds.selectFolder();
+            if (folderRes && folderRes.filePaths && folderRes.filePaths.length > 0) {
+                const searchFolder = folderRes.filePaths[0];
+                setAppStatus('Buscando mídias correspondentes...', 'info');
+
+                const scannedFiles = await window.bds.scanRelinkFolder(searchFolder);
+                const matches = await window.bds.matchMissingMedia(currentRelinkContext.missingList, scannedFiles);
+                currentRelinkContext.matches = matches;
+
+                let resolvedCount = 0;
+                for (const match of matches) {
+                    if (match.matched && match.resolved) {
+                        currentRelinkContext.relinkMap[match.missing.original_path] = match.matched.filepath;
+                        currentRelinkContext.relinkMap[match.missing.filename] = match.matched.filepath;
+                        resolvedCount++;
+                    }
+                }
+
+                renderRelinkTable();
+                setAppStatus(`Reconexão concluída: ${resolvedCount} de ${currentRelinkContext.missingList.length} mídias associadas`, 'success');
+            }
+        } catch (e) {
+            console.error('Erro ao buscar mídias para relink:', e);
+            window.bdsModal.alert('Erro ao escanear pasta de mídias.');
+        }
+    });
+
+    // Confirmar Importação
+    document.getElementById('btnConfirmImportBdspro')?.addEventListener('click', async () => {
+        if (!currentRelinkContext) return;
+        try {
+            setAppStatus('Importando projeto BDS...', 'info');
+            const importRes = await window.bds.importBdspro(currentRelinkContext.bdsproPath, currentRelinkContext.relinkMap);
+            if (importRes && importRes.success) {
+                setAppStatus(`Projeto "${importRes.projectName}" importado com sucesso!`, 'success');
+                modal.classList.remove('open');
+                currentRelinkContext = null;
+                await loadProjects();
+                selectProject(importRes.projectId);
+            }
+        } catch (e) {
+            console.error('Erro ao confirmar importação:', e);
+            setAppStatus('Erro ao importar projeto', 'error');
+            window.bdsModal.alert(`Erro ao importar projeto: ${e.message || e}`);
+        }
+    });
 }
 
 function openProjectWorkspace(id) {

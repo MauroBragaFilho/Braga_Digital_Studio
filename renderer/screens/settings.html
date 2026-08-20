@@ -18,6 +18,9 @@
       <button class="settings-tab" data-tab="settingsFoldersView" type="button">
         <span class="material-symbols-rounded">folder</span> Pastas
       </button>
+      <button class="settings-tab" data-tab="settingsLutsView" type="button">
+        <span class="material-symbols-rounded">gradient</span> LUTs
+      </button>
       <button class="settings-tab" data-tab="settingsUpdatesView" type="button">
         <span class="material-symbols-rounded">system_update</span> Atualizações
       </button>
@@ -125,6 +128,32 @@
             <span class="material-symbols-rounded">create_new_folder</span> + Nova Fonte
           </button>
           <div id="settingsCustomSourcesList" class="settings-custom-sources-list"></div>
+        </div>
+      </section>
+
+      <!-- ABA: LUTS -->
+      <section id="settingsLutsView" class="settings-view hidden">
+        <h3 class="settings-section-title">Configurações de LUTs</h3>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Imagem Padrão de Pré-visualização</h4>
+          <p class="settings-hint">Defina a imagem de referência utilizada no comparador (Antes/Depois) na tela de LUTs.</p>
+
+          <div class="settings-folder-row" style="margin-top: 14px;">
+            <span class="settings-folder-label">Imagem de Referência Atual</span>
+            <div class="settings-folder-controls">
+              <input type="text" id="lutPreviewImageInput" class="settings-input" placeholder="Imagem padrão do sistema (./assets/lut_preview.jpg)" readonly />
+              <button id="lutPreviewImageSelectBtn" class="settings-btn-outline" type="button">Escolher Imagem</button>
+              <button id="lutPreviewImageResetBtn" class="settings-btn-outline" type="button" title="Restaurar imagem padrão">Restaurar Padrão</button>
+            </div>
+          </div>
+
+          <div style="margin-top: 14px; display: flex; align-items: center; gap: 16px;">
+            <div style="width: 160px; height: 90px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--card-2); display: flex; align-items: center; justify-content: center;">
+              <img id="settingsLutPreviewThumb" src="./assets/lut_preview.jpg" style="width: 100%; height: 100%; object-fit: cover;" alt="Preview" />
+            </div>
+            <span class="settings-check-hint">Formatos suportados: PNG, JPG, JPEG, WEBP.</span>
+          </div>
         </div>
       </section>
 

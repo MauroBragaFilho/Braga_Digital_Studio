@@ -73,6 +73,13 @@ function renderSettings() {
   const accentInput = document.getElementById('accentColorInput');
   if (accentInput) accentInput.value = s.accentColor || '#e53935';
 
+  // LUTs Preview Image
+  setVal('lutPreviewImageInput', s.lutPreviewImage);
+  const lutThumb = document.getElementById('settingsLutPreviewThumb');
+  if (lutThumb) {
+    lutThumb.src = s.lutPreviewImage ? `file://${s.lutPreviewImage}` : './assets/lut_preview.jpg';
+  }
+
   toggleFolderInputs();
 }
 
@@ -95,6 +102,33 @@ function bindEvents() {
   document.getElementById('obsFolderButton')?.addEventListener('click', () => chooseFolder('obsFolderInput'));
   document.getElementById('shadowplayFolderButton')?.addEventListener('click', () => chooseFolder('shadowplayFolderInput'));
   document.getElementById('deviceFolderButton')?.addEventListener('click', () => chooseFolder('deviceFolderInput'));
+
+  // LUTs Preview Image Select / Reset
+  document.getElementById('lutPreviewImageSelectBtn')?.addEventListener('click', async () => {
+    try {
+      const files = await window.bds.selectFiles({
+        title: 'Selecionar Imagem de Referência para LUTs',
+        filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+        properties: ['openFile']
+      });
+      if (files && files.length > 0) {
+        const filePath = files[0];
+        const input = document.getElementById('lutPreviewImageInput');
+        if (input) input.value = filePath;
+        const thumb = document.getElementById('settingsLutPreviewThumb');
+        if (thumb) thumb.src = `file://${filePath}`;
+      }
+    } catch (err) {
+      console.error('[SETTINGS] Erro ao selecionar imagem de LUT:', err);
+    }
+  });
+
+  document.getElementById('lutPreviewImageResetBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('lutPreviewImageInput');
+    if (input) input.value = '';
+    const thumb = document.getElementById('settingsLutPreviewThumb');
+    if (thumb) thumb.src = './assets/lut_preview.jpg';
+  });
 
   // Tema — aplica preview imediato ao trocar
   document.getElementById('themeSelect')?.addEventListener('change', (e) => {
@@ -155,6 +189,7 @@ async function saveSettings() {
       autoUpdateGithub: document.getElementById('autoUpdateGithub')?.checked,
       theme: document.getElementById('themeSelect')?.value || 'dark',
       accentColor: document.getElementById('accentColorInput')?.value || '#e53935',
+      lutPreviewImage: document.getElementById('lutPreviewImageInput')?.value || '',
     });
     state.settings = updatedSettings;
     // Confirma o tema após salvar (garante consistência)
@@ -199,7 +234,8 @@ async function checkUpdates() {
   try {
     const result = await window.bds.checkUpdates();
     renderUpdates(result);
-    setStatus('Verificação de atualizações concluída.');
+    const hasUpdates = Object.values(result).some((item) => item && item.needsUpdate);
+    setStatus(hasUpdates ? 'Existem atualizações.' : 'Tudo atualizado.');
   } catch (error) {
     console.error('[SETTINGS] Erro ao verificar atualizações:', error);
     updatesList.innerHTML = `<p class="error-text">Erro: ${escapeHtml(error.message)}</p>`;
@@ -211,7 +247,7 @@ export function renderUpdates(result) {
   const updatesList = document.getElementById('updatesList');
   if (!updatesList || !result) return;
 
-  const items = [result.ytDlp, result.ffmpeg, result.spotdl].filter(Boolean);
+  const items = [result.ytDlp, result.ffmpeg, result.spotifyDlp, result.deno].filter(Boolean);
 
   if (items.length === 0) {
     updatesList.innerHTML = '<p>Nenhuma ferramenta configurada para atualização.</p>';

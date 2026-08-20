@@ -127,11 +127,12 @@ class LibraryQueryService {
         if (sort === 'filesize') orderClause = `ORDER BY m.filesize ${safeOrder}`;
         else if (sort === 'imported_at') orderClause = `ORDER BY m.imported_at ${safeOrder}`;
 
-        const selectSql = `SELECT DISTINCT m.* ${joins} ${filterSql} ${orderClause} LIMIT ?`;
+        const selectSql = `SELECT DISTINCT m.*, p.name as project_name ${joins} ${filterSql} ${orderClause} LIMIT ?`;
         const items = db.prepare(selectSql).all(...filterParams, limit);
 
         return { items, totalCount };
     }
+
 
 
     

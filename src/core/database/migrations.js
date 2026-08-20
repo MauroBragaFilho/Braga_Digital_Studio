@@ -25,13 +25,12 @@ function runMigrations() {
             
             const rows = db.prepare('SELECT id, filepath FROM media WHERE album IS NULL').all();
             if (rows.length > 0) {
-                const updateStmt = db.prepare('UPDATE media SET album = ? WHERE id = ?');
                 db.exec('BEGIN TRANSACTION');
                 for (const row of rows) {
                     const dir = path.dirname(row.filepath);
                     const albumName = path.basename(dir);
                     if (albumName && albumName !== '.' && albumName !== path.parse(dir).root) {
-                        updateStmt.run(albumName, row.id);
+                        db.prepare('UPDATE media SET album = ? WHERE id = ?').run(albumName, row.id);
                     }
                 }
                 db.exec('COMMIT');
@@ -132,11 +131,20 @@ function runMigrations() {
             db.exec("ALTER TABLE media ADD COLUMN origin TEXT;");
         } catch(e) {}
 
+        // Garante colunas de metadados BDSM em media
+        const bdsmCols = ['bdsm_camera', 'bdsm_profile', 'bdsm_lut', 'bdsm_metadata_json'];
+        for (const col of bdsmCols) {
+            try {
+                db.exec(`ALTER TABLE media ADD COLUMN ${col} TEXT;`);
+            } catch(e) {}
+        }
+
         // Normaliza todos os registros que têm status NULL para 'READY'
         try {
             db.exec("UPDATE media SET status = 'READY' WHERE status IS NULL;");
             db.exec("UPDATE media SET missing = 0 WHERE missing IS NULL;");
         } catch(e) {}
+
 
     } else {
         logger.warn('[Migrations] Arquivo schema.sql não encontrado.');

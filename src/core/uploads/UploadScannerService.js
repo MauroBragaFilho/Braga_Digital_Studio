@@ -1,12 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { ffmpegTool } = require('../../infrastructure/external-tools/adapters/FfmpegTool');
+const { ffprobeTool } = require('../../infrastructure/external-tools/adapters/FfprobeTool');
 
 class UploadScannerService {
     constructor(options = {}) {
         this.paths = options.paths || {};
-        this.ffprobePath = options.ffprobePath || path.join(this.paths.dataDir || '', 'ffprobe.exe');
-        this.ffmpegPath = options.ffmpegPath || path.join(this.paths.dataDir || '', 'ffmpeg.exe');
+        this.ffprobePath = options.ffprobePath || (this.paths.dataDir ? ffprobeTool.resolve({ mustExist: false }) : '');
+        this.ffmpegPath = options.ffmpegPath || (this.paths.dataDir ? ffmpegTool.resolve({ mustExist: false }) : '');
         this.thumbnailsDir = path.join(this.paths.dataDir || '', 'Thumbnails');
         
         if (!fs.existsSync(this.thumbnailsDir)) {

@@ -685,8 +685,14 @@ function bindEvents() {
     const codec = document.getElementById('selCodec')?.value || 'H.264';
     const quality = document.getElementById('selQuality')?.value || 'Alta';
     const format = (document.getElementById('selFormat')?.value || 'mp4').toLowerCase();
-    const destFolder = document.getElementById('txtDestFolder')?.value || 'C:/Users/Public/Videos/Montagem';
-    const baseOutputName = document.getElementById('txtOutputName')?.value || 'Montagem'; // Ajuste se houver um campo para isso
+    let defaultDest = 'Montagem';
+    try {
+      const vDir = (await window.bds?.getVideosPath?.()) || '';
+      const sep = vDir.includes('\\') ? '\\' : '/';
+      defaultDest = (vDir.endsWith('/') || vDir.endsWith('\\')) ? `${vDir}Montagem` : `${vDir}${sep}Montagem`;
+    } catch (_) {}
+    const destFolder = document.getElementById('txtDestFolder')?.value || defaultDest;
+    const baseOutputName = document.getElementById('txtOutputName')?.value || 'Montagem';
 
     const exportConfig = {
       introPath: introVideo.path,
