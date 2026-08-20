@@ -1,6 +1,6 @@
 # Braga Digital Studio (BDS) 🎬
 
-[![Licença](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Licença](https://img.shields.io/badge/Licen%C3%A7a-Propriet%C3%A1ria-red.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-19.0.0-blue)](https://www.electronjs.org/)
 [![NodeJS](https://img.shields.io/badge/Node.js-18.x-green)](https://nodejs.org/)
 
@@ -71,3 +71,9 @@ Todos os dados temporários que o programa gera são salvos de forma segura em u
 
 **Nenhuma informação sensível é enviada para servidores externos ou salva neste repositório**. 
 O banco de dados SQLite temporário, caches de renderização, logs, pastas `data` e sessões isoladas de autenticação do YouTube estão estritamente bloqueadas de serem enviadas para repositórios através de nossas regras rígidas no `.gitignore`.
+
+## 📄 Licença
+
+Copyright © 2026 **Mauro Braga**. Todos os direitos reservados.
+
+Este software é proprietário e confidencial. É estritamente proibida a cópia, modificação, distribuição, sublicenciamento ou divulgação deste código, por qualquer meio, sem a autorização prévia por escrito do autor.
