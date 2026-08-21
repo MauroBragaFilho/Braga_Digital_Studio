@@ -276,6 +276,7 @@ class Bootstrap {
     require('./ipc/projectHandlers')(projectService, premiereExporter, bdsproPackageService, this.paths, waveformService, audioSyncService, sequenceBuilder);
     require('./ipc/lutHandlers')(this.lutManager);
     require('./ipc/telemetryHandlers')();
+    require('./ipc/jobHandlers')();
 
     // Settings
     ipcMain.handle('settings:get', () => this.settingsManager.load());

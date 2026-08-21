@@ -10,7 +10,11 @@
     "start": "electron .",
     "prebuild": "npm version patch --no-git-tag-version",
     "build": "electron-builder --win nsis",
-    "build:portable": "electron-builder --win portable"
+    "build:win": "electron-builder --win nsis",
+    "build:win:portable": "electron-builder --win portable",
+    "build:linux": "electron-builder --linux AppImage deb",
+    "build:linux:appimage": "electron-builder --linux AppImage",
+    "build:linux:deb": "electron-builder --linux deb"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
@@ -35,6 +39,17 @@
     "win": {
       "icon": "assets/icon.ico",
       "target": "nsis"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo",
+      "executableName": "braga-digital-studio",
+      "synopsis": "Braga Digital Studio - Suíte de Mídia e Produção Digital",
+      "description": "Braga Digital Studio desktop app built with Electron, Node.js and SQLite."
     },
     "directories": {
       "output": "dist"
