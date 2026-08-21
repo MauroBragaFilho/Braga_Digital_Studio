@@ -1014,7 +1014,11 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #101215;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .ws-sync-viz-title {
@@ -1024,11 +1028,19 @@
   text-transform: uppercase;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
+  min-width: 0;
 }
 
 .ws-sync-viz-canvas {
   display: block;
-  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ws-waveform-canvas {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .ws-drop-overlay {

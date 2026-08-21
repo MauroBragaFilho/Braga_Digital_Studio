@@ -52,7 +52,10 @@ export class TimelineEngine {
   }
 
   setZoom(pxPerSecond) {
-    this.pxPerSecond = Math.max(2, pxPerSecond);
+    // Limite zoom horizontal para evitar extrapolar tamanho máximo seguro de Canvas em vídeos longos (ex: 3h+)
+    const maxSafePxPerSecond = this.duration > 0 ? Math.floor(16384 / this.duration) : 100;
+    const clampedPx = Math.min(Math.max(0.5, pxPerSecond), Math.max(10, maxSafePxPerSecond));
+    this.pxPerSecond = clampedPx;
     this.resize();
   }
 
@@ -73,9 +76,11 @@ export class TimelineEngine {
   }
 
   resize() {
-    const width = Math.max(this.canvas.parentElement?.clientWidth || 800, this.timeToX(this.duration));
-    const height = RULER_HEIGHT + this.tracks.length * TRACK_HEIGHT;
-    const dpr = window.devicePixelRatio || 1;
+    const parentWidth = this.canvas.parentElement?.clientWidth || 800;
+    // Limite superior de 16384px para manter performance e compatibilidade de hardware/canvas
+    const width = Math.min(16384, Math.max(parentWidth, Math.ceil(this.timeToX(this.duration))));
+    const height = Math.max(RULER_HEIGHT + TRACK_HEIGHT, RULER_HEIGHT + this.tracks.length * TRACK_HEIGHT);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     this.canvas.width = Math.floor(width * dpr);
     this.canvas.height = Math.floor(height * dpr);

@@ -22,7 +22,7 @@ export class TimelineControls {
     this.canvas = canvas;
     this.callbacks = callbacks;
 
-    this.tool = 'select'; // 'select' | 'blade'
+    this.tool = 'select'; // 'select' (modo sync / navegação segura)
     this.readOnly = !!callbacks.readOnly;
     this.dragState = null; // { clip, startX, originalStartTime }
     this.snapThresholdPx = 8;
@@ -31,9 +31,9 @@ export class TimelineControls {
   }
 
   setTool(tool) {
-    if (this.readOnly) return;
-    this.tool = tool;
-    this.canvas.style.cursor = tool === 'blade' ? 'crosshair' : 'default';
+    // BDS foca em decupagem, sincronização e organização (não edição destrutiva)
+    this.tool = 'select';
+    this.canvas.style.cursor = 'default';
   }
 
   _bindEvents() {
@@ -69,7 +69,7 @@ export class TimelineControls {
   _onMouseDown(e) {
     const { x, y } = this._getCanvasPos(e);
 
-    // Clique na régua ou em qualquer área quando em modo sync = seek do playhead
+    // Seek do playhead em qualquer ponto da régua ou com clique na timeline
     if (y < RULER_HEIGHT || this.readOnly) {
       const time = this.engine.xToTime(x);
       this.engine.setPlayhead(time);
@@ -81,27 +81,18 @@ export class TimelineControls {
     const hit = this.engine.hitTest(x, y);
     if (!hit) return;
 
-    if (this.tool === 'blade') {
-      if (hit.clip) {
-        this.callbacks.onSplitClip?.(hit.clip, hit.time);
-      }
-      return;
-    }
-
-    // Ferramenta de seleção/movimento
+    // Seleção e inspeção de clipe
     if (hit.clip) {
       this.engine.selectedClipId = hit.clip.id;
       this.callbacks.onSelectClip?.(hit.clip.id);
-      this.dragState = {
-        clip: hit.clip,
-        startX: x,
-        originalStartTime: hit.clip.start_time,
-        originalEndTime: hit.clip.end_time
-      };
     } else {
       this.engine.selectedClipId = null;
       this.callbacks.onSelectClip?.(null);
     }
+    
+    const time = this.engine.xToTime(x);
+    this.engine.setPlayhead(time);
+    this.callbacks.onSeek?.(time);
     this.callbacks.onRender?.();
   }
 

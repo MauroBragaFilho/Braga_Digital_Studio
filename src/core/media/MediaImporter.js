@@ -87,11 +87,12 @@ class MediaImporter {
 
             // 3. Salva no banco de dados
             const fileUuid = uuidv4();
+            const audioTrackCount = (info.audio_streams && info.audio_streams.length) ? info.audio_streams.length : (info.audio_codec ? 1 : 0);
             const stmt = db.prepare(`
                 INSERT INTO media (
                     library_id, uuid, origin, filename, filepath, filesize, duration,
-                    width, height, fps, video_codec, audio_codec, bitrate, hash, recorded_at, album
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    width, height, fps, video_codec, audio_codec, audio_track_count, bitrate, hash, recorded_at, album
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
             const info2 = stmt.run(
@@ -107,6 +108,7 @@ class MediaImporter {
                 info.fps,
                 info.video_codec,
                 info.audio_codec,
+                audioTrackCount,
                 info.bitrate,
                 hash,
                 recordedAt,
