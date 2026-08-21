@@ -903,4 +903,33 @@ window.bds?.onConverterFileFinished?.((data) => {
       overlay.classList.remove('active');
     }
   });
+
+  // ===== SISTEMA DE ENVIO DE ERROS / TELEMETRIA =====
+  window.addEventListener('error', (event) => {
+    try {
+      window.bds?.reportError?.({
+        name: event.error?.name || 'ClientError',
+        message: event.message || 'Erro inesperado na interface',
+        stack: event.error?.stack || ''
+      }, {
+        source: 'renderer:window.onerror',
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno
+      });
+    } catch (_) {}
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    try {
+      const reason = event.reason;
+      window.bds?.reportError?.({
+        name: reason?.name || 'UnhandledRejection',
+        message: reason?.message || String(reason || 'Promessa rejeitada sem tratamento'),
+        stack: reason?.stack || ''
+      }, {
+        source: 'renderer:unhandledrejection'
+      });
+    } catch (_) {}
+  });
 }
