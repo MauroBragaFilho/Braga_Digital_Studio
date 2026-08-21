@@ -145,6 +145,16 @@ function runMigrations() {
             db.exec("UPDATE media SET missing = 0 WHERE missing IS NULL;");
         } catch(e) {}
 
+        // Garante colunas de múltiplas faixas de áudio para a Sprint 8
+        try {
+            db.exec("ALTER TABLE media ADD COLUMN audio_track_count INTEGER DEFAULT 1;");
+            logger.info('[Migrations] Coluna audio_track_count adicionada em media.');
+        } catch(e) {}
+        try {
+            db.exec("ALTER TABLE timeline_clips ADD COLUMN audio_stream_index INTEGER DEFAULT 0;");
+            logger.info('[Migrations] Coluna audio_stream_index adicionada em timeline_clips.');
+        } catch(e) {}
+
 
     } else {
         logger.warn('[Migrations] Arquivo schema.sql não encontrado.');
