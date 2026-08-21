@@ -22,6 +22,13 @@ const api = {
   getVideosPath: () => ipcRenderer.invoke('system:getVideosPath'),
   getDownloadsPath: () => ipcRenderer.invoke('system:getDownloadsPath'),
 
+  // --- Sistema de Telemetria e Relatório de Erros ---
+  reportError: (error, context) => ipcRenderer.invoke('telemetry:reportError', error, context),
+  getDeveloperEmail: () => ipcRenderer.invoke('telemetry:getDeveloperEmail'),
+  getCrashReports: () => ipcRenderer.invoke('telemetry:getCrashReports'),
+  openCrashReportsFolder: () => ipcRenderer.invoke('telemetry:openReportsFolder'),
+  getMailtoErrorLink: (error, context) => ipcRenderer.invoke('telemetry:getMailtoLink', error, context),
+
   // Controles de Janela
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),

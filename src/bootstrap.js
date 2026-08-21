@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const path = require('node:path');
 const fs = require('node:fs');
@@ -8,6 +8,7 @@ const { ipcMain, dialog, BrowserWindow, app } = require('electron');
 const logger = require('./services/logService');
 const SettingsManager = require('./core/settings/SettingsManager');
 const LutManager = require('./core/luts/LutManager');
+const { errorReporter } = require('./infrastructure/telemetry/ErrorReporter');
 
 const { ffmpegTool } = require('./infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('./infrastructure/external-tools/adapters/FfprobeTool');
@@ -64,6 +65,14 @@ class Bootstrap {
   async init() {
     const paths = this.paths;
     const settings = this.settingsManager.load();
+
+    // Inicializar Sistema de Envio de Erros / Telemetria
+    errorReporter.init({
+      logsDir: this.appPaths.logsDir,
+      developerEmail: settings.developerEmail || 'obragafilho00@gmail.com',
+      endpointUrl: settings.errorReportingEndpoint || '',
+      getSettings: () => this.settingsManager.load()
+    });
 
     // Copiar LUTs embutidas
     const bundledLutsDir = path.join(__dirname, '..', 'data', 'LUTs');
@@ -266,6 +275,7 @@ class Bootstrap {
     require('./ipc/youtubeHandlers')();
     require('./ipc/projectHandlers')(projectService, premiereExporter, bdsproPackageService, this.paths, waveformService, audioSyncService, sequenceBuilder);
     require('./ipc/lutHandlers')(this.lutManager);
+    require('./ipc/telemetryHandlers')();
 
     // Settings
     ipcMain.handle('settings:get', () => this.settingsManager.load());

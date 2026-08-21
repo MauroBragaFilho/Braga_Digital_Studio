@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -31,7 +31,10 @@ class SettingsManager {
       theme: 'dark',
       accentColor: '#e53935',
       lutPreviewImage: '',
-      checkUpdatesOnStart: false
+      checkUpdatesOnStart: false,
+      errorReportingEnabled: true,
+      developerEmail: 'obragafilho00@gmail.com',
+      errorReportingEndpoint: ''
     };
   }
 
