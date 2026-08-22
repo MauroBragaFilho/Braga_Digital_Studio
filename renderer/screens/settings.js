@@ -143,7 +143,31 @@ function bindEvents() {
 
   // Atualizações
   document.getElementById('checkUpdatesButton')?.addEventListener('click', checkUpdates);
-  document.getElementById('updateDepsButton')?.addEventListener('click', updateDependencies);
+  document.getElementById('updateNowButton')?.addEventListener('click', startUnifiedUpdate);
+  document.getElementById('updateLaterButton')?.addEventListener('click', () => {
+    const btnNow = document.getElementById('updateNowButton');
+    const btnLater = document.getElementById('updateLaterButton');
+    if (btnNow) btnNow.classList.add('hidden');
+    if (btnLater) btnLater.classList.add('hidden');
+    setUpdateStatusView('later');
+  });
+
+  // Exportar Logs de Diagnóstico
+  document.getElementById('exportLogsButton')?.addEventListener('click', async () => {
+    try {
+      setStatus('Exportando logs de diagnóstico...');
+      const res = await window.bds.exportDiagnosticLogs();
+      if (res && res.success) {
+        setStatus('Logs exportados com sucesso.');
+        window.bdsModal.alert(`Logs de diagnóstico exportados com sucesso para:\n${res.exportPath}`);
+      } else if (!res?.cancelled) {
+        window.bdsModal.alert('Não foi possível exportar os logs.');
+      }
+    } catch (e) {
+      console.error('[SETTINGS] Erro ao exportar logs:', e);
+      window.bdsModal.alert('Erro ao exportar logs: ' + e.message);
+    }
+  });
 
   // Limpar Banco de Dados
   document.getElementById('clearDbButton')?.addEventListener('click', async () => {
@@ -222,109 +246,142 @@ async function fetchAppVersion() {
 }
 
 /* ==========================================================================
-   ATUALIZAÇÕES (lógica consolidada do antigo updates.js)
+   ATUALIZAÇÕES UNIFICADAS (BDS Update Manager)
    ========================================================================== */
-async function checkUpdates() {
-  const updatesList = document.getElementById('updatesList');
-  if (!updatesList) return;
+function setUpdateStatusView(stateType, extraMessage = '') {
+  const iconWrap = document.getElementById('updateStatusIconWrap');
+  const icon = document.getElementById('updateStatusIcon');
+  const headline = document.getElementById('updateHeadline');
+  const subHeadline = document.getElementById('updateSubHeadline');
+  const progressContainer = document.getElementById('updateProgressContainer');
+  const btnCheck = document.getElementById('checkUpdatesButton');
+  const btnNow = document.getElementById('updateNowButton');
+  const btnLater = document.getElementById('updateLaterButton');
 
-  updatesList.innerHTML = '<p class="loading-text">Verificando atualizações...</p>';
-  setStatus('Verificando atualizações das dependências...');
+  if (!iconWrap || !icon || !headline || !subHeadline) return;
+
+  iconWrap.className = 'settings-update-icon-wrap';
+
+  switch (stateType) {
+    case 'loading':
+      iconWrap.classList.add('updating');
+      icon.textContent = 'sync';
+      headline.textContent = 'Verificando atualizações...';
+      subHeadline.textContent = 'Consultando integridade dos componentes do BDS.';
+      if (progressContainer) progressContainer.classList.add('hidden');
+      if (btnCheck) btnCheck.disabled = true;
+      if (btnNow) btnNow.classList.add('hidden');
+      if (btnLater) btnLater.classList.add('hidden');
+      break;
+
+    case 'has_updates':
+      iconWrap.classList.add('has-updates');
+      icon.textContent = 'system_update';
+      headline.textContent = 'Existem atualizações disponíveis.';
+      subHeadline.textContent = 'Deseja atualizar os componentes do BDS agora?';
+      if (progressContainer) progressContainer.classList.add('hidden');
+      if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.add('hidden'); }
+      if (btnNow) btnNow.classList.remove('hidden');
+      if (btnLater) btnLater.classList.remove('hidden');
+      break;
+
+    case 'up_to_date':
+      icon.textContent = 'check_circle';
+      headline.textContent = 'Tudo está atualizado.';
+      subHeadline.textContent = 'Todos os componentes internos do BDS estão operando com as versões mais recentes.';
+      if (progressContainer) progressContainer.classList.add('hidden');
+      if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
+      if (btnNow) btnNow.classList.add('hidden');
+      if (btnLater) btnLater.classList.add('hidden');
+      break;
+
+    case 'updating':
+      iconWrap.classList.add('updating');
+      icon.textContent = 'downloading';
+      headline.textContent = 'Atualizando o BDS...';
+      subHeadline.textContent = extraMessage || 'Preparando componentes...';
+      if (progressContainer) progressContainer.classList.remove('hidden');
+      if (btnCheck) btnCheck.disabled = true;
+      if (btnNow) btnNow.classList.add('hidden');
+      if (btnLater) btnLater.classList.add('hidden');
+      break;
+
+    case 'later':
+      icon.textContent = 'schedule';
+      headline.textContent = 'Atualizações adiadas.';
+      subHeadline.textContent = 'Você poderá atualizar os componentes a qualquer momento clicando em verificar.';
+      if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
+      break;
+
+    case 'error':
+      iconWrap.classList.add('error');
+      icon.textContent = 'error';
+      headline.textContent = 'Não foi possível verificar atualizações.';
+      subHeadline.textContent = 'Verifique sua conexão com a internet e tente novamente.';
+      if (progressContainer) progressContainer.classList.add('hidden');
+      if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
+      if (btnNow) btnNow.classList.add('hidden');
+      if (btnLater) btnLater.classList.add('hidden');
+      break;
+  }
+}
+
+async function checkUpdates() {
+  setUpdateStatusView('loading');
+  setStatus('Verificando atualizações dos componentes...');
 
   try {
     const result = await window.bds.checkUpdates();
-    renderUpdates(result);
-    const hasUpdates = Object.values(result).some((item) => item && item.needsUpdate);
-    setStatus(hasUpdates ? 'Existem atualizações.' : 'Tudo atualizado.');
+    if (result && result.hasUpdates) {
+      setUpdateStatusView('has_updates');
+      setStatus('Existem atualizações disponíveis.');
+    } else {
+      setUpdateStatusView('up_to_date');
+      setStatus('Tudo atualizado.');
+    }
   } catch (error) {
     console.error('[SETTINGS] Erro ao verificar atualizações:', error);
-    updatesList.innerHTML = `<p class="error-text">Erro: ${escapeHtml(error.message)}</p>`;
+    setUpdateStatusView('error');
     setStatus('Falha ao verificar atualizações.');
   }
 }
 
-export function renderUpdates(result) {
-  const updatesList = document.getElementById('updatesList');
-  if (!updatesList || !result) return;
+async function startUnifiedUpdate() {
+  setUpdateStatusView('updating', 'Iniciando atualização de componentes...');
+  setStatus('Atualizando o BDS...');
 
-  const items = [result.ytDlp, result.ffmpeg, result.spotifyDlp, result.deno].filter(Boolean);
+  const fill = document.getElementById('updateProgressFill');
+  const percentEl = document.getElementById('updateProgressPercent');
+  const stepEl = document.getElementById('updateProgressStep');
 
-  if (items.length === 0) {
-    updatesList.innerHTML = '<p>Nenhuma ferramenta configurada para atualização.</p>';
-    return;
+  // Registrar ouvinte de progresso
+  if (window.bds.onUpdateProgress) {
+    window.bds.onUpdateProgress((data) => {
+      const pct = data.percent || 0;
+      if (fill) fill.style.width = `${pct}%`;
+      if (percentEl) percentEl.textContent = `${pct}%`;
+      if (stepEl && data.message) stepEl.textContent = data.message;
+    });
   }
 
-  updatesList.innerHTML = items.map((item) => {
-    const errorMarkup = item.error ? `<p class="tool-error">${escapeHtml(item.error)}</p>` : '';
-    const buttonText = item.needsUpdate ? 'Atualizar' : 'Reinstalar';
-    return `
-      <section class="update-item">
-        <div class="tool-info">
-          <h3>${escapeHtml(item.tool)}</h3>
-          <p>Instalada: <span class="version-tag">${escapeHtml(item.installed || 'não encontrada')}</span></p>
-          <p>Mais recente: <span class="version-tag">${escapeHtml(item.latest || 'indisponível')}</span></p>
-          ${errorMarkup}
-        </div>
-        <div class="tool-actions">
-          <button class="settings-btn-outline" data-update-tool="${escapeHtml(item.tool)}" ${item.canUpdate ? '' : 'disabled'}>
-            ${buttonText}
-          </button>
-        </div>
-      </section>
-    `;
-  }).join('');
-
-  updatesList.querySelectorAll('[data-update-tool]').forEach((button) => {
-    button.addEventListener('click', () => executeToolUpdate(button, button.dataset.updateTool));
-  });
-}
-
-async function executeToolUpdate(button, toolName) {
-  button.disabled = true;
-  button.textContent = 'Atualizando...';
-  setStatus(`Atualizando ${toolName}, aguarde...`);
-
   try {
-    await window.bds.updateTool(toolName);
-    setStatus(`${toolName} atualizado com sucesso!`);
-    const freshResult = await window.bds.checkUpdates();
-    renderUpdates(freshResult);
+    const result = await window.bds.installUpdates();
+    if (result && result.success) {
+      if (fill) fill.style.width = '100%';
+      if (percentEl) percentEl.textContent = '100%';
+      if (stepEl) stepEl.textContent = 'Componentes atualizados!';
+      setStatus('Atualização concluída com sucesso.');
+      setTimeout(() => {
+        setUpdateStatusView('up_to_date');
+      }, 1500);
+    } else {
+      setUpdateStatusView('error');
+      setStatus('Atualização concluída com avisos.');
+    }
   } catch (error) {
-    console.error(`[SETTINGS] Erro ao atualizar ${toolName}:`, error);
-    button.textContent = 'Erro';
-    setStatus(`Falha ao atualizar ${toolName}: ${error.message}`);
-    setTimeout(() => {
-      button.disabled = false;
-      button.textContent = 'Tentar Novamente';
-    }, 3000);
-  }
-}
-
-async function updateDependencies() {
-  const btn = document.getElementById('updateDepsButton');
-  const statusEl = document.getElementById('updateStatusText');
-  if (!btn) return;
-
-  const showStatus = (text, type) => {
-    if (!statusEl) return;
-    statusEl.textContent = text;
-    statusEl.className = `settings-update-status status-${type}`;
-  };
-
-  btn.disabled = true;
-  btn.innerText = 'ATUALIZANDO...';
-  showStatus('Baixando atualizações', 'loading');
-
-  try {
-    await window.bds.updateAllDependencies();
-    showStatus('✅ Atualizações concluídas com sucesso.', 'ok');
-    setTimeout(() => checkUpdates(), 1000);
-  } catch (error) {
-    showStatus('❌ Ocorreu um erro durante a atualização.', 'error');
-    console.error('[SETTINGS] Erro ao atualizar dependências:', error);
-  } finally {
-    btn.disabled = false;
-    btn.innerText = 'ATUALIZAR DEPENDÊNCIAS';
+    console.error('[SETTINGS] Erro durante a atualização:', error);
+    setUpdateStatusView('error');
+    setStatus('Erro ao atualizar componentes: ' + error.message);
   }
 }
 

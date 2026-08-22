@@ -139,10 +139,27 @@ const api = {
   listConversions: () => ipcRenderer.invoke('conversions:list'),
   clearConversions: () => ipcRenderer.invoke('conversions:clear'),
 
-  // --- Atualizações ---
-  checkUpdates: () => ipcRenderer.invoke('updates:check'),
+  // --- Atualizações Unificadas (BDS Update Manager) ---
+  checkUpdates: () => ipcRenderer.invoke('updates:checkSystem'),
+  installUpdates: () => ipcRenderer.invoke('updates:updateAll'),
   updateTool: (tool) => ipcRenderer.invoke('updates:updateTool', tool),
   updateAllDependencies: () => ipcRenderer.invoke('updates:updateAll'),
+  onUpdateProgress: (cb) => registerListener('updates:progress', cb),
+  onUpdateCompleted: (cb) => registerListener('updates:completed', cb),
+
+  // --- Recuperação de Vídeo ---
+  recovery: {
+    diagnose: (corruptPath, referencePath) => ipcRenderer.invoke('recovery:diagnose', { corruptPath, referencePath }),
+    start: (options) => ipcRenderer.invoke('recovery:start', options),
+    cancel: () => ipcRenderer.invoke('recovery:cancel'),
+    onProgress: (cb) => registerListener('recovery:progress', cb),
+    onStage: (cb) => registerListener('recovery:stage', cb),
+    onFinished: (cb) => registerListener('recovery:finished', cb),
+    onError: (cb) => registerListener('recovery:error', cb),
+  },
+
+  // --- Logs e Diagnóstico ---
+  exportDiagnosticLogs: () => ipcRenderer.invoke('logs:export'),
 
   // --- YouTube ---
   startYoutubeAuth: () => ipcRenderer.invoke('youtube:startAuth'),
@@ -151,11 +168,12 @@ const api = {
   onDownloadQueue: (cb) => registerListener('download:queue', cb),
   onProgress: (cb) => registerListener('download:progress', cb),
   onFinished: (cb) => registerListener('download:finished', cb),
-  // Atualizações e Dependências Iniciais
+  // Atualizações e Dependências Iniciais (legado)
   onUpdatesChecked: (cb) => registerListener('updates:checked', cb),
   onDependenciesDownloading: (cb) => registerListener('dependencies:downloading', cb),
   onDependenciesDone: (cb) => registerListener('dependencies:done', cb),
   
+
   // Conversor
   onConverterQueue: (cb) => registerListener('converter:queue', cb),
   onConverterFileStarted: (cb) => registerListener('converter:fileStarted', cb),

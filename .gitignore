@@ -1,4 +1,4 @@
-﻿# Dependências do Node.js
+# Dependências do Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -28,9 +28,11 @@ logs/
 src/logs/
 *.log
 
-# Documentações internas (mantendo apenas os READMEs)
+# Documentações internas (mantendo os READMEs e a pasta .docs)
 *.md
 !README*.md
+!.docs/
+!.docs/**
 
 # Sessão e cookies temporários
 Partitions/

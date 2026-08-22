@@ -1,0 +1,222 @@
+<div class="recovery-screen-container">
+  <!-- 1. CABEÇALHO DA TELA -->
+  <div class="recovery-header">
+    <p class="recovery-subtitle">
+      Recuperação e reconstrução estrutural de vídeos corrompidos, gravações interrompidas ou arquivos com cabeçalhos ausentes.
+    </p>
+  </div>
+
+  <!-- 2. BANNER DE ERRO / AVISO -->
+  <div id="recoveryErrorBanner" class="recovery-error-banner hidden">
+    <div class="recovery-error-header">
+      <span class="material-symbols-rounded">error</span>
+      <span id="recoveryErrorTitle">Não foi possível concluir a recuperação</span>
+      <button id="btnCloseRecoveryError" class="recovery-btn-mini" type="button">Fechar</button>
+    </div>
+    <p id="recoveryErrorMessage" class="recovery-error-text"></p>
+  </div>
+
+  <!-- 3. SELEÇÃO DE ARQUIVOS (DUAS COLUNAS) -->
+  <div class="recovery-grid-cards">
+    
+    <!-- CARD 1: VÍDEO DANIFICADO -->
+    <div class="recovery-card" id="corruptCard">
+      <div class="recovery-card-header">
+        <div class="recovery-card-title-wrap">
+          <span class="material-symbols-rounded icon-corrupt">broken_image</span>
+          <div>
+            <h3 class="recovery-card-title">1. Vídeo Danificado</h3>
+            <span class="recovery-card-hint">Arquivo corrompido ou incompleto</span>
+          </div>
+        </div>
+        <button id="btnClearCorruptFile" class="recovery-btn-icon-clear hidden" title="Remover arquivo" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <!-- Dropzone Danificado -->
+      <div class="recovery-dropzone" id="corruptDropzone">
+        <span class="material-symbols-rounded dropzone-icon">upload_file</span>
+        <p class="dropzone-text">Arraste o vídeo danificado aqui ou clique no botão</p>
+        <button id="btnSelectCorruptFile" class="recovery-btn-primary" type="button">
+          <span class="material-symbols-rounded">file_open</span> Selecionar Vídeo
+        </button>
+      </div>
+
+      <!-- Informações do Vídeo Danificado -->
+      <div class="recovery-file-details hidden" id="corruptFileDetails">
+        <div class="file-detail-row">
+          <span class="label">Arquivo:</span>
+          <strong class="value" id="corruptFileName">-</strong>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Tamanho:</span>
+          <span class="value" id="corruptFileSize">-</span>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Diagnóstico:</span>
+          <span class="badge" id="corruptSeverityBadge">Analisando...</span>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Estrutura:</span>
+          <span class="value" id="corruptStructureInfo">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 2: VÍDEO DE REFERÊNCIA -->
+    <div class="recovery-card" id="referenceCard">
+      <div class="recovery-card-header">
+        <div class="recovery-card-title-wrap">
+          <span class="material-symbols-rounded icon-reference">video_file</span>
+          <div>
+            <h3 class="recovery-card-title">2. Vídeo de Referência</h3>
+            <span class="recovery-card-hint">Vídeo íntegro da mesma câmera (Recomendado)</span>
+          </div>
+        </div>
+        <button id="btnClearReferenceFile" class="recovery-btn-icon-clear hidden" title="Remover referência" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <!-- Dropzone Referência -->
+      <div class="recovery-dropzone" id="referenceDropzone">
+        <span class="material-symbols-rounded dropzone-icon">rule_folder</span>
+        <p class="dropzone-text">Arraste um vídeo gravado com os mesmos ajustes</p>
+        <button id="btnSelectReferenceFile" class="recovery-btn-outline" type="button">
+          <span class="material-symbols-rounded">folder_open</span> Selecionar Referência
+        </button>
+      </div>
+
+      <!-- Informações do Vídeo de Referência -->
+      <div class="recovery-file-details hidden" id="referenceFileDetails">
+        <div class="file-detail-row">
+          <span class="label">Arquivo:</span>
+          <strong class="value" id="referenceFileName">-</strong>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Resolução / Codec:</span>
+          <span class="value" id="referenceSpecs">-</span>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Compatibilidade:</span>
+          <span class="badge" id="referenceCompatBadge">-</span>
+        </div>
+        <p class="compat-message" id="referenceCompatMessage">-</p>
+
+        <!-- Mini Preview do Vídeo de Referência -->
+        <div class="recovery-reference-preview-wrap" id="referencePreviewWrap">
+          <video id="referenceVideoPreview" class="recovery-mini-preview" muted controls preload="metadata"></video>
+          <span class="preview-tag">Preview da Referência</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 4. PAINEL DE CONTROLES E DESTINO -->
+  <div class="recovery-action-panel">
+    <div class="recovery-output-row">
+      <div class="output-folder-info">
+        <span class="material-symbols-rounded">folder</span>
+        <div>
+          <span class="output-label">Pasta de Destino:</span>
+          <span class="output-path" id="recoveryOutputPath">Mesma pasta do vídeo original</span>
+        </div>
+      </div>
+      <button id="btnSelectOutputDir" class="recovery-btn-outline-sm" type="button">
+        Alterar Pasta
+      </button>
+    </div>
+
+    <div class="recovery-main-actions">
+      <button id="btnStartRecovery" class="recovery-btn-action-start" type="button" disabled>
+        <span class="material-symbols-rounded">healing</span>
+        RECUPERAR VÍDEO
+      </button>
+      <button id="btnCancelRecovery" class="recovery-btn-action-cancel hidden" type="button">
+        <span class="material-symbols-rounded">cancel</span>
+        CANCELAR
+      </button>
+    </div>
+  </div>
+
+  <!-- 5. PROGRESSO DA RECUPERAÇÃO -->
+  <div class="recovery-progress-card hidden" id="recoveryProgressCard">
+    <div class="progress-header">
+      <div class="progress-title-wrap">
+        <span class="material-symbols-rounded spin">hourglass_top</span>
+        <div>
+          <h4 id="recoveryProgressHeadline">Recuperando arquivo...</h4>
+          <span class="progress-sub" id="recoveryProgressStep">Reconstruindo estrutura do vídeo...</span>
+        </div>
+      </div>
+      <strong class="progress-percent" id="recoveryProgressPercent">0%</strong>
+    </div>
+
+    <div class="recovery-progress-bar">
+      <div class="recovery-progress-fill" id="recoveryProgressFill" style="width: 0%;"></div>
+    </div>
+  </div>
+
+  <!-- 6. CARD DE RESULTADO SUCESSO & PREVIEW DO VÍDEO RECUPERADO -->
+  <div class="recovery-success-card hidden" id="recoverySuccessCard">
+    <div class="success-header">
+      <div class="success-icon-wrap">
+        <span class="material-symbols-rounded">check_circle</span>
+      </div>
+      <div class="success-info">
+        <h3>Vídeo Recuperado com Sucesso!</h3>
+        <p id="recoveryResultSummary">O arquivo foi reconstruído, validado e está pronto para reprodução.</p>
+      </div>
+    </div>
+
+    <!-- PLAYER EMBUTIDO DE PREVIEW DO VÍDEO RECUPERADO -->
+    <div class="recovery-preview-player-container">
+      <div class="recovery-player-header">
+        <span class="material-symbols-rounded">play_circle</span>
+        <span>Preview do Vídeo Recuperado</span>
+      </div>
+      <div class="recovery-video-frame">
+        <video id="recoveryResultVideoPlayer" class="recovery-main-video" controls preload="auto"></video>
+      </div>
+    </div>
+
+    <!-- COMPARATIVO E DETALHES DO ARQUIVO FINAL -->
+    <div class="success-details-grid">
+      <div class="success-detail-item">
+        <span>Arquivo Final:</span>
+        <strong id="resultFileName">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Método Utilizado:</span>
+        <strong id="resultMethod">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Resolução & Codec:</span>
+        <strong id="resultResolution">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Duração Recuperada:</span>
+        <strong id="resultDuration">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Tamanho Final:</span>
+        <strong id="resultSize">-</strong>
+      </div>
+    </div>
+
+    <div class="success-actions">
+      <button id="btnPlayRecoveredVideo" class="recovery-btn-primary" type="button">
+        <span class="material-symbols-rounded">open_in_new</span> Player Flutuante BDS
+      </button>
+      <button id="btnOpenRecoveredFolder" class="recovery-btn-outline" type="button">
+        <span class="material-symbols-rounded">folder_open</span> Abrir Pasta
+      </button>
+      <button id="btnRecoverAnother" class="recovery-btn-outline" type="button">
+        Recuperar Outro Vídeo
+      </button>
+    </div>
+  </div>
+
+</div>

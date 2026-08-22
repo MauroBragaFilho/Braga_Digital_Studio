@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    SETTINGS SCREEN - MODULAR CSS
    ========================================================================== */
 
@@ -525,78 +525,157 @@
   color: var(--muted);
 }
 
-.updates-list {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.2);
+/* --- ATUALIZAÇÕES UNIFICADAS DO BDS --- */
+.settings-updates-unified-card {
+  background: var(--card-2, rgba(255, 255, 255, 0.03));
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 12px;
 }
 
-.updates-list:empty {
-  display: none;
-}
-
-.update-item {
-  display: grid;
-  grid-template-columns: 1fr 150px;
-  gap: 14px;
+.settings-update-header {
+  display: flex;
   align-items: center;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  gap: 16px;
 }
 
-.tool-info h3 {
-  margin: 0 0 6px 0;
-  font-size: 14px;
-  font-weight: 600;
+.settings-update-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: rgba(76, 175, 80, 0.12);
+  color: #4caf50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.settings-update-icon-wrap.has-updates {
+  background: rgba(242, 92, 5, 0.15);
+  color: #f25c05;
+}
+
+.settings-update-icon-wrap.updating {
+  background: rgba(33, 150, 243, 0.15);
+  color: #2196f3;
+  animation: pulse-update 1.5s infinite ease-in-out;
+}
+
+.settings-update-icon-wrap.error {
+  background: rgba(229, 57, 53, 0.15);
+  color: #e53935;
+}
+
+@keyframes pulse-update {
+  0% { transform: scale(0.96); opacity: 0.8; }
+  50% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(0.96); opacity: 0.8; }
+}
+
+.settings-update-icon-wrap .material-symbols-rounded {
+  font-size: 28px;
+}
+
+.settings-update-header-text h4 {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text);
 }
 
-.tool-info p {
+.settings-update-header-text p {
   margin: 0;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.4;
-  font-size: 12px;
 }
 
-.version-tag {
-  font-family: monospace;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+.settings-update-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
 }
 
-.tool-error {
-  color: var(--danger, #e53935);
-  font-size: 11px;
-  margin: 4px 0 0 0;
-}
-
-.tool-actions button {
+.settings-update-progress-bar {
   width: 100%;
-  padding: 8px;
-  font-size: 12px;
-  font-weight: 600;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.loading-text,
-.error-text {
-  text-align: center;
-  padding: 20px;
-  margin: 0;
+.settings-update-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f25c05, #ff8c42);
+  border-radius: 4px;
+  transition: width 0.3s ease;
 }
 
-.loading-text {
+.settings-update-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
   color: var(--muted);
 }
 
-.error-text {
-  color: var(--danger, #e53935);
+.settings-update-progress-info strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.settings-update-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-updates-options-row {
+  margin-top: 14px;
+  padding-left: 4px;
+}
+
+/* --- DIAGNÓSTICO & LOGS --- */
+.settings-diagnostics-zone {
+  background: var(--card-2, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-diagnostics-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-diagnostics-title .material-symbols-rounded {
+  font-size: 18px;
+  color: #f25c05;
+}
+
+.settings-diagnostics-text {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 /* --- SISTEMA --- */

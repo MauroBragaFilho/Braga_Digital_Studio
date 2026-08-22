@@ -22,6 +22,7 @@ const UpdateService = require('./services/updateService');
 const MontageService = require('./services/montageService');
 const SilenceService = require('./services/silenceService');
 const MetadataService = require('./services/metadataService');
+const VideoRecoveryService = require('./services/videoRecoveryService');
 const sonyCameraService = require('./services/sonyCameraService');
 
 const MtpService = require('./core/MtpService');
@@ -91,6 +92,7 @@ class Bootstrap {
     const montageService = new MontageService({ paths });
     const silenceService = new SilenceService({ paths });
     const metadataServiceInstance = new MetadataService({ paths });
+    const videoRecoveryService = new VideoRecoveryService({ paths });
 
     const sequenceBuilder = new SequenceBuilder(projectService);
     const premiereExporter = new PremiereExporter(projectService, sequenceBuilder);
@@ -136,6 +138,7 @@ class Bootstrap {
       montageService,
       silenceService,
       metadataService: metadataServiceInstance,
+      videoRecoveryService,
       projectService,
       sequenceBuilder,
       premiereExporter,
@@ -246,6 +249,17 @@ class Bootstrap {
     metadataService.on('progress', (p) => this.mainWindow?.webContents.send('metadata:progress', p));
     metadataService.on('log', (p) => this.mainWindow?.webContents.send('metadata:log', p));
 
+    // Recovery Events
+    const { videoRecoveryService, updateService } = this.services;
+    videoRecoveryService.on('progress', (p) => this.mainWindow?.webContents.send('recovery:progress', p));
+    videoRecoveryService.on('stage', (p) => this.mainWindow?.webContents.send('recovery:stage', p));
+    videoRecoveryService.on('finished', (p) => this.mainWindow?.webContents.send('recovery:finished', p));
+    videoRecoveryService.on('error', (p) => this.mainWindow?.webContents.send('recovery:error', p));
+
+    // Update Events
+    updateService.on('progress', (p) => this.mainWindow?.webContents.send('updates:progress', p));
+    updateService.on('completed', (p) => this.mainWindow?.webContents.send('updates:completed', p));
+
     // Hardware Provider Events
     UsbService.on('progress', (data) => this.mainWindow?.webContents.send('mtp:import-progress', data));
     MtpService.on('progress', (data) => this.mainWindow?.webContents.send('mtp:import-progress', data));
@@ -263,7 +277,7 @@ class Bootstrap {
     const {
       downloadService, converterService, historyService, thumbnailService,
       updateService, montageService, silenceService, metadataService,
-      projectService, premiereExporter, bdsproPackageService,
+      videoRecoveryService, projectService, premiereExporter, bdsproPackageService,
       waveformService, audioSyncService, sequenceBuilder,
       uploadScannerService, libManager, watcherService, lutSyncService
     } = this.services;
@@ -272,6 +286,7 @@ class Bootstrap {
     require('./ipc/deviceHandlers')(logger, lutSyncService);
     require('./ipc/libraryHandlers')(this.paths, watcherService);
     require('./ipc/systemHandlers')(this.paths);
+    require('./ipc/recoveryHandlers')(videoRecoveryService, this.paths);
     require('./ipc/youtubeHandlers')();
     require('./ipc/projectHandlers')(projectService, premiereExporter, bdsproPackageService, this.paths, waveformService, audioSyncService, sequenceBuilder);
     require('./ipc/lutHandlers')(this.lutManager);
@@ -394,16 +409,12 @@ class Bootstrap {
     ipcMain.handle('conversions:clear', () => historyService.clearConversions());
 
     // Updates
-    ipcMain.handle('updates:check', () => updateService.checkAll());
+    ipcMain.handle('updates:checkSystem', () => updateService.checkSystem());
+    ipcMain.handle('updates:check', () => updateService.checkSystem());
+    ipcMain.handle('updates:checkLegacy', () => updateService.checkAll());
     ipcMain.handle('updates:updateTool', (_, tool) => updateService.updateTool(tool));
     ipcMain.handle('updates:updateAll', async () => {
-      const tools = ['yt-dlp', 'ffmpeg', 'ffprobe', 'spotdl'];
-      for (const tool of tools) {
-        try { await updateService.updateTool(tool); } catch (e) {
-          logger.error(`Erro ao atualizar ${tool} silenciosamente`, { error: e.message });
-        }
-      }
-      return true;
+      return await updateService.updateAll();
     });
 
     // Devices & Hardware
