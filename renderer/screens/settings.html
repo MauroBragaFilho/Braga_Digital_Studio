@@ -160,27 +160,49 @@
       <!-- ABA: ATUALIZAÇÕES -->
       <section id="settingsUpdatesView" class="settings-view hidden">
         <h3 class="settings-section-title">Atualizações do Sistema</h3>
-        <p class="settings-hint">Mantenha os motores de download e conversão atualizados.</p>
+        <p class="settings-hint">Mantenha os componentes e motores de processamento do BDS atualizados.</p>
 
-        <div class="settings-updates-status-row">
-          <span>Versão atual: <strong id="updatesVersionDisplay">Carregando...</strong></span>
+        <div class="settings-updates-unified-card" id="settingsUpdatesCard">
+          <div class="settings-update-header">
+            <div class="settings-update-icon-wrap" id="updateStatusIconWrap">
+              <span class="material-symbols-rounded" id="updateStatusIcon">check_circle</span>
+            </div>
+            <div class="settings-update-header-text">
+              <h4 id="updateHeadline">Verificando componentes...</h4>
+              <p id="updateSubHeadline">Aguarde enquanto o BDS verifica a integridade dos motores internos.</p>
+            </div>
+          </div>
+
+          <!-- Barra de Progresso Unificada (Oculta por padrão) -->
+          <div class="settings-update-progress-container hidden" id="updateProgressContainer">
+            <div class="settings-update-progress-bar">
+              <div class="settings-update-progress-fill" id="updateProgressFill" style="width: 0%;"></div>
+            </div>
+            <div class="settings-update-progress-info">
+              <span id="updateProgressStep">Preparando componentes...</span>
+              <strong id="updateProgressPercent">0%</strong>
+            </div>
+          </div>
+
+          <!-- Ações Unificadas -->
+          <div class="settings-update-actions-bar" id="updateActionsBar">
+            <button id="checkUpdatesButton" class="settings-btn-outline" type="button">
+              <span class="material-symbols-rounded">sync</span> Verificar Atualizações
+            </button>
+            <button id="updateNowButton" class="settings-btn-primary hidden" type="button">
+              <span class="material-symbols-rounded">download</span> Atualizar Agora
+            </button>
+            <button id="updateLaterButton" class="settings-btn-outline hidden" type="button">
+              Mais Tarde
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-updates-options-row">
           <label class="settings-check-inline">
-            <input type="checkbox" id="autoUpdateInput" /> Atualizar automaticamente
+            <input type="checkbox" id="autoUpdateInput" /> Manter componentes do BDS atualizados automaticamente
           </label>
         </div>
-
-        <div class="settings-updates-actions">
-          <button id="checkUpdatesButton" class="settings-btn-outline" type="button">
-            <span class="material-symbols-rounded">system_update</span> Verificar Atualizações
-          </button>
-          <button id="updateDepsButton" class="settings-btn-primary" type="button">
-            <span class="material-symbols-rounded">download</span> Atualizar Dependências
-          </button>
-        </div>
-
-        <p id="updateStatusText" class="settings-update-status hidden"></p>
-
-        <div id="updatesList" class="updates-list"></div>
       </section>
 
       <!-- ABA: SISTEMA -->
@@ -192,6 +214,19 @@
           <div class="settings-system-item"><span>Desenvolvedor</span><strong>Braga Dev</strong></div>
           <div class="settings-system-item"><span>Pastas do Aplicativo</span><strong id="sysFolders">Carregando...</strong></div>
           <div class="settings-system-item"><span>Atualizações</span><strong>Automático via Braga Dev</strong></div>
+        </div>
+
+        <!-- Diagnóstico e Logs -->
+        <div class="settings-diagnostics-zone">
+          <h4 class="settings-diagnostics-title">
+            <span class="material-symbols-rounded">assignment</span> Diagnóstico & Suporte
+          </h4>
+          <p class="settings-diagnostics-text">
+            Exporte os registros de atividades internas para resolução de problemas técnicos e diagnóstico seguro.
+          </p>
+          <button id="exportLogsButton" class="settings-btn-outline" type="button">
+            <span class="material-symbols-rounded">file_export</span> Exportar Logs de Diagnóstico
+          </button>
         </div>
 
         <div class="settings-danger-zone">

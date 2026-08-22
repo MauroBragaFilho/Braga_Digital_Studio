@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 /**
  * ToolManifest — Mapa de nomes de executáveis por plataforma.
@@ -40,22 +40,63 @@ const ToolManifest = {
     linux:  'deno',
     darwin: 'deno',
   },
+  // Motor de recuperação de vídeos corrompidos (anthwlock/untrunc)
+  untrunc: {
+    win32:  'untrunc.exe',
+    linux:  'untrunc',
+    darwin: 'untrunc',
+  },
 };
+
+/**
+ * Mapeamento de componentes lógicos de alto nível do BDS para as chaves internas.
+ */
+const LogicalComponentAliases = {
+  mediaEngine: 'ffmpeg',
+  probeEngine: 'ffprobe',
+  downloadEngine: 'ytdlp',
+  audioEngine: 'spotdl',
+  jsRuntime: 'deno',
+  recoveryEngine: 'untrunc',
+};
+
+/**
+ * Normaliza o identificador da ferramenta para a chave canônica do ToolManifest.
+ *
+ * @param {string} toolOrAlias
+ * @returns {string}
+ */
+function resolveCanonicalToolKey(toolOrAlias) {
+  if (!toolOrAlias) return toolOrAlias;
+  if (LogicalComponentAliases[toolOrAlias]) {
+    return LogicalComponentAliases[toolOrAlias];
+  }
+  const lower = toolOrAlias.toLowerCase().replace(/[-_]/g, '');
+  if (lower === 'ytdlp' || lower === 'ytdl') return 'ytdlp';
+  if (lower === 'spotdl' || lower === 'spotifydlp' || lower === 'spotify') return 'spotdl';
+  if (lower === 'ffmpeg') return 'ffmpeg';
+  if (lower === 'ffprobe') return 'ffprobe';
+  if (lower === 'deno') return 'deno';
+  if (lower === 'untrunc') return 'untrunc';
+  return toolOrAlias;
+}
 
 /**
  * Retorna o nome do executável para a plataforma atual.
  *
- * @param {keyof typeof ToolManifest} toolKey - 'ffmpeg' | 'ffprobe' | 'ytdlp' | 'spotdl'
+ * @param {string} toolKey - 'ffmpeg' | 'ffprobe' | 'ytdlp' | 'spotdl' | 'deno' | 'untrunc' (ou alias lógico)
  * @returns {string} Nome do executável (sem path)
  * @throws {Error} Se toolKey for inválido
  */
 function getExecutableName(toolKey) {
-  const entry = ToolManifest[toolKey];
+  const canonical = resolveCanonicalToolKey(toolKey);
+  const entry = ToolManifest[canonical];
   if (!entry) {
-    throw new Error(`Ferramenta desconhecida no ToolManifest: '${toolKey}'. Use: ${Object.keys(ToolManifest).join(', ')}`);
+    throw new Error(`Componente desconhecido no ToolManifest: '${toolKey}'. Use: ${Object.keys(ToolManifest).join(', ')}`);
   }
   const platform = process.platform;
   return entry[platform] || entry.linux;
 }
 
-module.exports = { ToolManifest, getExecutableName };
+module.exports = { ToolManifest, LogicalComponentAliases, resolveCanonicalToolKey, getExecutableName };
+
