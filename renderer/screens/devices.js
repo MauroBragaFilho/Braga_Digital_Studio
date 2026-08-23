@@ -130,6 +130,39 @@ export async function initScreen(forceRescan = false) {
                   { label: 'Sync LUTs', primary: false, action: 'bdsm_luts' }
                 ]
              });
+          } else if (dType === 'sony') {
+             devicesData.push({
+                id: 'sony_' + (device.id || 'cam').replace(/[^a-zA-Z0-9]/g, ''),
+                title: dName,
+                category: 'Sony Remote Camera',
+                categoryColor: '#e040fb',
+                connectionText: `Conectado via Wi-Fi Direct (${device.ip || '192.168.122.1'})`,
+                statusDotColor: '#4caf50',
+                image: getDeviceImage('sony', 'Sony Remote Camera', dName),
+                type: 'sony',
+                wifiIp: device.ip,
+                rawDevice: device,
+                badgeStatus: 'Conectado',
+                details: {
+                  deviceType: 'Mirrorless / Compact Camera',
+                  manufacturer: 'Sony Corporation',
+                  model: device.model || dName,
+                  connection: `Wi-Fi (${device.ip || '192.168.122.1'}:8080)`,
+                  ip: device.ip || '192.168.122.1',
+                  battery: device.battery != null ? `${device.battery}%` : 'Ativa',
+                  app: 'Sony Camera Remote API',
+                  status: 'Pronto para Download'
+                },
+                storage: {
+                  used: '0 GB',
+                  free: 'Calculando...',
+                  total: 'Calculando...',
+                  percent: 0
+                },
+                buttons: [
+                  { label: 'Importar Mídia', primary: true, action: 'sony_import' }
+                ]
+             });
           } else {
              if (device.Storages && device.Storages.length > 0) {
                 const store = device.Storages[0];

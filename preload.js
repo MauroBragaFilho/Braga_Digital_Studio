@@ -59,13 +59,21 @@ const api = {
   onSilenceFinished: (cb) => registerListener('silence:finished', cb),
   onSilenceLog: (cb) => registerListener('silence:log', cb),
   
-  // Devices (MTP)
+  // Devices (MTP & Sony)
   getAllDevices: (force = false) => ipcRenderer.invoke('devices:get-all', force),
   listUsbFolder: (basePath, pathArray) => ipcRenderer.invoke('usb:list-folder', basePath, pathArray),
   importUsbItems: (basePath, pathArray, itemNames, destFolder) => ipcRenderer.invoke('usb:import-items', basePath, pathArray, itemNames, destFolder),
   listMtpFolder: (deviceName, pathArray) => ipcRenderer.invoke('mtp:list-folder', deviceName, pathArray),
   importMtpItems: (deviceName, pathArray, itemNames, destFolder) => ipcRenderer.invoke('mtp:import-items', deviceName, pathArray, itemNames, destFolder),
   onMtpProgress: (cb) => registerListener('mtp:import-progress', cb),
+  
+  // Sony Camera API
+  sonyList: (cameraId, options) => ipcRenderer.invoke('sony:list', cameraId, options),
+  sonyBrowse: (cameraId, uri) => ipcRenderer.invoke('sony:browse', cameraId, uri),
+  sonyGetStatus: (cameraId) => ipcRenderer.invoke('sony:get-status', cameraId),
+  sonyImportItems: (cameraId, items, destFolder) => ipcRenderer.invoke('sony:import-items', { cameraId, items, destFolder }),
+  onSonyImportProgress: (cb) => registerListener('sony:import-progress', cb),
+  onSonyStatusUpdated: (cb) => registerListener('sony:status_updated', cb),
 
   // Metadados
   probeMetadataFile: (filePath) => ipcRenderer.invoke('metadata:probe', filePath),

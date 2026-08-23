@@ -71,7 +71,7 @@ flowchart TB
 | **USB Storage** | Mass Storage (FAT32/exFAT/NTFS) | Sondagem de volumes de disco do SO | Cartões SD, Pen Drives, SSDs externos |
 | **MTP** | Media Transfer Protocol (WPD/libmtp) | Enumeração de Dispositivos Portáteis | Celulares Android, Gravadores, Câmeras |
 | **BDSM Mobile** | HTTP REST + JSON | mDNS Bonjour (`_bdsm._tcp`) / ADB Port Forward | BDS Companion App, Transferência de Mídia, Sincronização de LUTs 3D |
-| **Sony Camera** | SSDP + Sony Camera Remote API | Descoberta UPnP/SSDP via UDP | Liveview, disparo remoto e download de fotos de câmeras Sony |
+| **Sony Camera** | SSDP + Sony Camera Remote API (JSON-RPC) | Descoberta UPnP/SSDP via UDP + Fallback IP direto (192.168.122.1:8080) | Importação de fotos e vídeos (RAW .ARW, JPG, MP4) com download separado, telemetria em tempo real (bateria e armazenamento) e ingestão automática no pipeline da Library |
 
 ---
 
@@ -176,16 +176,15 @@ Faz o download em lote de mídias do celular para o projeto.
 
 ---
 
-### 3.4. Câmeras Sony (Sony Camera Remote API)
+### 3.4. Câmeras Sony (Sony Camera Remote API & Ingestão)
 
-- `window.api.discoverSonyCamera(timeoutMs?: number): Promise<SonyCameraInfo>`
-- `window.api.getSonyCameraStatus(): Promise<SonyCameraStatus>`
-- `window.api.takeSonyCameraPhoto(): Promise<string>`
-- `window.api.startSonyCameraLiveview(): Promise<string>`
-- `window.api.stopSonyCameraLiveview(): Promise<boolean>`
-- `window.api.downloadSonyCameraMedia(fileUrl: string, destPath: string): Promise<boolean>`
-- `window.api.disconnectSonyCamera(): Promise<void>`
-- **Eventos:** `onSonyCameraConnected`, `onSonyCameraDisconnected`, `onSonyCameraPhotoTaken`, `onSonyCameraStatusUpdate`, `onSonyCameraDownloadProgress`.
+- `window.api.sonyList(cameraId: string, options?: { uri?: string, cnt?: number, view?: string }): Promise<Array<SonyMediaItem>>`
+- `window.api.sonyBrowse(cameraId: string, uri: string): Promise<Array<SonyMediaItem>>`
+- `window.api.sonyGetStatus(cameraId: string): Promise<SonyDeviceStatus>`
+- `window.api.sonyImportItems(cameraId: string, items: Array<SonyMediaItem>, destFolder: string): Promise<string[]>`
+- **Eventos:**
+  - `window.api.onSonyImportProgress(callback: (progress: { currentItem: string, itemIndex: number, totalItems: number, percent: number, downloaded: number, total: number }) => void)`
+  - `window.api.onSonyStatusUpdated(callback: (status: SonyDeviceStatus) => void)`
 
 ---
 
@@ -193,11 +192,18 @@ Faz o download em lote de mídias do celular para o projeto.
 
 | Canal IPC | Tipo | Payload de Entrada | Retorno / Emissão |
 |---|---|---|---|
-| `devices:get-all` | `invoke` | `force: boolean` | `{ success: boolean, devices: Array }` |
+| `devices:get-all` | `invoke` | `force: boolean` | `{ success: boolean, devices: Array }` (MTP, USB, BDSM, SONY) |
 | `usb:list-folder` | `invoke` | `basePath, pathArray` | `{ success: boolean, items: Array }` |
 | `usb:import-items`| `invoke` | `basePath, pathArray, itemNames, destFolder` | `boolean` |
 | `mtp:list-folder` | `invoke` | `deviceName, pathArray` | `Array<Item>` |
 | `mtp:import-items`| `invoke` | `deviceName, pathArray, itemNames, destFolder` | `boolean` |
+| `sony:list`       | `invoke` | `cameraId, options` | `Array<SonyMediaItem>` |
+| `sony:browse`     | `invoke` | `cameraId, uri` | `Array<SonyMediaItem>` |
+| `sony:get-status` | `invoke` | `cameraId` | `SonyDeviceStatus` |
+| `sony:import-items` | `invoke` | `{ cameraId, items, destFolder }` | `Array<string>` (arquivos importados) |
+| `sony:import-progress` | `send (event)` | — | `{ currentItem, itemIndex, totalItems, percent, downloaded, total }` |
+| `sony:camera_connected` | `send (event)` | — | `SonyCameraInfo` |
+| `sony:status_updated` | `send (event)` | — | `SonyDeviceStatus` |
 | `bdsm:getMedia`   | `invoke` | `ip, port` | `Array<MediaItem>` |
 | `bdsm:importMedia`| `invoke` | `{ ip, port, deviceId, items, destFolder, projectId }` | `completedCount` |
 | `bdsm:analyzeLutSync` | `invoke` | `ip, port` | `LutSyncPlan` |
