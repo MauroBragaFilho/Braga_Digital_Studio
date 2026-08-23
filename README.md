@@ -13,6 +13,7 @@ Braga Digital Studio (anteriormente Braga Media Downloader) é uma central avan�
 - **Gerenciamento de Dispositivos de Captura:** 
   - Reconhecimento automático, rápido e seguro de dispositivos conectados via **MTP** (Media Transfer Protocol) para Câmeras/Celulares.
   - Leitura nativa de cartões SD e pendrives via **USB (Mass Storage)**.
+  - Integração sem fio com **Câmeras Sony (Alpha/Cyber-shot)** via SSDP e Camera Remote API para telemetria de bateria/armazenamento e download com separação de RAW (.ARW), JPG e MP4.
   - Importação de mídias de forma limpa, ignorando pastas de sistema ocultas nativas das câmeras.
 
 - **Painel de Color Grading (LUTs):**  (EM PROGRESSO)

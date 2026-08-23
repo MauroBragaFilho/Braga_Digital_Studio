@@ -23,7 +23,7 @@ const MontageService = require('./services/montageService');
 const SilenceService = require('./services/silenceService');
 const MetadataService = require('./services/metadataService');
 const VideoRecoveryService = require('./services/videoRecoveryService');
-const sonyCameraService = require('./services/sonyCameraService');
+const sonyCameraService = require('./core/devices/SonyCameraService');
 
 const MtpService = require('./core/MtpService');
 const UsbService = require('./core/UsbService');
@@ -128,6 +128,7 @@ class Bootstrap {
 
     // 4. Inicializar Descoberta de Hardware
     deviceDiscoveryService.start();
+    sonyCameraService.start();
 
     this.services = {
       historyService,
@@ -192,6 +193,10 @@ class Bootstrap {
     deviceDiscoveryService.on('device_added', (d) => this.mainWindow?.webContents.send('bdsm:device_added', d));
     deviceDiscoveryService.on('device_removed', (id) => this.mainWindow?.webContents.send('bdsm:device_removed', id));
     deviceDiscoveryService.on('device_updated', (d) => this.mainWindow?.webContents.send('bdsm:device_updated', d));
+
+    // Sony Camera Events
+    sonyCameraService.on('camera_connected', (cam) => this.mainWindow?.webContents.send('sony:camera_connected', cam));
+    sonyCameraService.on('camera_status_updated', (status) => this.mainWindow?.webContents.send('sony:status_updated', status));
 
     // Media Library Events
     EventBus.on('MEDIA_IMPORTED', (m) => this.mainWindow?.webContents.send('bds:media-imported', m));
@@ -423,10 +428,12 @@ class Bootstrap {
       const mtpDevices = await MtpService.getDevices();
       const usbDevices = await UsbService.getDevices();
       const bdsmDevices = deviceDiscoveryService.getDevices();
+      const sonyDevices = sonyCameraService.getCameras();
       return [
         ...mtpDevices.map(d => ({ ...d, type: 'MTP', isBdsm: false })),
         ...usbDevices.map(d => ({ ...d, type: 'USB', isBdsm: false })),
-        ...bdsmDevices.map(d => ({ ...d, type: 'BDSM', isBdsm: true }))
+        ...bdsmDevices.map(d => ({ ...d, type: 'BDSM', isBdsm: true })),
+        ...sonyDevices.map(d => ({ ...d, type: 'SONY', isBdsm: false }))
       ];
     });
     ipcMain.handle('usb:list-folder', (_, basePath, pathArray) => UsbService.listFolder(basePath, pathArray));
@@ -434,14 +441,72 @@ class Bootstrap {
     ipcMain.handle('mtp:list-folder', (_, deviceName, pathArray) => MtpService.listMtpFolder(deviceName, pathArray));
     ipcMain.handle('mtp:import-items', (_, deviceName, pathArray, itemNames, destFolder) => MtpService.importMtpItems(deviceName, pathArray, itemNames, destFolder));
 
-    // Sony Camera
-    ipcMain.handle('sony-camera:discover', (_, timeoutMs) => sonyCameraService.discover(timeoutMs));
-    ipcMain.handle('sony-camera:get-status', () => sonyCameraService.getStatus());
-    ipcMain.handle('sony-camera:take-photo', () => sonyCameraService.takePicture());
-    ipcMain.handle('sony-camera:start-liveview', () => sonyCameraService.startLiveview());
-    ipcMain.handle('sony-camera:stop-liveview', () => sonyCameraService.stopLiveview());
-    ipcMain.handle('sony-camera:download', (_, fileUrl, destPath) => sonyCameraService.downloadMedia(fileUrl, destPath));
-    ipcMain.handle('sony-camera:disconnect', () => sonyCameraService.disconnect());
+    // Sony Camera Integration
+    ipcMain.handle('sony:list', async (_, cameraId, options) => {
+      const provider = sonyCameraService.getProvider(cameraId);
+      if (!provider) return [];
+      return await provider.list(options);
+    });
+
+    ipcMain.handle('sony:browse', async (_, cameraId, uri) => {
+      const provider = sonyCameraService.getProvider(cameraId);
+      if (!provider) return [];
+      return await provider.browse(uri);
+    });
+
+    ipcMain.handle('sony:get-status', async (_, cameraId) => {
+      const provider = sonyCameraService.getProvider(cameraId);
+      if (!provider) return null;
+      return await provider.getDeviceStatus();
+    });
+
+    ipcMain.handle('sony:import-items', async (event, { cameraId, items, destFolder }) => {
+      const provider = sonyCameraService.getProvider(cameraId);
+      if (!provider) throw new Error(`Provider não encontrado para ${cameraId}`);
+
+      if (!fs.existsSync(destFolder)) {
+        fs.mkdirSync(destFolder, { recursive: true });
+      }
+
+      const importedPaths = [];
+      let index = 0;
+
+      for (const item of items) {
+        index++;
+        try {
+          const files = await provider.import(item, destFolder, (progress) => {
+            event.sender.send('sony:import-progress', {
+              currentItem: item.title || item.filename,
+              itemIndex: index,
+              totalItems: items.length,
+              ...progress
+            });
+          });
+
+          for (const filePath of files) {
+            importedPaths.push(filePath);
+            // Pipeline padrão da Library: enfileira importação com hash e FFProbe
+            if (this.services.importQueue) {
+              const db = dbManager.get();
+              let lib = db.prepare("SELECT * FROM libraries WHERE type = 'BDSM_DEVICE' OR type = 'DEVICE' LIMIT 1").get();
+              if (!lib) {
+                lib = db.prepare("SELECT * FROM libraries LIMIT 1").get();
+              }
+              if (lib) {
+                this.services.importQueue.enqueue({
+                  library: lib,
+                  filePath: filePath
+                });
+              }
+            }
+          }
+        } catch (e) {
+          logger.error(`[Sony Import] Erro ao importar ${item.title || item.filename}: ${e.message}`);
+        }
+      }
+
+      return importedPaths;
+    });
 
     // Upload & Scanner
     ipcMain.handle('upload:scanDirectory', async (_, customDir) => {
