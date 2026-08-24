@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
@@ -8,20 +8,20 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 const { appPaths } = require('./src/infrastructure/filesystem/AppPaths');
-const { externalTools } = require('./src/infrastructure/external-tools/ExternalToolsManager');
-const Bootstrap = require('./src/bootstrap');
 
-// Inicialização dos caminhos e ferramentas externas
+// Inicialização dos caminhos e ambiente gravável
 const isPackaged = app.isPackaged;
 const appRoot = isPackaged ? process.resourcesPath : __dirname;
 const writableRoot = isPackaged ? app.getPath('userData') : __dirname;
 
 appPaths.init(writableRoot, appRoot);
 appPaths.ensureDirectories();
-externalTools.init(appPaths.dataDir);
-
 process.env.BMD_LOGS_DIR = appPaths.logsDir;
 
+const { externalTools } = require('./src/infrastructure/external-tools/ExternalToolsManager');
+externalTools.init(appPaths.dataDir);
+
+const Bootstrap = require('./src/bootstrap');
 const bootstrap = new Bootstrap(appPaths);
 let mainWindow = null;
 
@@ -55,8 +55,11 @@ app.whenReady().then(async () => {
   await bootstrap.init();
   createWindow();
 
+  // Inicia serviços de background (watchers, discovery) após a interface estar montada
+  setTimeout(() => bootstrap.startBackgroundServices(), 500);
+
   // Verificação em background de ferramentas/atualizações
-  setTimeout(() => bootstrap.checkInitialDependencies(), 1000);
+  setTimeout(() => bootstrap.checkInitialDependencies(), 2000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

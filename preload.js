@@ -310,6 +310,7 @@ const api = {
   probeAudioStreams: (filePath) => ipcRenderer.invoke('projects:probeAudioStreams', filePath),
   hasWaveformCache: (uuid, streamIndex) => ipcRenderer.invoke('projects:hasWaveformCache', uuid, streamIndex),
   deleteWaveformCache: (uuid, streamIndex) => ipcRenderer.invoke('projects:deleteWaveformCache', uuid, streamIndex),
+  getTrackAudioPath: (params) => ipcRenderer.invoke('projects:getTrackAudioPath', params),
 
   // Sincronização por Áudio (Fase 6)
   runAudioSync: (params) => ipcRenderer.invoke('projects:runAudioSync', params),

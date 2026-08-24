@@ -352,6 +352,12 @@
   letter-spacing: 2px;
 }
 
+.lib-card-waveform {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .lib-card-duration {
   position: absolute;
   bottom: 8px;

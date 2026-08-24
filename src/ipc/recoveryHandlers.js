@@ -19,7 +19,7 @@ module.exports = function registerRecoveryHandlers(videoRecoveryService, paths) 
   });
 
   ipcMain.handle('logs:export', async () => {
-    const logsDir = path.join(process.cwd(), 'logs');
+    const logsDir = paths?.logsDir || process.env.BMD_LOGS_DIR || path.join(process.cwd(), 'logs');
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showOpenDialog(win, {
       title: 'Selecione a pasta de destino para exportar os logs',

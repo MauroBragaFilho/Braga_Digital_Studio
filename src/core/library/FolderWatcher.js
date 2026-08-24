@@ -20,10 +20,10 @@ class FolderWatcher {
     start() {
         logger.info(`[FolderWatcher] Monitorando lib #${this.libraryId}: ${this.folderPath}`);
         
-        // ignoreInitial: false -> Vai ler os arquivos já existentes e engatilhar 'add'
+        // ignoreInitial: true -> Evita reprocessar arquivos existentes no startup, capturando apenas novas adições/modificações
         this.watcher = chokidar.watch(this.folderPath, {
             persistent: true,
-            ignoreInitial: false, 
+            ignoreInitial: true, 
             ignored: (itemPath, stats) => {
                 if (!itemPath) return false;
                 const basename = path.basename(itemPath);

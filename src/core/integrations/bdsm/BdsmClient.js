@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,10 +43,11 @@ class BdsmClient {
   /**
    * Consulta informações do dispositivo.
    * @param {boolean} [silent=false]
+   * @param {number} [timeout=2500]
    * @returns {Promise<Object>}
    */
-  async getInfo(silent = false) {
-    return this._fetch(BdsmProtocol.ENDPOINTS.DISCOVERY_INFO, {}, silent);
+  async getInfo(silent = false, timeout = 2500) {
+    return this._fetch(BdsmProtocol.ENDPOINTS.DISCOVERY_INFO, { timeout }, silent);
   }
 
   /**

@@ -82,18 +82,35 @@ class DBManager {
     schedulePersist() {
         if (this.saveTimer) clearTimeout(this.saveTimer);
         this.saveTimer = setTimeout(() => {
-            this.persist();
-        }, 500); // Salva 500ms após a última escrita
+            this.persistAsync().catch(err => {
+                console.error('[DBManager] Erro ao persistir banco:', err.message);
+            });
+        }, 1000); // Salva 1000ms após a última escrita de forma agrupada
+    }
+
+    async persistAsync() {
+        if (!this.db || !this.dbPath) return;
+        try {
+            const data = this.db.export();
+            await fs.promises.writeFile(this.dbPath, Buffer.from(data));
+        } catch (err) {
+            console.error('[DBManager] Erro na persistência assíncrona:', err.message);
+        }
     }
 
     persist() {
-        if (!this.db) return;
-        const data = this.db.export();
-        fs.writeFileSync(this.dbPath, Buffer.from(data));
+        if (!this.db || !this.dbPath) return;
+        try {
+            const data = this.db.export();
+            fs.writeFileSync(this.dbPath, Buffer.from(data));
+        } catch (err) {
+            console.error('[DBManager] Erro na persistência síncrona:', err.message);
+        }
     }
 
     close() {
         if (this.db) {
+            if (this.saveTimer) clearTimeout(this.saveTimer);
             this.persist();
             this.db.close();
             this.db = null;

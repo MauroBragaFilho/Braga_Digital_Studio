@@ -13,7 +13,7 @@ const logger = require('../../services/logService');
  */
 function logUpdater(message, data = null) {
   try {
-    const logsDir = path.join(process.cwd(), 'logs');
+    const logsDir = process.env.BMD_LOGS_DIR || path.join(process.cwd(), 'logs');
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const logPath = path.join(logsDir, 'updater.log');
     const timestamp = new Date().toISOString();

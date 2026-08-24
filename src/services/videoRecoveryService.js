@@ -12,7 +12,7 @@ const logger = require('./logService');
  */
 function logRecovery(message, data = null) {
   try {
-    const logsDir = path.join(process.cwd(), 'logs');
+    const logsDir = process.env.BMD_LOGS_DIR || path.join(process.cwd(), 'logs');
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const logPath = path.join(logsDir, 'recovery.log');
     const timestamp = new Date().toISOString();

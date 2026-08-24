@@ -96,26 +96,30 @@ export async function initScreen(forceRescan = false) {
              storageUsed = storageTotal - storageFree;
              storagePercent = storageTotal > 0 ? Math.round((storageUsed / storageTotal) * 100) : 0;
 
+             const isUsb = device.connection === 'usb' || device.ip === '127.0.0.1';
+             const connectionLabel = isUsb ? 'Conectado via Cabo USB (ADB)' : `Conectado via Wi-Fi (${device.ip})`;
+             const connectionDetail = isUsb ? 'USB (ADB Forward :8080)' : `Wi-Fi (${device.ip}:${device.port || 8080})`;
+
              devicesData.push({
                 id: 'bdsm_' + device.id,
                 title: dName,
                 category: 'BDSM Mobile App',
                 categoryColor: '#f25c05',
-                connectionText: `Conectado via Wi-Fi (${device.ip})`,
+                connectionText: connectionLabel,
                 statusDotColor: '#4caf50',
                 image: getDeviceImage('bdsm', 'BDSM Mobile App', dName),
                 type: 'bdsm',
-                wifiIp: device.ip,
-                battery: device.battery || '--',
+                wifiIp: isUsb ? 'USB (127.0.0.1)' : device.ip,
+                battery: device.battery != null ? device.battery : '--',
                 rawDevice: device,
                 badgeStatus: 'Conectado',
                 details: {
                   deviceType: 'Smartphone',
                   manufacturer: 'Mobile',
                   model: device.model || dName,
-                  connection: `Wi-Fi (${device.ip}:${device.port})`,
+                  connection: connectionDetail,
                   ip: device.ip,
-                  battery: `${device.battery || '--'}%`,
+                  battery: device.battery != null ? `${device.battery}%` : 'N/A',
                   app: `BDSM v${device.app_version || '1.0'}`,
                   status: 'Sincronização Ativa'
                 },

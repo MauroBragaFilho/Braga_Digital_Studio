@@ -41,13 +41,17 @@ export async function initScreen() {
     await loadStats();
     await loadRecentJobs();
 
-    // Listener de novas mídias (apenas uma vez)
+    // Listener de novas mídias (apenas uma vez, com debounce para evitar tempestade de re-renders)
     if (window.bds && window.bds.onMediaImported && !window.homeListenerRegistered) {
       window.homeListenerRegistered = true;
-      window.bds.onMediaImported(async (media) => {
-        console.log('[HOME] Novo arquivo importado:', media.filename);
-        await loadStats();
-        await loadRecentJobs();
+      let importDebounceTimer = null;
+      window.bds.onMediaImported((media) => {
+        console.log('[HOME] Novo arquivo importado:', media?.filename || '');
+        if (importDebounceTimer) clearTimeout(importDebounceTimer);
+        importDebounceTimer = setTimeout(async () => {
+          await loadStats();
+          await loadRecentJobs();
+        }, 800);
       });
     }
   } catch (err) {
