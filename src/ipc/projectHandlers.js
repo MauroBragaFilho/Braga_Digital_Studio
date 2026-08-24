@@ -197,6 +197,13 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
     return true;
   });
 
+  // --- Extração de track isolada para mudo independente no Monitor de Origem ---
+  ipcMain.handle('projects:getTrackAudioPath', async (_, { uuid, filePath, streamIndex }) => {
+    if (!waveformService) throw new Error('WaveformService não inicializado');
+    const outPath = await waveformService.getOrExtractTrack(uuid, filePath, streamIndex || 0);
+    return `file:///${outPath.replace(/\\/g, '/')}`;
+  });
+
   // --- Sincronização Automática por Áudio (Fase 6) ---
   ipcMain.handle('projects:runAudioSync', async (event, { projectId, groupName, masterMediaId, mediaList, maxOffsetSeconds }) => {
     if (!audioSyncService) throw new Error('AudioSyncService não inicializado');
@@ -217,7 +224,7 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
       projectId,
       groupName || `Sync Group ${new Date().toLocaleString('pt-BR')}`,
       masterMediaId,
-      results.map(r => ({ media_id: r.media_id, offset_seconds: r.offset_seconds }))
+      results.map(r => ({ media_id: r.media_id, offset_seconds: r.offset_seconds, confidence: r.confidence, drift_rate_ppm: r.drift_rate_ppm }))
     );
 
     return { groupId, results };

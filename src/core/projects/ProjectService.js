@@ -363,7 +363,7 @@ class ProjectService {
     getSyncGroups(projectId) {
         const groups = this.db.prepare(`SELECT * FROM sync_groups WHERE project_id = ? ORDER BY id ASC`).all(projectId);
         const stmtItems = this.db.prepare(`
-            SELECT sgi.*, m.filename, m.filepath, m.duration
+            SELECT sgi.*, m.filename, m.filepath, m.duration, m.uuid
             FROM sync_group_items sgi
             JOIN media m ON sgi.media_id = m.id
             WHERE sgi.sync_group_id = ?
@@ -381,8 +381,8 @@ class ProjectService {
         // Nota: uma statement nova por item — ver comentário em addMediaBulkToProject
         // sobre por que a mesma statement não pode ser reutilizada em loop aqui.
         for (const item of items) {
-            this.db.prepare(`INSERT INTO sync_group_items (sync_group_id, media_id, offset_seconds) VALUES (?, ?, ?)`)
-                .run(groupId, item.media_id, item.offset_seconds || 0.0);
+            this.db.prepare(`INSERT INTO sync_group_items (sync_group_id, media_id, offset_seconds, confidence, drift_rate_ppm) VALUES (?, ?, ?, ?, ?)`)
+                .run(groupId, item.media_id, item.offset_seconds || 0.0, item.confidence || 0, item.drift_rate_ppm || 0);
         }
         return groupId;
     }

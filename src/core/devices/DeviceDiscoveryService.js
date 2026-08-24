@@ -9,81 +9,165 @@ class DeviceDiscoveryService extends EventEmitter {
         super();
         this.devices = new Map(); // device_id -> device info
         this.bonjour = null;
+        this.bonjourBrowser = null;
         this.usbPollInterval = null;
         this.cleanupInterval = null;
+        this._isPolling = false;
+        this._lastAdbForwardDevice = null;
+        this._adbCheckCounter = 0;
     }
 
     start() {
         // --- 1. mDNS / Bonjour (Wi-Fi) ---
+        this.startMdns();
+
+        // --- 2. Polling USB (ADB) e Wi-Fi ---
+        // Checa a cada 8s para manter dispositivos vivos sem sobrecarregar a CPU
+        this.usbPollInterval = setInterval(() => this.pollAllDevices(), 8000);
+        this.setupAdbForward();
+
+        // --- 3. Cleanup Offline ---
+        this.cleanupInterval = setInterval(() => this.cleanupDevices(), 20000);
+    }
+
+    startMdns() {
         try {
-            this.bonjour = new Bonjour();
-            this.bonjour.find({ type: 'bdsm' }, (service) => {
+            if (!this.bonjour) {
+                this.bonjour = new Bonjour();
+            }
+            if (this.bonjourBrowser) {
+                try { this.bonjourBrowser.stop(); } catch (_) {}
+            }
+
+            this.bonjourBrowser = this.bonjour.find({ type: 'bdsm' }, (service) => {
                 logger.info(`[Discovery] Serviço BDSM via Wi-Fi encontrado: ${service.name}`);
-                this.probeDevice(service.addresses[0], service.port, 'wifi');
+                const ip = this._extractBestIp(service);
+                if (ip) {
+                    this.probeDevice(ip, service.port || 8080, 'wifi');
+                } else {
+                    logger.warn(`[Discovery] Serviço BDSM encontrado sem endereço IPv4 válido: ${service.name}`);
+                }
             });
         } catch (e) {
             logger.error(`[Discovery] Falha ao iniciar Bonjour: ${e.message}`);
         }
+    }
 
-        // --- 2. Polling USB (ADB) e Wi-Fi ---
-        // Checa a cada 5 segundos para manter dispositivos vivos e descobrir via USB
-        this.usbPollInterval = setInterval(() => this.pollAllDevices(), 5000);
-        // Tenta disparar o adb forward logo na partida para garantir
-        this.setupAdbForward();
+    _extractBestIp(service) {
+        if (!service) return null;
+        if (Array.isArray(service.addresses) && service.addresses.length > 0) {
+            // Prioriza IPv4
+            const ipv4 = service.addresses.find(a => typeof a === 'string' && a.includes('.') && !a.startsWith('127.'));
+            if (ipv4) return ipv4;
 
-        // --- 3. Cleanup Offline ---
-        this.cleanupInterval = setInterval(() => this.cleanupDevices(), 15000);
+            // Se apenas IPv6, formata adequadamente
+            const ipv6 = service.addresses.find(a => typeof a === 'string' && a.includes(':'));
+            if (ipv6) return ipv6.startsWith('[') ? ipv6 : `[${ipv6}]`;
+        }
+        if (service.referer && service.referer.address) {
+            return service.referer.address;
+        }
+        if (service.host) {
+            return service.host;
+        }
+        return null;
     }
 
     setupAdbForward() {
-        exec('adb forward tcp:8080 tcp:8080', (error, stdout, stderr) => {
-            if (error) {
-                // Ignore errors se adb não estiver instalado ou não houver devices.
-            } else {
-                logger.info('[Discovery] ADB forward configurado com sucesso na porta 8080');
+        exec('adb devices', (err, stdout) => {
+            if (err || !stdout) {
+                return;
             }
+
+            const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+            const activeDevices = [];
+            for (let i = 1; i < lines.length; i++) {
+                const parts = lines[i].split(/\s+/);
+                if (parts.length >= 2 && parts[1] === 'device') {
+                    activeDevices.push(parts[0]);
+                }
+            }
+
+            const targetDevice = activeDevices[0] || null;
+            if (!targetDevice) {
+                this._lastAdbForwardDevice = null;
+                return;
+            }
+
+            // Evita re-configurar ADB repetidamente se o dispositivo não mudou
+            if (this._lastAdbForwardDevice === targetDevice) {
+                return;
+            }
+
+            exec(`adb -s ${targetDevice} forward tcp:8080 tcp:8080`, (error) => {
+                if (!error) {
+                    this._lastAdbForwardDevice = targetDevice;
+                    logger.info(`[Discovery] ADB forward configurado no dispositivo ${targetDevice} (porta 8080)`);
+                }
+            });
         });
     }
 
     async pollAllDevices() {
-        this.setupAdbForward();
-        // Polling USB
-        await this.probeDevice('127.0.0.1', 8080, 'usb', true);
-        
-        // Polling Wi-Fi (manter vivos os dispositivos encontrados via Bonjour)
-        for (const [id, device] of this.devices.entries()) {
-            if (device.connection === 'wifi') {
-                await this.probeDevice(device.ip, device.port, 'wifi', true);
+        if (this._isPolling) return;
+        this._isPolling = true;
+
+        try {
+            // Executa setup ADB a cada 3 ciclos de polling (24s) ou se não houver dispositivo
+            this._adbCheckCounter++;
+            if (this._adbCheckCounter % 3 === 0 || !this._lastAdbForwardDevice) {
+                this.setupAdbForward();
             }
+
+            const probePromises = [];
+
+            // 1. Polling USB (localhost)
+            probePromises.push(this.probeDevice('127.0.0.1', 8080, 'usb', true));
+
+            // 2. Polling Wi-Fi (manter vivos os dispositivos encontrados via Bonjour ou sondagem anterior)
+            for (const [id, device] of this.devices.entries()) {
+                if (device.connection === 'wifi' && device.ip && device.ip !== '127.0.0.1') {
+                    probePromises.push(this.probeDevice(device.ip, device.port || 8080, 'wifi', true));
+                }
+            }
+
+            await Promise.allSettled(probePromises);
+        } finally {
+            this._isPolling = false;
         }
     }
 
     async probeDevice(ip, port, connectionType, silentFail = false) {
+        if (!ip) return;
         try {
             const client = new BdsmClient(ip, port);
-            const info = await client.getInfo(silentFail);
-            
-            // O mobile nos retorna: deviceName, deviceModel, appVersion, batteryLevel, etc
+            const info = await client.getInfo(silentFail, 2000); // 2s timeout para não travar o polling
+
+            if (!info) return;
+
+            const name = info.deviceName || info.name || info.deviceModel || info.model || 'Smartphone BDSM';
+            const model = info.deviceModel || info.model || 'Mobile Device';
+            const rawId = info.id || info.deviceId || info.serial || name;
+
             const deviceData = {
-                id: info.deviceName + '_' + connectionType, // Geramos um ID unívoco
-                name: info.deviceName || info.deviceModel || 'Smartphone BDSM',
-                model: info.deviceModel || 'Unknown Model',
+                id: `${rawId}_${connectionType}`.replace(/\s+/g, '_'),
+                name: name,
+                model: model,
                 ip: ip,
                 port: port,
-                battery: info.batteryLevel || 100,
-                storage_total: info.totalStorageBytes || 0,
-                storage_free: info.freeStorageBytes || 0,
-                app_version: info.appVersion || '1.0.0',
+                battery: info.batteryLevel ?? info.battery ?? 100,
+                storage_total: info.totalStorageBytes || info.storage_total || 0,
+                storage_free: info.freeStorageBytes || info.storage_free || 0,
+                app_version: info.appVersion || info.version || '1.0.0',
                 connection: connectionType,
                 type: 'bdsm',
                 last_seen: Date.now()
             };
 
             this.registerDevice(deviceData);
-        } catch(e) {
-            // Se falhar o fetch, o dispositivo não está disponível
+        } catch (e) {
             if (!silentFail) {
-                logger.error(`[Discovery] Falha ao sondar dispositivo ${ip}:${port} - ${e.message}`);
+                logger.error(`[Discovery] Falha ao sondar dispositivo ${ip}:${port} (${connectionType}) - ${e.message}`);
             }
         }
     }
@@ -91,8 +175,12 @@ class DeviceDiscoveryService extends EventEmitter {
     stop() {
         if (this.cleanupInterval) clearInterval(this.cleanupInterval);
         if (this.usbPollInterval) clearInterval(this.usbPollInterval);
+        if (this.bonjourBrowser) {
+            try { this.bonjourBrowser.stop(); } catch (_) {}
+            this.bonjourBrowser = null;
+        }
         if (this.bonjour) {
-            this.bonjour.destroy();
+            try { this.bonjour.destroy(); } catch (_) {}
             this.bonjour = null;
         }
     }
@@ -102,7 +190,7 @@ class DeviceDiscoveryService extends EventEmitter {
         this.devices.set(deviceData.id, deviceData);
 
         if (!existing) {
-            logger.info(`[Discovery] Novo dispositivo BDSM encontrado: ${deviceData.name} (${deviceData.connection})`);
+            logger.info(`[Discovery] Novo dispositivo BDSM encontrado: ${deviceData.name} (${deviceData.connection} @ ${deviceData.ip}:${deviceData.port})`);
             this.emit('device_added', deviceData);
         } else {
             this.emit('device_updated', deviceData);
@@ -111,11 +199,11 @@ class DeviceDiscoveryService extends EventEmitter {
 
     cleanupDevices() {
         const now = Date.now();
-        const timeout = 15000; // 15 seconds sem dar sinal = offline
+        const timeout = 15000; // 15 seconds sem resposta = offline
         
         for (const [id, device] of this.devices.entries()) {
             if (now - device.last_seen > timeout) {
-                logger.info(`[Discovery] Dispositivo BDSM desconectado por inatividade: ${device.name}`);
+                logger.info(`[Discovery] Dispositivo BDSM desconectado por inatividade: ${device.name} (${id})`);
                 this.devices.delete(id);
                 this.emit('device_removed', id);
             }
@@ -127,18 +215,8 @@ class DeviceDiscoveryService extends EventEmitter {
     }
 
     async forceRescan() {
-        // Limpamos o mapa para forçar uma rediscoberta imediata do USB
-        this.devices.clear();
+        this.startMdns();
         await this.pollAllDevices();
-        
-        // Se houver wifi, forçamos um novo scan no Bonjour
-        if (this.bonjour) {
-            try {
-                this.bonjour.find({ type: 'bdsm' }, (service) => {
-                    this.probeDevice(service.addresses[0], service.port, 'wifi');
-                });
-            } catch (e) {}
-        }
     }
 }
 

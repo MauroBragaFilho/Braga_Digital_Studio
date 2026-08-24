@@ -124,11 +124,6 @@ class Bootstrap {
 
     // Sincronizar bibliotecas das configurações
     this._syncLibraries(libManager, settings);
-    watcherService.startAll();
-
-    // 4. Inicializar Descoberta de Hardware
-    deviceDiscoveryService.start();
-    sonyCameraService.start();
 
     this.services = {
       historyService,
@@ -558,16 +553,43 @@ class Bootstrap {
     ipcMain.handle('upload:clearQueue', () => UploadService.clearQueue());
   }
 
-  async checkInitialDependencies() {
-    const missingTools = externalTools.getMissing();
-    const { updateService } = this.services;
+  startBackgroundServices() {
+    try {
+      // 1. Inicia watcher de bibliotecas
+      if (this.services.watcherService) {
+        this.services.watcherService.startAll();
+      }
 
-    if (missingTools.length > 0) {
-      logger.info('Primeira inicialização detectada. Baixando dependências...');
+      // 2. Inicia descoberta de dispositivos
+      deviceDiscoveryService.start();
+      sonyCameraService.start();
+      logger.info('Serviços em segundo plano inicializados.');
+    } catch (err) {
+      logger.error('Erro ao iniciar serviços em segundo plano:', { error: err.message });
+    }
+  }
+
+  async checkInitialDependencies() {
+    const { updateService } = this.services;
+    
+    // Verifica apenas ferramentas essenciais de execução
+    const requiredTools = ['ytdlp', 'ffmpeg', 'ffprobe'];
+    const missing = requiredTools.filter(tool => {
+      try {
+        if (tool === 'ytdlp') return !externalTools.ytdlp.exists();
+        if (tool === 'ffmpeg') return !externalTools.ffmpeg.exists();
+        if (tool === 'ffprobe') return !externalTools.ffprobe.exists();
+      } catch (_) {
+        return true;
+      }
+      return false;
+    });
+
+    if (missing.length > 0) {
+      logger.info(`Primeira inicialização: Baixando dependências essenciais ausentes: ${missing.join(', ')}`);
       this.mainWindow?.webContents.send('dependencies:downloading');
 
-      const tools = ['yt-dlp', 'ffmpeg', 'ffprobe', 'spotdl'];
-      for (const tool of tools) {
+      for (const tool of missing) {
         try {
           await updateService.updateTool(tool);
         } catch (e) {

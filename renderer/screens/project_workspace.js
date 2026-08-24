@@ -567,6 +567,9 @@ async function deleteSyncGroupAction(groupId) {
 // FASE E — VISUALIZAÇÃO GRÁFICA DA SINCRONIZAÇÃO (estática, sem edição)
 // ==========================================================================
 
+// --- FASE 4: Visualização estilo PluralEyes — faixas de waveform empilhadas,
+//     deslocadas horizontalmente pelo offset calculado, com hachura no
+//     trecho "vazio" e badge de confiança por clipe. ---
 function renderSyncVisualization(group) {
   const wrapper = document.getElementById('wsSyncVizWrapper');
   if (!wrapper) return;
@@ -577,86 +580,76 @@ function renderSyncVisualization(group) {
     return;
   }
 
-  wrapper.innerHTML = `
-    <div class="ws-sync-viz-wrapper">
-      <div class="ws-sync-viz-title">Visualização da Sincronização</div>
-      <canvas id="wsSyncVizCanvas" class="ws-sync-viz-canvas"></canvas>
-    </div>
-  `;
-
-  const canvas = document.getElementById('wsSyncVizCanvas');
-  if (!canvas) return;
-
-  const dpr = window.devicePixelRatio || 1;
-  const rowHeight = 34;
-  const topPadding = 24;
-  const leftLabelWidth = 140;
-  const rightPadding = 16;
-  const cssWidth = wrapper.clientWidth || 600;
-  const cssHeight = topPadding + items.length * rowHeight + 16;
-
-  canvas.style.width = cssWidth + 'px';
-  canvas.style.height = cssHeight + 'px';
-  canvas.width = Math.round(cssWidth * dpr);
-  canvas.height = Math.round(cssHeight * dpr);
-
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+  const avgConfidence = items.reduce((sum, it) => sum + (it.confidence || 0), 0) / items.length;
+  const confidenceLabel = avgConfidence >= 0.75 ? 'Confiança alta' : avgConfidence >= 0.4 ? 'Confiança média' : 'Confiança baixa';
+  const confidenceClass = avgConfidence >= 0.75 ? 'high' : avgConfidence >= 0.4 ? 'medium' : 'low';
 
   // Escala de tempo: do menor offset até o maior (offset + duração)
   const maxEnd = items.reduce((max, it) => Math.max(max, (it.offset_seconds || 0) + (it.duration || 0)), 0.001);
   const minStart = Math.min(0, ...items.map(it => it.offset_seconds || 0));
   const timeRange = Math.max(0.001, maxEnd - minStart);
-  const trackWidth = cssWidth - leftLabelWidth - rightPadding;
 
-  const timeToX = (t) => leftLabelWidth + ((t - minStart) / timeRange) * trackWidth;
+  const trackRows = items.map((it, i) => {
+    const isMaster = it.media_id === group.master_media_id;
+    const conf = it.confidence !== undefined && it.confidence !== null ? it.confidence : null;
+    const confPct = conf !== null ? Math.round(conf * 100) : null;
+    const confClass = conf === null ? '' : conf >= 0.75 ? 'high' : conf >= 0.4 ? 'medium' : 'low';
+    const confDotLabel = conf === null ? '—' : conf >= 0.75 ? 'alta' : conf >= 0.4 ? 'média' : 'baixa';
 
-  // Réguas de tempo (marcas a cada intervalo "redondo")
-  const rulerStepCandidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
-  const targetTicks = 6;
-  const rawStep = timeRange / targetTicks;
-  const rulerStep = rulerStepCandidates.find(s => s >= rawStep) || rulerStepCandidates[rulerStepCandidates.length - 1];
+    const startPct = ((((it.offset_seconds || 0) - minStart) / timeRange) * 100).toFixed(3);
+    const widthPct = (((it.duration || 0) / timeRange) * 100).toFixed(3);
+    const driftBadge = it.drift_rate_ppm && Math.abs(it.drift_rate_ppm) >= 5
+      ? `<span class="ws-sync-drift-badge" title="Deriva de clock detectada e corrigida">drift ${it.drift_rate_ppm > 0 ? '+' : ''}${Math.round(it.drift_rate_ppm)}ppm</span>`
+      : '';
 
-  ctx.font = '10px Inter, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.textAlign = 'center';
+    return `
+      <div class="ws-sync-track-row ${confClass ? 'conf-' + confClass : ''}" data-media-id="${it.media_id}">
+        <div class="ws-sync-track-label">
+          <span class="ws-sync-track-name" title="${escapeHtml(it.filename)}">
+            ${isMaster ? '<span class="material-symbols-rounded ws-sync-master-icon" title="Mestre">star</span>' : ''}
+            ${escapeHtml(it.filename.length > 18 ? it.filename.slice(0, 16) + '…' : it.filename)}
+          </span>
+          <span class="ws-sync-track-offset">${isMaster ? 'mestre' : formatOffset(it.offset_seconds)}</span>
+        </div>
+        <div class="ws-sync-track-lane">
+          <div class="ws-sync-track-bar" style="left:${startPct}%; width:${widthPct}%;">
+            <canvas class="ws-sync-track-canvas" data-media-id="${it.media_id}" data-stream-index="0"></canvas>
+          </div>
+        </div>
+        <div class="ws-sync-track-conf ${confClass}" title="Confiança da correlação: ${confPct !== null ? confPct + '%' : 'indisponível'}">
+          ${confPct !== null ? confPct + '%' : '—'} <span class="ws-sync-conf-word">${confDotLabel}</span>
+          ${driftBadge}
+        </div>
+      </div>
+    `;
+  }).join('');
 
-  for (let t = Math.ceil(minStart / rulerStep) * rulerStep; t <= maxEnd; t += rulerStep) {
-    const x = timeToX(t);
-    ctx.beginPath();
-    ctx.moveTo(x, topPadding - 6);
-    ctx.lineTo(x, cssHeight - 8);
-    ctx.stroke();
-    ctx.fillText(secondsToTimecode(Math.max(0, t), 30).slice(0, 8), x, topPadding - 10);
-  }
+  wrapper.innerHTML = `
+    <div class="ws-sync-viz-wrapper ws-sync-viz-pluraleyes">
+      <div class="ws-sync-viz-header">
+        <span class="ws-sync-viz-title">Visualização da Sincronização</span>
+        <span class="ws-sync-viz-confidence-badge ${confidenceClass}">${confidenceLabel} · ${Math.round(avgConfidence * 100)}%</span>
+      </div>
+      <div class="ws-sync-tracks">${trackRows}</div>
+    </div>
+  `;
 
-  // Barras por item
-  const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
-  items.forEach((it, i) => {
-    const y = topPadding + i * rowHeight;
-    const x1 = timeToX(it.offset_seconds || 0);
-    const x2 = timeToX((it.offset_seconds || 0) + (it.duration || 0));
-    const barColor = it.media_id === group.master_media_id ? '#f59e0b' : colors[i % colors.length];
+  // Desenha as waveforms reais dentro de cada faixa (assíncrono, cacheado)
+  wrapper.querySelectorAll('.ws-sync-track-canvas').forEach(canvas => {
+    const mediaId = Number(canvas.dataset.mediaId);
+    const item = items.find(it => it.media_id === mediaId);
+    if (!item || !item.filepath) return;
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.font = '11px Inter, sans-serif';
-    const label = it.filename.length > 20 ? it.filename.slice(0, 18) + '…' : it.filename;
-    ctx.fillText(label, leftLabelWidth - 10, y + rowHeight / 2 + 4);
-
-    ctx.fillStyle = barColor;
-    const barHeight = 16;
-    const barY = y + (rowHeight - barHeight) / 2;
-    const radius = 4;
-    const w = Math.max(2, x2 - x1);
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(x1, barY, w, barHeight, radius);
-    } else {
-      ctx.rect(x1, barY, w, barHeight);
-    }
-    ctx.fill();
+    canvas.height = 30;
+    window.bds.getMediaWaveform({
+      uuid: item.uuid || String(item.media_id),
+      filePath: item.filepath,
+      duration: item.duration || 0,
+      peaksPerSecond: 60,
+      streamIndex: 0
+    }).then(wf => {
+      if (wf && wf.peaks) drawWaveformOnCanvas(canvas, wf.peaks);
+    }).catch(() => { /* sem waveform cacheada ainda, faixa fica só com a cor de fundo */ });
   });
 }
 
@@ -971,14 +964,23 @@ function createBinNode(bin) {
 function createMediaNode(pm) {
   const el = document.createElement('div');
   el.className = `ws-bin-media ${selectedItem?.type === 'project_media' && selectedItem.id === pm.pm_id ? 'selected' : ''} ${syncSelection.has(pm.pm_id) ? 'sync-selected' : ''}`;
-  const icon = pm.extension === 'MP3' || pm.extension === 'WAV' ? 'audiotrack' :
+  const isAudio = pm.extension === 'MP3' || pm.extension === 'WAV';
+  const icon = isAudio ? 'audiotrack' :
                ['JPG','PNG','WEBP'].includes(pm.extension) ? 'image' : 'movie';
   const name = pm.custom_name || pm.filename;
   const synced = isMediaSynced(pm);
+  const thumbUrl = pm.thumbnail_path ? `url('file:///${pm.thumbnail_path.replace(/\\/g, '/')}')` : '';
+
+  const thumbHtml = isAudio
+    ? `<canvas class="ws-bin-media-thumb ws-bin-media-thumb-wave" data-uuid="${pm.uuid || ''}" data-path="${pm.filepath ? pm.filepath.replace(/"/g, '&quot;') : ''}"></canvas>`
+    : `<div class="ws-bin-media-thumb" style="background-image:${thumbUrl};">${!thumbUrl ? `<span class="material-symbols-rounded">${icon}</span>` : ''}</div>`;
+
   el.innerHTML = `
-    <span class="material-symbols-rounded" style="font-size: 16px;">${icon}</span>
-    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(name)}</span>
-    <span class="material-symbols-rounded ws-bin-media-sync-badge ${synced ? 'synced' : 'pending'}" title="${synced ? 'Sincronizado' : 'Pendente de sincronização'}">${synced ? 'check_circle' : 'warning'}</span>
+    ${thumbHtml}
+    <span class="ws-bin-media-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(name)}</span>
+    <span class="ws-bin-media-sync-pill ${synced ? 'synced' : 'pending'}" title="${synced ? 'Sincronizado' : 'Pendente de sincronização'}">
+      <span class="material-symbols-rounded">${synced ? 'check_circle' : 'warning'}</span>${synced ? 'Sync' : 'Pendente'}
+    </span>
   `;
   el.draggable = true;
   el.addEventListener('dragstart', e => {
@@ -1001,6 +1003,19 @@ function createMediaNode(pm) {
     switchCenterTab('monitor');
     loadIntoMonitor(pm);
   });
+
+  if (isAudio) {
+    const canvas = el.querySelector('.ws-bin-media-thumb-wave');
+    if (canvas && pm.uuid && pm.filepath && window.bds?.getMediaWaveform) {
+      requestAnimationFrame(() => {
+        canvas.height = 28;
+        window.bds.getMediaWaveform({ uuid: pm.uuid, filePath: pm.filepath, peaksPerSecond: 30, streamIndex: 0 })
+          .then(wf => { if (wf && wf.peaks) drawWaveformOnCanvas(canvas, wf.peaks); })
+          .catch(() => {});
+      });
+    }
+  }
+
   return el;
 }
 
@@ -1128,6 +1143,7 @@ function isMediaAudioOnly(pm) {
 
 async function loadIntoMonitor(pm) {
   try {
+    teardownMonitorTrackAudio();
     monitorMedia = pm;
     markIn = 0;
     markOut = pm.duration || 0;
@@ -1170,9 +1186,24 @@ async function loadIntoMonitor(pm) {
     monitorEl.ontimeupdate = () => {
       document.getElementById('wsTcCurrent').textContent = secondsToTimecode(monitorEl.currentTime, pm.fps || 30);
       document.getElementById('wsScrubber').value = String(Math.floor(monitorEl.currentTime * 1000));
+      // Corrige deriva leve entre as linhas extras e o player principal
+      monitorTrackAudioEls.forEach(el => {
+        if (el && Math.abs(el.currentTime - monitorEl.currentTime) > 0.25) {
+          el.currentTime = monitorEl.currentTime;
+        }
+      });
     };
-    monitorEl.onplay = () => { document.getElementById('wsPlayIcon').textContent = 'pause'; };
-    monitorEl.onpause = () => { document.getElementById('wsPlayIcon').textContent = 'play_arrow'; };
+    monitorEl.onplay = () => {
+      document.getElementById('wsPlayIcon').textContent = 'pause';
+      monitorTrackAudioEls.forEach(el => { if (el) { el.currentTime = monitorEl.currentTime; el.play().catch(() => {}); } });
+    };
+    monitorEl.onpause = () => {
+      document.getElementById('wsPlayIcon').textContent = 'play_arrow';
+      monitorTrackAudioEls.forEach(el => { if (el) el.pause(); });
+    };
+    monitorEl.onseeked = () => {
+      monitorTrackAudioEls.forEach(el => { if (el) el.currentTime = monitorEl.currentTime; });
+    };
 
     loadWaveformForMonitor(pm);
 
@@ -1194,10 +1225,25 @@ function secondsToTimecode(totalSeconds, fps = 30) {  if (!totalSeconds || isNaN
 }
 
 // --- FASE 5: Waveform (geração/cache via WaveformService + render em canvas) ---
+// --- FASE 5b: até 3 linhas de áudio visíveis ao mesmo tempo, cada uma com
+//     mudo independente durante o preview (elementos <audio> extraídos e
+//     sincronizados ao player principal, já que o Chromium não mixa
+//     múltiplas tracks nativas de um mesmo arquivo com volume separado) ---
+const MAX_MONITOR_AUDIO_TRACKS = 3;
+let monitorTrackAudioEls = []; // <audio> extras sincronizados ao monitorEl
+
+function teardownMonitorTrackAudio() {
+  monitorTrackAudioEls.forEach(el => {
+    try { el.pause(); el.src = ''; el.remove(); } catch (_) {}
+  });
+  monitorTrackAudioEls = [];
+}
+
 async function loadWaveformForMonitor(pm) {
   const container = document.getElementById('wsWaveformsContainer');
   if (!container) return;
   container.innerHTML = '';
+  teardownMonitorTrackAudio();
 
   if (!pm.audio_codec && !monitorIsAudio) return; // sem faixa de áudio, nada a desenhar
   if (!pm.uuid || !pm.filepath) return;
@@ -1215,14 +1261,51 @@ async function loadWaveformForMonitor(pm) {
       audioStreams = [{ index: 0, title: 'Audio 1', codec_name: pm.audio_codec || 'audio' }];
     }
 
-    for (let i = 0; i < audioStreams.length; i++) {
-      const stream = audioStreams[i];
+    const visibleStreams = audioStreams.slice(0, MAX_MONITOR_AUDIO_TRACKS);
+    if (audioStreams.length > MAX_MONITOR_AUDIO_TRACKS) {
+      const notice = document.createElement('div');
+      notice.style.cssText = 'font-size:10px; color:var(--muted); padding:2px 4px;';
+      notice.textContent = `Mostrando ${MAX_MONITOR_AUDIO_TRACKS} de ${audioStreams.length} linhas de áudio.`;
+      container.appendChild(notice);
+    }
+
+    // A track 0 já toca nativamente pelo monitorEl (video/audio principal).
+    // Track 0 é sempre mudável via um <audio> espelho silencioso do próprio
+    // monitorEl (para não duplicar som) — as demais (1, 2) são extraídas e
+    // tocadas em elementos próprios, sincronizados ao monitorEl.
+    for (let i = 0; i < visibleStreams.length; i++) {
+      const stream = visibleStreams[i];
+      const streamIndex = stream.index ?? i;
       const trackWrap = document.createElement('div');
       trackWrap.style.cssText = 'display:flex; flex-direction:column; gap:2px; width:100%; position:relative;';
 
       const label = document.createElement('div');
-      label.style.cssText = 'font-size:10px; color:var(--muted); font-weight:700; padding-left:4px; display:flex; justify-content:space-between;';
+      label.style.cssText = 'font-size:10px; color:var(--muted); font-weight:700; padding-left:4px; display:flex; align-items:center; justify-content:space-between; gap:6px;';
+
+      const muteBtn = document.createElement('button');
+      muteBtn.type = 'button';
+      muteBtn.className = 'ws-track-mute-btn';
+      muteBtn.title = `Silenciar linha ${i + 1}`;
+      muteBtn.style.cssText = 'background:none; border:0.5px solid var(--border, #444); border-radius:4px; width:20px; height:18px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:#22c55e;';
+      muteBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:13px;">volume_up</span>';
+
+      let isMuted = false;
+      const applyMute = () => {
+        if (i === 0) {
+          // Track principal: muta o próprio monitorEl
+          if (monitorEl) monitorEl.muted = isMuted;
+        } else {
+          const trackEl = monitorTrackAudioEls[i];
+          if (trackEl) trackEl.muted = isMuted;
+        }
+        muteBtn.style.color = isMuted ? 'var(--danger, #ef4444)' : '#22c55e';
+        muteBtn.title = isMuted ? `Ativar linha ${i + 1}` : `Silenciar linha ${i + 1}`;
+        muteBtn.querySelector('span').textContent = isMuted ? 'volume_off' : 'volume_up';
+      };
+      muteBtn.addEventListener('click', () => { isMuted = !isMuted; applyMute(); });
+
       label.innerHTML = `<span><span style="color:#22c55e;">A${i+1}</span> (${stream.codec_name || 'audio'})</span><span>${escapeHtml(stream.title || '')}</span>`;
+      label.appendChild(muteBtn);
       trackWrap.appendChild(label);
 
       const canvas = document.createElement('canvas');
@@ -1239,7 +1322,7 @@ async function loadWaveformForMonitor(pm) {
         filePath: pm.filepath,
         duration: pm.duration || 0,
         peaksPerSecond: 100,
-        streamIndex: stream.index || 0
+        streamIndex
       }).then(wf => {
         if (monitorMedia?.pm_id === pm.pm_id && wf && wf.peaks) {
           drawWaveformOnCanvas(canvas, wf.peaks);
@@ -1247,6 +1330,20 @@ async function loadWaveformForMonitor(pm) {
       }).catch(err => {
         console.warn(`[WORKSPACE] Waveform indisponível para track ${i+1}:`, err.message);
       });
+
+      // Para linhas além da 0, extrai e sincroniza um <audio> próprio
+      if (i > 0 && window.bds.getTrackAudioPath) {
+        window.bds.getTrackAudioPath({ uuid: pm.uuid, filePath: pm.filepath, streamIndex }).then(url => {
+          if (monitorMedia?.pm_id !== pm.pm_id || !monitorEl) return;
+          const trackEl = new Audio(url);
+          trackEl.preload = 'auto';
+          trackEl.currentTime = monitorEl.currentTime || 0;
+          if (monitorEl.paused) trackEl.pause(); else trackEl.play().catch(() => {});
+          monitorTrackAudioEls[i] = trackEl;
+        }).catch(err => {
+          console.warn(`[WORKSPACE] Não foi possível extrair a linha de áudio ${i + 1}:`, err.message);
+        });
+      }
     }
   } catch (e) {
     console.warn('[WORKSPACE] Waveform indisponível:', e.message);

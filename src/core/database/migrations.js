@@ -155,6 +155,16 @@ function runMigrations() {
             logger.info('[Migrations] Coluna audio_stream_index adicionada em timeline_clips.');
         } catch(e) {}
 
+        // Fase 3 — Sincronismo com correção de deriva de clock (clock drift)
+        try {
+            db.exec("ALTER TABLE sync_group_items ADD COLUMN confidence REAL DEFAULT 0;");
+            logger.info('[Migrations] Coluna confidence adicionada em sync_group_items.');
+        } catch(e) {}
+        try {
+            db.exec("ALTER TABLE sync_group_items ADD COLUMN drift_rate_ppm REAL DEFAULT 0;");
+            logger.info('[Migrations] Coluna drift_rate_ppm adicionada em sync_group_items.');
+        } catch(e) {}
+
 
     } else {
         logger.warn('[Migrations] Arquivo schema.sql não encontrado.');

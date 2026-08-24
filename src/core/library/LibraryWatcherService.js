@@ -16,8 +16,10 @@ class LibraryWatcherService {
         const db = dbManager.get();
         const libraries = db.prepare('SELECT * FROM libraries WHERE enabled = 1 AND auto_scan = 1').all();
         
-        // Reconcilia arquivos deletados enquanto o app estava fechado
-        this.reconcileMissingFiles();
+        // Reconcilia arquivos deletados em segundo plano após o startup
+        setTimeout(() => {
+            this.reconcileMissingFiles().catch(err => logger.error(`[LibraryWatcherService] Falha na reconciliação: ${err.message}`));
+        }, 1500);
         
         for (const lib of libraries) {
             if (lib.path) {
@@ -28,9 +30,9 @@ class LibraryWatcherService {
 
     /**
      * Verifica todos os arquivos no banco e marca como missing=1
-     * aqueles que não existem mais no disco.
+     * aqueles que não existem mais no disco de forma assíncrona.
      */
-    reconcileMissingFiles() {
+    async reconcileMissingFiles() {
         const fs = require('fs');
         const db = dbManager.get();
         

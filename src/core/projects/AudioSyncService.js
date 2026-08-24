@@ -189,6 +189,146 @@ class AudioSyncService {
     }
 
     // ------------------------------------------------------------------
+    // FASE 3: Correção de deriva de clock (clock drift)
+    // ------------------------------------------------------------------
+    // Em gravações longas (>~5min), dois gravadores com clocks internos
+    // levemente diferentes derivam ao longo do tempo mesmo após o offset
+    // inicial estar correto — o áudio vai lentamente "escorregando".
+    // Em vez de um único offset global, amostramos a correlação em vários
+    // pontos ao longo do trecho sobreposto e ajustamos uma reta
+    // (offset em função do tempo) por regressão linear simples.
+    // O resultado é: offset_seconds (no início) + drift_rate (segundos de
+    // deriva por segundo de mídia, tipicamente na ordem de dezenas de ppm).
+
+    /**
+     * Sincroniza com correção de deriva: primeiro acha o offset global
+     * (grosso), depois refina com múltiplos pontos de amostragem para
+     * detectar e compensar a deriva de clock.
+     *
+     * @param {Float32Array} masterEnv
+     * @param {Float32Array} targetEnv
+     * @param {number} maxOffsetSeconds
+     * @returns {{offsetSeconds:number, confidence:number, driftRatePpm:number, samplePoints:Array}}
+     */
+    syncWithDriftCorrection(masterEnv, targetEnv, maxOffsetSeconds = 30) {
+        // 1) Offset global grosso, igual ao algoritmo original
+        const coarse = this.crossCorrelate(masterEnv, targetEnv, maxOffsetSeconds);
+        if (coarse.confidence <= 0) return { ...coarse, driftRatePpm: 0, samplePoints: [] };
+
+        const overlapSeconds = Math.min(masterEnv.length, targetEnv.length) * this.windowSeconds;
+
+        // Deriva só é relevante em clipes longos; abaixo disso o offset
+        // global já é suficientemente preciso e a amostragem por segmento
+        // não teria trecho longo o bastante para ser confiável.
+        const DRIFT_MIN_DURATION_SECONDS = 300; // 5 minutos
+        if (overlapSeconds < DRIFT_MIN_DURATION_SECONDS) {
+            return { ...coarse, driftRatePpm: 0, samplePoints: [] };
+        }
+
+        // 2) Amostra a correlação em N pontos ao longo da sobreposição,
+        //    cada um buscando apenas numa janela pequena ao redor do
+        //    offset grosso já conhecido (refinamento local, rápido).
+        const NUM_SAMPLE_POINTS = 5;
+        const localSearchSeconds = 0.75; // busca fina de ±750ms ao redor do offset grosso
+        const segmentSpanSeconds = 8;    // cada ponto usa ~8s de envelope centrados nele
+
+        const samplePoints = [];
+        for (let p = 0; p < NUM_SAMPLE_POINTS; p++) {
+            // Distribui os pontos uniformemente ao longo do trecho sobreposto,
+            // evitando as bordas (onde a janela local poderia faltar dados).
+            const centerT = overlapSeconds * ((p + 1) / (NUM_SAMPLE_POINTS + 1));
+            const local = this._localOffsetAt(masterEnv, targetEnv, coarse.offsetSeconds, centerT, segmentSpanSeconds, localSearchSeconds);
+            if (local) samplePoints.push({ tSeconds: centerT, offsetSeconds: local.offsetSeconds, confidence: local.confidence });
+        }
+
+        if (samplePoints.length < 3) {
+            // Amostragem insuficiente (trechos de silêncio, etc.) — mantém offset global sem deriva
+            return { ...coarse, driftRatePpm: 0, samplePoints };
+        }
+
+        // 3) Regressão linear simples: offset(t) = intercept + slope * t
+        const { slope, intercept } = this._linearRegression(samplePoints.map(s => s.tSeconds), samplePoints.map(s => s.offsetSeconds));
+
+        const avgConfidence = samplePoints.reduce((sum, s) => sum + s.confidence, 0) / samplePoints.length;
+        const driftRatePpm = parseFloat((slope * 1_000_000).toFixed(2)); // segundos de deriva por segundo → ppm
+
+        return {
+            offsetSeconds: parseFloat(intercept.toFixed(3)),
+            confidence: parseFloat(Math.max(0, Math.min(coarse.confidence, avgConfidence)).toFixed(4)),
+            driftRatePpm,
+            samplePoints
+        };
+    }
+
+    /**
+     * Refina o offset localmente ao redor de um ponto do tempo, buscando
+     * apenas numa janela pequena (localSearchSeconds) em torno do offset
+     * grosseiro já conhecido — muito mais rápido que uma busca global.
+     * @private
+     */
+    _localOffsetAt(masterEnv, targetEnv, coarseOffsetSeconds, centerTSeconds, segmentSpanSeconds, localSearchSeconds) {
+        const centerSample = Math.round(centerTSeconds / this.windowSeconds);
+        const halfSpan = Math.round((segmentSpanSeconds / 2) / this.windowSeconds);
+        const coarseShiftSamples = Math.round(coarseOffsetSeconds / this.windowSeconds);
+        const localSearchSamples = Math.max(1, Math.round(localSearchSeconds / this.windowSeconds));
+
+        const tStart = Math.max(0, centerSample - halfSpan);
+        const tEnd = Math.min(targetEnv.length, centerSample + halfSpan);
+        if (tEnd - tStart < 20) return null; // segmento curto demais (~0.4s), ignora
+
+        const targetSegment = targetEnv.subarray(tStart, tEnd);
+        const targetMean = this._mean(targetSegment);
+        const targetStd = this._std(targetSegment, targetMean);
+        if (targetStd < 1e-6) return null; // segmento silencioso, sem sinal pra correlacionar
+
+        let bestShift = coarseShiftSamples;
+        let bestScore = -Infinity;
+
+        for (let extra = -localSearchSamples; extra <= localSearchSamples; extra++) {
+            const shift = coarseShiftSamples + extra;
+            const mStart = tStart + shift;
+            const mEnd = tEnd + shift;
+            if (mStart < 0 || mEnd > masterEnv.length) continue;
+
+            const masterSegment = masterEnv.subarray(mStart, mEnd);
+            const masterMean = this._mean(masterSegment);
+            const masterStd = this._std(masterSegment, masterMean);
+            if (masterStd < 1e-6) continue;
+
+            let sum = 0;
+            for (let i = 0; i < targetSegment.length; i++) {
+                sum += (masterSegment[i] - masterMean) * (targetSegment[i] - targetMean);
+            }
+            const score = sum / (masterStd * targetStd * targetSegment.length);
+            if (score > bestScore) {
+                bestScore = score;
+                bestShift = shift;
+            }
+        }
+
+        if (bestScore === -Infinity) return null;
+        return {
+            offsetSeconds: parseFloat((bestShift * this.windowSeconds).toFixed(3)),
+            confidence: parseFloat(Math.max(0, bestScore).toFixed(4))
+        };
+    }
+
+    /** @private */
+    _linearRegression(xs, ys) {
+        const n = xs.length;
+        const meanX = xs.reduce((a, b) => a + b, 0) / n;
+        const meanY = ys.reduce((a, b) => a + b, 0) / n;
+        let num = 0, den = 0;
+        for (let i = 0; i < n; i++) {
+            num += (xs[i] - meanX) * (ys[i] - meanY);
+            den += (xs[i] - meanX) ** 2;
+        }
+        const slope = den === 0 ? 0 : num / den;
+        const intercept = meanY - slope * meanX;
+        return { slope, intercept };
+    }
+
+    // ------------------------------------------------------------------
     // API DE ALTO NÍVEL: sincroniza um grupo de mídias contra uma master
     // ------------------------------------------------------------------
 
@@ -198,7 +338,7 @@ class AudioSyncService {
      * @param {number} masterMediaId - ID da mídia usada como referência (offset 0.0)
      * @param {number} [maxOffsetSeconds=30] - Janela máxima de busca de offset
      * @param {Function} [onProgress] - Callback opcional (mediaId, status) para reportar progresso
-     * @returns {Promise<Array<{media_id:number, offset_seconds:number, confidence:number}>>}
+     * @returns {Promise<Array<{media_id:number, offset_seconds:number, confidence:number, drift_rate_ppm:number}>>}
      */
     async syncGroup(mediaList, masterMediaId, maxOffsetSeconds = 30, onProgress = null) {
         const master = mediaList.find(m => m.id === masterMediaId);
@@ -207,7 +347,7 @@ class AudioSyncService {
         if (onProgress) onProgress(master.id, 'extracting');
         const masterEnv = await this.extractEnvelope(master.filepath);
 
-        const results = [{ media_id: master.id, offset_seconds: 0.0, confidence: 1.0 }];
+        const results = [{ media_id: master.id, offset_seconds: 0.0, confidence: 1.0, drift_rate_ppm: 0 }];
 
         for (const media of mediaList) {
             if (media.id === masterMediaId) continue;
@@ -217,13 +357,13 @@ class AudioSyncService {
                 const targetEnv = await this.extractEnvelope(media.filepath);
 
                 if (onProgress) onProgress(media.id, 'correlating');
-                const { offsetSeconds, confidence } = this.crossCorrelate(masterEnv, targetEnv, maxOffsetSeconds);
+                const { offsetSeconds, confidence, driftRatePpm } = this.syncWithDriftCorrection(masterEnv, targetEnv, maxOffsetSeconds);
 
-                results.push({ media_id: media.id, offset_seconds: offsetSeconds, confidence });
+                results.push({ media_id: media.id, offset_seconds: offsetSeconds, confidence, drift_rate_ppm: driftRatePpm || 0 });
                 if (onProgress) onProgress(media.id, 'done');
             } catch (e) {
                 logger.error(`[AudioSyncService] Falha ao sincronizar mídia ${media.id}: ${e.message}`);
-                results.push({ media_id: media.id, offset_seconds: 0.0, confidence: 0, error: e.message });
+                results.push({ media_id: media.id, offset_seconds: 0.0, confidence: 0, drift_rate_ppm: 0, error: e.message });
                 if (onProgress) onProgress(media.id, 'error');
             }
         }

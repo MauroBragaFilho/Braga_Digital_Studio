@@ -555,21 +555,24 @@
 .ws-lib-item {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 8px;
   display: flex;
   align-items: center;
   gap: 12px;
   cursor: grab;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.15s, border-color 0.15s;
 }
 
 .ws-lib-item:hover {
   background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
 }
 
 .ws-lib-item:active {
   cursor: grabbing;
+  transform: translateY(0);
 }
 
 .ws-lib-thumb {
@@ -577,7 +580,7 @@
   height: 27px;
   background-size: cover;
   background-position: center;
-  border-radius: 4px;
+  border-radius: 5px;
   background-color: #000;
   flex-shrink: 0;
 }
@@ -687,12 +690,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px 4px 24px;
-  border-radius: 4px;
+  padding: 5px 8px 5px 24px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--muted);
   font-size: 12px;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.15s;
   position: relative;
   border: 1px solid transparent;
 }
@@ -700,7 +703,7 @@
 .ws-bin-media::before {
   content: '';
   position: absolute;
-  top: 14px;
+  top: 16px;
   left: -12px;
   width: 12px;
   height: 1px;
@@ -708,7 +711,7 @@
 }
 
 .ws-bin-media:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text);
 }
 
@@ -722,6 +725,64 @@
   background: rgba(245, 158, 11, 0.12);
   border-color: #f59e0b;
   color: var(--text);
+}
+
+.ws-bin-media-thumb {
+  width: 40px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  background-color: #000;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ws-bin-media-thumb .material-symbols-rounded {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.ws-bin-media-thumb-wave {
+  width: 40px;
+  height: 26px;
+  display: block;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-bin-media-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-bin-media-sync-pill {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px 2px 6px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.ws-bin-media-sync-pill .material-symbols-rounded {
+  font-size: 12px !important;
+}
+
+.ws-bin-media-sync-pill.synced {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.ws-bin-media-sync-pill.pending {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
 }
 
 /* --- UTILS --- */
@@ -1009,6 +1070,8 @@
 
 /* ==========================================================================
    FASE E — VISUALIZAÇÃO GRÁFICA DA SINCRONIZAÇÃO
+   FASE 4 — Refeita no estilo PluralEyes: faixas de waveform empilhadas,
+   deslocadas pelo offset, com badge de confiança por clipe.
    ========================================================================== */
 .ws-sync-viz-wrapper {
   border: 1px solid var(--line);
@@ -1035,6 +1098,160 @@
   display: block;
   max-width: 100%;
   box-sizing: border-box;
+}
+
+.ws-sync-viz-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  gap: 12px;
+}
+
+.ws-sync-viz-confidence-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ws-sync-viz-confidence-badge.high {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.ws-sync-viz-confidence-badge.medium {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.ws-sync-viz-confidence-badge.low {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.ws-sync-tracks {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 600px;
+}
+
+.ws-sync-track-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 90px;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-sync-track-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  text-align: right;
+}
+
+.ws-sync-track-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.ws-sync-master-icon {
+  font-size: 13px !important;
+  color: #f59e0b;
+}
+
+.ws-sync-track-offset {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.ws-sync-track-lane {
+  position: relative;
+  height: 30px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.02),
+    rgba(255, 255, 255, 0.02) 4px,
+    transparent 4px,
+    transparent 10px
+  );
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ws-sync-track-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  min-width: 4px;
+  background: rgba(34, 197, 94, 0.12);
+  border-left: 2px solid rgba(34, 197, 94, 0.5);
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+.ws-sync-track-row.conf-medium .ws-sync-track-bar {
+  background: rgba(234, 179, 8, 0.12);
+  border-left-color: rgba(234, 179, 8, 0.6);
+}
+
+.ws-sync-track-row.conf-low .ws-sync-track-bar {
+  background: rgba(239, 68, 68, 0.1);
+  border-left-color: rgba(239, 68, 68, 0.6);
+  opacity: 0.75;
+}
+
+.ws-sync-track-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.ws-sync-track-conf {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+  color: var(--muted);
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.ws-sync-track-conf.high { color: #22c55e; }
+.ws-sync-track-conf.medium { color: #eab308; }
+.ws-sync-track-conf.low { color: #ef4444; }
+
+.ws-sync-conf-word {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.ws-sync-drift-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: #a855f7;
+  background: rgba(168, 85, 247, 0.12);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
 }
 
 .ws-waveform-canvas {

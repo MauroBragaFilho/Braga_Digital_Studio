@@ -59,6 +59,52 @@ class WaveformService {
     }
 
     /**
+     * Caminho do arquivo de áudio extraído (uma track isolada) usado para
+     * permitir playback + mudo independente por linha no Source Monitor,
+     * já que o <video>/<audio> nativo do Chromium não mixa múltiplas
+     * tracks de áudio simultaneamente com volume independente.
+     */
+    getTrackAudioPath(uuid, streamIndex = 0) {
+        return path.join(this.cacheDir, `${uuid}_track${streamIndex}.m4a`);
+    }
+
+    hasTrackAudio(uuid, streamIndex = 0) {
+        return fs.existsSync(this.getTrackAudioPath(uuid, streamIndex));
+    }
+
+    /**
+     * Extrai (e cacheia) uma track de áudio isolada em AAC, para tocar em
+     * um <audio> próprio sincronizado ao player principal.
+     * @returns {Promise<string>} caminho do arquivo extraído
+     */
+    async getOrExtractTrack(uuid, filePath, streamIndex = 0, force = false) {
+        const outPath = this.getTrackAudioPath(uuid, streamIndex);
+        if (!force && fs.existsSync(outPath)) return outPath;
+
+        await new Promise((resolve, reject) => {
+            const args = [
+                '-v', 'error', '-y',
+                '-i', filePath,
+                '-map', `0:a:${streamIndex}`,
+                '-vn',
+                '-c:a', 'aac',
+                '-b:a', '160k',
+                outPath
+            ];
+            const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
+            let stderr = '';
+            proc.stderr.on('data', (d) => { stderr += d.toString(); });
+            proc.on('error', reject);
+            proc.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(`ffmpeg falhou ao extrair track ${streamIndex}: ${stderr.slice(-300)}`));
+            });
+        });
+
+        return outPath;
+    }
+
+    /**
      * Obtém o waveform de um arquivo, gerando e cacheando se necessário.
      * @param {Object} params
      * @param {string} params.uuid - UUID único da mídia (usado como chave de cache)

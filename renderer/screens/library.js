@@ -388,6 +388,7 @@ function renderMedia() {
       html += `<div class="lib-grid">${grouped[key].items.map(m => renderGridCard(m)).join('')}</div>`;
     }
     container.innerHTML = html;
+    loadVisibleAudioWaveforms(container);
   } else {
     html = `<table class="lib-list-table">
       <thead><tr>
@@ -480,6 +481,57 @@ function updateSelectionVisuals() {
   }
 }
 
+// --- Waveforms de áudio na Biblioteca (reaproveita o cache do WaveformService) ---
+let libWaveformObserver = null;
+
+function loadVisibleAudioWaveforms(container) {
+  const canvases = container.querySelectorAll('.lib-card-waveform');
+  if (!canvases.length || !window.bds?.getMediaWaveform) return;
+
+  if (libWaveformObserver) libWaveformObserver.disconnect();
+
+  libWaveformObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const canvas = entry.target;
+      libWaveformObserver.unobserve(canvas);
+      const uuid = canvas.dataset.uuid;
+      const filePath = canvas.dataset.path;
+      if (!uuid || !filePath || canvas.dataset.loaded) return;
+      canvas.dataset.loaded = '1';
+
+      window.bds.getMediaWaveform({ uuid, filePath, peaksPerSecond: 50, streamIndex: 0 })
+        .then(wf => {
+          if (wf && wf.peaks) drawLibWaveform(canvas, wf.peaks);
+        })
+        .catch(() => { /* mídia sem waveform disponível, mantém card em branco */ });
+    });
+  }, { root: null, rootMargin: '200px' });
+
+  canvases.forEach(c => libWaveformObserver.observe(c));
+}
+
+function drawLibWaveform(canvas, peaks) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width = canvas.clientWidth || 200;
+  const h = canvas.height = canvas.clientHeight || 60;
+  ctx.clearRect(0, 0, w, h);
+
+  const step = Math.max(1, Math.floor(peaks.length / w));
+  const mid = h / 2;
+  ctx.fillStyle = 'rgba(167, 139, 250, 0.85)';
+
+  for (let x = 0; x < w; x++) {
+    const idx = x * step;
+    let peak = 0;
+    for (let j = idx; j < idx + step && j < peaks.length; j++) {
+      if (peaks[j] > peak) peak = peaks[j];
+    }
+    const barH = Math.max(1, peak * (h - 4));
+    ctx.fillRect(x, mid - barH / 2, 1, barH);
+  }
+}
+
 function renderGridCard(media) {
   const thumbUrl = media.thumbnail ? `${thumbsDir}/${media.thumbnail}` : '';
   const rawDate = media.recorded_at || media.imported_at;
@@ -498,16 +550,20 @@ function renderGridCard(media) {
 
   const thumbClass = isAudio && !thumbUrl ? 'lib-card-thumb audio-placeholder' : 'lib-card-thumb';
   const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}');` : '';
-  const audioPlaceholder = isAudio && !thumbUrl ? '<span>ÁUDIO</span>' : '';
+  const audioWaveform = isAudio && !thumbUrl
+    ? `<canvas class="lib-card-waveform" data-uuid="${escapeAttr(media.uuid || '')}" data-path="${escapeAttr(media.filepath || '')}" width="200" height="60"></canvas>`
+    : '';
   const durationBadge = (!isPhoto && !isAudio) ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
+  const audioDurationBadge = isAudio ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
 
   return `
     <div class="lib-card media-clickable ${isSelected ? 'selected' : ''}" data-id="${media.id}">
       <div class="${thumbClass}" style="${thumbStyle}">
         <input type="checkbox" class="lib-card-checkbox" ${isSelected ? 'checked' : ''}>
         <span class="material-symbols-rounded lib-card-badge-fav ${favClass}">${favIcon}</span>
-        ${audioPlaceholder}
+        ${audioWaveform}
         ${durationBadge}
+        ${audioDurationBadge}
       </div>
       <div class="lib-card-info">
         <div class="lib-card-title" title="${escapeAttr(media.filename)}">${escapeHtml(media.filename)}</div>
