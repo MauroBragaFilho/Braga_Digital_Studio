@@ -1,5 +1,0 @@
-rawpy>=0.24,<1.0
-numpy>=1.24,<3.0
-tifffile>=2024.1.0
-exifread>=3.0,<4.0
-pyinstaller>=6.0,<7.0
