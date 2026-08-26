@@ -151,6 +151,7 @@ const api = {
   checkUpdates: () => ipcRenderer.invoke('updates:checkSystem'),
   installUpdates: () => ipcRenderer.invoke('updates:updateAll'),
   updateTool: (tool) => ipcRenderer.invoke('updates:updateTool', tool),
+  rollbackTool: (tool) => ipcRenderer.invoke('updates:rollbackTool', tool),
   updateAllDependencies: () => ipcRenderer.invoke('updates:updateAll'),
   onUpdateProgress: (cb) => registerListener('updates:progress', cb),
   onUpdateCompleted: (cb) => registerListener('updates:completed', cb),
@@ -164,6 +165,17 @@ const api = {
     onStage: (cb) => registerListener('recovery:stage', cb),
     onFinished: (cb) => registerListener('recovery:finished', cb),
     onError: (cb) => registerListener('recovery:error', cb),
+
+    // --- Recuperação de RAW ---
+    raw: {
+      diagnose: (corruptPath, referencePath) => ipcRenderer.invoke('recovery:raw:diagnose', { corruptPath, referencePath }),
+      start: (options) => ipcRenderer.invoke('recovery:raw:start', options),
+      cancel: () => ipcRenderer.invoke('recovery:raw:cancel'),
+      onProgress: (cb) => registerListener('recovery:raw:progress', cb),
+      onStage: (cb) => registerListener('recovery:raw:stage', cb),
+      onFinished: (cb) => registerListener('recovery:raw:finished', cb),
+      onError: (cb) => registerListener('recovery:raw:error', cb),
+    },
   },
 
   // --- Logs e Diagnóstico ---

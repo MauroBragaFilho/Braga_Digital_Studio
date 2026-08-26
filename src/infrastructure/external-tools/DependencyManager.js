@@ -5,6 +5,7 @@ const path = require('node:path');
 const { ToolManifest, LogicalComponentAliases, resolveCanonicalToolKey, getExecutableName } = require('./ToolManifest');
 const { toolResolver } = require('./ToolResolver');
 const { toolUpdater } = require('./ToolUpdater');
+const ManifestClient = require('./ManifestClient');
 const logger = require('../../services/logService');
 
 /**
@@ -47,6 +48,16 @@ const BDS_COMPONENTS = {
     description: 'Recuperação e reconstrução de vídeos corrompidos ou incompletos.',
     canonicalTool: 'untrunc',
   },
+  rawEngine: {
+    id: 'rawEngine',
+    title: 'Motor de Recuperação RAW',
+    description: 'Diagnóstico, decodificação e reparo estrutural de arquivos RAW de câmeras.',
+    canonicalTool: 'rawrecoveryengine',
+    // Binário próprio do BDS (rawpy/LibRaw empacotado). Sem release pública com download
+    // automático ainda — ver README de build em raw_recovery_engine/. Instalação manual do
+    // binário na pasta de ferramentas do BDS até que exista um repositório de releases.
+    manualInstallOnly: true,
+  },
 };
 
 /**
@@ -56,6 +67,7 @@ const BDS_COMPONENTS = {
 class DependencyManager {
   constructor() {
     this._toolsDir = null;
+    this._manifestClient = null;
   }
 
   /**
@@ -66,6 +78,28 @@ class DependencyManager {
     this._toolsDir = toolsDir;
     toolUpdater.init(toolsDir);
     this._ensureToolsDirectory();
+  }
+
+  /**
+   * Configura (ou desativa) o Update Server central. Quando configurado, componentes
+   * presentes no manifest.json remoto passam a ser verificados/atualizados por lá
+   * (com checksum sempre obrigatório), inclusive componentes hoje marcados como
+   * `manualInstallOnly` (ex: rawEngine) — assim que o Update Server publicar uma entrada
+   * para eles, o BDS passa a atualizá-los automaticamente sem precisar de mudança de código.
+   * @param {string|null} updateServerUrl
+   */
+  configureUpdateServer(updateServerUrl) {
+    if (!updateServerUrl) {
+      this._manifestClient = null;
+      logger.info('DependencyManager:configureUpdateServer:disabled');
+      return;
+    }
+    this._manifestClient = new ManifestClient(updateServerUrl);
+    logger.info('DependencyManager:configureUpdateServer:enabled', { updateServerUrl });
+  }
+
+  get hasUpdateServer() {
+    return Boolean(this._manifestClient);
   }
 
   _ensureToolsDirectory() {
@@ -107,6 +141,56 @@ class DependencyManager {
   async getComponentsStatus() {
     const results = [];
     for (const [key, comp] of Object.entries(BDS_COMPONENTS)) {
+      // 1. Se há um Update Server configurado, ele tem prioridade: componentes listados no
+      //    manifest.json remoto são verificados por lá (checksum sempre obrigatório), mesmo
+      //    componentes hoje marcados como manualInstallOnly (ex: rawEngine).
+      if (this._manifestClient) {
+        try {
+          const entry = await this._manifestClient.getComponentEntry(comp.canonicalTool);
+          if (entry) {
+            const checkResult = toolUpdater.checkAgainstManifest(comp.canonicalTool, entry);
+            results.push({
+              id: comp.id,
+              title: comp.title,
+              description: comp.description,
+              canonicalTool: comp.canonicalTool,
+              isInstalled: Boolean(checkResult.installed),
+              installedVersion: checkResult.installed,
+              latestVersion: checkResult.latest,
+              needsUpdate: Boolean(checkResult.needsUpdate),
+              hasBackup: Boolean(checkResult.hasBackup),
+              source: 'update-server',
+              error: null,
+            });
+            continue;
+          }
+        } catch (err) {
+          logger.warn('DependencyManager:manifest_check_failed', { tool: comp.canonicalTool, error: err.message });
+          // Cai para o fluxo padrão abaixo (GitHub ou manual) se o Update Server falhar.
+        }
+      }
+
+      // 2. Componentes de instalação manual sem entrada no Update Server: apenas verificamos
+      //    presença no disco, sem consultar releases remotas.
+      if (comp.manualInstallOnly) {
+        const isInstalled = this.isAvailable(comp.canonicalTool);
+        results.push({
+          id: comp.id,
+          title: comp.title,
+          description: comp.description,
+          canonicalTool: comp.canonicalTool,
+          isInstalled,
+          installedVersion: null,
+          latestVersion: null,
+          needsUpdate: false,
+          canUpdate: false,
+          manualInstallOnly: true,
+          error: isInstalled ? null : 'Instalação manual: copie o binário para a pasta de ferramentas do BDS.',
+        });
+        continue;
+      }
+
+      // 3. Fluxo padrão: releases públicas do GitHub.
       try {
         const checkResult = await toolUpdater.check(comp.canonicalTool);
         results.push({
@@ -118,6 +202,8 @@ class DependencyManager {
           installedVersion: checkResult.installed,
           latestVersion: checkResult.latest,
           needsUpdate: Boolean(checkResult.needsUpdate),
+          hasBackup: Boolean(checkResult.hasBackup),
+          source: 'github',
           error: checkResult.error || null,
         });
       } catch (err) {
@@ -158,7 +244,9 @@ class DependencyManager {
    */
   async updateAllComponents(onProgress) {
     const statuses = await this.getComponentsStatus();
-    const toUpdate = statuses.filter(s => s.needsUpdate || !s.isInstalled);
+    // Um componente entra na fila de atualização se: (a) não é estritamente manual (ou seja,
+    // tem uma fonte real de atualização — GitHub ou Update Server) e (b) precisa atualizar.
+    const toUpdate = statuses.filter(s => (s.source || !s.manualInstallOnly) && (s.needsUpdate || !s.isInstalled));
 
     if (toUpdate.length === 0) {
       if (onProgress) onProgress(100, 'Todos os componentes já estão atualizados.');
@@ -179,12 +267,14 @@ class DependencyManager {
           onProgress(basePercent, `Preparando componentes (${current}/${total})...`);
         }
 
-        await toolUpdater.update(comp.canonicalTool, (toolPercent) => {
+        const stepProgress = (toolPercent) => {
           if (onProgress) {
             const overall = basePercent + Math.round((toolPercent / 100) * (nextPercent - basePercent));
             onProgress(Math.min(99, Math.max(1, overall)), 'Instalando componentes do BDS...');
           }
-        });
+        };
+
+        await this.updateComponent(comp.canonicalTool, stepProgress);
       } catch (err) {
         logger.error(`DependencyManager:update_failed:${comp.id}`, { error: err.message });
         errors.push(`Falha ao atualizar motor interno: ${err.message}`);
@@ -203,13 +293,34 @@ class DependencyManager {
   }
 
   /**
-   * Atualiza um componente específico pelo ID lógico ou chave canônica.
+   * Atualiza um componente específico pelo ID lógico ou chave canônica. Se o Update Server
+   * central estiver configurado e publicar uma entrada para este componente, ela tem
+   * prioridade sobre o fluxo padrão do GitHub (e funciona mesmo para componentes hoje
+   * marcados como manualInstallOnly).
    * @param {string} componentKey
    * @param {Function} [onProgress]
    */
   async updateComponent(componentKey, onProgress) {
     const canonical = resolveCanonicalToolKey(componentKey);
+
+    if (this._manifestClient) {
+      const entry = await this._manifestClient.getComponentEntry(canonical).catch(() => null);
+      if (entry) {
+        return toolUpdater.updateFromManifest(canonical, entry, onProgress);
+      }
+    }
+
     return toolUpdater.update(canonical, onProgress);
+  }
+
+  /**
+   * Reverte um componente para a última versão estável conhecida (backup persistido
+   * após a última atualização validada com sucesso).
+   * @param {string} componentKey
+   */
+  async rollbackComponent(componentKey) {
+    const canonical = resolveCanonicalToolKey(componentKey);
+    return toolUpdater.rollback(canonical);
   }
 }
 

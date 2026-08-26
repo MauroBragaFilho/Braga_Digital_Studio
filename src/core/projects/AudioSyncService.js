@@ -1,5 +1,6 @@
 const logger = require('../../services/logService');
 const { spawn } = require('child_process');
+const fs = require('fs');
 
 /**
  * AudioSyncService
@@ -39,6 +40,15 @@ class AudioSyncService {
      */
     extractEnvelope(filePath) {
         return new Promise((resolve, reject) => {
+            if (!filePath || !fs.existsSync(filePath)) {
+                reject(new Error(`Arquivo não encontrado no disco: ${filePath}`));
+                return;
+            }
+            if (!this.ffmpegPath || !fs.existsSync(this.ffmpegPath)) {
+                reject(new Error(`FFmpeg não encontrado em: "${this.ffmpegPath}". Verifique se as dependências foram baixadas corretamente.`));
+                return;
+            }
+
             const args = [
                 '-v', 'error',
                 '-i', filePath,

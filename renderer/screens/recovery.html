@@ -2,9 +2,22 @@
   <!-- 1. CABEÇALHO DA TELA -->
   <div class="recovery-header">
     <p class="recovery-subtitle">
-      Recuperação e reconstrução estrutural de vídeos corrompidos, gravações interrompidas ou arquivos com cabeçalhos ausentes.
+      Recuperação e reconstrução estrutural de vídeos e arquivos RAW corrompidos, gravações interrompidas ou arquivos com cabeçalhos ausentes.
     </p>
   </div>
+
+  <!-- ABAS: VÍDEO / RAW -->
+  <div class="recovery-tabs" role="tablist">
+    <button class="recovery-tab-btn active" id="recoveryTabBtnVideo" data-tab="video" type="button">
+      <span class="material-symbols-rounded">movie</span> Vídeo
+    </button>
+    <button class="recovery-tab-btn" id="recoveryTabBtnRaw" data-tab="raw" type="button">
+      <span class="material-symbols-rounded">photo_camera</span> RAW
+    </button>
+  </div>
+
+  <!-- ================= PAINEL: VÍDEO ================= -->
+  <div class="recovery-tab-panel active" id="recoveryPanelVideo">
 
   <!-- 2. BANNER DE ERRO / AVISO -->
   <div id="recoveryErrorBanner" class="recovery-error-banner hidden">
@@ -218,5 +231,211 @@
       </button>
     </div>
   </div>
+
+  </div>
+  <!-- ================= FIM PAINEL: VÍDEO ================= -->
+
+  <!-- ================= PAINEL: RAW ================= -->
+  <div class="recovery-tab-panel" id="recoveryPanelRaw">
+
+  <!-- BANNER DE ERRO / AVISO (RAW) -->
+  <div id="rawErrorBanner" class="recovery-error-banner hidden">
+    <div class="recovery-error-header">
+      <span class="material-symbols-rounded">error</span>
+      <span id="rawErrorTitle">Não foi possível concluir a recuperação</span>
+      <button id="btnCloseRawError" class="recovery-btn-mini" type="button">Fechar</button>
+    </div>
+    <p id="rawErrorMessage" class="recovery-error-text"></p>
+  </div>
+
+  <!-- SELEÇÃO DE ARQUIVOS (DUAS COLUNAS) -->
+  <div class="recovery-grid-cards">
+
+    <!-- CARD 1: RAW DANIFICADO -->
+    <div class="recovery-card" id="rawCorruptCard">
+      <div class="recovery-card-header">
+        <div class="recovery-card-title-wrap">
+          <span class="material-symbols-rounded icon-corrupt">broken_image</span>
+          <div>
+            <h3 class="recovery-card-title">1. Arquivo RAW Danificado</h3>
+            <span class="recovery-card-hint">CR2, ARW ou NEF corrompido ou incompleto</span>
+          </div>
+        </div>
+        <button id="btnClearRawCorruptFile" class="recovery-btn-icon-clear hidden" title="Remover arquivo" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <!-- Dropzone Danificado -->
+      <div class="recovery-dropzone" id="rawCorruptDropzone">
+        <span class="material-symbols-rounded dropzone-icon">upload_file</span>
+        <p class="dropzone-text">Arraste o RAW danificado aqui ou clique no botão</p>
+        <button id="btnSelectRawCorruptFile" class="recovery-btn-primary" type="button">
+          <span class="material-symbols-rounded">file_open</span> Selecionar RAW
+        </button>
+      </div>
+
+      <!-- Informações do RAW Danificado -->
+      <div class="recovery-file-details hidden" id="rawCorruptFileDetails">
+        <div class="file-detail-row">
+          <span class="label">Arquivo:</span>
+          <strong class="value" id="rawCorruptFileName">-</strong>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Tamanho:</span>
+          <span class="value" id="rawCorruptFileSize">-</span>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Diagnóstico:</span>
+          <span class="badge" id="rawCorruptSeverityBadge">Analisando...</span>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Câmera:</span>
+          <span class="value" id="rawCorruptStructureInfo">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 2: RAW DE REFERÊNCIA -->
+    <div class="recovery-card" id="rawReferenceCard">
+      <div class="recovery-card-header">
+        <div class="recovery-card-title-wrap">
+          <span class="material-symbols-rounded icon-reference">rule_folder</span>
+          <div>
+            <h3 class="recovery-card-title">2. RAW de Referência</h3>
+            <span class="recovery-card-hint">RAW íntegro da mesma câmera (Opcional)</span>
+          </div>
+        </div>
+        <button id="btnClearRawReferenceFile" class="recovery-btn-icon-clear hidden" title="Remover referência" type="button">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
+      <!-- Dropzone Referência -->
+      <div class="recovery-dropzone" id="rawReferenceDropzone">
+        <span class="material-symbols-rounded dropzone-icon">rule_folder</span>
+        <p class="dropzone-text">Arraste um RAW gravado com os mesmos ajustes</p>
+        <button id="btnSelectRawReferenceFile" class="recovery-btn-outline" type="button">
+          <span class="material-symbols-rounded">folder_open</span> Selecionar Referência
+        </button>
+      </div>
+
+      <!-- Informações do RAW de Referência -->
+      <div class="recovery-file-details hidden" id="rawReferenceFileDetails">
+        <div class="file-detail-row">
+          <span class="label">Arquivo:</span>
+          <strong class="value" id="rawReferenceFileName">-</strong>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Câmera / Formato:</span>
+          <span class="value" id="rawReferenceSpecs">-</span>
+        </div>
+        <div class="file-detail-row">
+          <span class="label">Compatibilidade:</span>
+          <span class="badge" id="rawReferenceCompatBadge">-</span>
+        </div>
+        <p class="compat-message" id="rawReferenceCompatMessage">-</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PAINEL DE CONTROLES E DESTINO (RAW) -->
+  <div class="recovery-action-panel">
+    <div class="recovery-output-row">
+      <div class="output-folder-info">
+        <span class="material-symbols-rounded">folder</span>
+        <div>
+          <span class="output-label">Pasta de Destino:</span>
+          <span class="output-path" id="rawOutputPath">Mesma pasta do arquivo original</span>
+        </div>
+      </div>
+      <button id="btnSelectRawOutputDir" class="recovery-btn-outline-sm" type="button">
+        Alterar Pasta
+      </button>
+    </div>
+
+    <div class="recovery-main-actions">
+      <button id="btnStartRawRecovery" class="recovery-btn-action-start" type="button" disabled>
+        <span class="material-symbols-rounded">healing</span>
+        RECUPERAR RAW
+      </button>
+      <button id="btnCancelRawRecovery" class="recovery-btn-action-cancel hidden" type="button">
+        <span class="material-symbols-rounded">cancel</span>
+        CANCELAR
+      </button>
+    </div>
+  </div>
+
+  <!-- PROGRESSO DA RECUPERAÇÃO (RAW) -->
+  <div class="recovery-progress-card hidden" id="rawProgressCard">
+    <div class="progress-header">
+      <div class="progress-title-wrap">
+        <span class="material-symbols-rounded spin">hourglass_top</span>
+        <div>
+          <h4 id="rawProgressHeadline">Recuperando arquivo RAW...</h4>
+          <span class="progress-sub" id="rawProgressStep">Analisando estrutura do RAW...</span>
+        </div>
+      </div>
+      <strong class="progress-percent" id="rawProgressPercent">0%</strong>
+    </div>
+
+    <div class="recovery-progress-bar">
+      <div class="recovery-progress-fill" id="rawProgressFill" style="width: 0%;"></div>
+    </div>
+  </div>
+
+  <!-- CARD DE RESULTADO SUCESSO (RAW) -->
+  <div class="recovery-success-card hidden" id="rawSuccessCard">
+    <div class="success-header">
+      <div class="success-icon-wrap">
+        <span class="material-symbols-rounded">check_circle</span>
+      </div>
+      <div class="success-info">
+        <h3>Arquivo RAW Recuperado!</h3>
+        <p id="rawResultSummary">O arquivo foi reconstruído/exportado e está pronto para uso.</p>
+      </div>
+    </div>
+
+    <!-- COMPARATIVO E DETALHES DO ARQUIVO FINAL -->
+    <div class="success-details-grid">
+      <div class="success-detail-item">
+        <span>Arquivo Final:</span>
+        <strong id="rawResultFileName">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Método Utilizado:</span>
+        <strong id="rawResultMethod">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Tipo de Saída:</span>
+        <strong id="rawResultType">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Câmera / Resolução:</span>
+        <strong id="rawResultCamera">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Tamanho Final:</span>
+        <strong id="rawResultSize">-</strong>
+      </div>
+      <div class="success-detail-item">
+        <span>Qualidade do Resultado:</span>
+        <strong id="rawResultQuality">-</strong>
+      </div>
+    </div>
+
+    <div class="success-actions">
+      <button id="btnOpenRawRecoveredFolder" class="recovery-btn-outline" type="button">
+        <span class="material-symbols-rounded">folder_open</span> Abrir Pasta
+      </button>
+      <button id="btnRecoverAnotherRaw" class="recovery-btn-outline" type="button">
+        Recuperar Outro Arquivo
+      </button>
+    </div>
+  </div>
+
+  </div>
+  <!-- ================= FIM PAINEL: RAW ================= -->
 
 </div>

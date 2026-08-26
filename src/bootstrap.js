@@ -23,6 +23,7 @@ const MontageService = require('./services/montageService');
 const SilenceService = require('./services/silenceService');
 const MetadataService = require('./services/metadataService');
 const VideoRecoveryService = require('./services/videoRecoveryService');
+const RawRecoveryService = require('./services/rawRecoveryService');
 const sonyCameraService = require('./core/devices/SonyCameraService');
 
 const MtpService = require('./core/MtpService');
@@ -88,11 +89,12 @@ class Bootstrap {
     const downloadService = new DownloadService({ paths, getSettings: () => this.settingsManager.load(), historyService });
     const converterService = new ConverterService({ paths, getSettings: () => this.settingsManager.load(), historyService });
     const thumbnailService = new ThumbnailService({ paths, getSettings: () => this.settingsManager.load() });
-    const updateService = new UpdateService({ paths });
+    const updateService = new UpdateService({ paths, getSettings: () => this.settingsManager.load() });
     const montageService = new MontageService({ paths });
     const silenceService = new SilenceService({ paths });
     const metadataServiceInstance = new MetadataService({ paths });
     const videoRecoveryService = new VideoRecoveryService({ paths });
+    const rawRecoveryService = new RawRecoveryService({ paths });
 
     const sequenceBuilder = new SequenceBuilder(projectService);
     const premiereExporter = new PremiereExporter(projectService, sequenceBuilder);
@@ -135,6 +137,7 @@ class Bootstrap {
       silenceService,
       metadataService: metadataServiceInstance,
       videoRecoveryService,
+      rawRecoveryService,
       projectService,
       sequenceBuilder,
       premiereExporter,
@@ -250,11 +253,16 @@ class Bootstrap {
     metadataService.on('log', (p) => this.mainWindow?.webContents.send('metadata:log', p));
 
     // Recovery Events
-    const { videoRecoveryService, updateService } = this.services;
+    const { videoRecoveryService, rawRecoveryService, updateService } = this.services;
     videoRecoveryService.on('progress', (p) => this.mainWindow?.webContents.send('recovery:progress', p));
     videoRecoveryService.on('stage', (p) => this.mainWindow?.webContents.send('recovery:stage', p));
     videoRecoveryService.on('finished', (p) => this.mainWindow?.webContents.send('recovery:finished', p));
     videoRecoveryService.on('error', (p) => this.mainWindow?.webContents.send('recovery:error', p));
+
+    rawRecoveryService.on('progress', (p) => this.mainWindow?.webContents.send('recovery:raw:progress', p));
+    rawRecoveryService.on('stage', (p) => this.mainWindow?.webContents.send('recovery:raw:stage', p));
+    rawRecoveryService.on('finished', (p) => this.mainWindow?.webContents.send('recovery:raw:finished', p));
+    rawRecoveryService.on('error', (p) => this.mainWindow?.webContents.send('recovery:raw:error', p));
 
     // Update Events
     updateService.on('progress', (p) => this.mainWindow?.webContents.send('updates:progress', p));
@@ -277,7 +285,7 @@ class Bootstrap {
     const {
       downloadService, converterService, historyService, thumbnailService,
       updateService, montageService, silenceService, metadataService,
-      videoRecoveryService, projectService, premiereExporter, bdsproPackageService,
+      videoRecoveryService, rawRecoveryService, projectService, premiereExporter, bdsproPackageService,
       waveformService, audioSyncService, sequenceBuilder,
       uploadScannerService, libManager, watcherService, lutSyncService
     } = this.services;
@@ -286,7 +294,7 @@ class Bootstrap {
     require('./ipc/deviceHandlers')(logger, lutSyncService);
     require('./ipc/libraryHandlers')(this.paths, watcherService);
     require('./ipc/systemHandlers')(this.paths);
-    require('./ipc/recoveryHandlers')(videoRecoveryService, this.paths);
+    require('./ipc/recoveryHandlers')(videoRecoveryService, this.paths, rawRecoveryService);
     require('./ipc/youtubeHandlers')();
     require('./ipc/projectHandlers')(projectService, premiereExporter, bdsproPackageService, this.paths, waveformService, audioSyncService, sequenceBuilder);
     require('./ipc/lutHandlers')(this.lutManager);
@@ -302,6 +310,7 @@ class Bootstrap {
         watcherService.stopAll();
         setTimeout(() => watcherService.startAll(), 1000);
       }
+      updateService?.applyUpdateServerSettings();
       return saved;
     });
 
@@ -413,6 +422,7 @@ class Bootstrap {
     ipcMain.handle('updates:check', () => updateService.checkSystem());
     ipcMain.handle('updates:checkLegacy', () => updateService.checkAll());
     ipcMain.handle('updates:updateTool', (_, tool) => updateService.updateTool(tool));
+    ipcMain.handle('updates:rollbackTool', (_, tool) => updateService.rollbackTool(tool));
     ipcMain.handle('updates:updateAll', async () => {
       return await updateService.updateAll();
     });

@@ -34,7 +34,10 @@ class SettingsManager {
       checkUpdatesOnStart: false,
       errorReportingEnabled: true,
       developerEmail: 'obragafilho00@gmail.com',
-      errorReportingEndpoint: ''
+      errorReportingEndpoint: '',
+      // URL base do BDS Update Server (ex: https://updates.bragadigital.com). Deixe vazio
+      // para usar apenas o fluxo padrão de checagem por componente via GitHub releases.
+      updateServerUrl: ''
     };
   }
 

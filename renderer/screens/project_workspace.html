@@ -115,9 +115,21 @@
       <button class="ws-media-filter active" data-filter="all" type="button">Todos</button>
       <button class="ws-media-filter" data-filter="video" type="button">Vídeos</button>
       <button class="ws-media-filter" data-filter="audio" type="button">Áudios</button>
+      <div class="ws-view-toggle">
+        <button id="wsViewGrid" class="ws-view-toggle-btn active" type="button" title="Visualização em grade">
+          <span class="material-symbols-rounded">grid_view</span>
+        </button>
+        <button id="wsViewList" class="ws-view-toggle-btn" type="button" title="Visualização em lista/pastas">
+          <span class="material-symbols-rounded">view_list</span>
+        </button>
+      </div>
     </div>
 
-    <div id="wsBinsTree" class="ws-bins-tree">
+    <div id="wsMediaGrid" class="ws-media-grid">
+      <!-- Grade de cards de mídia renderizada via JS -->
+    </div>
+
+    <div id="wsBinsTree" class="ws-bins-tree hidden">
       <!-- Árvore de Pastas renderizada via JS -->
     </div>
 

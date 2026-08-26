@@ -46,6 +46,12 @@ const ToolManifest = {
     linux:  'untrunc',
     darwin: 'untrunc',
   },
+  // Motor de decodificação/reparo RAW (LibRaw via rawpy, empacotado em binário único) — instalação manual
+  rawrecoveryengine: {
+    win32:  'RawRecoveryEngine.exe',
+    linux:  'RawRecoveryEngine',
+    darwin: 'RawRecoveryEngine',
+  },
 };
 
 /**
@@ -58,6 +64,7 @@ const LogicalComponentAliases = {
   audioEngine: 'spotdl',
   jsRuntime: 'deno',
   recoveryEngine: 'untrunc',
+  rawEngine: 'rawrecoveryengine',
 };
 
 /**
@@ -78,6 +85,7 @@ function resolveCanonicalToolKey(toolOrAlias) {
   if (lower === 'ffprobe') return 'ffprobe';
   if (lower === 'deno') return 'deno';
   if (lower === 'untrunc') return 'untrunc';
+  if (lower === 'rawrecoveryengine' || lower === 'dcrawemu' || lower === 'rawrepair' || lower === 'libraw' || lower === 'rawpy') return 'rawrecoveryengine';
   return toolOrAlias;
 }
 

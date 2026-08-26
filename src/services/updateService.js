@@ -6,12 +6,29 @@ const { dependencyManager } = require('../infrastructure/external-tools/Dependen
 const logger = require('./logService');
 
 class UpdateService extends EventEmitter {
-  constructor({ paths }) {
+  constructor({ paths, getSettings } = {}) {
     super();
     this.paths = paths;
+    this.getSettings = getSettings;
     if (paths && (paths.tools || paths.dataDir)) {
       const toolsDir = paths.tools || paths.dataDir;
       dependencyManager.init(toolsDir);
+    }
+    this.applyUpdateServerSettings();
+  }
+
+  /**
+   * Lê `updateServerUrl` das configurações atuais e (re)configura o DependencyManager.
+   * Chamado na inicialização e sempre que as configurações forem salvas, para que uma
+   * mudança na URL do Update Server tenha efeito imediato, sem reiniciar o BDS.
+   */
+  applyUpdateServerSettings() {
+    if (!this.getSettings) return;
+    try {
+      const settings = this.getSettings();
+      dependencyManager.configureUpdateServer(settings?.updateServerUrl || null);
+    } catch (err) {
+      logger.warn('UpdateService:applyUpdateServerSettings:error', { error: err.message });
     }
   }
 
@@ -71,6 +88,14 @@ class UpdateService extends EventEmitter {
 
   async updateTool(tool, onProgress) {
     return dependencyManager.updateComponent(tool, onProgress);
+  }
+
+  /**
+   * Reverte um componente para a última versão estável conhecida (rollback manual).
+   */
+  async rollbackTool(tool) {
+    logger.info('UpdateService:rollbackTool', { tool });
+    return dependencyManager.rollbackComponent(tool);
   }
 
   async checkYtDlp() {

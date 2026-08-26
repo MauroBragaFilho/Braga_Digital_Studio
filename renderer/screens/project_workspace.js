@@ -37,6 +37,7 @@ let syncGroupsCache = []; // cache de sync groups do projeto, para o resumo
 
 // --- FASE C/D: Filtro de mídia e Sync Groups ---
 let mediaTypeFilter = 'all'; // 'all' | 'video' | 'audio'
+let wsMediaViewMode = 'grid'; // 'grid' | 'list' — grid é a visualização padrão (estilo mockup)
 let selectedSyncGroupId = null;
 
 // --- FASE H: Relink de mídia ausente ---
@@ -854,7 +855,107 @@ function setMediaTypeFilter(filter) {
   renderTree();
 }
 
+// --- Toggle Grade / Lista (a grade é a visualização padrão, estilo do mockup de referência) ---
+function setMediaViewMode(mode) {
+  wsMediaViewMode = mode;
+  document.getElementById('wsViewGrid')?.classList.toggle('active', mode === 'grid');
+  document.getElementById('wsViewList')?.classList.toggle('active', mode === 'list');
+  document.getElementById('wsMediaGrid')?.classList.toggle('hidden', mode !== 'grid');
+  document.getElementById('wsBinsTree')?.classList.toggle('hidden', mode !== 'list');
+}
+
+/**
+ * Visualização em grade (estilo do mockup de referência): cards com
+ * thumbnail real (vídeo/foto) ou waveform (áudio), badge de duração e
+ * badge de status de sincronismo. Lista os itens de forma achatada
+ * (sem estrutura de pastas — para isso existe a visualização em Lista).
+ */
+function renderMediaGrid() {
+  const container = document.getElementById('wsMediaGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const items = projectMedia.filter(mediaMatchesFilter);
+
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ws-empty-state';
+    empty.textContent = 'Nenhum arquivo neste projeto ainda. Importe da Biblioteca ou do computador, ou arraste arquivos aqui.';
+    container.appendChild(empty);
+    return;
+  }
+
+  items.forEach(pm => container.appendChild(createMediaGridCard(pm)));
+}
+
+function createMediaGridCard(pm) {
+  const isAudio = isMediaAudioOnly(pm);
+  const isPhoto = ['JPG', 'PNG', 'WEBP'].includes(pm.extension);
+  const synced = isMediaSynced(pm);
+  const name = pm.custom_name || pm.filename;
+  const thumbUrl = pm.thumbnail_path ? `url('file:///${pm.thumbnail_path.replace(/\\/g, '/')}')` : '';
+
+  const card = document.createElement('div');
+  card.className = `ws-media-card ${selectedItem?.type === 'project_media' && selectedItem.id === pm.pm_id ? 'selected' : ''} ${syncSelection.has(pm.pm_id) ? 'sync-selected' : ''}`;
+  card.draggable = true;
+  card.dataset.pmId = pm.pm_id;
+
+  const thumbInner = isAudio
+    ? `<canvas class="ws-media-card-wave" data-uuid="${pm.uuid || ''}" data-path="${pm.filepath ? pm.filepath.replace(/"/g, '&quot;') : ''}"></canvas>`
+    : (!thumbUrl ? `<span class="material-symbols-rounded">${isPhoto ? 'image' : 'movie'}</span>` : '');
+
+  card.innerHTML = `
+    <div class="ws-media-card-thumb ${isAudio ? 'is-audio' : ''}" style="${thumbUrl ? `background-image:${thumbUrl};` : ''}">
+      ${thumbInner}
+      <span class="ws-media-card-sync-badge ${synced ? 'synced' : 'pending'}">${synced ? 'Sync' : 'Sem sync'}</span>
+      ${!isPhoto ? `<span class="ws-media-card-duration">${formatDuration(pm.duration)}</span>` : ''}
+    </div>
+    <div class="ws-media-card-info">
+      <div class="ws-media-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+      <div class="ws-media-card-meta">${pm.width && pm.height ? `${pm.width}x${pm.height} · ` : ''}${pm.extension || ''}</div>
+    </div>
+  `;
+
+  card.addEventListener('dragstart', e => {
+    e.stopPropagation();
+    draggedItem = { type: 'project_media', id: pm.pm_id };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', pm.pm_id);
+  });
+  card.addEventListener('click', e => {
+    if (e.ctrlKey || e.metaKey) {
+      toggleSyncSelection(pm.pm_id);
+      renderMediaGrid();
+      return;
+    }
+    selectItem('project_media', pm.pm_id);
+    document.querySelectorAll('.ws-media-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+  });
+  card.addEventListener('dblclick', () => {
+    selectItem('project_media', pm.pm_id);
+    switchCenterTab('monitor');
+    loadIntoMonitor(pm);
+  });
+
+  if (isAudio) {
+    const canvas = card.querySelector('.ws-media-card-wave');
+    if (canvas && pm.uuid && pm.filepath && window.bds?.getMediaWaveform) {
+      requestAnimationFrame(() => {
+        canvas.height = 70;
+        window.bds.getMediaWaveform({ uuid: pm.uuid, filePath: pm.filepath, peaksPerSecond: 40, streamIndex: 0 })
+          .then(wf => { if (wf && wf.peaks) drawWaveformOnCanvas(canvas, wf.peaks); })
+          .catch(() => {});
+      });
+    }
+  }
+
+  return card;
+}
+
 function renderTree() {
+  renderMediaGrid();
+
   const container = document.getElementById('wsBinsTree');
   container.innerHTML = '';
 
@@ -1456,76 +1557,95 @@ function setupMonitorKeyboardShortcuts() {
 // ==========================================================================
 
 async function runAudioSyncOnSelection() {
-  if (syncSelection.size < 2) {
-    window.bdsModal.alert('Selecione ao menos 2 mídias (Ctrl+clique) para sincronizar por áudio.');
-    return;
-  }
-
-  const selectedPm = projectMedia.filter(pm => syncSelection.has(pm.pm_id));
-  const withoutAudio = selectedPm.filter(pm => !pm.audio_codec);
-  if (withoutAudio.length > 0) {
-    const proceed = await window.bdsModal.confirm(
-      `${withoutAudio.length} mídia(s) selecionada(s) não possuem faixa de áudio detectada e podem falhar na sincronização. Continuar mesmo assim?`
-    );
-    if (!proceed) return;
-  }
-
-  // Master = mídia com maior duração (normalmente a câmera principal / referência mais longa)
-  const master = [...selectedPm].sort((a, b) => (b.duration || 0) - (a.duration || 0))[0];
-
-  const groupName = await window.bdsModal.prompt('Nome do Sync Group:', `Sync ${new Date().toLocaleTimeString('pt-BR')}`);
-  if (groupName === null) return; // usuário cancelou
-
-  const mediaList = selectedPm.map(pm => ({ id: pm.id, filepath: pm.filepath }));
-
-  setAppStatus(`Sincronizando ${mediaList.length} mídias por áudio...`, 'info');
-
-  const progressCleanup = window.bds.onAudioSyncProgress(({ mediaId, status }) => {
-    const pm = selectedPm.find(p => p.id === mediaId);
-    const label = pm ? (pm.custom_name || pm.filename) : mediaId;
-    const statusLabels = {
-      extracting: 'extraindo áudio',
-      correlating: 'calculando correlação',
-      done: 'concluído',
-      error: 'erro'
-    };
-    setAppStatus(`Sync: ${label} — ${statusLabels[status] || status}`, status === 'error' ? 'error' : 'info');
-  });
-
   try {
-    const { groupId, results } = await window.bds.runAudioSync({
-      projectId,
-      groupName: groupName || undefined,
-      masterMediaId: master.id,
-      mediaList,
-      maxOffsetSeconds: 30
+    if (syncSelection.size < 2) {
+      await window.bdsModal.alert('Selecione ao menos 2 mídias (Ctrl+clique) para sincronizar por áudio.');
+      return;
+    }
+
+    const selectedPm = projectMedia.filter(pm => syncSelection.has(pm.pm_id));
+    const withoutAudio = selectedPm.filter(pm => !pm.audio_codec);
+    if (withoutAudio.length > 0) {
+      const proceed = await window.bdsModal.confirm(
+        `${withoutAudio.length} mídia(s) selecionada(s) não possuem faixa de áudio detectada e podem falhar na sincronização. Continuar mesmo assim?`
+      );
+      if (!proceed) return;
+    }
+
+    // Master = mídia com maior duração (normalmente a câmera principal / referência mais longa)
+    const master = [...selectedPm].sort((a, b) => (b.duration || 0) - (a.duration || 0))[0];
+
+    if (!master.filepath) {
+      await window.bdsModal.alert('A mídia master não tem um caminho de arquivo válido. Reconecte o arquivo antes de sincronizar.');
+      return;
+    }
+
+    const groupName = await window.bdsModal.prompt('Nome do Sync Group:', `Sync ${new Date().toLocaleTimeString('pt-BR')}`);
+    if (groupName === null) return; // usuário cancelou
+
+    const mediaList = selectedPm.map(pm => ({ id: pm.id, filepath: pm.filepath }));
+
+    setAppStatus(`Sincronizando ${mediaList.length} mídias por áudio...`, 'info');
+
+    const progressCleanup = window.bds.onAudioSyncProgress(({ mediaId, status }) => {
+      const pm = selectedPm.find(p => p.id === mediaId);
+      const label = pm ? (pm.custom_name || pm.filename) : mediaId;
+      const statusLabels = {
+        extracting: 'extraindo áudio',
+        correlating: 'calculando correlação',
+        done: 'concluído',
+        error: 'erro'
+      };
+      setAppStatus(`Sync: ${label} — ${statusLabels[status] || status}`, status === 'error' ? 'error' : 'info');
     });
 
-    const summary = results.map(r => {
-      const pm = selectedPm.find(p => p.id === r.media_id);
-      const label = pm ? (pm.custom_name || pm.filename) : r.media_id;
-      const isMaster = r.media_id === master.id;
-      const offsetMs = Math.round(r.offset_seconds * 1000);
-      const confidencePct = Math.round((r.confidence || 0) * 100);
-      return isMaster
-        ? `• ${label}: MASTER (offset 0ms)`
-        : `• ${label}: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms (confiança ${confidencePct}%)${r.error ? ` — erro: ${r.error}` : ''}`;
-    }).join('\n');
+    try {
+      console.log('[WORKSPACE] Iniciando runAudioSync', { projectId, masterMediaId: master.id, mediaList });
+      const { groupId, results } = await window.bds.runAudioSync({
+        projectId,
+        groupName: groupName || undefined,
+        masterMediaId: master.id,
+        mediaList,
+        maxOffsetSeconds: 30
+      });
+      console.log('[WORKSPACE] runAudioSync retornou', { groupId, results });
 
-    setAppStatus('Sincronização por áudio concluída.', 'success');
-    await window.bdsModal.alert(`Sync Group #${groupId} criado com sucesso:\n\n${summary}`);
+      if (!groupId) {
+        throw new Error('O backend não retornou um ID de grupo válido — a criação pode ter falhado silenciosamente no banco de dados.');
+      }
 
-    syncSelection.clear();
-    renderTree();
-    updateSyncSelectionHint();
-    await reloadSyncGroups();
+      const summary = results.map(r => {
+        const pm = selectedPm.find(p => p.id === r.media_id);
+        const label = pm ? (pm.custom_name || pm.filename) : r.media_id;
+        const isMaster = r.media_id === master.id;
+        const offsetMs = Math.round(r.offset_seconds * 1000);
+        const confidencePct = Math.round((r.confidence || 0) * 100);
+        return isMaster
+          ? `• ${label}: MASTER (offset 0ms)`
+          : `• ${label}: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms (confiança ${confidencePct}%)${r.error ? ` — erro: ${r.error}` : ''}`;
+      }).join('\n');
+
+      setAppStatus('Sincronização por áudio concluída.', 'success');
+      await window.bdsModal.alert(`Sync Group #${groupId} criado com sucesso:\n\n${summary}`);
+
+      syncSelection.clear();
+      renderTree();
+      updateSyncSelectionHint();
+      await reloadSyncGroups();
+    } finally {
+      if (typeof progressCleanup === 'function') progressCleanup();
+    }
   } catch (e) {
     console.error('[WORKSPACE] Erro na sincronização por áudio:', e);
     setAppStatus('Erro ao sincronizar por áudio.', 'error');
-    window.bdsModal.alert(`Erro ao sincronizar por áudio: ${e.message || e}`);
-  } finally {
-    if (typeof progressCleanup === 'function') progressCleanup();
+    await window.bdsModal.alert(`Erro ao sincronizar por áudio:\n\n${e.message || e}\n\n(Veja o console — Ctrl+Shift+I — para detalhes técnicos)`);
   }
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '00:00';
+  const d = new Date(seconds * 1000);
+  return d.toISOString().substring(11, 19).replace(/^00:/, '');
 }
 
 function formatBytes(bytes) {
@@ -1561,6 +1681,10 @@ function setupEventListeners() {
   document.querySelectorAll('.ws-media-filter').forEach(btn => {
     btn.addEventListener('click', () => setMediaTypeFilter(btn.dataset.filter));
   });
+
+  // --- Toggle Grade / Lista ---
+  document.getElementById('wsViewGrid')?.addEventListener('click', () => setMediaViewMode('grid'));
+  document.getElementById('wsViewList')?.addEventListener('click', () => setMediaViewMode('list'));
 
   // --- FASE 4: Tabs do inspetor (Info / Metadados BDSM) ---
   document.getElementById('wsInspTabInfo')?.addEventListener('click', () => setInspectorTab('info'));
