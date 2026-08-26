@@ -6,10 +6,40 @@ let customOutputDir = null;
 let lastRecoveredPath = null;
 let isRecovering = false;
 
+// --- Estado RAW ---
+let rawCorruptFilePath = null;
+let rawReferenceFilePath = null;
+let rawCustomOutputDir = null;
+let rawLastRecoveredPath = null;
+let isRawRecovering = false;
+
 export function initScreen() {
   bindEvents();
   setupDragAndDrop();
   setupRecoveryListeners();
+  setupTabs();
+
+  bindRawEvents();
+  setupRawDragAndDrop();
+  setupRawRecoveryListeners();
+}
+
+function setupTabs() {
+  const btnVideo = document.getElementById('recoveryTabBtnVideo');
+  const btnRaw = document.getElementById('recoveryTabBtnRaw');
+  const panelVideo = document.getElementById('recoveryPanelVideo');
+  const panelRaw = document.getElementById('recoveryPanelRaw');
+
+  const activate = (tab) => {
+    const isVideo = tab === 'video';
+    btnVideo?.classList.toggle('active', isVideo);
+    btnRaw?.classList.toggle('active', !isVideo);
+    panelVideo?.classList.toggle('active', isVideo);
+    panelRaw?.classList.toggle('active', !isVideo);
+  };
+
+  btnVideo?.addEventListener('click', () => activate('video'));
+  btnRaw?.addEventListener('click', () => activate('raw'));
 }
 
 function bindEvents() {
@@ -424,5 +454,368 @@ function formatDuration(seconds) {
     return `${hrs}h ${remMins}m ${secs}s`;
   }
   return `${mins}m ${secs}s`;
+}
+
+/* ===================================================================== */
+/* ============================  RAW FLOW  =============================== */
+/* ===================================================================== */
+
+function bindRawEvents() {
+  // Seleção de Arquivo Danificado
+  document.getElementById('btnSelectRawCorruptFile')?.addEventListener('click', selectRawCorruptFile);
+  document.getElementById('btnClearRawCorruptFile')?.addEventListener('click', clearRawCorruptFile);
+
+  // Seleção de Arquivo de Referência
+  document.getElementById('btnSelectRawReferenceFile')?.addEventListener('click', selectRawReferenceFile);
+  document.getElementById('btnClearRawReferenceFile')?.addEventListener('click', clearRawReferenceFile);
+
+  // Seleção de Pasta de Saída
+  document.getElementById('btnSelectRawOutputDir')?.addEventListener('click', selectRawOutputDir);
+
+  // Ações de Execução e Cancelamento
+  document.getElementById('btnStartRawRecovery')?.addEventListener('click', startRawRecovery);
+  document.getElementById('btnCancelRawRecovery')?.addEventListener('click', cancelRawRecovery);
+
+  // Botões do Card de Sucesso
+  document.getElementById('btnOpenRawRecoveredFolder')?.addEventListener('click', () => {
+    if (rawLastRecoveredPath && window.bds?.openLocalPath) {
+      const folder = rawCustomOutputDir || rawLastRecoveredPath.substring(0, Math.max(rawLastRecoveredPath.lastIndexOf('\\'), rawLastRecoveredPath.lastIndexOf('/')));
+      window.bds.openLocalPath(folder);
+    }
+  });
+
+  document.getElementById('btnRecoverAnotherRaw')?.addEventListener('click', resetRawForm);
+
+  // Fechar Banner de Erro
+  document.getElementById('btnCloseRawError')?.addEventListener('click', () => {
+    document.getElementById('rawErrorBanner')?.classList.add('hidden');
+  });
+}
+
+function setupRawDragAndDrop() {
+  const corruptDropzone = document.getElementById('rawCorruptDropzone');
+  const referenceDropzone = document.getElementById('rawReferenceDropzone');
+
+  const handleDrag = (el, onDrop) => {
+    if (!el) return;
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.add('dragover');
+    });
+    el.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove('dragover');
+    });
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        const path = window.bds.getPathForFile ? window.bds.getPathForFile(files[0]) : files[0].path;
+        if (path) onDrop(path);
+      }
+    });
+  };
+
+  handleDrag(corruptDropzone, (path) => setRawCorruptFile(path));
+  handleDrag(referenceDropzone, (path) => setRawReferenceFile(path));
+}
+
+function setupRawRecoveryListeners() {
+  if (window.bds?.recovery?.raw?.onProgress) {
+    window.bds.recovery.raw.onProgress((data) => {
+      updateRawProgressUI(data);
+    });
+  }
+}
+
+async function selectRawCorruptFile() {
+  try {
+    const files = await window.bds.selectFiles({
+      title: 'Selecionar Arquivo RAW Danificado ou Corrompido',
+      filters: [{ name: 'RAW', extensions: ['cr2', 'arw', 'nef'] }],
+      properties: ['openFile']
+    });
+    if (files && files.length > 0) {
+      await setRawCorruptFile(files[0]);
+    }
+  } catch (err) {
+    showRawError('Erro ao selecionar arquivo: ' + err.message);
+  }
+}
+
+async function selectRawReferenceFile() {
+  try {
+    const files = await window.bds.selectFiles({
+      title: 'Selecionar RAW de Referência (Gravado pela mesma câmera)',
+      filters: [{ name: 'RAW', extensions: ['cr2', 'arw', 'nef'] }],
+      properties: ['openFile']
+    });
+    if (files && files.length > 0) {
+      await setRawReferenceFile(files[0]);
+    }
+  } catch (err) {
+    showRawError('Erro ao selecionar referência: ' + err.message);
+  }
+}
+
+async function setRawCorruptFile(filePath) {
+  rawCorruptFilePath = filePath;
+  hideRawError();
+
+  const dropzone = document.getElementById('rawCorruptDropzone');
+  const details = document.getElementById('rawCorruptFileDetails');
+  const btnClear = document.getElementById('btnClearRawCorruptFile');
+  const badgeEl = document.getElementById('rawCorruptSeverityBadge');
+  const btnStart = document.getElementById('btnStartRawRecovery');
+
+  if (dropzone) dropzone.classList.add('hidden');
+  if (details) details.classList.remove('hidden');
+  if (btnClear) btnClear.classList.remove('hidden');
+  if (btnStart) btnStart.disabled = false;
+
+  const baseName = filePath.split(/[\\/]/).pop();
+  const fileNameEl = document.getElementById('rawCorruptFileName');
+  if (fileNameEl) fileNameEl.textContent = baseName;
+  if (badgeEl) {
+    badgeEl.textContent = 'Analisando...';
+    badgeEl.className = 'badge badge-yellow';
+  }
+
+  await runRawDiagnosis();
+}
+
+async function setRawReferenceFile(filePath) {
+  rawReferenceFilePath = filePath;
+  hideRawError();
+
+  const dropzone = document.getElementById('rawReferenceDropzone');
+  const details = document.getElementById('rawReferenceFileDetails');
+  const btnClear = document.getElementById('btnClearRawReferenceFile');
+  const fileNameEl = document.getElementById('rawReferenceFileName');
+
+  if (dropzone) dropzone.classList.add('hidden');
+  if (details) details.classList.remove('hidden');
+  if (btnClear) btnClear.classList.remove('hidden');
+
+  const baseName = filePath.split(/[\\/]/).pop();
+  if (fileNameEl) fileNameEl.textContent = baseName;
+
+  await runRawDiagnosis();
+}
+
+function clearRawCorruptFile() {
+  rawCorruptFilePath = null;
+  const dropzone = document.getElementById('rawCorruptDropzone');
+  const details = document.getElementById('rawCorruptFileDetails');
+  const btnClear = document.getElementById('btnClearRawCorruptFile');
+  const btnStart = document.getElementById('btnStartRawRecovery');
+
+  if (dropzone) dropzone.classList.remove('hidden');
+  if (details) details.classList.add('hidden');
+  if (btnClear) btnClear.classList.add('hidden');
+  if (btnStart) btnStart.disabled = true;
+
+  clearRawReferenceCompatibility();
+}
+
+function clearRawReferenceFile() {
+  rawReferenceFilePath = null;
+  const dropzone = document.getElementById('rawReferenceDropzone');
+  const details = document.getElementById('rawReferenceFileDetails');
+  const btnClear = document.getElementById('btnClearRawReferenceFile');
+
+  if (dropzone) dropzone.classList.remove('hidden');
+  if (details) details.classList.add('hidden');
+  if (btnClear) btnClear.classList.add('hidden');
+
+  clearRawReferenceCompatibility();
+}
+
+function clearRawReferenceCompatibility() {
+  const compatBadge = document.getElementById('rawReferenceCompatBadge');
+  const compatMsg = document.getElementById('rawReferenceCompatMessage');
+  if (compatBadge) {
+    compatBadge.textContent = '-';
+    compatBadge.className = 'badge';
+  }
+  if (compatMsg) compatMsg.textContent = '-';
+}
+
+async function selectRawOutputDir() {
+  try {
+    const dir = await window.bds.selectFolder();
+    if (dir) {
+      rawCustomOutputDir = dir;
+      const pathEl = document.getElementById('rawOutputPath');
+      if (pathEl) pathEl.textContent = dir;
+    }
+  } catch (err) {
+    console.error('Erro ao selecionar pasta de saída (RAW):', err);
+  }
+}
+
+async function runRawDiagnosis() {
+  if (!rawCorruptFilePath) return;
+
+  try {
+    const diag = await window.bds.recovery.raw.diagnose(rawCorruptFilePath, rawReferenceFilePath);
+    renderRawDiagnosticResults(diag);
+  } catch (err) {
+    console.error('Erro no diagnóstico RAW:', err);
+    showRawError('Falha ao analisar o arquivo: ' + err.message);
+  }
+}
+
+function renderRawDiagnosticResults(diag) {
+  const { corrupted, reference, compatibility } = diag;
+
+  const sizeEl = document.getElementById('rawCorruptFileSize');
+  const badgeEl = document.getElementById('rawCorruptSeverityBadge');
+  const structEl = document.getElementById('rawCorruptStructureInfo');
+
+  if (sizeEl) sizeEl.textContent = formatBytes(corrupted.sizeBytes);
+  if (structEl) structEl.textContent = `${corrupted.manufacturer} ${corrupted.camera !== 'Desconhecido' ? corrupted.camera : ''}`.trim() || corrupted.format;
+
+  if (badgeEl) {
+    if (corrupted.severity.includes('CRÍTICA')) {
+      badgeEl.textContent = 'Assinatura Ausente';
+      badgeEl.className = 'badge badge-red';
+    } else if (corrupted.severity.includes('MODERADA')) {
+      badgeEl.textContent = 'Dados Parcialmente Legíveis';
+      badgeEl.className = 'badge badge-yellow';
+    } else {
+      badgeEl.textContent = 'Danos Leves';
+      badgeEl.className = 'badge badge-green';
+    }
+  }
+
+  if (reference) {
+    const refSpecs = document.getElementById('rawReferenceSpecs');
+    const compatBadge = document.getElementById('rawReferenceCompatBadge');
+    const compatMsg = document.getElementById('rawReferenceCompatMessage');
+
+    if (refSpecs) refSpecs.textContent = `${reference.manufacturer} ${reference.camera !== 'Desconhecido' ? reference.camera : ''} | ${reference.format}`.trim();
+
+    if (compatBadge) {
+      compatBadge.textContent = compatibility.badge;
+      if (compatibility.status === 'ALTA') compatBadge.className = 'badge badge-green';
+      else if (compatibility.status === 'MEDIA') compatBadge.className = 'badge badge-yellow';
+      else compatBadge.className = 'badge badge-red';
+    }
+
+    if (compatMsg) compatMsg.textContent = compatibility.message;
+  }
+}
+
+async function startRawRecovery() {
+  if (!rawCorruptFilePath || isRawRecovering) return;
+
+  isRawRecovering = true;
+  hideRawError();
+
+  const progressCard = document.getElementById('rawProgressCard');
+  const successCard = document.getElementById('rawSuccessCard');
+  const btnStart = document.getElementById('btnStartRawRecovery');
+  const btnCancel = document.getElementById('btnCancelRawRecovery');
+
+  if (progressCard) progressCard.classList.remove('hidden');
+  if (successCard) successCard.classList.add('hidden');
+  if (btnStart) btnStart.classList.add('hidden');
+  if (btnCancel) btnCancel.classList.remove('hidden');
+
+  setStatus('Recuperando arquivo RAW...');
+  updateRawProgressUI({ percent: 5, message: 'Iniciando diagnóstico e recuperação...' });
+
+  try {
+    const result = await window.bds.recovery.raw.start({
+      corruptPath: rawCorruptFilePath,
+      referencePath: rawReferenceFilePath,
+      outputDir: rawCustomOutputDir,
+    });
+
+    if (result && result.success) {
+      rawLastRecoveredPath = result.outputPath;
+      renderRawSuccessResult(result);
+      setStatus('Arquivo RAW recuperado com sucesso!');
+    }
+  } catch (err) {
+    console.error('Erro na recuperação RAW:', err);
+    showRawError(err.message || 'Não foi possível concluir a recuperação do RAW.');
+    setStatus('Falha na recuperação RAW.');
+  } finally {
+    isRawRecovering = false;
+    if (progressCard) progressCard.classList.add('hidden');
+    if (btnStart) btnStart.classList.remove('hidden');
+    if (btnCancel) btnCancel.classList.add('hidden');
+  }
+}
+
+async function cancelRawRecovery() {
+  if (!isRawRecovering) return;
+  try {
+    await window.bds.recovery.raw.cancel();
+    setStatus('Recuperação RAW cancelada.');
+  } catch (err) {
+    console.error('Erro ao cancelar recuperação RAW:', err);
+  }
+}
+
+function updateRawProgressUI(data) {
+  const fill = document.getElementById('rawProgressFill');
+  const percentEl = document.getElementById('rawProgressPercent');
+  const stepEl = document.getElementById('rawProgressStep');
+
+  const pct = data.percent || 0;
+  if (fill) fill.style.width = `${pct}%`;
+  if (percentEl) percentEl.textContent = `${pct}%`;
+  if (stepEl && data.message) stepEl.textContent = data.message;
+}
+
+function renderRawSuccessResult(result) {
+  const successCard = document.getElementById('rawSuccessCard');
+  const fileNameEl = document.getElementById('rawResultFileName');
+  const methodEl = document.getElementById('rawResultMethod');
+  const typeEl = document.getElementById('rawResultType');
+  const cameraEl = document.getElementById('rawResultCamera');
+  const sizeEl = document.getElementById('rawResultSize');
+  const qualityEl = document.getElementById('rawResultQuality');
+
+  if (fileNameEl) fileNameEl.textContent = result.fileName;
+  if (methodEl) methodEl.textContent = result.methodUsed;
+  if (typeEl) typeEl.textContent = result.outputType;
+  if (cameraEl) cameraEl.textContent = [result.camera, result.resolution].filter(Boolean).join(' | ') || '-';
+  if (sizeEl) sizeEl.textContent = formatBytes(result.sizeBytes);
+  if (qualityEl) qualityEl.textContent = result.resultQuality;
+
+  if (successCard) {
+    successCard.classList.remove('hidden');
+    successCard.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function resetRawForm() {
+  clearRawCorruptFile();
+  clearRawReferenceFile();
+  rawLastRecoveredPath = null;
+  document.getElementById('rawSuccessCard')?.classList.add('hidden');
+  document.getElementById('rawProgressCard')?.classList.add('hidden');
+  hideRawError();
+}
+
+function showRawError(msg) {
+  const banner = document.getElementById('rawErrorBanner');
+  const msgEl = document.getElementById('rawErrorMessage');
+  if (banner && msgEl) {
+    msgEl.textContent = msg;
+    banner.classList.remove('hidden');
+  }
+}
+
+function hideRawError() {
+  document.getElementById('rawErrorBanner')?.classList.add('hidden');
 }
 

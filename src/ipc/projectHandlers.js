@@ -206,26 +206,41 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
 
   // --- Sincronização Automática por Áudio (Fase 6) ---
   ipcMain.handle('projects:runAudioSync', async (event, { projectId, groupName, masterMediaId, mediaList, maxOffsetSeconds }) => {
-    if (!audioSyncService) throw new Error('AudioSyncService não inicializado');
+    console.log('[IPC] projects:runAudioSync chamado', { projectId, groupName, masterMediaId, mediaCount: mediaList?.length });
+    if (!audioSyncService) throw new Error('AudioSyncService não inicializado — verifique se o FFmpeg foi resolvido corretamente no bootstrap.');
     if (!Array.isArray(mediaList) || mediaList.length < 2) {
       throw new Error('São necessárias ao menos 2 mídias para sincronizar.');
     }
 
-    const results = await audioSyncService.syncGroup(
-      mediaList,
-      masterMediaId,
-      maxOffsetSeconds || 30,
-      (mediaId, status) => {
-        event.sender.send('projects:audioSyncProgress', { mediaId, status });
-      }
-    );
+    let results;
+    try {
+      results = await audioSyncService.syncGroup(
+        mediaList,
+        masterMediaId,
+        maxOffsetSeconds || 30,
+        (mediaId, status) => {
+          event.sender.send('projects:audioSyncProgress', { mediaId, status });
+        }
+      );
+    } catch (syncErr) {
+      console.error('[IPC] Falha no AudioSyncService.syncGroup:', syncErr);
+      throw new Error(`Falha ao processar o áudio: ${syncErr.message}`);
+    }
+    console.log('[IPC] syncGroup concluído, resultados:', results);
 
-    const groupId = projectService.createSyncGroup(
-      projectId,
-      groupName || `Sync Group ${new Date().toLocaleString('pt-BR')}`,
-      masterMediaId,
-      results.map(r => ({ media_id: r.media_id, offset_seconds: r.offset_seconds, confidence: r.confidence, drift_rate_ppm: r.drift_rate_ppm }))
-    );
+    let groupId;
+    try {
+      groupId = projectService.createSyncGroup(
+        projectId,
+        groupName || `Sync Group ${new Date().toLocaleString('pt-BR')}`,
+        masterMediaId,
+        results.map(r => ({ media_id: r.media_id, offset_seconds: r.offset_seconds, confidence: r.confidence, drift_rate_ppm: r.drift_rate_ppm }))
+      );
+    } catch (dbErr) {
+      console.error('[IPC] Falha ao gravar Sync Group no banco:', dbErr);
+      throw new Error(`Falha ao salvar o Sync Group no banco de dados: ${dbErr.message}`);
+    }
+    console.log('[IPC] Sync Group criado com id:', groupId);
 
     return { groupId, results };
   });

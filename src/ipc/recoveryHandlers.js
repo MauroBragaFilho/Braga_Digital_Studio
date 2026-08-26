@@ -4,7 +4,7 @@ const { ipcMain, dialog, BrowserWindow } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
-module.exports = function registerRecoveryHandlers(videoRecoveryService, paths) {
+module.exports = function registerRecoveryHandlers(videoRecoveryService, paths, rawRecoveryService) {
   ipcMain.handle('recovery:diagnose', async (_, { corruptPath, referencePath }) => {
     return await videoRecoveryService.diagnose(corruptPath, referencePath);
   });
@@ -15,6 +15,20 @@ module.exports = function registerRecoveryHandlers(videoRecoveryService, paths) 
 
   ipcMain.handle('recovery:cancel', async () => {
     videoRecoveryService.cancel();
+    return { success: true };
+  });
+
+  // --- Recuperação de RAW ---
+  ipcMain.handle('recovery:raw:diagnose', async (_, { corruptPath, referencePath }) => {
+    return await rawRecoveryService.diagnose(corruptPath, referencePath);
+  });
+
+  ipcMain.handle('recovery:raw:start', async (_, options) => {
+    return await rawRecoveryService.recoverRaw(options);
+  });
+
+  ipcMain.handle('recovery:raw:cancel', async () => {
+    rawRecoveryService.cancel();
     return { success: true };
   });
 

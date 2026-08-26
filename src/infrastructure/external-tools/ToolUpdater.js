@@ -3,10 +3,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
+const http = require('node:http');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { getExecutableName, resolveCanonicalToolKey } = require('./ToolManifest');
 const { toolResolver } = require('./ToolResolver');
 const logger = require('../../services/logService');
+
+const BACKUPS_DIRNAME = '.component-backups';
+const MANIFEST_DIRNAME = '.component-manifests';
 
 /**
  * Registra eventos específicos do atualizador em logs/updater.log
@@ -32,6 +37,135 @@ class ToolUpdater {
 
   init(toolsDir) {
     this._toolsDir = toolsDir;
+    this._backupsDir = path.join(toolsDir, BACKUPS_DIRNAME);
+    this._manifestDir = path.join(toolsDir, MANIFEST_DIRNAME);
+    try { fs.mkdirSync(this._backupsDir, { recursive: true }); } catch (_) {}
+    try { fs.mkdirSync(this._manifestDir, { recursive: true }); } catch (_) {}
+  }
+
+  /**
+   * Calcula o hash SHA-256 de um arquivo (usado para verificação de integridade e detecção
+   * de corrupção após cópia/download).
+   */
+  _computeSha256(filePath) {
+    const hash = crypto.createHash('sha256');
+    const data = fs.readFileSync(filePath);
+    hash.update(data);
+    return hash.digest('hex');
+  }
+
+  _manifestPath(toolKey) {
+    return path.join(this._manifestDir, `${toolKey}.json`);
+  }
+
+  _readManifest(toolKey) {
+    try {
+      const raw = fs.readFileSync(this._manifestPath(toolKey), 'utf8');
+      return JSON.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _writeManifest(toolKey, data) {
+    try {
+      fs.writeFileSync(this._manifestPath(toolKey), JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      logUpdater(`Aviso: falha ao gravar manifesto de ${toolKey}: ${err.message}`);
+    }
+  }
+
+  _backupPathFor(toolKey, exeName) {
+    return path.join(this._backupsDir, toolKey, exeName);
+  }
+
+  /**
+   * Persiste a versão instalada atualmente como "última versão estável conhecida",
+   * sobrescrevendo o backup anterior. Chamado somente após uma atualização validada com sucesso.
+   */
+  _persistBackup(toolKey, exeName, sourcePath, version, sha256) {
+    try {
+      const dir = path.join(this._backupsDir, toolKey);
+      fs.mkdirSync(dir, { recursive: true });
+      const dest = this._backupPathFor(toolKey, exeName);
+      fs.copyFileSync(sourcePath, dest);
+      const sidecar = path.join(dir, '.info.json');
+      fs.writeFileSync(sidecar, JSON.stringify({ version, sha256, savedAt: new Date().toISOString() }, null, 2), 'utf8');
+      logUpdater(`Backup de rollback atualizado para ${toolKey} (versão ${version}).`);
+    } catch (err) {
+      logUpdater(`Aviso: falha ao persistir backup de rollback de ${toolKey}: ${err.message}`);
+    }
+  }
+
+  _hasPersistedBackup(toolKey, exeName) {
+    return fs.existsSync(this._backupPathFor(toolKey, exeName));
+  }
+
+  /**
+   * Restaura manualmente a última versão estável conhecida de um componente.
+   * Pode ser chamado após uma atualização automática (rollback de falha) ou sob demanda
+   * pelo usuário/administrador caso uma versão recém-atualizada apresente problemas.
+   */
+  async rollback(rawToolKey) {
+    const toolKey = resolveCanonicalToolKey(rawToolKey);
+    const exeName = getExecutableName(toolKey);
+    const backupPath = this._backupPathFor(toolKey, exeName);
+    const target = path.join(this._toolsDir, exeName);
+
+    if (!fs.existsSync(backupPath)) {
+      throw new Error(`Não há uma versão anterior salva para reverter (${toolKey}).`);
+    }
+
+    logUpdater(`Iniciando rollback manual de ${toolKey}...`);
+    try {
+      if (fs.existsSync(target)) {
+        try { fs.unlinkSync(target); } catch (_) { fs.renameSync(target, `${target}.old_${Date.now()}`); }
+      }
+      fs.copyFileSync(backupPath, target);
+      const info = this._readBackupInfo(toolKey);
+      logUpdater(`Rollback de ${toolKey} concluído com sucesso.`, info);
+      return { success: true, tool: toolKey, restoredVersion: info?.version || null };
+    } catch (err) {
+      logUpdater(`Falha crítica no rollback manual de ${toolKey}: ${err.message}`);
+      throw new Error(`Não foi possível reverter ${toolKey}: ${err.message}`);
+    }
+  }
+
+  _readBackupInfo(toolKey) {
+    try {
+      const sidecar = path.join(this._backupsDir, toolKey, '.info.json');
+      return JSON.parse(fs.readFileSync(sidecar, 'utf8'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Verifica um componente contra uma entrada do manifest.json do Update Server, comparando
+   * pelo SHA-256 já persistido localmente (mais confiável que comparar apenas strings de
+   * versão, e não depende de rodar o executável para extrair versão).
+   * @param {string} rawToolKey
+   * @param {object} manifestEntry - { version, sha256, url }
+   */
+  checkAgainstManifest(rawToolKey, manifestEntry) {
+    const toolKey = resolveCanonicalToolKey(rawToolKey);
+    const exeName = getExecutableName(toolKey);
+    const target = path.join(this._toolsDir, exeName);
+    const isInstalled = fs.existsSync(target);
+    const localManifest = this._readManifest(toolKey);
+
+    const installedSha256 = isInstalled ? this._computeSha256(target) : null;
+    const needsUpdate = !isInstalled || !manifestEntry?.sha256 || installedSha256 !== manifestEntry.sha256;
+
+    return {
+      tool: toolKey,
+      installed: localManifest?.version || (isInstalled ? '(desconhecida)' : null),
+      latest: manifestEntry?.version || null,
+      needsUpdate,
+      canUpdate: true,
+      hasBackup: this._hasPersistedBackup(toolKey, exeName),
+      source: 'update-server',
+    };
   }
 
   async check(rawToolKey) {
@@ -41,17 +175,20 @@ class ToolUpdater {
     const isInstalled = fs.existsSync(exe);
     const installed = isInstalled ? await this._getVersion(exe, config.versionArgs) : null;
     const latest = await this._fetchLatestTag(config.githubOwner, config.githubRepo).catch(() => null);
+    const exeName = getExecutableName(toolKey);
     return {
       tool: toolKey,
       installed,
       latest,
       needsUpdate: !installed || (latest ? !installed.includes(latest.replace(/^v/, '')) : false),
       canUpdate: true,
+      hasBackup: this._hasPersistedBackup(toolKey, exeName),
     };
   }
 
   /**
-   * Executa atualização atômica de um componente interno com staging, smoke-test e rollback.
+   * Executa atualização atômica de um componente interno com staging, smoke-test e rollback,
+   * a partir de uma release do GitHub.
    */
   async update(rawToolKey, onProgress) {
     const toolKey = resolveCanonicalToolKey(rawToolKey);
@@ -60,23 +197,82 @@ class ToolUpdater {
       return this._updateYtDlpSelf(onProgress);
     }
 
+    if (toolKey === 'rawrecoveryengine') {
+      throw new Error('Este componente exige instalação manual: copie o RawRecoveryEngine.exe para a pasta de ferramentas do BDS.');
+    }
+
     const config = this._getConfig(toolKey);
     const exeName = getExecutableName(toolKey);
-    const target = path.join(this._toolsDir, exeName);
 
     logUpdater(`Iniciando atualização de componente: ${toolKey}`);
     logger.info(`toolUpdater:update:start`, { tool: toolKey });
 
     if (onProgress) onProgress(5);
 
-    // 1. Obter tag mais recente e URL de download
-    const latestTag = await this._fetchLatestTag(config.githubOwner, config.githubRepo);
+    // Obter release mais recente (tag + lista de assets, para checksum quando disponível)
+    const release = await this._fetchLatestRelease(config.githubOwner, config.githubRepo);
+    const latestTag = release.tag_name || release.name;
     const downloadUrl = config.downloadUrl(latestTag, process.platform);
     const isZip = downloadUrl.endsWith('.zip') || downloadUrl.includes('.zip');
+    const expectedDigest = this._findAssetDigest(release, downloadUrl);
 
-    // 2. Diretório temporário de Staging isolado
+    const result = await this._stagedInstall({
+      toolKey, exeName, downloadUrl, isZip,
+      expectedSha256: expectedDigest,
+      versionLabel: latestTag,
+      versionArgs: config.versionArgs,
+      onProgress,
+    });
+
+    logger.info(`toolUpdater:update:done`, { tool: toolKey });
+    return result;
+  }
+
+  /**
+   * Atualiza um componente a partir de um Update Server central (manifest.json),
+   * reaproveitando o mesmo pipeline de staging/checksum/backup/rollback.
+   * @param {string} rawToolKey
+   * @param {object} manifestEntry - { version, sha256, url, isZip? }
+   * @param {Function} [onProgress]
+   */
+  async updateFromManifest(rawToolKey, manifestEntry, onProgress) {
+    const toolKey = resolveCanonicalToolKey(rawToolKey);
+    const exeName = getExecutableName(toolKey);
+
+    if (!manifestEntry || !manifestEntry.url || !manifestEntry.sha256) {
+      throw new Error(`Manifesto do Update Server incompleto para o componente '${toolKey}' (faltam url/sha256).`);
+    }
+
+    logUpdater(`Iniciando atualização via Update Server: ${toolKey}`, { version: manifestEntry.version });
+    logger.info('toolUpdater:updateFromManifest:start', { tool: toolKey, version: manifestEntry.version });
+
+    const versionArgs = this._getConfig(toolKey, { optional: true })?.versionArgs || this._getManifestOnlyVersionArgs(toolKey);
+
+    const result = await this._stagedInstall({
+      toolKey, exeName,
+      downloadUrl: manifestEntry.url,
+      isZip: Boolean(manifestEntry.isZip) || manifestEntry.url.endsWith('.zip'),
+      expectedSha256: manifestEntry.sha256,
+      versionLabel: manifestEntry.version,
+      versionArgs,
+      onProgress,
+      source: 'update-server',
+    });
+
+    logger.info('toolUpdater:updateFromManifest:done', { tool: toolKey });
+    return result;
+  }
+
+  /**
+   * Núcleo compartilhado de instalação atômica: download -> checksum -> staging ->
+   * smoke-test -> backup temporário -> swap -> validação pós-cópia -> backup persistente
+   * + manifesto. Usado tanto pelo fluxo GitHub (`update`) quanto pelo Update Server
+   * (`updateFromManifest`).
+   */
+  async _stagedInstall({ toolKey, exeName, downloadUrl, isZip, expectedSha256, versionLabel, versionArgs, onProgress, source = 'github' }) {
+    const target = path.join(this._toolsDir, exeName);
     const stagingDir = path.join(this._toolsDir, `.staging_${toolKey}_${Date.now()}`);
-    const backupTarget = path.join(this._toolsDir, `.backup_${exeName}`);
+    const preSwapBackup = path.join(this._toolsDir, `.preswap_${exeName}_${Date.now()}`);
     fs.mkdirSync(stagingDir, { recursive: true });
 
     const downloadDest = path.join(stagingDir, isZip ? `${toolKey}_download.zip` : exeName);
@@ -84,18 +280,29 @@ class ToolUpdater {
     if (onProgress) onProgress(15);
 
     try {
-      // 3. Download para Staging
+      // 1. Download para Staging
       await this._downloadFile(downloadUrl, downloadDest, (bytesReceived, totalBytes) => {
         if (onProgress && totalBytes > 0) {
-          onProgress(15 + Math.round((bytesReceived / totalBytes) * 60));
+          onProgress(15 + Math.round((bytesReceived / totalBytes) * 55));
         }
       });
 
-      if (onProgress) onProgress(75);
+      // 2. Verificação de checksum (SHA-256)
+      if (expectedSha256) {
+        const gotDigest = this._computeSha256(downloadDest);
+        if (gotDigest.toLowerCase() !== expectedSha256.toLowerCase()) {
+          throw new Error(`Falha de integridade: checksum do download não confere para ${exeName} (esperado ${expectedSha256.slice(0, 12)}..., obtido ${gotDigest.slice(0, 12)}...).`);
+        }
+        logUpdater(`Checksum verificado com sucesso para ${toolKey}.`, { sha256: gotDigest, source });
+      } else {
+        logUpdater(`Aviso: fonte de ${toolKey} (${source}) não publica checksum do asset; integridade do download não verificada por hash.`);
+      }
+
+      if (onProgress) onProgress(72);
 
       let stagedExe = downloadDest;
 
-      // 4. Se for ZIP, extrair para staging e localizar o executável
+      // 3. Se for ZIP, extrair para staging e localizar o executável
       if (isZip) {
         const extractDir = path.join(stagingDir, 'extracted');
         fs.mkdirSync(extractDir, { recursive: true });
@@ -117,25 +324,30 @@ class ToolUpdater {
         }
       }
 
-      if (onProgress) onProgress(85);
+      if (onProgress) onProgress(82);
 
-      // 5. Smoke-Test (Validação de Execução no arquivo em Staging)
-      const testVersion = await this._getVersion(stagedExe, config.versionArgs);
-      if (!testVersion && config.versionArgs.length > 0) {
-        logUpdater(`Aviso de validação: smoke-test retornou vazio para ${stagedExe}`);
+      // Garante bit de execução em POSIX antes de qualquer tentativa de rodar o binário staged.
+      if (process.platform !== 'win32') {
+        try { fs.chmodSync(stagedExe, 0o755); } catch (_) {}
       }
 
-      // 6. Backup da versão atual instalada
+      // 4. Smoke-Test (Validação de Execução no arquivo em Staging, antes de qualquer substituição)
+      const testVersion = await this._getVersion(stagedExe, versionArgs);
+      if (!testVersion && versionArgs.length > 0) {
+        logUpdater(`Aviso de validação: smoke-test retornou vazio para ${stagedExe}`);
+      }
+      const stagedSha256 = this._computeSha256(stagedExe);
+
+      // 5. Backup temporário da versão atual instalada (para rollback imediato em caso de falha na troca)
       if (fs.existsSync(target)) {
         try {
-          if (fs.existsSync(backupTarget)) fs.rmSync(backupTarget, { force: true });
-          fs.copyFileSync(target, backupTarget);
+          fs.copyFileSync(target, preSwapBackup);
         } catch (bkErr) {
-          logUpdater(`Aviso ao criar backup de ${exeName}: ${bkErr.message}`);
+          logUpdater(`Aviso ao criar backup temporário de ${exeName}: ${bkErr.message}`);
         }
       }
 
-      // 7. Substituição Atômica
+      // 6. Substituição Atômica
       try {
         if (fs.existsSync(target)) {
           try {
@@ -145,34 +357,79 @@ class ToolUpdater {
           }
         }
         fs.copyFileSync(stagedExe, target);
-        logUpdater(`Componente ${toolKey} atualizado com sucesso para versão ${latestTag}`);
-      } catch (swapErr) {
-        // Rollback automático
-        logUpdater(`Falha na substituição de ${exeName}, iniciando rollback...`, { error: swapErr.message });
-        if (fs.existsSync(backupTarget)) {
-          try {
-            fs.copyFileSync(backupTarget, target);
-            logUpdater(`Rollback para ${exeName} concluído com sucesso.`);
-          } catch (rbErr) {
-            logUpdater(`Falha crítica no rollback de ${exeName}: ${rbErr.message}`);
-          }
+        // Em plataformas POSIX (Linux/Mac), o bit de execução não é preservado de forma
+        // confiável em todo download/cópia — garantimos explicitamente aqui.
+        if (process.platform !== 'win32') {
+          try { fs.chmodSync(target, 0o755); } catch (_) {}
         }
+      } catch (swapErr) {
+        logUpdater(`Falha na substituição de ${exeName}, iniciando rollback...`, { error: swapErr.message });
+        this._restorePreSwap(preSwapBackup, target);
         throw new Error(`Não foi possível instalar o componente ${exeName}: ${swapErr.message}`);
       }
 
-      if (onProgress) onProgress(100);
-      logger.info(`toolUpdater:update:done`, { tool: toolKey });
+      if (onProgress) onProgress(92);
 
-      return this.check(toolKey);
+      // 7. Validação pós-instalação: confirma que a cópia final não foi corrompida e que o
+      //    executável instalado (não apenas o staged) realmente executa.
+      const installedSha256 = this._computeSha256(target);
+      const postSwapVersion = await this._getVersion(target, versionArgs);
+      const copyIntact = installedSha256 === stagedSha256;
+      const executes = versionArgs.length === 0 || Boolean(postSwapVersion);
+
+      if (!copyIntact || !executes) {
+        logUpdater(`Validação pós-instalação falhou para ${toolKey} (copyIntact=${copyIntact}, executes=${executes}). Revertendo...`);
+        this._restorePreSwap(preSwapBackup, target);
+        throw new Error(`A instalação de ${exeName} falhou na validação pós-cópia. A versão anterior foi restaurada automaticamente.`);
+      }
+
+      logUpdater(`Componente ${toolKey} atualizado e validado com sucesso para versão ${versionLabel} (fonte: ${source}).`);
+
+      // 8. Só agora, com a nova versão validada e funcionando, persistimos o backup de rollback
+      //    de longo prazo (substituindo o anterior) e o manifesto de versão/checksum do componente.
+      this._persistBackup(toolKey, exeName, target, versionLabel, installedSha256);
+      this._writeManifest(toolKey, {
+        name: toolKey,
+        version: versionLabel,
+        platform: process.platform,
+        architecture: process.arch,
+        sha256: installedSha256,
+        source,
+        updatedAt: new Date().toISOString(),
+      });
+
+      if (onProgress) onProgress(100);
+
+      return {
+        tool: toolKey,
+        installed: versionLabel,
+        latest: versionLabel,
+        needsUpdate: false,
+        canUpdate: true,
+        hasBackup: this._hasPersistedBackup(toolKey, exeName),
+        source,
+      };
     } catch (err) {
       logUpdater(`Erro durante atualização de ${toolKey}: ${err.message}`);
       throw err;
     } finally {
-      // Limpeza de diretórios de Staging e temporários
+      // Limpeza de diretórios de Staging e temporários (o backup PERSISTENTE de rollback,
+      // em .component-backups, nunca é apagado aqui — só é sobrescrito por uma futura atualização bem-sucedida)
       try {
         if (fs.existsSync(stagingDir)) fs.rmSync(stagingDir, { recursive: true, force: true });
-        if (fs.existsSync(backupTarget)) fs.rmSync(backupTarget, { force: true });
+        if (fs.existsSync(preSwapBackup)) fs.rmSync(preSwapBackup, { force: true });
       } catch (_) {}
+    }
+  }
+
+  _restorePreSwap(preSwapBackup, target) {
+    if (!fs.existsSync(preSwapBackup)) return;
+    try {
+      if (fs.existsSync(target)) fs.rmSync(target, { force: true });
+      fs.copyFileSync(preSwapBackup, target);
+      logUpdater(`Rollback imediato concluído para ${path.basename(target)}.`);
+    } catch (rbErr) {
+      logUpdater(`Falha crítica no rollback imediato de ${path.basename(target)}: ${rbErr.message}`);
     }
   }
 
@@ -200,7 +457,19 @@ class ToolUpdater {
     return this.check('ytdlp');
   }
 
-  _getConfig(toolKey) {
+  /**
+   * Argumentos de versão para componentes que não têm configuração de release do GitHub
+   * (ex: distribuídos via Update Server / manifest.json), usados apenas para o smoke-test
+   * pós-instalação.
+   */
+  _getManifestOnlyVersionArgs(toolKey) {
+    const map = {
+      rawrecoveryengine: ['version'],
+    };
+    return map[toolKey] || [];
+  }
+
+  _getConfig(toolKey, { optional = false } = {}) {
     const configs = {
       ytdlp: {
         githubOwner: 'yt-dlp',
@@ -261,7 +530,10 @@ class ToolUpdater {
     };
 
     const config = configs[toolKey];
-    if (!config) throw new Error(`ToolUpdater: componente desconhecido '${toolKey}'`);
+    if (!config) {
+      if (optional) return null;
+      throw new Error(`ToolUpdater: componente desconhecido '${toolKey}'`);
+    }
     return config;
   }
 
@@ -278,8 +550,32 @@ class ToolUpdater {
   }
 
   async _fetchLatestTag(owner, repo) {
-    const data = await this._requestJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+    const data = await this._fetchLatestRelease(owner, repo);
     return data.tag_name || data.name;
+  }
+
+  async _fetchLatestRelease(owner, repo) {
+    return this._requestJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+  }
+
+  /**
+   * Procura o campo `digest` (formato "sha256:<hex>") de um asset de release do GitHub,
+   * quando publicado pelo repositório. Retorna apenas o hex, ou null se indisponível.
+   */
+  _findAssetDigest(release, downloadUrl) {
+    try {
+      const assets = Array.isArray(release.assets) ? release.assets : [];
+      const targetName = downloadUrl.split('/').pop();
+      const asset = assets.find(a =>
+        a.browser_download_url === downloadUrl || a.name === targetName
+      );
+      if (asset && typeof asset.digest === 'string' && asset.digest.startsWith('sha256:')) {
+        return asset.digest.slice('sha256:'.length);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   _requestJson(url) {
@@ -303,7 +599,8 @@ class ToolUpdater {
   _downloadFile(url, dest, onProgress) {
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(dest);
-      const req = https.get(url, { headers: { 'User-Agent': 'BragaDigitalStudio/1.0' } }, (res) => {
+      const client = url.startsWith('http://') ? http : https;
+      const req = client.get(url, { headers: { 'User-Agent': 'BragaDigitalStudio/1.0' } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           file.close(); fs.rmSync(dest, { force: true });
           resolve(this._downloadFile(res.headers.location, dest, onProgress)); return;

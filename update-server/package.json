@@ -1,0 +1,14 @@
+{
+  "name": "bds-update-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BDS Update Server — hospeda o manifest.json central e os pacotes de componentes internos do Braga Digital Studio.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build-manifest": "node build-manifest.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
