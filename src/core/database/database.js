@@ -1,6 +1,7 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
+const logger = require('../../services/logService');
 
 class DBManager {
     constructor() {
@@ -8,6 +9,7 @@ class DBManager {
         this.dbPath = null;
         this.SQL = null;
         this.saveTimer = null;
+        this.persisting = false; // [FASE 3] Evita persistências concorrentes
     }
 
     async init(dataDir) {
@@ -21,8 +23,24 @@ class DBManager {
         });
 
         if (fs.existsSync(this.dbPath)) {
-            const bytes = fs.readFileSync(this.dbPath);
-            this.db = new this.SQL.Database(bytes);
+            // [FASE 3] Se o DB foi corrompido, tenta recuperar do backup .bak
+            let bytes = null;
+            try {
+                bytes = fs.readFileSync(this.dbPath);
+                this.db = new this.SQL.Database(bytes);
+            } catch (e) {
+                const backupPath = `${this.dbPath}.bak`;
+                if (fs.existsSync(backupPath)) {
+                    logger.warn('[DBManager] Banco principal corrompido. Restaurando do backup .bak');
+                    bytes = fs.readFileSync(backupPath);
+                    this.db = new this.SQL.Database(bytes);
+                    this.persist();
+                } else {
+                    logger.error('[DBManager] Banco corrompido e sem backup. Criando novo banco.', { error: e.message });
+                    this.db = new this.SQL.Database();
+                    this.persist();
+                }
+            }
         } else {
             this.db = new this.SQL.Database();
             this.persist();
@@ -83,18 +101,38 @@ class DBManager {
         if (this.saveTimer) clearTimeout(this.saveTimer);
         this.saveTimer = setTimeout(() => {
             this.persistAsync().catch(err => {
-                console.error('[DBManager] Erro ao persistir banco:', err.message);
+                logger.error('[DBManager] Erro ao persistir banco:', { error: err.message });
             });
         }, 1000); // Salva 1000ms após a última escrita de forma agrupada
     }
 
     async persistAsync() {
         if (!this.db || !this.dbPath) return;
+        // [FASE 3] Evita sobrescrever enquanto uma gravação já está em andamento
+        if (this.persisting) return;
+        this.persisting = true;
         try {
             const data = this.db.export();
-            await fs.promises.writeFile(this.dbPath, Buffer.from(data));
+            const buffer = Buffer.from(data);
+            const tempPath = `${this.dbPath}.tmp`;
+            // [FASE 3] Persistência atômica: escreve em .tmp e renomeia
+            await fs.promises.writeFile(tempPath, buffer);
+            // Faz backup do arquivo atual antes de substituir
+            if (fs.existsSync(this.dbPath)) {
+                await fs.promises.copyFile(this.dbPath, `${this.dbPath}.bak`).catch(() => {});
+            }
+            // No Windows, rename para um destino existente falha com EPERM;
+            // removemos o destino existente antes de renomear para garantir atomicidade.
+            try {
+                await fs.promises.rename(tempPath, this.dbPath);
+            } catch (renameErr) {
+                if (fs.existsSync(this.dbPath)) await fs.promises.unlink(this.dbPath);
+                await fs.promises.rename(tempPath, this.dbPath);
+            }
         } catch (err) {
-            console.error('[DBManager] Erro na persistência assíncrona:', err.message);
+            logger.error('[DBManager] Erro na persistência assíncrona:', { error: err.message });
+        } finally {
+            this.persisting = false;
         }
     }
 
@@ -102,9 +140,12 @@ class DBManager {
         if (!this.db || !this.dbPath) return;
         try {
             const data = this.db.export();
-            fs.writeFileSync(this.dbPath, Buffer.from(data));
+            const buffer = Buffer.from(data);
+            fs.writeFileSync(this.dbPath, buffer);
+            // Também mantém backup sincronizado
+            try { fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`); } catch (_) {}
         } catch (err) {
-            console.error('[DBManager] Erro na persistência síncrona:', err.message);
+            logger.error('[DBManager] Erro na persistência síncrona:', { error: err.message });
         }
     }
 

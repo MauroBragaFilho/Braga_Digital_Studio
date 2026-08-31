@@ -2,6 +2,7 @@ const { ipcMain, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
+const { assertSafePath, assertSafeFileName, assertNonEmpty } = require('./validate');
 
 module.exports = function registerLibraryHandlers(paths, watcherService) {
   const LibraryQueryService = require('../core/library/LibraryQueryService');
@@ -31,6 +32,11 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     const MediaImporter = require('../core/media/MediaImporter');
     const EventBus = require('../core/EventBus');
     const db = dbManager.get();
+
+    // [FASE 1.2] Validação de entrada
+    assertNonEmpty(name, 'Nome da fonte');
+    assertNonEmpty(folderPath, 'Caminho da pasta');
+    assertSafePath(folderPath, folderPath);  // Verifica que é um caminho absoluto válido
 
     if (!name || !folderPath) {
       throw new Error('Nome da fonte e caminho da pasta são obrigatórios.');
@@ -196,6 +202,14 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     if (!ids || ids.length === 0 || !baseName) return true;
+
+    // [FASE 1.2] Validação de entrada
+    assertNonEmpty(baseName, 'Nome base');
+    for (const id of ids) {
+      if (!Number.isInteger(Number(id)) || Number(id) <= 0) {
+        throw new Error(`ID inválido: ${id}`);
+      }
+    }
     
     const placeholders = ids.map(() => '?').join(',');
     const rows = db.prepare(`SELECT id, filepath, filename FROM media WHERE id IN (${placeholders}) ORDER BY COALESCE(recorded_at, imported_at) ASC`).all(...ids);
@@ -228,6 +242,15 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     if (!ids || ids.length === 0 || !newDir) return true;
+
+    // [FASE 1.2] Validação de caminho de destino
+    assertNonEmpty(newDir, 'Diretório de destino');
+    assertSafePath(paths.dataDir, newDir);
+    for (const id of ids) {
+      if (!Number.isInteger(Number(id)) || Number(id) <= 0) {
+        throw new Error(`ID inválido: ${id}`);
+      }
+    }
     
     const placeholders = ids.map(() => '?').join(',');
     const rows = db.prepare(`SELECT id, filepath, filename FROM media WHERE id IN (${placeholders})`).all(...ids);

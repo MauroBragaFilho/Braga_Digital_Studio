@@ -1,6 +1,7 @@
 const { ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { assertSafePath, assertNonEmpty } = require('./validate');
 
 module.exports = function registerDeviceHandlers(logger, lutSyncService) {
   const BdsmClient = require('../core/devices/BdsmClient');
@@ -23,6 +24,10 @@ module.exports = function registerDeviceHandlers(logger, lutSyncService) {
       const client = new BdsmClient(ip, port);
       const db = dbManager.get();
       let completed = 0;
+
+      // [FASE 1.2] Validação de entrada
+      assertNonEmpty(destFolder, 'Diretório de destino');
+      assertNonEmpty(deviceId, 'ID do dispositivo');
 
       for (const item of items) {
           try {

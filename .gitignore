@@ -28,6 +28,11 @@ logs/
 src/logs/
 *.log
 
+# Backups e temporários do banco de dados (gerados pelo DBManager)
+*.db.bak
+*.db.tmp
+bds.db.bak
+
 # Documentações internas (mantendo os READMEs e a pasta .docs)
 *.md
 !README*.md
