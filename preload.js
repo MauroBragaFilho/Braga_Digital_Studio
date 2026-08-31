@@ -156,6 +156,11 @@ const api = {
   updateTool: (tool) => ipcRenderer.invoke('updates:updateTool', tool),
   rollbackTool: (tool) => ipcRenderer.invoke('updates:rollbackTool', tool),
   updateAllDependencies: () => ipcRenderer.invoke('updates:updateAll'),
+  checkEverything: () => ipcRenderer.invoke('updates:checkAll'),
+  updateEverything: () => ipcRenderer.invoke('updates:updateEverything'),
+  downloadAppUpdate: () => ipcRenderer.invoke('updates:downloadAppUpdate'),
+  installAppUpdate: (installerPath) => ipcRenderer.invoke('updates:installAppUpdate', installerPath),
+  relaunchApp: () => ipcRenderer.invoke('updates:relaunchApp'),
   onUpdateProgress: (cb) => registerListener('updates:progress', cb),
   onUpdateCompleted: (cb) => registerListener('updates:completed', cb),
 

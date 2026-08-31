@@ -255,6 +255,7 @@ class DependencyManager {
 
     const total = toUpdate.length;
     let current = 0;
+    let updatedCount = 0;
     const errors = [];
 
     for (const comp of toUpdate) {
@@ -274,7 +275,12 @@ class DependencyManager {
           }
         };
 
-        await this.updateComponent(comp.canonicalTool, stepProgress);
+        const result = await this.updateComponent(comp.canonicalTool, stepProgress);
+        // So conta como atualizacao efetiva se o short-circuit nao tiver pulado o componente
+        // (ex: release remota sem versao compravel, como "latest" do BtbN).
+        if (!(result && result.skipped)) {
+          updatedCount++;
+        }
       } catch (err) {
         logger.error(`DependencyManager:update_failed:${comp.id}`, { error: err.message });
         errors.push(`Falha ao atualizar motor interno: ${err.message}`);
@@ -287,7 +293,9 @@ class DependencyManager {
 
     return {
       success: errors.length === 0,
-      updatedCount: total - errors.length,
+      updatedCount,
+      skippedCount: Math.max(0, total - updatedCount - errors.length),
+      total,
       errors,
     };
   }

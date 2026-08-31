@@ -54,6 +54,18 @@ class ToolUpdater {
     return hash.digest('hex');
   }
 
+  /**
+   * Extrai a versão semver de uma string arbitrária (tag do GitHub, saída de `--version`,
+   * nome de release etc.). Tolerante a prefixos ("v1.2.3", "n7.1.1", "latest"), sufixos e
+   * texto ao redor ("ffmpeg version 7.1.1-essentials_build"). Retorna null se nenhum
+   * padrão de versão for encontrado.
+   */
+  _extractVersion(str) {
+    if (!str) return null;
+    const m = String(str).match(/(?:^|[^0-9])([0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?)/);
+    return m ? m[1].replace(/^v/, '') : null;
+  }
+
   _manifestPath(toolKey) {
     return path.join(this._manifestDir, `${toolKey}.json`);
   }
@@ -172,8 +184,16 @@ class ToolUpdater {
     const toolKey = resolveCanonicalToolKey(rawToolKey);
     const config = this._getConfig(toolKey);
     const exe = toolResolver.resolve(toolKey, this._toolsDir, { mustExist: false });
+    const exeName = getExecutableName(toolKey);
     const isInstalled = fs.existsSync(exe);
     const installed = isInstalled ? await this._getVersion(exe, config.versionArgs) : null;
+    const localManifest = this._readManifest(toolKey);
+
+    // 1. Se o binário está instalado e o manifesto local informa uma versão, podemos usá-lo
+    //    como base confiável para a comparação, evitando depender de parsing frágil da saída
+    //    do binário e de tags de release não-semver (ex: BtbN/FFmpeg-Builds publica tag_name
+    //    "latest", que nunca casa com a versão instalada e causaria needUpdate permanente).
+    const installedNorm = this._extractVersion(installed) || (localManifest?.version ? this._extractVersion(localManifest.version) : null);
 
     const repoInfo = config.repoResolver
       ? config.repoResolver(process.platform)
@@ -184,14 +204,36 @@ class ToolUpdater {
       : this._fetchLatestTag(repoInfo.owner, repoInfo.repo)
     ).catch(() => null);
 
-    const exeName = getExecutableName(toolKey);
+    let needsUpdate = false;
+    if (!isInstalled) {
+      needsUpdate = true;
+    } else if (latest && installedNorm) {
+      // Comparação normalizada quando conseguimos extrair versão de ambos.
+      const latestNorm = this._extractVersion(latest);
+      if (latestNorm) {
+        needsUpdate = latestNorm !== installedNorm;
+      } else {
+        // A release remota não expõe versão semver comparável (ex: BtbN/FFmpeg-Builds usa
+        // tag_name "latest", que nunca casa com a versão instalada). Nesse caso não é possível
+        // determinar uma atualização real de forma confiável — para não re-baixar a cada ciclo
+        // (loop infinito de "atualização disponível"), confiamos no manifesto local: se o
+        // binário está instalado e foi persistido com sucesso, consideramos atualizado.
+        needsUpdate = !localManifest?.version;
+      }
+    } else {
+      // Sem referência remota utilizável, marca como atualizado para não entrar em loop
+      // de re-baixar releases que não expõem versão semver (ex: "latest" do BtbN).
+      needsUpdate = false;
+    }
+
     return {
       tool: toolKey,
       installed,
       latest,
-      needsUpdate: !installed || (latest ? !installed.includes(latest.replace(/^v/, '')) : false),
+      needsUpdate,
       canUpdate: true,
       hasBackup: this._hasPersistedBackup(toolKey, exeName),
+      source: 'github',
     };
   }
 
@@ -208,6 +250,26 @@ class ToolUpdater {
 
     const config = this._getConfig(toolKey);
     const exeName = getExecutableName(toolKey);
+
+    // Short-circuit: se o binário já está instalado e o manifesto local confirma a versão
+    // atual, não há necessidade de re-baixar/reinstalar. Isso evita o loop de atualizações
+    // falsas para componentes cuja release remota não expõe versão semver comparável
+    // (ex: BtbN/FFmpeg-Builds usa tag_name "latest").
+    const localManifest = this._readManifest(toolKey);
+    if (localManifest?.version) {
+      const exePath = toolResolver.resolve(toolKey, this._toolsDir, { mustExist: false });
+      if (fs.existsSync(exePath)) {
+        const installedVersion = await this._getVersion(exePath, config.versionArgs);
+        const installedNorm = this._extractVersion(installedVersion) || this._extractVersion(localManifest.version);
+        const manifestNorm = this._extractVersion(localManifest.version);
+        if (installedNorm && manifestNorm && installedNorm === manifestNorm) {
+          logUpdater(`Componente ja esta atualizado, ignorando atualizacao: ${toolKey} (${localManifest.version})`);
+          logger.info('toolUpdater:update:skipped', { tool: toolKey, version: localManifest.version });
+          if (onProgress) onProgress(100);
+          return { tool: toolKey, skipped: true, version: localManifest.version };
+        }
+      }
+    }
 
     logUpdater(`Iniciando atualização de componente: ${toolKey}`);
     logger.info(`toolUpdater:update:start`, { tool: toolKey });

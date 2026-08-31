@@ -941,7 +941,7 @@ window.bds?.onConverterFileFinished?.((data) => {
     if (result && result.hasUpdates) {
       if (badge) badge.classList.remove('hidden');
       window.bdsModal?.alert?.(
-        'Há atualizações disponíveis para os componentes do BDS (yt-dlp/FFmpeg). ' +
+        'Há atualizações disponíveis para o BDS (aplicativo e/ou componentes internos como yt-dlp/FFmpeg). ' +
         'Abra Configurações → Atualizações para instalar.'
       );
     } else if (badge) {
