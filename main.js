@@ -5,7 +5,11 @@ const path = require('node:path');
 
 // Configurações de inicialização do Electron
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-app.commandLine.appendSwitch('remote-debugging-port', '8315');
+
+// [FASE 1.1] Debug remoto só em desenvolvimento — NUNCA em produção
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch('remote-debugging-port', '8315');
+}
 
 const { appPaths } = require('./src/infrastructure/filesystem/AppPaths');
 
@@ -25,6 +29,21 @@ const Bootstrap = require('./src/bootstrap');
 const bootstrap = new Bootstrap(appPaths);
 let mainWindow = null;
 
+// [FASE 2.1] Tratamento de erros globais no processo principal
+const logger = require('./src/services/logService');
+const { errorReporter } = require('./src/infrastructure/telemetry/ErrorReporter');
+
+process.on('uncaughtException', (err) => {
+  logger.error('[Main] Exceção não capturada:', { message: err.message, stack: err.stack });
+  errorReporter.report(err, { source: 'main-process-uncaughtException' }).catch(() => {});
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  logger.error('[Main] Rejeição não tratada:', { message });
+  errorReporter.report(reason instanceof Error ? reason : new Error(message), { source: 'main-process-unhandledRejection' }).catch(() => {});
+});
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -34,15 +53,15 @@ function createWindow() {
     resizable: true,
     backgroundColor: '#121212',
     title: 'Braga Digital Studio',
-    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    icon: path.join(appRoot, 'assets', 'icon.ico'), // [FASE 2.3] Usar appRoot em vez de __dirname
     frame: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      webviewTag: true
+      sandbox: true,       // [FASE 1.3] Habilitar sandbox para reduzir superfície de ataque
+      webviewTag: false     // [FASE 1.3] Removido — não é usado no renderer
     }
   });
 

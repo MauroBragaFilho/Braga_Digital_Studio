@@ -345,19 +345,10 @@ const api = {
   executeBdsmLutSync: (data) => ipcRenderer.invoke('bdsm:executeLutSync', data),
   onBdsmLutSyncProgress: (callback) => ipcRenderer.on('bdsm:lutSyncProgress', (e, data) => callback(data)),
 
-  // Sony Camera a6000
-  discoverSonyCamera: (timeoutMs) => ipcRenderer.invoke('sony-camera:discover', timeoutMs),
-  getSonyCameraStatus: () => ipcRenderer.invoke('sony-camera:get-status'),
-  takeSonyCameraPhoto: () => ipcRenderer.invoke('sony-camera:take-photo'),
-  startSonyCameraLiveview: () => ipcRenderer.invoke('sony-camera:start-liveview'),
-  stopSonyCameraLiveview: () => ipcRenderer.invoke('sony-camera:stop-liveview'),
-  downloadSonyCameraMedia: (fileUrl, destPath) => ipcRenderer.invoke('sony-camera:download', fileUrl, destPath),
-  disconnectSonyCamera: () => ipcRenderer.invoke('sony-camera:disconnect'),
-  onSonyCameraConnected: (cb) => registerListener('sony-camera:connected', cb),
-  onSonyCameraDisconnected: (cb) => registerListener('sony-camera:disconnected', cb),
-  onSonyCameraPhotoTaken: (cb) => registerListener('sony-camera:photo-taken', cb),
-  onSonyCameraStatusUpdate: (cb) => registerListener('sony-camera:status-update', cb),
-  onSonyCameraDownloadProgress: (cb) => registerListener('sony-camera:download-progress', cb),
+  // Sony Camera a6000 [FASE 2.2] — Removidas APIs mortas (sem handlers IPC correspondentes).
+  // As integrações Sony são expostas via `getAllDevices`/`sony:list`/`sony:browse`.
+  // As APIs `sony-camera:*` do preload apontavam para handlers inexistentes e não eram usadas no renderer;
+  // mantê-las apenas aumentaria a superfície de ataque do contextBridge.
 
   // Limpeza Global
   removeAllListeners: () => {
@@ -369,4 +360,4 @@ const api = {
 };
 
 contextBridge.exposeInMainWorld('bds', api);
-contextBridge.exposeInMainWorld('bmd', api);
+// [FASE 2.2] Removida exposição duplicada 'bmd' — manter apenas 'bds'

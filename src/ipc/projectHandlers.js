@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { ipcMain, dialog, BrowserWindow } = require('electron');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
+const { assertSafePath, assertNonEmpty, assertPositiveInt } = require('./validate');
 
 module.exports = function registerProjectHandlers(projectService, premiereExporter, bdsproPackageService, paths = {}, waveformService = null, audioSyncService = null, sequenceBuilder = null) {
   const thumbnailsDir = paths.dataDir ? path.join(paths.dataDir, 'Thumbnails') : '';
@@ -15,7 +16,11 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
 
   ipcMain.handle('projects:list', () => projectService.getAllProjects());
   ipcMain.handle('projects:get', (_, id) => projectService.getProjectById(id));
-  ipcMain.handle('projects:create', (_, data) => projectService.createProject(data));
+  ipcMain.handle('projects:create', (_, data) => {
+    // [FASE 1.2] Validação de entrada
+    if (data && data.name) assertNonEmpty(data.name, 'Nome do projeto');
+    return projectService.createProject(data);
+  });
   ipcMain.handle('projects:update', (_, id, data) => projectService.updateProject(id, data));
   ipcMain.handle('projects:delete', (_, id) => projectService.deleteProject(id));
 

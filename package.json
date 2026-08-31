@@ -13,6 +13,7 @@
   "scripts": {
     "start": "electron .",
     "prebuild": "npm version patch --no-git-tag-version",
+    "check": "node scripts/check-syntax.js",
     "build": "electron-builder --win nsis",
     "build:win": "electron-builder --win nsis",
     "build:win:portable": "electron-builder --win portable",
@@ -25,7 +26,6 @@
     "bonjour-service": "^1.4.4",
     "chokidar": "^5.0.0",
     "express": "^5.2.1",
-    "ftp-srv": "^4.6.3",
     "puppeteer-core": "^25.3.0",
     "sql.js": "^1.12.0",
     "uuid": "^14.0.1",

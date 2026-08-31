@@ -86,7 +86,7 @@ class Bootstrap {
     await dbManager.init(paths.databaseDir);
     runMigrations();
 
-    // 2. Inicializar Serviços Core e Infraestrutura
+    // 2. Inicializar ServiÃ§os Core e Infraestrutura
     const historyService = await HistoryService.create(paths.databaseDir);
     const downloadService = new DownloadService({ paths, getSettings: () => this.settingsManager.load(), historyService });
     const converterService = new ConverterService({ paths, getSettings: () => this.settingsManager.load(), historyService });
@@ -126,7 +126,7 @@ class Bootstrap {
     });
     const watcherService = new LibraryWatcherService(importQueue);
 
-    // Sincronizar bibliotecas das configurações
+    // Sincronizar bibliotecas das configuraÃ§Ãµes
     this._syncLibraries(libManager, settings);
 
     this.services = {
@@ -194,9 +194,9 @@ class Bootstrap {
     deviceDiscoveryService.on('device_removed', (id) => this.mainWindow?.webContents.send('bdsm:device_removed', id));
     deviceDiscoveryService.on('device_updated', (d) => this.mainWindow?.webContents.send('bdsm:device_updated', d));
 
-    // Sony Camera Events
-    sonyCameraService.on('camera_connected', (cam) => this.mainWindow?.webContents.send('sony:camera_connected', cam));
-    sonyCameraService.on('camera_status_updated', (status) => this.mainWindow?.webContents.send('sony:status_updated', status));
+    // [FASE 2.2] Sony Camera Events — unificados para canais do preload
+    sonyCameraService.on('camera_connected', (cam) => this.mainWindow?.webContents.send('sony-camera:connected', cam));
+    sonyCameraService.on('camera_status_updated', (status) => this.mainWindow?.webContents.send('sony-camera:status-update', status));
 
     // Media Library Events
     EventBus.on('MEDIA_IMPORTED', (m) => this.mainWindow?.webContents.send('bds:media-imported', m));
@@ -219,7 +219,7 @@ class Bootstrap {
           }
           importQueue.add({ libraryId: lib.id, path: item.outputPath });
         } catch (err) {
-          logger.error('Erro ao adicionar download à biblioteca:', { error: err.message });
+          logger.error('Erro ao adicionar download Ã  biblioteca:', { error: err.message });
         }
       }
     });
@@ -276,11 +276,8 @@ class Bootstrap {
 
     // Upload & Sony Events
     UploadService.on('queue-updated', (q) => this.mainWindow?.webContents.send('upload:queue-updated', q));
-    sonyCameraService.on('connected', (d) => this.mainWindow?.webContents.send('sony-camera:connected', d));
-    sonyCameraService.on('disconnected', () => this.mainWindow?.webContents.send('sony-camera:disconnected'));
-    sonyCameraService.on('photo-taken', (d) => this.mainWindow?.webContents.send('sony-camera:photo-taken', d));
-    sonyCameraService.on('status-update', (d) => this.mainWindow?.webContents.send('sony-camera:status-update', d));
-    sonyCameraService.on('download-progress', (d) => this.mainWindow?.webContents.send('sony-camera:download-progress', d));
+    // [FASE 2.2] Sony — eventos 'connected'/'photo-taken' já capturados no bloco acima via camera_connected
+    // Não registrar listeners duplicados para o mesmo serviço
   }
 
   _registerIpcHandlers() {
@@ -292,7 +289,7 @@ class Bootstrap {
       uploadScannerService, libManager, watcherService, lutSyncService
     } = this.services;
 
-    // Registra Handlers por Módulo
+    // Registra Handlers por MÃ³dulo
     require('./ipc/deviceHandlers')(logger, lutSyncService);
     require('./ipc/libraryHandlers')(this.paths, watcherService);
     require('./ipc/systemHandlers')(this.paths);
@@ -438,11 +435,11 @@ class Bootstrap {
       const bdsmDevices = deviceDiscoveryService.getDevices();
       const sonyDevices = sonyCameraService.getCameras();
 
-      // Quando o mesmo aparelho físico já está acessível via o app BDSM (que dá acesso
-      // direto às gravações do app), suprimimos a entrada MTP genérica equivalente — o
-      // usuário quer trabalhar com as gravações do app, não navegar o sistema de arquivos
-      // bruto do dispositivo via MTP. Não existe um ID compartilhado entre os dois
-      // protocolos, então o cruzamento é feito pelo nome do dispositivo (normalizado).
+      // Quando o mesmo aparelho fÃ­sico jÃ¡ estÃ¡ acessÃ­vel via o app BDSM (que dÃ¡ acesso
+      // direto Ã s gravaÃ§Ãµes do app), suprimimos a entrada MTP genÃ©rica equivalente â€” o
+      // usuÃ¡rio quer trabalhar com as gravaÃ§Ãµes do app, nÃ£o navegar o sistema de arquivos
+      // bruto do dispositivo via MTP. NÃ£o existe um ID compartilhado entre os dois
+      // protocolos, entÃ£o o cruzamento Ã© feito pelo nome do dispositivo (normalizado).
       const normalizeDeviceName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const bdsmNames = new Set(bdsmDevices.map(d => normalizeDeviceName(d.name)));
       const mtpDevicesFiltered = mtpDevices.filter(d => {
@@ -487,7 +484,7 @@ class Bootstrap {
 
     ipcMain.handle('sony:import-items', async (event, { cameraId, items, destFolder }) => {
       const provider = sonyCameraService.getProvider(cameraId);
-      if (!provider) throw new Error(`Provider não encontrado para ${cameraId}`);
+      if (!provider) throw new Error(`Provider nÃ£o encontrado para ${cameraId}`);
 
       if (!fs.existsSync(destFolder)) {
         fs.mkdirSync(destFolder, { recursive: true });
@@ -510,7 +507,7 @@ class Bootstrap {
 
           for (const filePath of files) {
             importedPaths.push(filePath);
-            // Pipeline padrão da Library: enfileira importação com hash e FFProbe
+            // Pipeline padrÃ£o da Library: enfileira importaÃ§Ã£o com hash e FFProbe
             if (this.services.importQueue) {
               const db = dbManager.get();
               let lib = db.prepare("SELECT * FROM libraries WHERE type = 'BDSM_DEVICE' OR type = 'DEVICE' LIMIT 1").get();
@@ -554,7 +551,7 @@ class Bootstrap {
       const win = this.mainWindow || BrowserWindow.getFocusedWindow();
       const result = await dialog.showOpenDialog(win, {
         properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Vídeos', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }]
+        filters: [{ name: 'VÃ­deos', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }]
       });
       if (!result.canceled && result.filePaths.length > 0) {
         const fileList = [];
@@ -593,16 +590,16 @@ class Bootstrap {
       // 2. Inicia descoberta de dispositivos
       deviceDiscoveryService.start();
       sonyCameraService.start();
-      logger.info('Serviços em segundo plano inicializados.');
+      logger.info('ServiÃ§os em segundo plano inicializados.');
     } catch (err) {
-      logger.error('Erro ao iniciar serviços em segundo plano:', { error: err.message });
+      logger.error('Erro ao iniciar serviÃ§os em segundo plano:', { error: err.message });
     }
   }
 
   async checkInitialDependencies() {
     const { updateService } = this.services;
     
-    // Verifica apenas ferramentas essenciais de execução
+    // Verifica apenas ferramentas essenciais de execuÃ§Ã£o
     const requiredTools = ['ytdlp', 'ffmpeg', 'ffprobe'];
     const missing = requiredTools.filter(tool => {
       try {
@@ -616,24 +613,24 @@ class Bootstrap {
     });
 
     if (missing.length > 0) {
-      logger.info(`Primeira inicialização: Baixando dependências essenciais ausentes: ${missing.join(', ')}`);
+      logger.info(`Primeira inicializaÃ§Ã£o: Baixando dependÃªncias essenciais ausentes: ${missing.join(', ')}`);
       this.mainWindow?.webContents.send('dependencies:downloading');
 
       for (const tool of missing) {
         try {
           await updateService.updateTool(tool);
         } catch (e) {
-          logger.error(`Erro ao baixar ${tool} na inicialização`, { error: e.message });
+          logger.error(`Erro ao baixar ${tool} na inicializaÃ§Ã£o`, { error: e.message });
         }
       }
 
       this.mainWindow?.webContents.send('dependencies:done');
-      logger.info('Dependências iniciais instaladas com sucesso.');
+      logger.info('DependÃªncias iniciais instaladas com sucesso.');
     } else if (this.settingsManager.load().checkUpdatesOnStart) {
-      // Usa checkSystem() (mesmo método do botão "Verificar Atualizações" em
-      // Configurações) para que o resultado tenha o formato { hasUpdates, components }
-      // esperado pelo renderer. checkAll() é um método legado com formato diferente
-      // (um objeto por ferramenta) e não deve ser usado aqui.
+      // Usa checkSystem() (mesmo mÃ©todo do botÃ£o "Verificar AtualizaÃ§Ãµes" em
+      // ConfiguraÃ§Ãµes) para que o resultado tenha o formato { hasUpdates, components }
+      // esperado pelo renderer. checkAll() Ã© um mÃ©todo legado com formato diferente
+      // (um objeto por ferramenta) e nÃ£o deve ser usado aqui.
       updateService.checkSystem().then((result) => {
         this.mainWindow?.webContents.send('updates:checked', result);
       }).catch((error) => {
@@ -658,7 +655,7 @@ class Bootstrap {
 
     try { watcherService?.stopAll(); } catch (_) {}
     try { deviceDiscoveryService?.stop(); } catch (_) {}
-    try { sonyCameraService?.disconnect?.(); } catch (_) {}
+    try { sonyCameraService?.stop?.(); } catch (_) {}
   }
 }
 
