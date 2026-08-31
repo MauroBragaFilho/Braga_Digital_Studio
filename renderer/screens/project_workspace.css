@@ -9,6 +9,7 @@
   height: 100%;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   font-family: 'Inter', sans-serif;
   background: var(--bg);
