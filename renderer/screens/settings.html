@@ -203,6 +203,12 @@
             <input type="checkbox" id="autoUpdateInput" /> Manter componentes do BDS atualizados automaticamente
           </label>
         </div>
+
+        <div class="settings-updates-options-row">
+          <label class="settings-check-inline">
+            <input type="checkbox" id="checkUpdatesOnStartInput" /> Verificar atualizações automaticamente ao abrir o BDS
+          </label>
+        </div>
       </section>
 
       <!-- ABA: SISTEMA -->
@@ -214,6 +220,16 @@
           <div class="settings-system-item"><span>Desenvolvedor</span><strong>Braga Dev</strong></div>
           <div class="settings-system-item"><span>Pastas do Aplicativo</span><strong id="sysFolders">Carregando...</strong></div>
           <div class="settings-system-item"><span>Atualizações</span><strong>Automático via Braga Dev</strong></div>
+        </div>
+
+        <div class="settings-diagnostics-zone">
+          <h4 class="settings-diagnostics-title">
+            <span class="material-symbols-rounded">system_update</span> Atualização do BDS
+          </h4>
+          <p class="settings-diagnostics-text" id="appUpdateStatusText">
+            Verifique se há uma nova versão do Braga Digital Studio disponível nas releases do GitHub.
+          </p>
+          <button class="settings-btn-outline" id="checkAppUpdateButton" type="button">Verificar atualização do BDS</button>
         </div>
 
         <!-- Diagnóstico e Logs -->

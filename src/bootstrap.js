@@ -6,6 +6,7 @@ const os = require('node:os');
 const { ipcMain, dialog, BrowserWindow, app } = require('electron');
 
 const logger = require('./services/logService');
+const { DEVELOPER_EMAIL } = require('./config/appInfo');
 const SettingsManager = require('./core/settings/SettingsManager');
 const LutManager = require('./core/luts/LutManager');
 const { errorReporter } = require('./infrastructure/telemetry/ErrorReporter');
@@ -13,6 +14,7 @@ const { errorReporter } = require('./infrastructure/telemetry/ErrorReporter');
 const { ffmpegTool } = require('./infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('./infrastructure/external-tools/adapters/FfprobeTool');
 const { externalTools } = require('./infrastructure/external-tools/ExternalToolsManager');
+const { appUpdateChecker } = require('./infrastructure/external-tools/AppUpdateChecker');
 
 const DownloadService = require('./services/downloadService');
 const HistoryService = require('./services/historyService');
@@ -71,7 +73,7 @@ class Bootstrap {
     // Inicializar Sistema de Envio de Erros / Telemetria
     errorReporter.init({
       logsDir: this.appPaths.logsDir,
-      developerEmail: settings.developerEmail || 'obragafilho00@gmail.com',
+      developerEmail: settings.developerEmail || DEVELOPER_EMAIL,
       endpointUrl: settings.errorReportingEndpoint || '',
       getSettings: () => this.settingsManager.load()
     });
@@ -315,6 +317,7 @@ class Bootstrap {
     });
 
     ipcMain.handle('app:getVersion', () => app.getVersion());
+    ipcMain.handle('app:checkForUpdate', () => appUpdateChecker.checkForUpdate(app.getVersion()));
 
     // Window Controls
     ipcMain.handle('window:minimize', () => this.mainWindow?.minimize());
@@ -434,8 +437,25 @@ class Bootstrap {
       const usbDevices = await UsbService.getDevices();
       const bdsmDevices = deviceDiscoveryService.getDevices();
       const sonyDevices = sonyCameraService.getCameras();
+
+      // Quando o mesmo aparelho físico já está acessível via o app BDSM (que dá acesso
+      // direto às gravações do app), suprimimos a entrada MTP genérica equivalente — o
+      // usuário quer trabalhar com as gravações do app, não navegar o sistema de arquivos
+      // bruto do dispositivo via MTP. Não existe um ID compartilhado entre os dois
+      // protocolos, então o cruzamento é feito pelo nome do dispositivo (normalizado).
+      const normalizeDeviceName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const bdsmNames = new Set(bdsmDevices.map(d => normalizeDeviceName(d.name)));
+      const mtpDevicesFiltered = mtpDevices.filter(d => {
+        const mtpName = normalizeDeviceName(d.name || d.Name);
+        const matchesBdsm = mtpName && bdsmNames.has(mtpName);
+        if (matchesBdsm) {
+          logger.info('devices:get-all:mtp_suppressed_duplicate_of_bdsm', { name: d.name || d.Name });
+        }
+        return !matchesBdsm;
+      });
+
       return [
-        ...mtpDevices.map(d => ({ ...d, type: 'MTP', isBdsm: false })),
+        ...mtpDevicesFiltered.map(d => ({ ...d, type: 'MTP', isBdsm: false })),
         ...usbDevices.map(d => ({ ...d, type: 'USB', isBdsm: false })),
         ...bdsmDevices.map(d => ({ ...d, type: 'BDSM', isBdsm: true })),
         ...sonyDevices.map(d => ({ ...d, type: 'SONY', isBdsm: false }))
@@ -610,7 +630,11 @@ class Bootstrap {
       this.mainWindow?.webContents.send('dependencies:done');
       logger.info('Dependências iniciais instaladas com sucesso.');
     } else if (this.settingsManager.load().checkUpdatesOnStart) {
-      updateService.checkAll().then((result) => {
+      // Usa checkSystem() (mesmo método do botão "Verificar Atualizações" em
+      // Configurações) para que o resultado tenha o formato { hasUpdates, components }
+      // esperado pelo renderer. checkAll() é um método legado com formato diferente
+      // (um objeto por ferramenta) e não deve ser usado aqui.
+      updateService.checkSystem().then((result) => {
         this.mainWindow?.webContents.send('updates:checked', result);
       }).catch((error) => {
         logger.warn('updates:startup_check_failed', { error: error.message });

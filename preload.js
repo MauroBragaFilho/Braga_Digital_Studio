@@ -19,8 +19,11 @@ const api = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  checkForAppUpdate: () => ipcRenderer.invoke('app:checkForUpdate'),
   getVideosPath: () => ipcRenderer.invoke('system:getVideosPath'),
   getDownloadsPath: () => ipcRenderer.invoke('system:getDownloadsPath'),
+  getToolsPath: () => ipcRenderer.invoke('system:getToolsPath'),
+  isPackaged: () => ipcRenderer.invoke('system:isPackaged'),
 
   // --- Sistema de Telemetria e Relatório de Erros ---
   reportError: (error, context) => ipcRenderer.invoke('telemetry:reportError', error, context),

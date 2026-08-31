@@ -324,6 +324,22 @@ button:disabled {
   background: var(--card-2);
   color: var(--accent);
 }
+.tab-button {
+  position: relative;
+}
+.nav-update-badge {
+  position: absolute;
+  top: 8px;
+  left: 28px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #e53935);
+  box-shadow: 0 0 0 2px var(--card, #1a1a1a);
+}
+.nav-update-badge.hidden {
+  display: none;
+}
 
 /* Panel Containers */
 .panel,

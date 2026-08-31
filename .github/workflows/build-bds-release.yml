@@ -1,0 +1,112 @@
+name: Build BDS (Windows Installer)
+
+# Compila o Braga Digital Studio completo (Electron + NSIS installer) em um runner
+# windows-latest de verdade, e publica o instalador na Release do GitHub.
+#
+# Como disparar:
+#   1) Manual: aba Actions -> "Build BDS (Windows Installer)" -> "Run workflow".
+#      O instalador fica disponível como artefato do run por 90 dias.
+#   2) Automático com Release: crie e envie uma tag "v*" (ex: v1.0.4):
+#        git tag v1.0.4 && git push origin v1.0.4
+#      Isso builda E publica uma Release no GitHub com o instalador anexado.
+#
+# IMPORTANTE — pré-requisitos deste workflow:
+#   - assets/icon.ico deve existir no repositório (usado pelo NSIS/instalador). Se estiver
+#     fora do repo (.gitignore), o build falha — adicione-o antes de usar este workflow.
+#   - A pasta data/ (onde ficam os binários baixados como ffmpeg.exe, untrunc.exe etc.) NÃO
+#     precisa estar no repositório — o workflow cria uma pasta data/ vazia antes do build,
+#     já que ela é populada em runtime pelo próprio BDS (DependencyManager), não é parte do
+#     código-fonte.
+#   - Este build gera um instalador SEM assinatura de código (unsigned). O Windows
+#     SmartScreen/Defender pode alertar o usuário no primeiro uso — isso é esperado até que
+#     um certificado de assinatura de código seja adquirido e configurado.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # necessário para publicar a Release quando a tag disparar o workflow
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Garantir pasta data/ (populada em runtime, não versionada)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path data | Out-Null
+          New-Item -ItemType File -Force -Path data/.gitkeep | Out-Null
+
+      - name: Verificar assets de ícone
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "assets/icon.ico")) {
+            Write-Error "assets/icon.ico não encontrado no repositório. O build do instalador NSIS precisa desse arquivo. Adicione-o e tente novamente."
+            exit 1
+          }
+
+      - name: Build do instalador Windows (NSIS)
+        shell: pwsh
+        env:
+          # Evita que o electron-builder tente localizar/usar um certificado de assinatura
+          # de código automaticamente (não configurado neste momento) — gera instalador
+          # sem assinatura, que é o comportamento esperado até haver um certificado.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis
+
+      - name: Localizar o instalador gerado
+        id: find_installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "Nenhum instalador .exe foi encontrado em dist/ após o build."
+            exit 1
+          }
+          Write-Host "Instalador encontrado: $($installer.FullName)"
+          echo "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          echo "installer_name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Calcular SHA-256
+        shell: pwsh
+        run: |
+          $hash = Get-FileHash "${{ steps.find_installer.outputs.installer_path }}" -Algorithm SHA256
+          $hash.Hash | Out-File -Encoding ascii "${{ steps.find_installer.outputs.installer_path }}.sha256"
+          Write-Host "SHA-256: $($hash.Hash)"
+
+      - name: Publicar artefato do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BDS-installer-windows
+          path: |
+            dist/*.exe
+            dist/*.exe.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publicar Release (apenas em push de tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.exe.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

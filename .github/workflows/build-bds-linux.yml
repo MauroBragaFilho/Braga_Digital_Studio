@@ -1,0 +1,166 @@
+name: Build BDS (Linux — AppImage + deb)
+
+# Compila o Braga Digital Studio para Linux (AppImage + .deb) em um runner ubuntu-latest de
+# verdade, roda um smoke-test headless real (via Xvfb) para confirmar que o app abre sem
+# crashar imediatamente, e publica os pacotes na Release do GitHub.
+#
+# Como disparar:
+#   1) Manual: aba Actions -> "Build BDS (Linux — AppImage + deb)" -> "Run workflow".
+#      Os pacotes ficam disponíveis como artefato do run por 90 dias.
+#   2) Automático com Release: crie e envie uma tag "v*" (ex: v1.0.4):
+#        git tag v1.0.4 && git push origin v1.0.4
+#      Isso builda E publica na Release do GitHub — a MESMA tag "v*" também dispara o build
+#      do Windows (workflow separado), então os dois pacotes acabam anexados à mesma Release.
+#
+# Pré-requisitos deste workflow (mesma ressalva do build Windows):
+#   - assets/icon.png deve existir no repositório (ícone usado pelo target Linux do
+#     electron-builder). Se estiver fora do repo, o build falha com uma mensagem clara.
+#   - A pasta data/ (binários baixados em runtime) não precisa estar no repositório — o
+#     workflow cria uma pasta data/ vazia antes do build.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Garantir pasta data/ (populada em runtime, não versionada)
+        run: |
+          mkdir -p data
+          touch data/.gitkeep
+
+      - name: Verificar assets de ícone
+        run: |
+          if [ ! -f "assets/icon.png" ]; then
+            echo "::error::assets/icon.png não encontrado no repositório. O build do target Linux do electron-builder precisa desse arquivo."
+            exit 1
+          fi
+
+      - name: Build dos pacotes Linux (AppImage + deb)
+        run: npm run build:linux
+
+      - name: Localizar os pacotes gerados
+        id: find_packages
+        run: |
+          APPIMAGE=$(find dist -maxdepth 1 -iname "*.AppImage" | head -n1)
+          DEB=$(find dist -maxdepth 1 -iname "*.deb" | head -n1)
+
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::Nenhum arquivo .AppImage encontrado em dist/ após o build."
+            exit 1
+          fi
+          if [ -z "$DEB" ]; then
+            echo "::error::Nenhum arquivo .deb encontrado em dist/ após o build."
+            exit 1
+          fi
+
+          echo "Encontrado: $APPIMAGE"
+          echo "Encontrado: $DEB"
+          echo "appimage_path=$APPIMAGE" >> "$GITHUB_OUTPUT"
+          echo "deb_path=$DEB" >> "$GITHUB_OUTPUT"
+          chmod +x "$APPIMAGE"
+
+      - name: Calcular SHA-256
+        run: |
+          sha256sum "${{ steps.find_packages.outputs.appimage_path }}" | awk '{print $1}' > "${{ steps.find_packages.outputs.appimage_path }}.sha256"
+          sha256sum "${{ steps.find_packages.outputs.deb_path }}" | awk '{print $1}' > "${{ steps.find_packages.outputs.deb_path }}.sha256"
+          echo "AppImage SHA-256: $(cat "${{ steps.find_packages.outputs.appimage_path }}.sha256")"
+          echo "deb SHA-256: $(cat "${{ steps.find_packages.outputs.deb_path }}.sha256")"
+
+      - name: Validar estrutura do pacote .deb
+        run: |
+          echo "== dpkg-deb --info =="
+          dpkg-deb --info "${{ steps.find_packages.outputs.deb_path }}"
+          echo "== dpkg-deb --contents (resumo) =="
+          dpkg-deb --contents "${{ steps.find_packages.outputs.deb_path }}" | head -n 20
+          # Verifica se o control file é válido e se o pacote não está corrompido, sem
+          # precisar instalar de fato (mais rápido e não polui o runner).
+
+      - name: Smoke-test headless do AppImage (Xvfb)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+
+          # AppImages usam FUSE para montar o conteúdo em runtime; muitos runners de CI não
+          # têm FUSE configurado corretamente. O workaround padrão é extrair o conteúdo do
+          # AppImage (--appimage-extract), que não depende de FUSE, e rodar o AppRun
+          # extraído diretamente — é o mesmo ponto de entrada usado quando o AppImage é
+          # executado normalmente (montado via FUSE), então o comportamento é equivalente.
+          cd "$(dirname "${{ steps.find_packages.outputs.appimage_path }}")"
+          APPIMAGE_NAME="$(basename "${{ steps.find_packages.outputs.appimage_path }}")"
+          "./$APPIMAGE_NAME" --appimage-extract > /dev/null
+
+          EXECUTABLE="squashfs-root/AppRun"
+          if [ ! -f "$EXECUTABLE" ]; then
+            echo "::error::AppRun não encontrado após extrair o AppImage — estrutura inesperada."
+            exit 1
+          fi
+
+          echo "Executando smoke-test headless: $EXECUTABLE"
+          LOG_FILE="/tmp/bds_smoketest.log"
+
+          # --no-sandbox é necessário para rodar o Electron como root no runner do CI.
+          # Roda em segundo plano sob Xvfb, aguarda alguns segundos, e verifica se o
+          # processo continua vivo (ou seja, não crashou/travou logo na inicialização).
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            "$EXECUTABLE" --no-sandbox --disable-gpu > "$LOG_FILE" 2>&1 &
+          APP_PID=$!
+
+          sleep 12
+
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "✓ Smoke-test OK: o app continua em execução após 12s (não crashou na inicialização)."
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+            exit 0
+          else
+            echo "::error::Smoke-test falhou: o processo encerrou sozinho logo após iniciar."
+            echo "== Log de saída do processo =="
+            cat "$LOG_FILE" || true
+            exit 1
+          fi
+
+      - name: Publicar artefatos do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BDS-linux-packages
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.sha256
+            dist/*.deb
+            dist/*.deb.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publicar Release (apenas em push de tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.AppImage
+            dist/*.AppImage.sha256
+            dist/*.deb
+            dist/*.deb.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

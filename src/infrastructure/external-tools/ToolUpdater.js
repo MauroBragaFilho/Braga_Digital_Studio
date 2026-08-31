@@ -174,7 +174,16 @@ class ToolUpdater {
     const exe = toolResolver.resolve(toolKey, this._toolsDir, { mustExist: false });
     const isInstalled = fs.existsSync(exe);
     const installed = isInstalled ? await this._getVersion(exe, config.versionArgs) : null;
-    const latest = await this._fetchLatestTag(config.githubOwner, config.githubRepo).catch(() => null);
+
+    const repoInfo = config.repoResolver
+      ? config.repoResolver(process.platform)
+      : { owner: config.githubOwner, repo: config.githubRepo, useGitTags: false };
+
+    const latest = await (repoInfo.useGitTags
+      ? this._fetchLatestGitTagOnly(repoInfo.owner, repoInfo.repo)
+      : this._fetchLatestTag(repoInfo.owner, repoInfo.repo)
+    ).catch(() => null);
+
     const exeName = getExecutableName(toolKey);
     return {
       tool: toolKey,
@@ -197,10 +206,6 @@ class ToolUpdater {
       return this._updateYtDlpSelf(onProgress);
     }
 
-    if (toolKey === 'rawrecoveryengine') {
-      throw new Error('Este componente exige instalação manual: copie o RawRecoveryEngine.exe para a pasta de ferramentas do BDS.');
-    }
-
     const config = this._getConfig(toolKey);
     const exeName = getExecutableName(toolKey);
 
@@ -209,18 +214,37 @@ class ToolUpdater {
 
     if (onProgress) onProgress(5);
 
-    // Obter release mais recente (tag + lista de assets, para checksum quando disponível)
-    const release = await this._fetchLatestRelease(config.githubOwner, config.githubRepo);
-    const latestTag = release.tag_name || release.name;
+    // Alguns componentes usam um repositório/estratégia de versão diferente dependendo da
+    // plataforma (ex: exiftool usa releases do ShareX/ExifTool no Windows, mas o repositório
+    // oficial exiftool/exiftool no Linux/macOS, que não usa GitHub Releases — só tags).
+    const repoInfo = config.repoResolver
+      ? config.repoResolver(process.platform)
+      : { owner: config.githubOwner, repo: config.githubRepo, useGitTags: false };
+
+    let latestTag, release = null;
+    if (repoInfo.useGitTags) {
+      latestTag = await this._fetchLatestGitTagOnly(repoInfo.owner, repoInfo.repo);
+    } else {
+      release = await this._fetchLatestRelease(repoInfo.owner, repoInfo.repo);
+      latestTag = release.tag_name || release.name;
+    }
+
     const downloadUrl = config.downloadUrl(latestTag, process.platform);
-    const isZip = downloadUrl.endsWith('.zip') || downloadUrl.includes('.zip');
-    const expectedDigest = this._findAssetDigest(release, downloadUrl);
+    const archiveType = this._detectArchiveType(downloadUrl);
+    const expectedDigest = release ? this._findAssetDigest(release, downloadUrl) : null;
+
+    if (!expectedDigest) {
+      logUpdater(`Aviso: fonte de ${toolKey} não publica checksum verificável (${repoInfo.useGitTags ? 'download de tag/código-fonte do Git' : 'release sem digest'}); integridade do download não verificada por hash.`);
+    }
 
     const result = await this._stagedInstall({
-      toolKey, exeName, downloadUrl, isZip,
+      toolKey, exeName, downloadUrl, archiveType,
       expectedSha256: expectedDigest,
       versionLabel: latestTag,
       versionArgs: config.versionArgs,
+      alternateFileNames: config.alternateFileNames,
+      copySiblingFiles: config.copySiblingFiles,
+      copySiblingDirs: config.copySiblingDirs,
       onProgress,
     });
 
@@ -251,7 +275,7 @@ class ToolUpdater {
     const result = await this._stagedInstall({
       toolKey, exeName,
       downloadUrl: manifestEntry.url,
-      isZip: Boolean(manifestEntry.isZip) || manifestEntry.url.endsWith('.zip'),
+      archiveType: manifestEntry.isZip ? 'zip' : this._detectArchiveType(manifestEntry.url),
       expectedSha256: manifestEntry.sha256,
       versionLabel: manifestEntry.version,
       versionArgs,
@@ -269,13 +293,14 @@ class ToolUpdater {
    * + manifesto. Usado tanto pelo fluxo GitHub (`update`) quanto pelo Update Server
    * (`updateFromManifest`).
    */
-  async _stagedInstall({ toolKey, exeName, downloadUrl, isZip, expectedSha256, versionLabel, versionArgs, onProgress, source = 'github' }) {
+  async _stagedInstall({ toolKey, exeName, downloadUrl, archiveType = null, expectedSha256, versionLabel, versionArgs, onProgress, source = 'github', alternateFileNames = [], copySiblingFiles = false, copySiblingDirs = [] }) {
     const target = path.join(this._toolsDir, exeName);
     const stagingDir = path.join(this._toolsDir, `.staging_${toolKey}_${Date.now()}`);
     const preSwapBackup = path.join(this._toolsDir, `.preswap_${exeName}_${Date.now()}`);
     fs.mkdirSync(stagingDir, { recursive: true });
 
-    const downloadDest = path.join(stagingDir, isZip ? `${toolKey}_download.zip` : exeName);
+    const isArchive = Boolean(archiveType);
+    const downloadDest = path.join(stagingDir, isArchive ? `${toolKey}_download.${archiveType === 'zip' ? 'zip' : 'tar'}` : exeName);
 
     if (onProgress) onProgress(15);
 
@@ -301,13 +326,32 @@ class ToolUpdater {
       if (onProgress) onProgress(72);
 
       let stagedExe = downloadDest;
+      let siblingSourceDir = null;
 
-      // 3. Se for ZIP, extrair para staging e localizar o executável
-      if (isZip) {
+      // 3. Se for um arquivo compactado (zip ou tar/.tar.xz/.tar.gz), extrair para staging
+      //    e localizar o executável dentro do conteúdo extraído.
+      if (isArchive) {
         const extractDir = path.join(stagingDir, 'extracted');
         fs.mkdirSync(extractDir, { recursive: true });
-        await this._extractZip(downloadDest, extractDir);
-        const found = this._findFile(extractDir, exeName);
+
+        if (archiveType === 'zip') {
+          await this._extractZip(downloadDest, extractDir);
+        } else {
+          await this._extractTar(downloadDest, extractDir);
+        }
+
+        let found = this._findFile(extractDir, exeName);
+        if (!found) {
+          // Tenta nomes alternativos conhecidos (ex: builds upstream que não renomeiam
+          // o executável para o nome esperado pelo BDS).
+          for (const altName of alternateFileNames) {
+            found = this._findFile(extractDir, altName);
+            if (found) {
+              logUpdater(`Componente ${toolKey} encontrado com nome alternativo '${altName}' no pacote baixado.`);
+              break;
+            }
+          }
+        }
         if (!found) {
           throw new Error(`Componente ${exeName} não foi encontrado no arquivo baixado.`);
         }
@@ -321,6 +365,14 @@ class ToolUpdater {
           if (otherFound) {
             this._atomicInstallPair(otherFound, path.join(this._toolsDir, otherExe), otherKey);
           }
+        }
+
+        // Componentes cujo executável depende de DLLs/arquivos irmãos na mesma pasta do zip
+        // (ex: untrunc.exe + suas DLLs do FFmpeg estático) — copiados apenas depois que o
+        // executável principal passar por toda a validação (ver mais abaixo), para não
+        // deixar DLLs órfãs na pasta de ferramentas caso o smoke-test falhe.
+        if (copySiblingFiles || copySiblingDirs.length > 0) {
+          siblingSourceDir = path.dirname(stagedExe);
         }
       }
 
@@ -369,6 +421,18 @@ class ToolUpdater {
       }
 
       if (onProgress) onProgress(92);
+
+      // 6b. Copia DLLs/subpastas irmãs (ex: untrunc.exe + DLLs, exiftool + lib/ do Perl)
+      // ANTES da validação pós-swap abaixo — o executável instalado só consegue rodar de
+      // verdade se essas dependências já estiverem presentes na pasta de ferramentas nesse
+      // momento (senão o smoke-test seguinte falharia incorretamente e causaria um rollback
+      // indevido, mesmo com o executável principal correto).
+      if (siblingSourceDir) {
+        if (copySiblingFiles) this._copySiblingFiles(siblingSourceDir, stagedExe, this._toolsDir, toolKey);
+        for (const dirName of copySiblingDirs) {
+          this._copySiblingDir(siblingSourceDir, dirName, this._toolsDir, toolKey);
+        }
+      }
 
       // 7. Validação pós-instalação: confirma que a cópia final não foi corrompida e que o
       //    executável instalado (não apenas o staged) realmente executa.
@@ -433,6 +497,51 @@ class ToolUpdater {
     }
   }
 
+  /**
+   * Copia recursivamente uma subpasta que fica ao lado do executável dentro do pacote
+   * baixado (ex: a pasta `lib/` do Perl que o script `exiftool` precisa para funcionar) para
+   * dentro da pasta de ferramentas do BDS. Substitui completamente a versão anterior, se
+   * existir, para não misturar arquivos de versões diferentes.
+   */
+  _copySiblingDir(sourceDir, dirName, toolsDir, toolKey) {
+    const src = path.join(sourceDir, dirName);
+    const dest = path.join(toolsDir, dirName);
+    try {
+      if (!fs.existsSync(src)) {
+        logUpdater(`Aviso: subpasta '${dirName}' não encontrada no pacote de ${toolKey}, ignorando.`);
+        return;
+      }
+      if (fs.existsSync(dest)) {
+        fs.rmSync(dest, { recursive: true, force: true });
+      }
+      fs.cpSync(src, dest, { recursive: true });
+      logUpdater(`Subpasta '${dirName}' de ${toolKey} copiada para a pasta de ferramentas.`);
+    } catch (err) {
+      logUpdater(`Aviso: falha ao copiar subpasta '${dirName}' de ${toolKey}: ${err.message}`);
+    }
+  }
+
+  _copySiblingFiles(sourceDir, stagedExePath, toolsDir, toolKey) {
+    try {
+      const exeBaseName = path.basename(stagedExePath).toLowerCase();
+      const items = fs.readdirSync(sourceDir, { withFileTypes: true });
+      let copied = 0;
+      for (const item of items) {
+        if (!item.isFile()) continue;
+        if (item.name.toLowerCase() === exeBaseName) continue; // o .exe principal já foi instalado via swap atômico
+        try {
+          fs.copyFileSync(path.join(sourceDir, item.name), path.join(toolsDir, item.name));
+          copied++;
+        } catch (err) {
+          logUpdater(`Aviso: falha ao copiar arquivo auxiliar '${item.name}' de ${toolKey}: ${err.message}`);
+        }
+      }
+      logUpdater(`${copied} arquivo(s) auxiliar(es) de ${toolKey} copiado(s) para a pasta de ferramentas.`);
+    } catch (err) {
+      logUpdater(`Aviso: falha ao copiar arquivos auxiliares de ${toolKey}: ${err.message}`);
+    }
+  }
+
   _atomicInstallPair(sourceExe, targetExe, key) {
     try {
       if (fs.existsSync(targetExe)) {
@@ -463,9 +572,7 @@ class ToolUpdater {
    * pós-instalação.
    */
   _getManifestOnlyVersionArgs(toolKey) {
-    const map = {
-      rawrecoveryengine: ['version'],
-    };
+    const map = {};
     return map[toolKey] || [];
   }
 
@@ -523,9 +630,44 @@ class ToolUpdater {
         githubRepo: 'untrunc',
         versionArgs: ['-h'],
         downloadUrl: (tag, platform) => {
+          if (platform !== 'win32') {
+            throw new Error('Download automático do untrunc está disponível apenas para Windows nesta versão (o release do anthwlock/untrunc só publica binário pré-compilado para Windows). Recuperação de vídeo por enquanto é uma funcionalidade exclusiva do Windows.');
+          }
           // Releases do anthwlock/untrunc para Windows contêm untrunc_x64.zip
           return 'https://github.com/anthwlock/untrunc/releases/latest/download/untrunc_x64.zip';
         },
+        // O untrunc.exe é vinculado dinamicamente a várias DLLs que ficam na mesma pasta
+        // dentro do zip (AVFORMAT-57.DLL, AVUTIL-55.DLL, AVCODEC-57.DLL, SWRESAMPLE-2.DLL,
+        // LIBGCC_S_SEH-1.DLL, LIBWINPTHREAD-1.DLL, LIBSTDC++-6.DLL) — sem elas o executável
+        // não abre. Copiamos todos os arquivos irmãos do .exe dentro do zip para a pasta de
+        // ferramentas do BDS, não apenas o .exe isoladamente.
+        copySiblingFiles: true,
+      },
+      exiftool: {
+        // Repositório e estratégia de versão dependem da plataforma: no Windows usamos o
+        // build pré-compilado do ShareX/ExifTool (via GitHub Releases); no Linux/macOS usamos
+        // o código-fonte oficial de exiftool/exiftool (via tags Git — esse repositório não
+        // usa GitHub Releases) e o executamos com o Perl do próprio sistema, sem precisar
+        // compilar nada.
+        repoResolver: (platform) => platform === 'win32'
+          ? { owner: 'ShareX', repo: 'ExifTool', useGitTags: false }
+          : { owner: 'exiftool', repo: 'exiftool', useGitTags: true },
+        versionArgs: ['-ver'],
+        downloadUrl: (tag, platform) => {
+          if (platform === 'win32') {
+            const version = tag.replace(/^v/, '');
+            return `https://github.com/ShareX/ExifTool/releases/download/${tag}/exiftool-${version}-win64.zip`;
+          }
+          // Código-fonte do exiftool/exiftool para a tag — é um script Perl puro, roda com o
+          // Perl já presente por padrão em praticamente qualquer instalação Linux/macOS.
+          return `https://github.com/exiftool/exiftool/archive/refs/tags/${tag}.tar.gz`;
+        },
+        // O build do ShareX/ExifTool pode empacotar o binário como "exiftool(-k).exe"
+        // (nome padrão upstream) em vez de "exiftool.exe" — tentamos ambos os nomes.
+        alternateFileNames: ['exiftool(-k).exe'],
+        // No Linux/macOS, o script "exiftool" sozinho não funciona — ele precisa da pasta
+        // "lib/" (módulos Perl do Image::ExifTool) ao seu lado. Copiada junto após validação.
+        copySiblingDirs: ['lib'],
       },
     };
 
@@ -556,6 +698,18 @@ class ToolUpdater {
 
   async _fetchLatestRelease(owner, repo) {
     return this._requestJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+  }
+
+  /**
+   * Para repositórios que não usam GitHub Releases (ex: exiftool/exiftool, que só publica
+   * tags Git), busca a tag mais recente via API de tags em vez de releases/latest.
+   */
+  async _fetchLatestGitTagOnly(owner, repo) {
+    const tags = await this._requestJson(`https://api.github.com/repos/${owner}/${repo}/tags`);
+    if (!Array.isArray(tags) || tags.length === 0) {
+      throw new Error(`Nenhuma tag encontrada em ${owner}/${repo}.`);
+    }
+    return tags[0].name;
   }
 
   /**
@@ -616,6 +770,44 @@ class ToolUpdater {
         file.on('finish', () => file.close(resolve));
       });
       req.on('error', (err) => { file.close(); fs.rmSync(dest, { force: true }); reject(err); });
+    });
+  }
+
+  /**
+   * Detecta o tipo de arquivo compactado a partir da URL de download, para decidir qual
+   * extrator usar (zip vs tar/.tar.xz/.tar.gz/.tar.bz2). Retorna null se a URL não aponta
+   * para um formato compactado reconhecido (ex: binário bruto, sem extração necessária).
+   */
+  _detectArchiveType(url) {
+    const lower = (url || '').toLowerCase().split('?')[0];
+    if (lower.endsWith('.zip')) return 'zip';
+    if (lower.endsWith('.tar.xz') || lower.endsWith('.txz')) return 'tar.xz';
+    if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) return 'tar.gz';
+    if (lower.endsWith('.tar.bz2') || lower.endsWith('.tbz2')) return 'tar.bz2';
+    if (lower.endsWith('.tar')) return 'tar';
+    return null;
+  }
+
+  /**
+   * Extrai um arquivo .tar/.tar.xz/.tar.gz/.tar.bz2 usando o `tar` do sistema operacional.
+   * Disponível por padrão em praticamente todas as distribuições Linux (GNU tar ou BusyBox
+   * tar) e no macOS (BSD tar) — ambos com `-xf` fazendo detecção automática de compressão
+   * pelo conteúdo/extensão, sem precisar de flags separadas por formato (-z/-j/-J).
+   */
+  async _extractTar(tarPath, destination) {
+    fs.mkdirSync(destination, { recursive: true });
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('tar', ['-xf', tarPath, '-C', destination]);
+      let stderr = '';
+      child.stderr?.on('data', (d) => { stderr += d.toString('utf8'); });
+      child.on('error', (err) => {
+        reject(new Error(`Comando 'tar' não disponível ou falhou ao iniciar: ${err.message}. Em sistemas Linux mínimos/containers, instale o pacote 'tar' (geralmente já vem por padrão).`));
+      });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Falha na extração do arquivo tar (código ${code}): ${stderr.slice(0, 300)}`));
+      });
     });
   }
 
