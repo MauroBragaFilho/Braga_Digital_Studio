@@ -1,6 +1,6 @@
 {
   "name": "braga-digital-studio",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Braga Digital Studio desktop app built with Electron, Node.js and SQLite.",
   "main": "main.js",
   "author": {
