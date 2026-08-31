@@ -27,11 +27,14 @@
 /* --- GLOBAL HEADER --- */
 .global-header {
   -webkit-app-region: drag;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: 0 16px 0 24px;
   gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
 }
 .header-left {
   display: flex;
@@ -447,4 +450,52 @@
 }
 .global-download-footer.gdf-completed .gdf-progress-fill {
   background: #4caf50;
+}
+
+/* ==========================================================================
+   RESPONSIVE - HEADER & WINDOW CONTROLS
+   shell.css loads AFTER style.css, so these media queries ALWAYS win
+   over the same selectors in style.css (same specificity, later source).
+   ========================================================================== */
+
+/* --- TABLET / NARROW DESKTOP (≤ 980px) --- */
+@media (max-width: 980px) {
+  .global-header {
+    padding: 0 12px 0 16px;
+    gap: 12px;
+  }
+  .search-wrapper {
+    max-width: 320px;
+  }
+}
+
+/* --- SMALL WINDOW (≤ 768px) --- */
+@media (max-width: 768px) {
+  .global-header {
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .header-left {
+    gap: 8px;
+  }
+  .search-wrapper {
+    max-width: 180px;
+    min-width: 100px;
+  }
+  .global-media-count {
+    display: none;
+  }
+  .header-divider {
+    display: none;
+  }
+}
+
+/* --- VERY SMALL WINDOW (≤ 560px) --- */
+@media (max-width: 560px) {
+  .search-wrapper {
+    display: none;
+  }
+  .page-title {
+    font-size: 14px;
+  }
 }

@@ -57,9 +57,16 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -132,6 +139,7 @@ button:disabled {
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
+  max-width: 100%;
   overflow: hidden;
 }
 
@@ -139,6 +147,9 @@ button:disabled {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .sidebar {
@@ -183,27 +194,7 @@ button:disabled {
   letter-spacing: 0.5px;
 }
 
-/* Header Global */
-.global-header {
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px 0 24px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
-  padding-right: 120px;
-}
-.page-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0;
-}
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+/* Header Global — definido em shell.css (carrega depois e vence no cascade) */
 
 /* Header Buttons (Window controls) */
 .win-btn {
@@ -234,6 +225,8 @@ button:disabled {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 .view {
   display: none;
@@ -250,6 +243,8 @@ button:disabled {
   gap: 24px;
   align-items: start;
   height: calc(100vh - 120px);
+  max-width: 100%;
+  min-width: 0;
 }
 .split-layout.equal {
   grid-template-columns: 1fr 1fr;
@@ -260,24 +255,54 @@ button:disabled {
 
 @media (max-width: 980px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column-reverse;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .main-column {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
   .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 2;
+    position: relative;
+    top: auto;
+    bottom: 0;
+    z-index: 20;
     flex-direction: row;
     align-items: center;
-    gap: 16px;
-    padding: 12px;
+    gap: 8px;
+    padding: 6px 12px;
     height: auto;
+    max-width: 100%;
+    overflow-x: hidden;
+    border-right: none;
+    border-top: 1px solid var(--line);
+    background: var(--card);
+  }
+  .brand {
+    display: none;
+  }
+  .sidebar-footer {
+    display: none;
   }
   .tabs {
     flex-direction: row;
     overflow-x: auto;
+    padding: 0;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
   }
   .tab-button {
     white-space: nowrap;
+    padding: 8px 12px;
+    font-size: 12px;
+    gap: 6px;
   }
   .tool-state {
     display: none;
@@ -290,6 +315,8 @@ button:disabled {
     height: auto;
   }
 }
+
+/* Media queries para header movidas para shell.css (carrega depois e vence no cascade) */
 
 /* ==========================================================================
    4. UI COMPONENTS
@@ -443,44 +470,18 @@ select:focus {
   border-color: var(--muted);
 }
 
-.search-wrapper {
-  display: flex;
-  align-items: center;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 12px;
-  width: 320px;
-}
-.search-wrapper span.material-symbols-rounded {
-  color: var(--muted);
-  font-size: 18px;
-  margin-right: 8px;
-}
-.search-wrapper input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text);
-  min-height: auto;
-  padding: 0;
-}
-.search-wrapper .shortcut {
-  font-size: 10px;
-  color: var(--muted);
-  background: var(--card-2);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
+/* Search wrapper definido em shell.css (carrega depois e vence no cascade) */
 
 /* Tables */
 .table-wrap {
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-width: 100%;
+  min-width: 0;
 }
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 850px;
 }
 th,
 td {
@@ -622,13 +623,7 @@ dd {
    ========================================================================== */
 
 /* --- HOME --- */
-.home-container {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
+/* .home-container agora é definido em screens/home.css (lazy-loaded) */
 .home-header {
   display: flex;
   align-items: center;
@@ -671,7 +666,10 @@ dd {
   display: flex;
   gap: 16px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 12px;
+  max-width: 100%;
+  min-width: 0;
 }
 .timeline-item {
   background: var(--card);
@@ -755,12 +753,16 @@ dd {
   gap: 24px;
   align-items: flex-start;
   min-height: 400px;
+  min-width: 0;
+  max-width: 100%;
 }
 .settings-sidebar {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 220px;
+  min-width: 180px;
+  flex-shrink: 0;
   border-right: 1px solid var(--line);
   padding-right: 24px;
 }

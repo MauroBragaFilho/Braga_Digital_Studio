@@ -9,8 +9,11 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* --- SECTION TITLES --- */
@@ -112,7 +115,10 @@
   display: flex;
   gap: 16px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 8px;
+  max-width: 100%;
+  min-width: 0;
 }
 .recordings-row .empty-message {
   color: var(--muted);
@@ -362,9 +368,21 @@
   /* Stats cards empilham verticalmente */
   .stats-grid {
     flex-direction: column;
+    gap: 12px;
   }
   .stat-card {
     min-width: 100%;
+    padding: 16px 24px;
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 16px;
+  }
+  .stat-label {
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 28px;
   }
   
   /* Tabela de jobs começa a permitir scroll horizontal */
@@ -373,43 +391,56 @@
   }
   
   /* Reduz espaçamentos entre seções */
-  .home-section {
-    gap: 16px;
-  }
   .stats-section,
   .recent-section {
     margin-top: 16px;
   }
   .actions-section,
   .jobs-section {
-    margin-top: 24px;
+    margin-top: 20px;
   }
 }
 
 /* --- BREAKPOINT 2: Janela estreita (< 768px) --- */
 @media (max-width: 768px) {
+  /* Stats cards voltam ao vertical compacto */
+  .stat-card {
+    flex-direction: column;
+    text-align: center;
+    justify-content: center;
+    padding: 16px;
+    gap: 0;
+  }
+  .stat-label {
+    margin-bottom: 8px;
+  }
+  
   /* Ações rápidas em 2 colunas */
   .quick-actions-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
+    gap: 10px;
   }
   
   /* Cards de ação mais compactos */
   .qa-card {
-    padding: 16px 12px;
+    padding: 14px 10px;
+    gap: 6px;
   }
   .qa-icon {
-    font-size: 36px !important;
+    font-size: 32px !important;
   }
   .qa-card strong {
     font-size: 13px;
+  }
+  .qa-card span:last-child {
+    font-size: 11px;
   }
   
   /* Abas de jobs com scroll horizontal (em vez de wrap) */
   .jobs-tabs {
     overflow-x: auto;
     flex-wrap: nowrap;
-    gap: 16px;
+    gap: 12px;
     padding-bottom: 4px;
     scrollbar-width: thin;
   }
@@ -417,38 +448,46 @@
     white-space: nowrap;
     flex-shrink: 0;
     font-size: 12px;
+    padding: 6px 10px;
   }
   
   /* Carousel de gravações: cards menores */
   .recent-carousel-card {
-    width: 200px;
+    width: 192px;
   }
   .recent-carousel-thumb {
-    height: 112px;
+    height: 108px;
   }
   
   /* Section titles menores */
   .section-title {
     font-size: 14px;
+    margin-bottom: 12px;
   }
   
   /* Stats values menores */
   .stat-value {
-    font-size: 26px;
+    font-size: 24px;
+  }
+  
+  /* Ocultar colunas menos essenciais da tabela em janela estreita */
+  .jobs-table .col-actions {
+    min-width: 60px;
   }
 }
 
-/* --- BREAKPOINT 3: Janela muito estreita (< 520px) --- */
-@media (max-width: 520px) {
+/* --- BREAKPOINT 3: Janela muito estreita (< 560px) --- */
+@media (max-width: 560px) {
   /* Ações rápidas em 1 coluna */
   .quick-actions-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
   }
   
   /* Stats breakdown em coluna quando não cabe */
   .stat-breakdown {
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
   .stat-separator {
     display: none;
@@ -456,13 +495,13 @@
   
   /* Carousel: cards ainda menores */
   .recent-carousel-card {
-    width: 160px;
+    width: 152px;
   }
   .recent-carousel-thumb {
-    height: 90px;
+    height: 86px;
   }
   .recent-carousel-title {
-    font-size: 12px;
+    font-size: 11px;
   }
   .recent-carousel-meta {
     font-size: 10px;
@@ -470,7 +509,20 @@
   
   /* Padding interno reduzido */
   .stat-card {
-    padding: 16px;
+    padding: 12px;
+  }
+  .stat-value {
+    font-size: 22px;
+  }
+  
+  /* Seções com menos margin */
+  .stats-section,
+  .recent-section {
+    margin-top: 12px;
+  }
+  .actions-section,
+  .jobs-section {
+    margin-top: 16px;
   }
 }
 
@@ -479,6 +531,8 @@
 .jobs-table-container {
   overflow-x: auto;
   overflow-y: auto;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* Scrollbar sutil para a tabela quando há overflow */

@@ -9,8 +9,11 @@
   gap: 16px;
   height: 100%;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
 }
 
@@ -45,17 +48,21 @@
   gap: 16px;
   min-height: 480px;
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* --- EDITOR PANEL (ESQUERDA) --- */
 .metadata-editor-panel {
   flex: 1;
+  min-width: 0;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 18px;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 .metadata-panel-header {
@@ -316,10 +323,13 @@
 /* --- SIDEBAR (DIREITA) --- */
 .metadata-sidebar {
   width: 320px;
+  min-width: 240px;
+  max-width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-x: hidden;
 }
 
 /* --- COVER CARD --- */
