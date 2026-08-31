@@ -1,9 +1,13 @@
 {
   "name": "braga-digital-studio",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Braga Digital Studio desktop app built with Electron, Node.js and SQLite.",
   "main": "main.js",
-  "author": "Mauro Braga",
+  "author": {
+    "name": "Mauro Braga",
+    "email": "obragafilho00@gmail.com"
+  },
+  "homepage": "https://github.com/bragadev/braga-digital-studio",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

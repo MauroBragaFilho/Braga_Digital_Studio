@@ -1,0 +1,258 @@
+name: Release BDS (Windows + Linux)
+
+# Builda o BDS para Windows E Linux em paralelo, num único disparo, e publica os dois numa
+# ÚNICA Release do GitHub — usando a versão já presente em package.json como tag
+# automaticamente (não precisa rodar "git tag" manualmente).
+#
+# Como disparar:
+#   Aba Actions -> "Release BDS (Windows + Linux)" -> "Run workflow".
+#
+# Por que um workflow único em vez dos dois separados (build-bds-release.yml /
+# build-bds-linux.yml) disparados por tag: criar uma tag automaticamente usando o token padrão
+# do GitHub Actions NÃO dispara outros workflows (é uma proteção anti-recursão do próprio
+# GitHub) — então não dava para simplesmente automatizar "criar tag -> workflows por tag
+# assumem dali". Em vez disso, este workflow builda os dois sistemas operacionais como jobs
+# paralelos e só cria a tag/Release no final, quando os dois builds já terminaram com sucesso.
+#
+# Os workflows build-bds-release.yml e build-bds-linux.yml continuam existindo à parte, para
+# quem preferir empurrar uma tag manualmente ou rebuildar uma única plataforma isolada.
+#
+# Pré-requisitos (mesmos dos workflows individuais):
+#   - assets/icon.ico (Windows) e assets/icon.png (Linux) precisam existir no repositório.
+#   - A pasta data/ não precisa estar versionada — cada job cria uma vazia antes do build.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  # ------------------------------------------------------------------------------------
+  # Lê a versão atual do package.json UMA VEZ e compartilha com os demais jobs, para que
+  # a tag/Release use exatamente essa versão, sem risco de builds paralelos lerem valores
+  # diferentes (ex: se o package.json mudasse entre um job e outro).
+  # ------------------------------------------------------------------------------------
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag: ${{ steps.get_version.outputs.tag }}
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Ler versão do package.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versão detectada: $VERSION (tag: v$VERSION)"
+
+      - name: Verificar se já existe uma Release para esta versão
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "::error::A tag '$TAG' já existe no repositório. Bump a versão em package.json (ex: npm version patch) antes de rodar este workflow novamente, para não sobrescrever uma Release já publicada."
+            exit 1
+          fi
+          echo "Tag '$TAG' ainda não existe — build pode prosseguir."
+
+  # ------------------------------------------------------------------------------------
+  # Build Windows (mesmos passos validados em build-bds-release.yml)
+  # ------------------------------------------------------------------------------------
+  build-windows:
+    needs: determine-version
+    runs-on: windows-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Garantir pasta data/ (populada em runtime, não versionada)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path data | Out-Null
+          New-Item -ItemType File -Force -Path data/.gitkeep | Out-Null
+
+      - name: Verificar assets de ícone
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "assets/icon.ico")) {
+            Write-Error "assets/icon.ico não encontrado no repositório. O build do instalador NSIS precisa desse arquivo."
+            exit 1
+          }
+
+      - name: Build do instalador Windows (NSIS)
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis
+
+      - name: Localizar o instalador gerado
+        id: find_installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "Nenhum instalador .exe foi encontrado em dist/ após o build."
+            exit 1
+          }
+          echo "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Calcular SHA-256
+        shell: pwsh
+        run: |
+          $hash = Get-FileHash "${{ steps.find_installer.outputs.installer_path }}" -Algorithm SHA256
+          $hash.Hash | Out-File -Encoding ascii "${{ steps.find_installer.outputs.installer_path }}.sha256"
+
+      - name: Publicar artefato do build Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: BDS-windows-installer
+          path: |
+            dist/*.exe
+            dist/*.exe.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  # ------------------------------------------------------------------------------------
+  # Build Linux (mesmos passos validados em build-bds-linux.yml, incluindo smoke-test)
+  # ------------------------------------------------------------------------------------
+  build-linux:
+    needs: determine-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Garantir pasta data/ (populada em runtime, não versionada)
+        run: |
+          mkdir -p data
+          touch data/.gitkeep
+
+      - name: Verificar assets de ícone
+        run: |
+          if [ ! -f "assets/icon.png" ]; then
+            echo "::error::assets/icon.png não encontrado no repositório."
+            exit 1
+          fi
+
+      - name: Build dos pacotes Linux (AppImage + deb)
+        run: npm run build:linux
+
+      - name: Localizar os pacotes gerados
+        id: find_packages
+        run: |
+          APPIMAGE=$(find dist -maxdepth 1 -iname "*.AppImage" | head -n1)
+          DEB=$(find dist -maxdepth 1 -iname "*.deb" | head -n1)
+          if [ -z "$APPIMAGE" ] || [ -z "$DEB" ]; then
+            echo "::error::AppImage ou .deb não encontrados em dist/ após o build."
+            exit 1
+          fi
+          echo "appimage_path=$APPIMAGE" >> "$GITHUB_OUTPUT"
+          echo "deb_path=$DEB" >> "$GITHUB_OUTPUT"
+          chmod +x "$APPIMAGE"
+
+      - name: Calcular SHA-256
+        run: |
+          sha256sum "${{ steps.find_packages.outputs.appimage_path }}" | awk '{print $1}' > "${{ steps.find_packages.outputs.appimage_path }}.sha256"
+          sha256sum "${{ steps.find_packages.outputs.deb_path }}" | awk '{print $1}' > "${{ steps.find_packages.outputs.deb_path }}.sha256"
+
+      - name: Validar estrutura do pacote .deb
+        run: dpkg-deb --info "${{ steps.find_packages.outputs.deb_path }}"
+
+      - name: Smoke-test headless do AppImage (Xvfb)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+
+          cd "$(dirname "${{ steps.find_packages.outputs.appimage_path }}")"
+          APPIMAGE_NAME="$(basename "${{ steps.find_packages.outputs.appimage_path }}")"
+          "./$APPIMAGE_NAME" --appimage-extract > /dev/null
+
+          EXECUTABLE="squashfs-root/AppRun"
+          if [ ! -f "$EXECUTABLE" ]; then
+            echo "::error::AppRun não encontrado após extrair o AppImage."
+            exit 1
+          fi
+
+          LOG_FILE="/tmp/bds_smoketest.log"
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            "$EXECUTABLE" --no-sandbox --disable-gpu > "$LOG_FILE" 2>&1 &
+          APP_PID=$!
+          sleep 12
+
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "✓ Smoke-test OK."
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          else
+            echo "::error::Smoke-test falhou: o processo encerrou sozinho."
+            cat "$LOG_FILE" || true
+            exit 1
+          fi
+
+      - name: Publicar artefatos do build Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: BDS-linux-packages
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.sha256
+            dist/*.deb
+            dist/*.deb.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  # ------------------------------------------------------------------------------------
+  # Só publica a Release depois que os DOIS builds tiverem terminado com sucesso — se
+  # qualquer um dos dois falhar, nenhuma Release é criada (evita publicar uma release
+  # incompleta, faltando uma das plataformas).
+  # ------------------------------------------------------------------------------------
+  release:
+    needs: [determine-version, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar artefato Windows
+        uses: actions/download-artifact@v4
+        with:
+          name: BDS-windows-installer
+          path: release-files
+
+      - name: Baixar artefatos Linux
+        uses: actions/download-artifact@v4
+        with:
+          name: BDS-linux-packages
+          path: release-files
+
+      - name: Listar arquivos que serão publicados
+        run: ls -la release-files/
+
+      - name: Publicar Release unificada (Windows + Linux)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.determine-version.outputs.tag }}
+          name: BDS ${{ needs.determine-version.outputs.tag }}
+          files: release-files/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

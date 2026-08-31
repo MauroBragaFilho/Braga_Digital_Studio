@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const logger = require('../../services/logService');
+const { DEVELOPER_EMAIL } = require('../../config/appInfo');
 
 /**
  * SettingsManager — Gerenciamento e persistência das configurações da aplicação.
@@ -33,7 +34,7 @@ class SettingsManager {
       lutPreviewImage: '',
       checkUpdatesOnStart: false,
       errorReportingEnabled: true,
-      developerEmail: 'obragafilho00@gmail.com',
+      developerEmail: DEVELOPER_EMAIL,
       errorReportingEndpoint: '',
       // URL base do BDS Update Server (ex: https://updates.bragadigital.com). Deixe vazio
       // para usar apenas o fluxo padrão de checagem por componente via GitHub releases.

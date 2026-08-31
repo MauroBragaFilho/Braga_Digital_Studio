@@ -7,11 +7,12 @@ const https = require('node:https');
 const http = require('node:http');
 const { app, shell } = require('electron');
 const logger = require('../../services/logService');
+const { DEVELOPER_EMAIL } = require('../../config/appInfo');
 
 /**
  * ErrorReporter — Sistema de captura, diagnóstico e envio de relatórios de erros para o desenvolvedor.
  *
- * Configurado para encaminhar relatórios para o desenvolvedor: obragafilho00@gmail.com
+ * Configurado para encaminhar relatórios para o desenvolvedor (ver src/config/appInfo.js).
  *
  * Recursos:
  * - Captura de erros não tratados no Main Process (uncaughtException, unhandledRejection)
@@ -24,7 +25,7 @@ const logger = require('../../services/logService');
  */
 class ErrorReporter {
   constructor() {
-    this.developerEmail = 'obragafilho00@gmail.com';
+    this.developerEmail = DEVELOPER_EMAIL;
     this.endpointUrl = ''; // Opcional: URL de webhook HTTP POST (ex: Cloudflare Worker, Discord Webhook, etc.)
     this.logsDir = null;
     this.crashReportsDir = null;
@@ -43,7 +44,7 @@ class ErrorReporter {
    */
   init(options = {}) {
     this.logsDir = options.logsDir || path.join(process.cwd(), 'logs');
-    this.developerEmail = options.developerEmail || 'obragafilho00@gmail.com';
+    this.developerEmail = options.developerEmail || DEVELOPER_EMAIL;
     this.endpointUrl = options.endpointUrl || '';
     this.getSettings = options.getSettings || null;
 

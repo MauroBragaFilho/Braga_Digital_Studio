@@ -5,7 +5,8 @@ export const state = {
   running: false,
   progressPercent: 0,
   converterQueue: [],
-  downloadQueue: []
+  downloadQueue: [],
+  pendingUpdateCheck: null // resultado da checagem de updates no startup, consumido pela tela Settings
 };
 
 // Objeto de elementos global do módulo
@@ -452,7 +453,55 @@ document.addEventListener('DOMContentLoaded', () => {
   const contentContainer = document.getElementById('dynamic-content');
   const tabButtons = document.querySelectorAll('.tab-button');
 
+  // --- Módulos restritos a builds de desenvolvimento (não aparecem no .exe final) ---
+  // Recuperação e Montagem Automática ainda estão em otimização; ficam disponíveis apenas
+  // quando o BDS roda a partir do código-fonte (não empacotado). Assume-se "empacotado" por
+  // padrão (fail-safe) até a checagem real do processo principal responder.
+  const DEV_ONLY_SCREENS = ['recovery', 'montage'];
+  let isPackagedApp = true;
+
+  function applyDevOnlyVisibility() {
+    DEV_ONLY_SCREENS.forEach((screenName) => {
+      const btn = document.querySelector(`.tab-button[data-view="${screenName}"]`);
+      if (!btn) return;
+      if (isPackagedApp) {
+        btn.classList.add('hidden');
+        btn.style.display = 'none';
+      } else {
+        btn.classList.remove('hidden');
+        btn.style.display = '';
+      }
+    });
+  }
+
+  applyDevOnlyVisibility(); // aplica o estado fail-safe (oculto) imediatamente
+
+  // Blindagem: se por qualquer motivo window.bds.isPackaged não existir ou falhar (ex: preload
+  // desatualizado, erro de IPC), isso NUNCA pode travar o restante da inicialização do app —
+  // o app inteiro ficaria com nada clicável, já que este trecho roda logo no início do
+  // DOMContentLoaded, antes dos listeners de clique serem registrados mais abaixo.
+  try {
+    if (window.bds && typeof window.bds.isPackaged === 'function') {
+      window.bds.isPackaged().then((packaged) => {
+        isPackagedApp = Boolean(packaged);
+        applyDevOnlyVisibility();
+      }).catch((err) => {
+        console.error('[APP] Falha ao verificar isPackaged (mantendo módulos dev ocultos):', err);
+      });
+    } else {
+      console.warn('[APP] window.bds.isPackaged indisponível — mantendo módulos dev ocultos (fail-safe).');
+    }
+  } catch (err) {
+    console.error('[APP] Erro inesperado ao checar isPackaged:', err);
+  }
+
   async function loadScreen(screenName) {
+    // Defesa extra: mesmo que a aba tenha sido acionada por outro caminho (não pelo clique
+    // visível do botão), builds empacotadas nunca carregam os módulos restritos.
+    if (DEV_ONLY_SCREENS.includes(screenName) && isPackagedApp) {
+      screenName = 'home';
+    }
+
     try {
       // Oculta todas as views ativas
       const views = contentContainer.querySelectorAll('.view');
@@ -880,11 +929,24 @@ window.bds?.onConverterFileFinished?.((data) => {
 // Eventos do Conversor que deram erro foram removidos temporariamente
 
   // ===== INÍCIO: UPDATES =====
-  // Ouvinte de resposta para checagem de atualizações externas (yt-dlp / FFmpeg)
+  // Ouvinte de resposta para checagem automática de atualizações no início do app
+  // (disparada pelo bootstrap.js quando "checkUpdatesOnStart" está ativo nas Configurações).
+  // Não existe uma tela dedicada de updates: o resultado é sinalizado com um badge na aba
+  // Configurações e consumido por renderer/screens/settings.js, que já tem a UI completa de
+  // atualização de componentes.
   window.bds.onUpdatesChecked((result) => {
-    import('./screens/updates.js')
-      .then(m => m.renderUpdates?.(result))
-      .catch(() => {});
+    state.pendingUpdateCheck = result;
+
+    const badge = document.getElementById('settingsUpdateBadge');
+    if (result && result.hasUpdates) {
+      if (badge) badge.classList.remove('hidden');
+      window.bdsModal?.alert?.(
+        'Há atualizações disponíveis para os componentes do BDS (yt-dlp/FFmpeg). ' +
+        'Abra Configurações → Atualizações para instalar.'
+      );
+    } else if (badge) {
+      badge.classList.add('hidden');
+    }
   });
 
   // ===== DEPENDÊNCIAS INICIAIS =====

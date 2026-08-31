@@ -11,6 +11,25 @@ export function initScreen() {
   fetchAppVersion();
   loadSettingsCustomSources();
   setupContainerClickHandler();
+  applyPendingUpdateCheck();
+}
+
+/* ==========================================================================
+   RESULTADO DE CHECAGEM AUTOMÁTICA (startup)
+   ========================================================================== */
+// Se o bootstrap já checou atualizações ao iniciar o app (checkUpdatesOnStart),
+// reaproveita esse resultado em vez de disparar uma nova checagem, e limpa o
+// badge da aba Configurações no menu lateral.
+function applyPendingUpdateCheck() {
+  const pending = state.pendingUpdateCheck;
+
+  const badge = document.getElementById('settingsUpdateBadge');
+  if (badge) badge.classList.add('hidden');
+
+  if (pending) {
+    setUpdateStatusView(pending.hasUpdates ? 'has_updates' : 'up_to_date');
+    state.pendingUpdateCheck = null;
+  }
 }
 
 // Impede que cliques internos "borbulhem" para listeners globais do shell
@@ -65,6 +84,7 @@ function renderSettings() {
   setVal('deviceFolderInput', s.deviceFolder);
   setChk('autoUpdateInput', s.autoUpdateDeps);
   setChk('autoUpdateGithub', s.autoUpdateGithub !== false);
+  setChk('checkUpdatesOnStartInput', s.checkUpdatesOnStart);
 
   // Tema e cor de destaque
   const themeSelect = document.getElementById('themeSelect');
@@ -143,6 +163,7 @@ function bindEvents() {
 
   // Atualizações
   document.getElementById('checkUpdatesButton')?.addEventListener('click', checkUpdates);
+  document.getElementById('checkAppUpdateButton')?.addEventListener('click', checkAppUpdate);
   document.getElementById('updateNowButton')?.addEventListener('click', startUnifiedUpdate);
   document.getElementById('updateLaterButton')?.addEventListener('click', () => {
     const btnNow = document.getElementById('updateNowButton');
@@ -211,6 +232,7 @@ async function saveSettings() {
       deviceFolder: document.getElementById('deviceFolderInput')?.value,
       autoUpdateDeps: document.getElementById('autoUpdateInput')?.checked,
       autoUpdateGithub: document.getElementById('autoUpdateGithub')?.checked,
+      checkUpdatesOnStart: document.getElementById('checkUpdatesOnStartInput')?.checked,
       theme: document.getElementById('themeSelect')?.value || 'dark',
       accentColor: document.getElementById('accentColorInput')?.value || '#e53935',
       lutPreviewImage: document.getElementById('lutPreviewImageInput')?.value || '',
@@ -242,6 +264,37 @@ async function fetchAppVersion() {
     }
   } catch (err) {
     console.error('[SETTINGS] Erro ao buscar versão:', err);
+  }
+}
+
+/** Verifica se há uma nova versão do BDS publicada nas GitHub Releases (src/config/appUpdate.config.json). */
+async function checkAppUpdate() {
+  const button = document.getElementById('checkAppUpdateButton');
+  const statusText = document.getElementById('appUpdateStatusText');
+
+  if (button) { button.disabled = true; button.textContent = 'Verificando...'; }
+
+  try {
+    const result = await window.bds.checkForAppUpdate();
+
+    if (result.hasUpdate) {
+      if (statusText) {
+        statusText.textContent = `Nova versão disponível: v${result.latestVersion} (você está na v${result.currentVersion}).`;
+      }
+      const abrirRelease = result.releaseUrl
+        ? window.confirm(`Nova versão do BDS disponível: v${result.latestVersion}.\n\nAbrir a página da release no GitHub?`)
+        : false;
+      if (abrirRelease) window.bds.openExternal?.(result.releaseUrl);
+    } else {
+      if (statusText) statusText.textContent = `Você já está na versão mais recente (v${result.currentVersion}).`;
+      window.bdsModal?.alert?.('Você já está usando a versão mais recente do BDS.');
+    }
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao checar atualização do BDS:', err);
+    if (statusText) statusText.textContent = 'Não foi possível checar atualizações agora.';
+    window.bdsModal?.alert?.('Não foi possível checar atualizações do BDS agora. Tente novamente mais tarde.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Verificar atualização do BDS'; }
   }
 }
 
