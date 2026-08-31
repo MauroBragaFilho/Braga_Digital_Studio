@@ -4,6 +4,7 @@ const https = require('node:https');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const logger = require('../../services/logService');
 
@@ -71,6 +72,7 @@ class AppUpdateChecker {
         releaseUrl: release.html_url || null,
         releaseNotes: release.body || null,
         installerUrl: this._findInstallerUrl(release) || null,
+        installerDigest: this._findInstallerDigest(release) || null,
         release
       };
     } catch (error) {
@@ -100,6 +102,24 @@ class AppUpdateChecker {
   }
 
   /**
+   * Localiza o digest (SHA-256) do asset do instalador na release.
+   * A GitHub API expõe o campo `digest` no formato "sha256:abcdef..." para assets.
+   * @param {object} release - Objeto de release retornado pela GitHub API.
+   * @returns {string|null} O digest no formato "sha256:..." ou null se não disponível.
+   */
+  _findInstallerDigest(release) {
+    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
+    if (assets.length === 0) return null;
+
+    const exeAssets = assets.filter((a) => (a.name || '').toLowerCase().endsWith('.exe'));
+    if (exeAssets.length === 0) return null;
+
+    const setup = exeAssets.find((a) => /^BragaDigitalStudioSetup\.exe$/i.test(a.name || ''));
+    const chosen = setup || exeAssets[0];
+    return chosen.digest || null;
+  }
+
+  /**
    * Retorna o URL do instalador da versão mais recente (se houver).
    * @returns {Promise<string|null>}
    */
@@ -120,16 +140,30 @@ class AppUpdateChecker {
 
   /**
    * Baixa o instalador da versão mais recente para destPath.
+   * Se expectedDigest for fornecido (ex: "sha256:abcdef..."), verifica a integridade
+   * do arquivo após o download; lança erro se não corresponder.
    * @param {string} destPath - Caminho de destino (_setup.exe).
    * @param {(received:number, total:number)=>void} [onProgress] - Callback de progresso em bytes.
+   * @param {string} [expectedDigest] - Digest esperado no formato "sha256:abcdef..." (opcional).
    * @returns {Promise<{path: string, size: number}>}
    */
-  async downloadLatestInstaller(destPath, onProgress) {
+  async downloadLatestInstaller(destPath, onProgress, expectedDigest) {
     const url = await this.getLatestInstallerUrl();
     if (!url) {
       throw new Error('Nenhum instalador (.exe) encontrado na release mais recente.');
     }
-    return this._downloadFile(url, destPath, onProgress);
+    const result = await this._downloadFile(url, destPath, onProgress);
+
+    // Verificação de integridade SHA-256 (quando digest disponível).
+    if (expectedDigest) {
+      const valid = this._verifyFileDigest(result.path, expectedDigest);
+      if (!valid) {
+        try { fs.rmSync(result.path, { force: true }); } catch (_) { /* noop */ }
+        throw new Error('Integridade do instalador verificada com falha (SHA-256 não corresponde). O arquivo foi removido por segurança.');
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -238,6 +272,33 @@ class AppUpdateChecker {
     });
   }
 
+  /**
+   * Verifica a integridade de um arquivo calculando seu SHA-256 e comparando com o digest
+   * esperado. Formato do digest: "sha256:abcdef..." (conforme GitHub API).
+   * @param {string} filePath - Caminho do arquivo a verificar.
+   * @param {string} expectedDigest - Digest esperado (ex: "sha256:e3b0c44298fc...").
+   * @returns {boolean} true se o digest corresponder, false caso contrário.
+   */
+  _verifyFileDigest(filePath, expectedDigest) {
+    try {
+      const [algorithm, expectedHash] = expectedDigest.split(':');
+      if (!algorithm || !expectedHash) {
+        logger.warn('AppUpdateChecker:verifyDigest:invalid_format', { expectedDigest });
+        return false;
+      }
+      const data = fs.readFileSync(filePath);
+      const actualHash = createHash(algorithm).update(data).digest('hex');
+      const match = actualHash.toLowerCase() === expectedHash.toLowerCase();
+      if (!match) {
+        logger.error('AppUpdateChecker:verifyDigest:mismatch', { algorithm, expectedHash, actualHash });
+      }
+      return match;
+    } catch (err) {
+      logger.error('AppUpdateChecker:verifyDigest:error', { error: err.message });
+      return false;
+    }
+  }
+
   /** Comparação simples de versionamento semântico (major.minor.patch). */
   _isNewer(latest, current) {
     const a = String(latest).split('.').map((n) => parseInt(n, 10) || 0);
@@ -251,7 +312,7 @@ class AppUpdateChecker {
   }
 
   _noUpdateResult(currentVersion) {
-    return { hasUpdate: false, currentVersion, latestVersion: null, releaseUrl: null, releaseNotes: null };
+    return { hasUpdate: false, currentVersion, latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null, installerDigest: null };
   }
 
   _fetchJson(urlString) {

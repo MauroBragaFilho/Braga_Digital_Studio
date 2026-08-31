@@ -116,7 +116,7 @@ class UpdateService extends EventEmitter {
       return await appUpdateChecker.checkForUpdate(this._currentAppVersion());
     } catch (err) {
       logger.error('UpdateService:checkAppUpdate:error', { error: err.message });
-      return { hasUpdate: false, currentVersion: this._currentAppVersion(), latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null };
+      return { hasUpdate: false, currentVersion: this._currentAppVersion(), latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null, installerDigest: null };
     }
   }
 
@@ -174,16 +174,33 @@ class UpdateService extends EventEmitter {
             if (pct != null) {
               emitProgress(pct, `Baixando nova versão do BDS... (${Math.round(received / 1048576)} MB)`, 'app-download');
             }
-          }
+          },
+          appInfo.installerDigest || null
         );
         appUpdate.downloaded = true;
         appUpdate.installerPath = dl.path;
+        appUpdate.digestVerified = Boolean(appInfo.installerDigest);
+
+        // Verificação defensiva: tamanho mínimo do instalador (~500 KB) para
+        // garantir que o download não foi truncado mesmo sem digest disponível.
+        if (dl.size < 512000) {
+          logger.warn('UpdateService:updateEverything:installer_too_small', { size: dl.size });
+          appUpdate.warning = 'O instalador parece muito pequeno; pode estar corrompido.';
+        }
 
         emitProgress(100, 'Instalando nova versão do BDS (silencioso)...', 'app-install');
         const install = await appUpdateChecker.installSilently(dl.path);
         appUpdate.install = install;
         appUpdate.installed = install.success;
         appUpdate.needsRestart = install.success;
+
+        logger.info('UpdateService:updateEverything:install_result', {
+          exitCode: install.exitCode,
+          timedOut: install.timedOut,
+          success: install.success,
+          digestVerified: appUpdate.digestVerified,
+          installerSize: dl.size
+        });
       } else {
         appUpdate.noUpdateNeeded = true;
       }

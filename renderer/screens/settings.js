@@ -285,9 +285,21 @@ async function checkAppUpdate() {
       if (statusText) {
         statusText.textContent = `Nova versão disponível: v${result.latestVersion} (você está na v${result.currentVersion}).`;
       }
-      const instalAuto = await window.bdsModal.confirm(
-        `Nova versão do BDS disponível: v${result.latestVersion}.\n\nDeseja baixar e instalar automaticamente?`
-      );
+      // Mostra as notas da release (changelog) quando disponíveis e houver update.
+      let confirmMsg = `Nova versão do BDS disponível: v${result.latestVersion}.\n\nDeseja baixar e instalar automaticamente?`;
+      if (result.releaseNotes && typeof result.releaseNotes === 'string' && result.releaseNotes.trim()) {
+        const excerpt = result.releaseNotes.trim().slice(0, 400);
+        confirmMsg = `Nova versão do BDS disponível: v${result.latestVersion}.\n\nNovidades desta versão:\n${excerpt}${result.releaseNotes.length > 400 ? '\n…' : ''}\n\nDeseja baixar e instalar automaticamente?`;
+      }
+      // Avisa sobre possível prompt UAC quando empacotado (instalação em Program Files).
+      if (window.bds && typeof window.bds.isPackaged === 'function') {
+        let packaged = false;
+        try { packaged = Boolean(await window.bds.isPackaged()); } catch (_) { /* noop */ }
+        if (packaged) {
+          confirmMsg += '\n\nObservação: como o BDS está instalado em uma pasta protegida, o Windows pode exibir um aviso de permissão (UAC) durante a instalação.';
+        }
+      }
+      const instalAuto = await window.bdsModal.confirm(confirmMsg);
       if (instalAuto && window.bds.updateEverything) {
         await runAppAutoInstall({ statusText, button, progressContainer, releaseUrl: result.releaseUrl });
         return;
@@ -319,12 +331,29 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
   const percentEl = document.getElementById('appUpdateProgressPercent');
   const stepEl = document.getElementById('appUpdateProgressStep');
 
+  // Regista ouvinte de progresso local (barra do painel dedicado do app).
+  if (window.bds.onUpdateProgress) {
+    window.bds.onUpdateProgress((data) => {
+      const pct = data.percent == null ? null : data.percent;
+      if (fill) {
+        if (pct == null) {
+          fill.classList.add('indeterminate');
+        } else {
+          fill.classList.remove('indeterminate');
+          fill.style.width = `${pct}%`;
+        }
+      }
+      if (percentEl) percentEl.textContent = pct == null ? (data.message ? '...' : '') : `${pct}%`;
+      if (stepEl && data.message) stepEl.textContent = data.message;
+    });
+  }
+
   try {
     const result = await window.bds.updateEverything();
     const appUpdate = result?.appUpdate;
 
     if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
-      if (fill) fill.style.width = '100%';
+      if (fill) { fill.classList.remove('indeterminate'); fill.style.width = '100%'; }
       if (percentEl) percentEl.textContent = '100%';
       if (stepEl) stepEl.textContent = 'Instalado! Reiniciando...';
       if (statusText) statusText.textContent = 'Nova versão instalada com sucesso.';
@@ -495,9 +524,17 @@ async function startUnifiedUpdate() {
   // Registrar ouvinte de progresso
   if (window.bds.onUpdateProgress) {
     window.bds.onUpdateProgress((data) => {
-      const pct = data.percent || 0;
-      if (fill) fill.style.width = `${pct}%`;
-      if (percentEl) percentEl.textContent = `${pct}%`;
+      const pct = data.percent == null ? null : data.percent;
+      if (fill) {
+        if (pct == null) {
+          // Total desconhecido: mostra barra indeterminada animada.
+          fill.classList.add('indeterminate');
+        } else {
+          fill.classList.remove('indeterminate');
+          fill.style.width = `${pct}%`;
+        }
+      }
+      if (percentEl) percentEl.textContent = pct == null ? (data.message ? '...' : '') : `${pct}%`;
       if (stepEl && data.message) stepEl.textContent = data.message;
     });
   }
