@@ -28,6 +28,8 @@ function applyPendingUpdateCheck() {
 
   if (pending) {
     setUpdateStatusView(pending.hasUpdates ? 'has_updates' : 'up_to_date');
+    // Se o resultado unificado trouxer dados do app, reflete no painel dedicado.
+    if (pending.app) reflectAppUpdate(pending.app);
     state.pendingUpdateCheck = null;
   }
 }
@@ -165,6 +167,7 @@ function bindEvents() {
   document.getElementById('checkUpdatesButton')?.addEventListener('click', checkUpdates);
   document.getElementById('checkAppUpdateButton')?.addEventListener('click', checkAppUpdate);
   document.getElementById('updateNowButton')?.addEventListener('click', startUnifiedUpdate);
+
   document.getElementById('updateLaterButton')?.addEventListener('click', () => {
     const btnNow = document.getElementById('updateNowButton');
     const btnLater = document.getElementById('updateLaterButton');
@@ -271,6 +274,7 @@ async function fetchAppVersion() {
 async function checkAppUpdate() {
   const button = document.getElementById('checkAppUpdateButton');
   const statusText = document.getElementById('appUpdateStatusText');
+  const progressContainer = document.getElementById('appUpdateProgress');
 
   if (button) { button.disabled = true; button.textContent = 'Verificando...'; }
 
@@ -281,8 +285,15 @@ async function checkAppUpdate() {
       if (statusText) {
         statusText.textContent = `Nova versão disponível: v${result.latestVersion} (você está na v${result.currentVersion}).`;
       }
+      const instalAuto = await window.bdsModal.confirm(
+        `Nova versão do BDS disponível: v${result.latestVersion}.\n\nDeseja baixar e instalar automaticamente?`
+      );
+      if (instalAuto && window.bds.updateEverything) {
+        await runAppAutoInstall({ statusText, button, progressContainer, releaseUrl: result.releaseUrl });
+        return;
+      }
       const abrirRelease = result.releaseUrl
-        ? window.confirm(`Nova versão do BDS disponível: v${result.latestVersion}.\n\nAbrir a página da release no GitHub?`)
+        ? await window.bdsModal.confirm('Deseja abrir a página da release no GitHub para baixar manualmente?')
         : false;
       if (abrirRelease) window.bds.openExternal?.(result.releaseUrl);
     } else {
@@ -294,7 +305,59 @@ async function checkAppUpdate() {
     if (statusText) statusText.textContent = 'Não foi possível checar atualizações agora.';
     window.bdsModal?.alert?.('Não foi possível checar atualizações do BDS agora. Tente novamente mais tarde.');
   } finally {
-    if (button) { button.disabled = false; button.textContent = 'Verificar atualização do BDS'; }
+    if (button) { button.disabled = false; button.textContent = 'Verificar Atualização do BDS'; }
+  }
+}
+
+// Realiza download + instalação silenciosa do app, mostrando progresso e oferecendo restart.
+async function runAppAutoInstall({ statusText, button, progressContainer, releaseUrl }) {
+  if (statusText) statusText.textContent = 'Baixando e instalando a nova versão do BDS...';
+  if (button) { button.disabled = true; button.textContent = 'Atualizando...'; }
+  if (progressContainer) progressContainer.classList.remove('hidden');
+
+  const fill = document.getElementById('appUpdateProgressFill');
+  const percentEl = document.getElementById('appUpdateProgressPercent');
+  const stepEl = document.getElementById('appUpdateProgressStep');
+
+  try {
+    const result = await window.bds.updateEverything();
+    const appUpdate = result?.appUpdate;
+
+    if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
+      if (fill) fill.style.width = '100%';
+      if (percentEl) percentEl.textContent = '100%';
+      if (stepEl) stepEl.textContent = 'Instalado! Reiniciando...';
+      if (statusText) statusText.textContent = 'Nova versão instalada com sucesso.';
+      const restart = await window.bdsModal.confirm(
+        'Nova versão do BDS instalada com sucesso.\n\nReiniciar agora para aplicar?'
+      );
+      if (restart && window.bds.relaunchApp) {
+        await window.bds.relaunchApp();
+      }
+      return;
+    }
+
+    if (appUpdate && appUpdate.error) {
+      if (statusText) statusText.textContent = `Falha ao atualizar automaticamente (${appUpdate.error}).`;
+      const openRelease = await window.bdsModal.confirm(
+        `Não foi possível instalar automaticamente (${appUpdate.error}).\n\nDeseja abrir a release no GitHub?`
+      );
+      if (openRelease && releaseUrl) window.bds.openExternal?.(releaseUrl);
+      return;
+    }
+
+    // Sem update do app nesse fluxo (apenas dependências foram atualizadas).
+    if (statusText) statusText.textContent = 'O app já estava atualizado.';
+  } catch (err) {
+    console.error('[SETTINGS] Erro na instalação automática do app:', err);
+    if (statusText) statusText.textContent = 'Falha durante a instalação automática.';
+    const openRelease = await window.bdsModal.confirm(
+      'Ocorreu um erro durante a instalação automática.\n\nDeseja abrir a release no GitHub para baixar manualmente?'
+    );
+    if (openRelease && releaseUrl) window.bds.openExternal?.(releaseUrl);
+  } finally {
+    if (progressContainer) progressContainer.classList.add('hidden');
+    if (button) { button.disabled = false; button.textContent = 'Verificar Atualização do BDS'; }
   }
 }
 
@@ -384,18 +447,40 @@ async function checkUpdates() {
   setStatus('Verificando atualizações dos componentes...');
 
   try {
-    const result = await window.bds.checkUpdates();
-    if (result && result.hasUpdates) {
+    let result;
+    if (window.bds.checkEverything) {
+      result = await window.bds.checkEverything();
+    } else {
+      result = await window.bds.checkUpdates();
+    }
+    // Fluxo unificado: result = { hasUpdates, app, dependencies }
+    const hasUpdates = typeof result?.hasUpdates === 'boolean' ? result.hasUpdates : result?.hasUpdates;
+    if (hasUpdates) {
       setUpdateStatusView('has_updates');
       setStatus('Existem atualizações disponíveis.');
     } else {
       setUpdateStatusView('up_to_date');
       setStatus('Tudo atualizado.');
+      // Atualiza também o painel do app se vierem dados explícitos.
+      if (result && result.app) reflectAppUpdate(result.app);
     }
   } catch (error) {
     console.error('[SETTINGS] Erro ao verificar atualizações:', error);
     setUpdateStatusView('error');
     setStatus('Falha ao verificar atualizações.');
+  }
+}
+
+// Mostra o estado do app no painel dedicado (dentro da aba Atualizações).
+function reflectAppUpdate(appInfo) {
+  const statusText = document.getElementById('appUpdateStatusText');
+  if (!statusText || !appInfo) return;
+  if (appInfo.hasUpdate) {
+    statusText.textContent = `Nova versão disponível: v${appInfo.latestVersion} (você está na v${appInfo.currentVersion}).`;
+  } else if (appInfo.currentVersion) {
+    statusText.textContent = `Você está na versão mais recente (v${appInfo.currentVersion}).`;
+  } else if (appInfo.error) {
+    statusText.textContent = `Não foi possível verificar atualizações do app (${appInfo.error}).`;
   }
 }
 
@@ -418,18 +503,83 @@ async function startUnifiedUpdate() {
   }
 
   try {
-    const result = await window.bds.installUpdates();
-    if (result && result.success) {
-      if (fill) fill.style.width = '100%';
-      if (percentEl) percentEl.textContent = '100%';
-      if (stepEl) stepEl.textContent = 'Componentes atualizados!';
-      setStatus('Atualização concluída com sucesso.');
-      setTimeout(() => {
+    // updateEverything atualiza as dependências E, se houver nova versão do app,
+    // baixa e instala silenciosamente. Retorna { dependencies, appUpdate, needsRestart }.
+    const result = window.bds.updateEverything
+      ? await window.bds.updateEverything()
+      : await window.bds.installUpdates();
+
+    // Se o fluxo unificado não estiver disponível (fallback), trata apenas dependências.
+    if (!window.bds.updateEverything) {
+      const nothingChanged = result?.updatedCount === 0 && (result?.skippedDueToBusy || result?.errors?.length === 0);
+      if (result && result.success && !nothingChanged) {
+        if (fill) fill.style.width = '100%';
+        if (percentEl) percentEl.textContent = '100%';
+        if (stepEl) stepEl.textContent = 'Componentes atualizados!';
+        setStatus('Atualização concluída com sucesso.');
+        setTimeout(() => setUpdateStatusView('up_to_date'), 1500);
+      } else if (result && result.success) {
         setUpdateStatusView('up_to_date');
-      }, 1500);
+        setStatus('Todos os componentes já estão atualizados.');
+      } else {
+        setUpdateStatusView('error');
+        setStatus('Atualização concluída com avisos.');
+      }
+      return;
+    }
+
+    // Fluxo unificado disponível.
+    const appUpdate = result?.appUpdate;
+    const deps = result?.dependencies;
+
+    if (fill) fill.style.width = '100%';
+    if (percentEl) percentEl.textContent = '100%';
+
+    // Atualização do app instalada?
+    if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
+      if (stepEl) stepEl.textContent = 'Nova versão do BDS instalada!';
+      setStatus('BDS atualizado para a versão mais recente.');
+      const restart = await window.bdsModal.confirm(
+        'Uma nova versão do Braga Digital Studio foi instalada com sucesso.\n\nReinicie o aplicativo agora para aplicar a atualização?'
+      );
+      if (restart && window.bds.relaunchApp) {
+        setUpdateStatusView('up_to_date');
+        setStatus('Reiniciando o BDS...');
+        await window.bds.relaunchApp();
+      } else {
+        setUpdateStatusView('up_to_date');
+        setStatus('Atualização instalada. O BDS será atualizado na próxima inicialização.');
+      }
+      return;
+    }
+
+    if (appUpdate && appUpdate.error) {
+      // Falha ao baixar/instalar o app — oferecer abrir a release no navegador.
+      if (stepEl) stepEl.textContent = 'Falha ao atualizar o app automaticamente.';
+      const openRelease = await window.bdsModal.confirm(
+        `Não foi possível automatizar a atualização do app (${appUpdate.error}).\n\nDeseja abrir a página da release no GitHub para baixar manualmente?`
+      );
+      if (openRelease && appUpdate.appInfo?.releaseUrl) {
+        window.bds.openExternal?.(appUpdate.appInfo.releaseUrl);
+      }
+    }
+
+    // Dependências
+    if (deps && deps.success) {
+      if (deps.updatedCount > 0) {
+        if (stepEl) stepEl.textContent = 'Componentes atualizados!';
+        setStatus('Atualização concluída com sucesso.');
+      } else {
+        if (stepEl) stepEl.textContent = 'Todos os componentes já estavam atualizados.';
+        setStatus('Todos os componentes já estão atualizados.');
+      }
+      setTimeout(() => setUpdateStatusView('up_to_date'), 1500);
+    } else if (deps && deps.errors?.length) {
+      setUpdateStatusView('error');
+      setStatus('Atualização de componentes concluída com avisos.');
     } else {
       setUpdateStatusView('error');
-      setStatus('Atualização concluída com avisos.');
+      setStatus('Falha ao atualizar os componentes.');
     }
   } catch (error) {
     console.error('[SETTINGS] Erro durante a atualização:', error);

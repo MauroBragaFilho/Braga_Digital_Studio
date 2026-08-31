@@ -1,8 +1,12 @@
 'use strict';
 
 const EventEmitter = require('node:events');
+const path = require('node:path');
+const fs = require('node:fs');
+const { app } = require('electron');
 const { toolUpdater } = require('../infrastructure/external-tools/ToolUpdater');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
+const { appUpdateChecker } = require('../infrastructure/external-tools/AppUpdateChecker');
 const logger = require('./logService');
 
 class UpdateService extends EventEmitter {
@@ -10,6 +14,7 @@ class UpdateService extends EventEmitter {
     super();
     this.paths = paths;
     this.getSettings = getSettings;
+    this._updating = false;
     if (paths && (paths.tools || paths.dataDir)) {
       const toolsDir = paths.tools || paths.dataDir;
       dependencyManager.init(toolsDir);
@@ -54,13 +59,188 @@ class UpdateService extends EventEmitter {
    * @param {Function} [onProgress] (percent, message)
    */
   async updateAll(onProgress) {
+    // Mutex contra chamadas concorrentes (ex: botão clicado duas vezes ou re-disparo
+    // automático após um ciclo que ainda está em andamento).
+    if (this._updating) {
+      logger.warn('UpdateService:updateAll:busy', { message: 'Uma atualização já está em andamento; ignorando chamada duplicada.' });
+      return { success: false, skippedDueToBusy: true, updatedCount: 0, errors: ['Atualização já em andamento.'] };
+    }
+    this._updating = true;
     logger.info('UpdateService:updateAll:start');
-    const result = await dependencyManager.updateAllComponents((percent, msg) => {
-      this.emit('progress', { percent, message: msg });
-      if (onProgress) onProgress(percent, msg);
-    });
-    this.emit('completed', result);
-    return result;
+    try {
+      const result = await dependencyManager.updateAllComponents((percent, msg) => {
+        this.emit('progress', { percent, message: msg });
+        if (onProgress) onProgress(percent, msg);
+      });
+      this.emit('completed', result);
+      return result;
+    } finally {
+      this._updating = false;
+      logger.info('UpdateService:updateAll:done');
+    }
+  }
+
+  /**
+   * Verificação unificada (app + dependências). Orquestra as duas fontes em paralelo
+   * e retorna um único objeto agregado consumido pelo painel de Atualizações.
+   * @returns {Promise<Object>}
+   */
+  async checkEverything() {
+    const [appResult, depsResult] = await Promise.allSettled([
+      this.checkAppUpdate(),
+      dependencyManager.checkSystemUpdates()
+    ]);
+
+    const appInfo = appResult.status === 'fulfilled'
+      ? appResult.value
+      : { hasUpdate: false, currentVersion: this._currentAppVersion(), latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null, error: appResult.reason?.message };
+
+    const depsInfo = depsResult.status === 'fulfilled'
+      ? depsResult.value
+      : { hasUpdates: false, totalNeedingUpdate: 0, components: [], error: depsResult.reason?.message };
+
+    const hasUpdates = Boolean(appInfo.hasUpdate) || Boolean(depsInfo.hasUpdates);
+
+    return {
+      app: appInfo,
+      dependencies: depsInfo,
+      hasUpdates
+    };
+  }
+
+  /**
+   * Verifica se há nova versão do próprio BDS (usando app.getVersion()).
+   */
+  async checkAppUpdate() {
+    try {
+      return await appUpdateChecker.checkForUpdate(this._currentAppVersion());
+    } catch (err) {
+      logger.error('UpdateService:checkAppUpdate:error', { error: err.message });
+      return { hasUpdate: false, currentVersion: this._currentAppVersion(), latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null };
+    }
+  }
+
+  _currentAppVersion() {
+    try { return app.getVersion(); } catch (_) { return '0.0.0'; }
+  }
+
+  /**
+   * Atualização unificada completa: atualiza as dependências e, se houver uma nova versão
+   * do app disponível, baixa o instalador e o instala em modo silencioso. Não reinicia o
+   * app automaticamente — devolve needsRestart para a UI decidir (chama relaunchApp).
+   *
+   * @param {Function} [onProgress] (percent, message, phase) phase: 'dependencies' | 'app-download' | 'app-install'
+   * @returns {Promise<Object>}
+   */
+  async updateEverything(onProgress) {
+    const bailIfBusy = this._updating;
+    if (bailIfBusy) {
+      return { success: false, skippedDueToBusy: true, updatedCount: 0, errors: ['Atualização já em andamento.'] };
+    }
+
+    const now = Date.now();
+    const installerPath = path.join(
+      (this.paths && (this.paths.tempDir || this.paths.dataDir)) || app.getPath('temp'),
+      `BDS_Setup_${now}.exe`
+    );
+
+    let dependenciesResult;
+    try {
+      dependenciesResult = await this.updateAll((percent, msg) => {
+        if (onProgress) onProgress(percent, msg, 'dependencies');
+      });
+    } catch (err) {
+      dependenciesResult = { success: false, updatedCount: 0, errors: [`Falha ao atualizar dependências: ${err.message}`] };
+    }
+
+    const emitProgress = (percent, message, phase) => {
+      this.emit('progress', { percent, message, phase });
+      if (onProgress) onProgress(percent, message, phase);
+    };
+
+    // Depois das dependências, verifica o app.
+    let appUpdate = { checked: false };
+    try {
+      const appInfo = await this.checkAppUpdate();
+      appUpdate.checked = true;
+      appUpdate.appInfo = appInfo;
+
+      if (appInfo.hasUpdate && appInfo.installerUrl) {
+        emitProgress(100, 'Baixando nova versão do BDS...', 'app-download');
+        const dl = await appUpdateChecker.downloadLatestInstaller(
+          installerPath,
+          (received, total) => {
+            const pct = total > 0 ? Math.round((received / total) * 100) : null;
+            if (pct != null) {
+              emitProgress(pct, `Baixando nova versão do BDS... (${Math.round(received / 1048576)} MB)`, 'app-download');
+            }
+          }
+        );
+        appUpdate.downloaded = true;
+        appUpdate.installerPath = dl.path;
+
+        emitProgress(100, 'Instalando nova versão do BDS (silencioso)...', 'app-install');
+        const install = await appUpdateChecker.installSilently(dl.path);
+        appUpdate.install = install;
+        appUpdate.installed = install.success;
+        appUpdate.needsRestart = install.success;
+      } else {
+        appUpdate.noUpdateNeeded = true;
+      }
+    } catch (err) {
+      logger.error('UpdateService:updateEverything:app_update_error', { error: err.message });
+      appUpdate.error = err.message;
+      appUpdate.installed = false;
+    } finally {
+      // Limpa o instalador baixado, a menos que ainda esteja em uso (instalação em curso).
+      if (appUpdate.installerPath && !appUpdate.installed) {
+        try { fs.rmSync(appUpdate.installerPath, { force: true }); } catch (_) { /* noop */ }
+      }
+    }
+
+    this.emit('completed', { dependencies: dependenciesResult, appUpdate });
+    return {
+      dependencies: dependenciesResult,
+      appUpdate,
+      success: dependenciesResult?.success !== false && (appUpdate.error ? false : true),
+      needsRestart: Boolean(appUpdate.needsRestart)
+    };
+  }
+
+  /**
+   * Baixa apenas o instalador da nova versão do app (fluxo isolado).
+   * @param {(received, total)=>void} [onProgress]
+   */
+  async downloadAppUpdate(onProgress) {
+    const installerPath = path.join(
+      (this.paths && (this.paths.tempDir || this.paths.dataDir)) || app.getPath('temp'),
+      `BDS_Setup_${Date.now()}.exe`
+    );
+    await appUpdateChecker.downloadLatestInstaller(installerPath, onProgress);
+    return { installerPath };
+  }
+
+  /**
+   * Instala silenciosamente um instalador já baixado.
+   * @param {string} installerPath
+   */
+  async installAppUpdate(installerPath) {
+    if (!installerPath || !fs.existsSync(installerPath)) {
+      return { success: false, exitCode: null, error: 'Instalador não encontrado.' };
+    }
+    return await appUpdateChecker.installSilently(installerPath);
+  }
+
+  /**
+   * Relança o BDS após uma instalação silenciosa concluída. Fecha o processo atual
+   * e abre novamente o executável instalado.
+   */
+  relaunchApp() {
+    logger.info('UpdateService:relaunchApp');
+    try {
+      app.relaunch();
+    } catch (_) { /* some platforms may not support */ }
+    app.exit(0);
   }
 
   /**

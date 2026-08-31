@@ -1,4 +1,4 @@
-const { ipcMain } = require('electron');
+﻿const { ipcMain, app } = require('electron');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 
 module.exports = function registerSystemHandlers(paths) {
@@ -9,6 +9,15 @@ module.exports = function registerSystemHandlers(paths) {
 
   ipcMain.handle('system:openPath', async (_, itemPath) => {
     require('electron').shell.openPath(itemPath);
+  });
+
+  ipcMain.handle('system:isPackaged', () => {
+    return app.isPackaged;
+  });
+
+  ipcMain.handle('system:getToolsPath', () => {
+    const toolsDir = (paths && paths.dataDir) ? paths.dataDir : (appPaths.dataDir || null);
+    return toolsDir || null;
   });
 
   ipcMain.handle('system:getVideosPath', () => {
@@ -48,7 +57,7 @@ module.exports = function registerSystemHandlers(paths) {
         }
         return gb.toFixed(1) + ' GB';
       };
-      
+
       let device = null;
       try {
         const MtpService = require('../core/MtpService');
@@ -57,26 +66,26 @@ module.exports = function registerSystemHandlers(paths) {
         const usbDevs = await UsbService.getDevices();
         const devs = [...mtpDevs, ...usbDevs];
         if (devs.length > 0) {
-           const d = devs[0];
-           let cap = 0, free = 0;
-           if (d.type === 'usb' && d.storage && d.storage.length) {
-              cap = d.storage[0].capacity;
-              free = d.storage[0].free;
-           } else if ((d.type === 'mtp' || !d.type) && d.Storages && d.Storages.length) {
-              cap = d.Storages[0].TotalSize;
-              free = d.Storages[0].FreeSpace;
-           }
-           const used = cap - free;
-           const percent = cap > 0 ? Math.round((used / cap) * 100) : 0;
-           
-           let dName = d.name || d.Name || 'MTP Device';
-           device = {
-             name: dName,
-             total: formatBytes(cap),
-             free: formatBytes(free),
-             used: formatBytes(used),
-             percent: percent
-           };
+          const d = devs[0];
+          let cap = 0, free = 0;
+          if (d.type === 'usb' && d.storage && d.storage.length) {
+            cap = d.storage[0].capacity;
+            free = d.storage[0].free;
+          } else if ((d.type === 'mtp' || !d.type) && d.Storages && d.Storages.length) {
+            cap = d.Storages[0].TotalSize;
+            free = d.Storages[0].FreeSpace;
+          }
+          const used = cap - free;
+          const percent = cap > 0 ? Math.round((used / cap) * 100) : 0;
+
+          let dName = d.name || d.Name || 'MTP Device';
+          device = {
+            name: dName,
+            total: formatBytes(cap),
+            free: formatBytes(free),
+            used: formatBytes(used),
+            percent: percent
+          };
         }
       } catch (e) {
         console.error('Error fetching devices for sidebar', e);

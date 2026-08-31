@@ -1,7 +1,10 @@
 'use strict';
 
 const https = require('node:https');
+const http = require('node:http');
+const fs = require('node:fs');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 const logger = require('../../services/logService');
 
 const CONFIG_PATH = path.join(__dirname, '..', '..', 'config', 'appUpdate.config.json');
@@ -66,7 +69,9 @@ class AppUpdateChecker {
         currentVersion,
         latestVersion,
         releaseUrl: release.html_url || null,
-        releaseNotes: release.body || null
+        releaseNotes: release.body || null,
+        installerUrl: this._findInstallerUrl(release) || null,
+        release
       };
     } catch (error) {
       logger.error('AppUpdateChecker:check_failed', { error: error.message });
@@ -74,9 +79,163 @@ class AppUpdateChecker {
     }
   }
 
+  /**
+   * Localiza o URL de download do instalador (.exe do NSIS) nos assets da release.
+   * Prioriza exatamente o nome definido em package.json (artifactName), com fallback
+   * para o primeiro asset .exe encontrado.
+   * @param {object} release - Objeto de release retornado pela GitHub API.
+   * @returns {string|null}
+   */
+  _findInstallerUrl(release) {
+    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
+    if (assets.length === 0) return null;
+
+    const exeAssets = assets.filter((a) => (a.name || '').toLowerCase().endsWith('.exe'));
+    if (exeAssets.length === 0) return null;
+
+    // Preferencia exata pelo artifactName do electron-builder.
+    const setup = exeAssets.find((a) => /^BragaDigitalStudioSetup\.exe$/i.test(a.name || ''));
+    const chosen = setup || exeAssets[0];
+    return chosen.browser_download_url || chosen.url || null;
+  }
+
+  /**
+   * Retorna o URL do instalador da versão mais recente (se houver).
+   * @returns {Promise<string|null>}
+   */
+  async getLatestInstallerUrl() {
+    const config = this._loadConfig();
+    const { owner, repo, includePrereleases } = config.github || {};
+    if (!owner || !repo) return null;
+    try {
+      const release = includePrereleases
+        ? await this._fetchLatestIncludingPrereleases(owner, repo)
+        : await this._fetchJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+      return this._findInstallerUrl(release);
+    } catch (error) {
+      logger.error('AppUpdateChecker:getLatestInstallerUrl:error', { error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Baixa o instalador da versão mais recente para destPath.
+   * @param {string} destPath - Caminho de destino (_setup.exe).
+   * @param {(received:number, total:number)=>void} [onProgress] - Callback de progresso em bytes.
+   * @returns {Promise<{path: string, size: number}>}
+   */
+  async downloadLatestInstaller(destPath, onProgress) {
+    const url = await this.getLatestInstallerUrl();
+    if (!url) {
+      throw new Error('Nenhum instalador (.exe) encontrado na release mais recente.');
+    }
+    return this._downloadFile(url, destPath, onProgress);
+  }
+
+  /**
+   * Executa o instalador NSIS em modo silencioso (/S). Se o destino exigir elevação
+   * (ex: Program Files), o Windows exibirá um único prompt UAC — a UI do instalador
+   * não é mostrada.
+   * @param {string} installerPath - Caminho do instalador .exe baixado.
+   * @param {object} [opts={}] { args?: string[], timeoutMs?: number }
+   * @returns {Promise<{success: boolean, exitCode: number|null, timedOut: boolean}>}
+   */
+  installSilently(installerPath, opts = {}) {
+    const args = opts.args || ['/S'];
+    const timeoutMs = opts.timeoutMs || 180000;
+
+    return new Promise((resolve) => {
+      logger.info('AppUpdateChecker:installSilently:start', { installerPath, args });
+      let child;
+      try {
+        child = spawn(installerPath, args, { windowsHide: true, detached: false });
+      } catch (err) {
+        logger.error('AppUpdateChecker:installSilently:spawn_error', { error: err.message });
+        return resolve({ success: false, exitCode: null, timedOut: false });
+      }
+
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { child.kill(); } catch (_) { /* noop */ }
+        logger.warn('AppUpdateChecker:installSilently:timeout');
+        resolve({ success: false, exitCode: null, timedOut: true });
+      }, timeoutMs);
+
+      child.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        logger.error('AppUpdateChecker:installSilently:process_error', { error: err.message });
+        resolve({ success: false, exitCode: null, timedOut: false });
+      });
+
+      child.on('close', (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        const success = code === 0;
+        logger.info('AppUpdateChecker:installSilently:close', { exitCode: code, success });
+        resolve({ success, exitCode: code, timedOut: false });
+      });
+    });
+  }
+
   async _fetchLatestIncludingPrereleases(owner, repo) {
     const releases = await this._fetchJson(`https://api.github.com/repos/${owner}/${repo}/releases`);
     return Array.isArray(releases) ? releases[0] : null;
+  }
+
+  /**
+   * Baixa um arquivo da internet para dest, seguindo redirects e reportando progresso.
+   * @returns {Promise<{path: string, size: number}>}
+   */
+  _downloadFile(url, dest, onProgress) {
+    return new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(dest);
+      let received = 0;
+      let total = 0;
+
+      const cleanup = () => {
+        try { file.close(); } catch (_) { /* noop */ }
+        try { fs.rmSync(dest, { force: true }); } catch (_) { /* noop */ }
+      };
+
+      const doGet = (targetUrl) => {
+        const client = targetUrl.startsWith('http://') ? http : https;
+        const req = client.get(targetUrl, { headers: { 'User-Agent': 'BDS-AppUpdateChecker' }, timeout: 30000 }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume();
+            file.close();
+            fs.rmSync(dest, { force: true });
+            return doGet(res.headers.location);
+          }
+          if (res.statusCode !== 200) {
+            res.resume();
+            cleanup();
+            return reject(new Error(`HTTP ${res.statusCode} ao baixar instalador.`));
+          }
+          total = parseInt(res.headers['content-length'] || '0', 10);
+          received = 0;
+          res.on('data', (chunk) => {
+            received += chunk.length;
+            if (onProgress) onProgress(received, total);
+          });
+          res.pipe(file);
+        });
+
+        req.on('timeout', () => req.destroy(new Error('Timeout ao baixar instalador.')));
+        req.on('error', (err) => { cleanup(); reject(err); });
+      };
+
+      file.on('finish', () => {
+        file.close(() => resolve({ path: dest, size: received }));
+      });
+      file.on('error', (err) => { cleanup(); reject(err); });
+
+      doGet(url);
+    });
   }
 
   /** Comparação simples de versionamento semântico (major.minor.patch). */

@@ -426,6 +426,17 @@ class Bootstrap {
     ipcMain.handle('updates:updateAll', async () => {
       return await updateService.updateAll();
     });
+    // Fluxo unificado (app + dependências)
+    ipcMain.handle('updates:checkAll', () => updateService.checkEverything());
+    ipcMain.handle('updates:updateEverything', async () => {
+      return await updateService.updateEverything();
+    });
+    ipcMain.handle('updates:downloadAppUpdate', async () => {
+      return await updateService.downloadAppUpdate();
+    });
+    ipcMain.handle('updates:installAppUpdate', (_, installerPath) => updateService.installAppUpdate(installerPath));
+    ipcMain.handle('updates:relaunchApp', () => updateService.relaunchApp());
+
 
     // Devices & Hardware
     ipcMain.handle('devices:get-all', async (_, force = false) => {
@@ -627,11 +638,11 @@ class Bootstrap {
       this.mainWindow?.webContents.send('dependencies:done');
       logger.info('DependÃªncias iniciais instaladas com sucesso.');
     } else if (this.settingsManager.load().checkUpdatesOnStart) {
-      // Usa checkSystem() (mesmo mÃ©todo do botÃ£o "Verificar AtualizaÃ§Ãµes" em
-      // ConfiguraÃ§Ãµes) para que o resultado tenha o formato { hasUpdates, components }
-      // esperado pelo renderer. checkAll() Ã© um mÃ©todo legado com formato diferente
-      // (um objeto por ferramenta) e nÃ£o deve ser usado aqui.
-      updateService.checkSystem().then((result) => {
+      // Usa checkEverything() (mesmo mÃ©todo do botÃ£o "Verificar AtualizaÃ§Ãµes" em
+      // ConfiguraÃ§Ãµes) para checar app + dependÃªncias num formato { hasUpdates, app,
+      // dependencies } esperado pelo renderer. checkAll() Ã© um mÃ©todo legado com formato
+      // diferente (um objeto por ferramenta) e nÃ£o deve ser usado aqui.
+      updateService.checkEverything().then((result) => {
         this.mainWindow?.webContents.send('updates:checked', result);
       }).catch((error) => {
         logger.warn('updates:startup_check_failed', { error: error.message });
