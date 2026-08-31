@@ -632,6 +632,19 @@
   transition: width 0.3s ease;
 }
 
+/* Barra indeterminada: usada quando o total de bytes não é conhecido (sem content-length). */
+.settings-update-progress-fill.indeterminate {
+  width: 40% !important;
+  background: linear-gradient(90deg, transparent, #f25c05, #ff8c42, transparent);
+  background-size: 200% 100%;
+  animation: settings-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes settings-progress-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .settings-update-progress-info {
   display: flex;
   justify-content: space-between;
