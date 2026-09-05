@@ -135,6 +135,73 @@ export function applyTheme(theme = 'dark', accentColor = '#e53935') {
   applyAccentColor(accentColor);
 }
 
+/* ==========================================================================
+   SIDEBAR COLAPSÁVEL (icon rail)
+   ========================================================================== */
+
+/**
+ * Extrai o rótulo legível de um botão da sidebar (removendo ícones/spans).
+ * @param {HTMLElement} btn — elemento `.tab-button`
+ * @returns {string}
+ */
+function getTabLabel(btn) {
+  const clone = btn.cloneNode(true);
+  clone.querySelectorAll('span').forEach(s => s.remove());
+  return clone.textContent.trim();
+}
+
+let _sidebarTooltipTitles = null; // guarda títulos originais (evita sobrescrever títulos manuais)
+let _sidebarLabels = null;        // labels gerados automaticamente (para detectar títulos manuais)
+
+/**
+ * Labels de tela gerados automaticamente (Home, Downloads, ...).
+ * Usado para não sobrescrever títulos manuais com valores derivados.
+ * @returns {Set<string>}
+ */
+function getSidebarTitlesLabels() {
+  if (!_sidebarLabels) {
+    _sidebarLabels = new Set();
+    document.querySelectorAll('.sidebar .tab-button').forEach(b => {
+      _sidebarLabels.add(getTabLabel(b));
+    });
+  }
+  return _sidebarLabels;
+}
+
+function applySidebarCollapsed(collapsed) {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+
+  const isNarrow = window.innerWidth <= 980;
+
+  document.querySelector('.app-shell')?.classList.toggle('collapsed', collapsed);
+  sidebar.classList.toggle('collapsed', collapsed);
+
+  const toggleBtn = document.getElementById('sidebarToggleBtn');
+  if (toggleBtn) {
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    toggleBtn.title = collapsed ? 'Expandir menu' : 'Recolher menu';
+    const icon = toggleBtn.querySelector('.material-symbols-rounded');
+    if (icon) icon.textContent = collapsed ? 'menu' : 'menu_open';
+  }
+
+  // Em janelas estreitas (barra inferior) os rótulos continuam visíveis: aqui o
+  // CSS trata o override visual e não há tooltips a adicionar/remover.
+  if (isNarrow) return;
+
+  // Tooltips com o nome da tela quando colapsada (sem perda de títulos manuais)
+  document.querySelectorAll('.sidebar .tab-button').forEach(btn => {
+    if (!_sidebarTooltipTitles) _sidebarTooltipTitles = new Map();
+    if (!_sidebarTooltipTitles.has(btn)) {
+      // Primeira vez: captura o título original (vazio ou manual)
+      _sidebarTooltipTitles.set(btn, btn.title);
+    } else if (collapsed && !getSidebarTitlesLabels().has(btn.title)) {
+      // Título manual definido depois da primeira colapsagem: atualiza o registro
+      _sidebarTooltipTitles.set(btn, btn.title);
+    }
+    btn.title = collapsed ? getTabLabel(btn) : (_sidebarTooltipTitles.get(btn) || '');
+  });
+}
 
 // --- FLOATING VIDEO PLAYER ---
 window.bdsPlayer = {
@@ -631,6 +698,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Sidebar colapsável (icon rail) — toggle manual + atalho Ctrl+B
+  const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+  if (sidebarToggleBtn) {
+    const toggleSidebar = () => {
+      const next = !document.querySelector('.sidebar')?.classList.contains('collapsed');
+      applySidebarCollapsed(next);
+      if (state.settings) state.settings.sidebarCollapsed = next;
+      if (window.bds?.saveSettings) {
+        window.bds.saveSettings({ sidebarCollapsed: next }).catch(() => {});
+      }
+    };
+    sidebarToggleBtn.addEventListener('click', toggleSidebar);
+    // Atalho Ctrl+B (não interfere ao digitar em campos de texto)
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        const tag = document.activeElement?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        e.preventDefault();
+        toggleSidebar();
+      }
+    });
+  }
+
   // Configuração dos cliques de navegação da Sidebar
   tabButtons.forEach(button => {
     button.addEventListener('click', () => {
@@ -729,6 +819,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tabButton) tabButton.click();
   });
 
+  // Navegação via clique em notificação nativa (Windows)
+  // Mapeia nomes internos do NotificationCenter → data-view da sidebar
+  if (window.bds?.onNavigateToScreen) {
+    const NOTIFICATION_SCREEN_MAP = {
+      'downloads': 'download',
+      'converter': 'converter',
+      'copy':      'upload',
+      'silence':   'silence',
+      'projects':  'projects',
+    };
+    window.bds.onNavigateToScreen((screen) => {
+      const view = NOTIFICATION_SCREEN_MAP[screen] || screen;
+      const tabButton = document.querySelector(`.sidebar .tab-button[data-view="${view}"]`);
+      if (tabButton) tabButton.click();
+    });
+  }
+
   // Inicializa escutas globais do Electron (IPC)
   initGlobalElectronListeners();
   
@@ -810,6 +917,8 @@ async function initGlobalElectronListeners() {
   state.settings = await window.bds.getSettings();
   // Aplica tema e cor de destaque sem flash, antes do primeiro render
   applyTheme(state.settings.theme, state.settings.accentColor);
+  // Reaplica o estado persistido da sidebar (colapsada/expandida)
+  applySidebarCollapsed(state.settings.sidebarCollapsed === true);
 
   // ── Downloads: Queue Manager (canal correto com `id` nos payloads) ──────────
 

@@ -683,6 +683,14 @@ function bindConverterEvents() {
       if (folder) {
         const input = document.getElementById('outConverterFolder');
         if (input) input.value = folder;
+        // Persiste a pasta escolhida para usá-la como padrão nas próximas vezes
+        if (window.bds && window.bds.saveSettings) {
+          try {
+            await window.bds.saveSettings({ converterFolder: folder });
+          } catch (e) {
+            logConverterScreen(`Erro ao salvar pasta de destino: ${e.message}`, 'error');
+          }
+        }
       }
     }
   });

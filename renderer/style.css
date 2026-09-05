@@ -141,6 +141,10 @@ button:disabled {
   min-height: 100vh;
   max-width: 100%;
   overflow: hidden;
+  transition: grid-template-columns 0.25s ease;
+}
+.app-shell.collapsed {
+  grid-template-columns: 64px 1fr;
 }
 
 .main-column {
@@ -158,6 +162,7 @@ button:disabled {
   background: var(--card); /* Era #141414, usando card/bg */
   border-right: 1px solid var(--line);
   height: 100vh;
+  overflow: hidden;
 }
 
 /* Sidebar Brand */
@@ -192,6 +197,64 @@ button:disabled {
   display: block;
   font-size: 13px;
   letter-spacing: 0.5px;
+}
+
+/* Sidebar Toggle Button */
+.sidebar-toggle-btn {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.sidebar-toggle-btn:hover {
+  background: var(--card-2);
+  color: var(--text);
+}
+.sidebar-toggle-btn .material-symbols-rounded {
+  font-size: 20px;
+}
+
+/* ─── Sidebar colapsada (icon rail ~64px) ─── */
+.sidebar.collapsed .brand {
+  padding: 16px 0;
+  justify-content: center;
+  gap: 0;
+}
+.sidebar.collapsed .brand-mark,
+.sidebar.collapsed .brand-text {
+  display: none;
+}
+.sidebar.collapsed .sidebar-toggle-btn {
+  margin-left: 0;
+}
+.sidebar.collapsed .tabs {
+  padding: 16px 8px;
+}
+.sidebar.collapsed .tab-button {
+  justify-content: center;
+  padding: 12px;
+  gap: 0;
+  font-size: 0;
+  line-height: 0;
+}
+.sidebar.collapsed .tab-button .material-symbols-rounded {
+  font-size: 22px;
+  line-height: 1;
+}
+.sidebar.collapsed .tab-button.active {
+  border-left-color: transparent;
+}
+.sidebar.collapsed .nav-update-badge {
+  left: auto;
+  right: 6px;
+}
+.sidebar.collapsed .sidebar-footer {
+  display: none;
 }
 
 /* Header Global — definido em shell.css (carrega depois e vence no cascade) */
@@ -277,6 +340,7 @@ button:disabled {
     gap: 8px;
     padding: 6px 12px;
     height: auto;
+    width: 100%;
     max-width: 100%;
     overflow-x: hidden;
     border-right: none;
@@ -287,6 +351,34 @@ button:disabled {
     display: none;
   }
   .sidebar-footer {
+    display: none;
+  }
+  .app-shell.collapsed {
+    grid-template-columns: 1fr;
+  }
+  .sidebar-toggle-btn {
+    display: none;
+  }
+  /* Em janelas estreitas (barra inferior) a sidebar nunca fica em modo rail:
+     mesmo com a classe .collapsed presente, os rótulos continuam visíveis. */
+  .sidebar.collapsed .tabs {
+    padding: 0;
+  }
+  .sidebar.collapsed .tab-button {
+    justify-content: flex-start;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: normal;
+    gap: 6px;
+  }
+  .sidebar.collapsed .tab-button .material-symbols-rounded {
+    font-size: inherit;
+    line-height: inherit;
+  }
+  .sidebar.collapsed .tab-button.active {
+    border-left-color: var(--accent);
+  }
+  .sidebar.collapsed .sidebar-footer {
     display: none;
   }
   .tabs {

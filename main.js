@@ -3,6 +3,11 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
 
+// Identifica o app para o Windows — necessário para que notificações nativas
+// (new Notification()) apareçam, especialmente em modo desenvolvimento (npm start),
+// onde o app não tem AppUserModelID definido pelo electron-builder em produção.
+app.setAppUserModelId('com.bragadev.digitalstudio');
+
 // Configurações de inicialização do Electron
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 

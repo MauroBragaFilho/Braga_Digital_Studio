@@ -16,6 +16,11 @@ const { ffprobeTool } = require('./infrastructure/external-tools/adapters/Ffprob
 const { externalTools } = require('./infrastructure/external-tools/ExternalToolsManager');
 const { appUpdateChecker } = require('./infrastructure/external-tools/AppUpdateChecker');
 
+const taskProgressCenter = require('./infrastructure/desktop/TaskProgressCenter');
+const notificationCenter = require('./infrastructure/desktop/NotificationCenter');
+const deadlineNotifier = require('./infrastructure/desktop/DeadlineNotifier');
+const telegramDeliveryChannel = require('./infrastructure/desktop/TelegramDeliveryChannel');
+
 const DownloadService = require('./services/downloadService');
 const HistoryService = require('./services/historyService');
 const ThumbnailService = require('./services/thumbnailService');
@@ -64,11 +69,26 @@ class Bootstrap {
 
   setMainWindow(window) {
     this.mainWindow = window;
+    taskProgressCenter.setMainWindow(window);
+    notificationCenter.setMainWindow(window);
+    notificationCenter.setNavigateHandler((screen) => {
+      this.mainWindow?.webContents.send('bds:navigate-to-screen', screen);
+    });
   }
 
   async init() {
     const paths = this.paths;
     const settings = this.settingsManager.load();
+
+    // Notificações nativas — refletir preferências do usuário já carregadas.
+    notificationCenter.updateSettings(settings);
+
+    // Canal Telegram (opcional): fica inativo até token/chat_id serem configurados.
+    notificationCenter.registerDeliveryChannel({
+      name: telegramDeliveryChannel.name,
+      deliver: (note) => telegramDeliveryChannel.deliver(note)
+    });
+    telegramDeliveryChannel.updateSettings(settings);
 
     // Inicializar Sistema de Envio de Erros / Telemetria
     errorReporter.init({
@@ -187,6 +207,11 @@ class Bootstrap {
   }
 
   _bindServiceEvents() {
+    // Guard contra registro duplicado de listeners (init() nunca deve ser
+    // chamado duas vezes, mas esta proteção evita barra/notificação doble).
+    if (this._eventsBound) return;
+    this._eventsBound = true;
+
     const { downloadService, converterService, montageService, silenceService, metadataService, importQueue } = this.services;
 
     // Discovery Events
@@ -206,7 +231,10 @@ class Bootstrap {
     // Download Events
     downloadService.on('downloads:added', (item) => this.mainWindow?.webContents.send('downloads:added', item));
     downloadService.on('downloads:updated', (queue) => this.mainWindow?.webContents.send('downloads:updated', queue));
-    downloadService.on('downloads:progress', (data) => this.mainWindow?.webContents.send('downloads:progress', data));
+    downloadService.on('downloads:progress', (data) => {
+      taskProgressCenter.reportProgress('downloads', (data.progress || 0) / 100);
+      this.mainWindow?.webContents.send('downloads:progress', data);
+    });
     downloadService.on('downloads:completed', (item) => {
       this.mainWindow?.webContents.send('downloads:completed', item);
       if (item.outputPath && importQueue) {
@@ -223,9 +251,16 @@ class Bootstrap {
         }
       }
     });
-    downloadService.on('downloads:failed', (data) => this.mainWindow?.webContents.send('downloads:failed', data));
+    downloadService.on('downloads:failed', (data) => {
+      taskProgressCenter.reportError('downloads');
+      this.mainWindow?.webContents.send('downloads:failed', data);
+    });
     downloadService.on('downloads:removed', (id) => this.mainWindow?.webContents.send('downloads:removed', id));
-    downloadService.on('downloads:queue-completed', () => this.mainWindow?.webContents.send('downloads:queue-completed'));
+    downloadService.on('downloads:queue-completed', () => {
+      taskProgressCenter.reportIdle('downloads');
+      notificationCenter.notifyTaskCompleted('downloads', {});
+      this.mainWindow?.webContents.send('downloads:queue-completed');
+    });
     downloadService.on('queue', (payload) => this.mainWindow?.webContents.send('download:queue', payload));
     downloadService.on('progress', (payload) => this.mainWindow?.webContents.send('download:progress', payload));
     downloadService.on('finished', (payload) => this.mainWindow?.webContents.send('download:finished', payload));
@@ -235,9 +270,23 @@ class Bootstrap {
     // Converter Events
     converterService.on('queue', (p) => this.mainWindow?.webContents.send('converter:queue', p));
     converterService.on('fileStarted', (p) => this.mainWindow?.webContents.send('converter:fileStarted', p));
-    converterService.on('progress', (p) => this.mainWindow?.webContents.send('converter:progress', p));
+    converterService.on('progress', (p) => {
+      taskProgressCenter.reportProgress('converter', (p?.progress || 0) / 100);
+      this.mainWindow?.webContents.send('converter:progress', p);
+    });
     converterService.on('fileFinished', (p) => this.mainWindow?.webContents.send('converter:fileFinished', p));
-    converterService.on('finished', (p) => this.mainWindow?.webContents.send('converter:finished', p));
+    converterService.on('finished', (p) => {
+      taskProgressCenter.reportIdle('converter');
+      if (p?.status === 'error') {
+        taskProgressCenter.reportError('converter');
+      } else {
+        // O payload 'finished' não traz contagem — calculamos pelos itens
+        // efetivamente concluídos na fila do serviço.
+        const count = converterService.getQueue().filter((it) => it.status === 'Concluído').length;
+        notificationCenter.notifyTaskCompleted('converter', { count });
+      }
+      this.mainWindow?.webContents.send('converter:finished', p);
+    });
 
     // Montage Events
     montageService.on('progress', (p) => this.mainWindow?.webContents.send('montage:progress', p));
@@ -246,8 +295,21 @@ class Bootstrap {
     montageService.on('log', (t) => this.mainWindow?.webContents.send('montage:log', t));
 
     // Silence Events
-    silenceService.on('progress', (p) => this.mainWindow?.webContents.send('silence:progress', p));
-    silenceService.on('finished', (p) => this.mainWindow?.webContents.send('silence:finished', p));
+    silenceService.on('progress', (p) => {
+      taskProgressCenter.reportProgress('silence', (p?.percent || 0) / 100);
+      this.mainWindow?.webContents.send('silence:progress', p);
+    });
+    silenceService.on('finished', (p) => {
+      taskProgressCenter.reportIdle('silence');
+      if (p?.status === 'error') {
+        taskProgressCenter.reportError('silence');
+      } else if (p?.status !== 'canceled') {
+        // payload.file fica undefined até o silenceService emitir o nome do
+        // último arquivo — o NotificationCenter cai no texto genérico.
+        notificationCenter.notifyTaskCompleted('silence', { file: p?.lastFile });
+      }
+      this.mainWindow?.webContents.send('silence:finished', p);
+    });
     silenceService.on('log', (p) => this.mainWindow?.webContents.send('silence:log', p));
 
     // Metadata Events
@@ -275,7 +337,29 @@ class Bootstrap {
     MtpService.on('progress', (data) => this.mainWindow?.webContents.send('mtp:import-progress', data));
 
     // Upload & Sony Events
-    UploadService.on('queue-updated', (q) => this.mainWindow?.webContents.send('upload:queue-updated', q));
+    // Cópia de arquivos (upload p/ YouTube) — Opção A: refletir o progresso
+    // simulado do UploadService na taskbar como tarefa 'copy'.
+    let copyCompleted = false;
+    UploadService.on('queue-updated', (q) => {
+      const hasPending = q.some((job) => job.status === 'queued' || job.status === 'uploading' || job.status === 'Enviando...');
+      if (hasPending) copyCompleted = false;
+
+      const active = q.find((job) => job.status === 'uploading' || job.status === 'Enviando...');
+      if (active) {
+        taskProgressCenter.reportProgress('copy', (active.progress || 0) / 100);
+      } else {
+        taskProgressCenter.reportIdle('copy');
+      }
+
+      const allDone = q.length > 0 && q.every((job) => job.status === 'Concluído' || job.status === 'error');
+      if (allDone && !copyCompleted) {
+        copyCompleted = true;
+        const count = q.filter((job) => job.status === 'Concluído').length;
+        notificationCenter.notifyTaskCompleted('copy', { count });
+      }
+
+      this.mainWindow?.webContents.send('upload:queue-updated', q);
+    });
     // [FASE 2.2] Sony — eventos 'connected'/'photo-taken' já capturados no bloco acima via camera_connected
     // Não registrar listeners duplicados para o mesmo serviço
   }
@@ -304,6 +388,13 @@ class Bootstrap {
     ipcMain.handle('settings:get', () => this.settingsManager.load());
     ipcMain.handle('settings:save', (_, settings) => {
       const saved = this.settingsManager.save(settings);
+      notificationCenter.updateSettings(saved);
+      // Sincroniza o canal Telegram com as preferências (token, chat id, flag)
+      telegramDeliveryChannel.updateSettings(saved);
+      // Reavalia prazos imediatamente após salvar preferências de notificação
+      if (typeof deadlineNotifier.checkDeadlines === 'function') {
+        deadlineNotifier.checkDeadlines(saved);
+      }
       if (libManager && watcherService) {
         this._syncLibraries(libManager, saved);
         watcherService.stopAll();
@@ -313,8 +404,47 @@ class Bootstrap {
       return saved;
     });
 
+    // Teste do canal Telegram (botão "Testar envio no Telegram" na tela de Configurações)
+    ipcMain.handle('telegram:sendTest', async (_, data) => {
+      const token = String(data?.botToken || '').trim();
+      const chatId = String(data?.chatId || '').trim();
+      if (!token || !chatId) {
+        return { success: false, error: 'Token do bot e Chat ID são obrigatórios.' };
+      }
+      try {
+        const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: '✅ Notificações do Braga Digital Studio funcionando!'
+          })
+        });
+        if (!response.ok) {
+          const errBody = await response.text();
+          return { success: false, error: `Telegram respondeu HTTP ${response.status}: ${errBody.slice(0, 200)}` };
+        }
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message || 'Falha de rede ao contatar o Telegram.' };
+      }
+    });
+
     ipcMain.handle('app:getVersion', () => app.getVersion());
     ipcMain.handle('app:checkForUpdate', () => appUpdateChecker.checkForUpdate(app.getVersion()));
+    // Pasta de destino padrão do Conversor: usa a pasta persistida pelo usuário
+    // (settings.converterFolder) ou, na ausência dela, "Vídeos do usuário/Convertido".
+    ipcMain.handle('system:getConverterOutputDir', () => {
+      const settings = this.settingsManager.load();
+      let dir = settings.converterFolder;
+      if (!dir) dir = path.join(this.appPaths.videosDir, 'Convertido');
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (_) {}
+      return dir;
+    });
+
+
 
     // Window Controls
     ipcMain.handle('window:minimize', () => this.mainWindow?.minimize());
@@ -601,6 +731,9 @@ class Bootstrap {
       // 2. Inicia descoberta de dispositivos
       deviceDiscoveryService.start();
       sonyCameraService.start();
+
+      // 3. Inicia verificação de prazos dos projetos (lembretes de deadline)
+      deadlineNotifier.start(this.settingsManager.load());
       logger.info('ServiÃ§os em segundo plano inicializados.');
     } catch (err) {
       logger.error('Erro ao iniciar serviÃ§os em segundo plano:', { error: err.message });
@@ -665,6 +798,7 @@ class Bootstrap {
     } catch (_) {}
 
     try { watcherService?.stopAll(); } catch (_) {}
+    try { deadlineNotifier.stop(); } catch (_) {}
     try { deviceDiscoveryService?.stop(); } catch (_) {}
     try { sonyCameraService?.stop?.(); } catch (_) {}
   }

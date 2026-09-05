@@ -60,9 +60,108 @@
             <input type="color" id="accentColorInput" class="settings-color-input" value="#e53935" />
           </div>
         </div>
-      </section>
 
-      <!-- ABA: PASTAS -->
+        <div class="settings-group">
+          <h4 class="settings-group-title">Notificações</h4>
+
+          <label class="settings-check-row">
+            <input type="checkbox" id="notificationsEnabledInput" />
+            <div>
+              <span class="settings-check-label">Notificações nativas do sistema</span>
+              <span class="settings-check-hint">Mostra avisos do Windows ao concluir tarefas em segundo plano.</span>
+            </div>
+          </label>
+
+          <label class="settings-check-row" style="padding-left: 28px;">
+            <input type="checkbox" id="notifyDownloadsInput" />
+            <div>
+              <span class="settings-check-label">Downloads</span>
+              <span class="settings-check-hint">Notificar quando a fila de downloads for concluída.</span>
+            </div>
+          </label>
+
+          <label class="settings-check-row" style="padding-left: 28px;">
+            <input type="checkbox" id="notifyConverterInput" />
+            <div>
+              <span class="settings-check-label">Conversor de arquivos</span>
+              <span class="settings-check-hint">Notificar quando a conversão dos arquivos terminar.</span>
+            </div>
+          </label>
+
+          <label class="settings-check-row" style="padding-left: 28px;">
+            <input type="checkbox" id="notifyCopyInput" />
+            <div>
+              <span class="settings-check-label">Cópia de arquivos</span>
+              <span class="settings-check-hint">Notificar quando o envio/cópia de arquivos for concluído.</span>
+            </div>
+          </label>
+
+          <label class="settings-check-row" style="padding-left: 28px;">
+            <input type="checkbox" id="notifySilenceInput" />
+            <div>
+              <span class="settings-check-label">Remoção de silêncios</span>
+              <span class="settings-check-hint">Notificar quando a remoção de silêncios for concluída.</span>
+            </div>
+          </label>
+
+          <label class="settings-check-row" style="padding-left: 28px;">
+            <input type="checkbox" id="notifyDeadlinesInput" />
+            <div>
+              <span class="settings-check-label">Prazos dos projetos</span>
+              <span class="settings-check-hint">Lembrar sobre prazos de projetos que estão para vencer, vencem hoje ou já estão atrasados.</span>
+            </div>
+          </label>
+
+          <div id="deadlineSettingsGroup" class="settings-form-row" style="padding-left: 28px; margin-top: 8px;">
+            <label for="deadlineNotifyLeadDaysInput">Avisar com antecedência</label>
+            <select id="deadlineNotifyLeadDaysInput" class="settings-select">
+              <option value="1">1 dia</option>
+              <option value="2">2 dias</option>
+              <option value="3">3 dias</option>
+              <option value="5" selected>5 dias</option>
+              <option value="7">7 dias</option>
+              <option value="14">14 dias</option>
+            </select>
+          </div>
+
+          <div id="deadlineNotifyTimeRow" class="settings-form-row" style="padding-left: 28px;">
+            <label for="deadlineNotifyTimeInput">Horário do lembrete</label>
+            <input type="time" id="deadlineNotifyTimeInput" class="settings-input" value="09:00" />
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Telegram <span style="font-weight: normal; font-size: 12px; opacity: .6;">(opcional)</span></h4>
+          <p class="settings-check-hint" style="margin-bottom: 10px;">
+            Receba os mesmos avisos no seu celular. Crie um bot com o @BotFather no Telegram, copie o token e informe o ID do seu chat.
+            Clique em "Salvar Alterações" e depois teste enviando uma notificação.
+          </p>
+
+          <label class="settings-check-row">
+            <input type="checkbox" id="telegramNotificationsEnabledInput" />
+            <div>
+              <span class="settings-check-label">Ativar notificações via Telegram</span>
+              <span class="settings-check-hint">Envia também para o seu Telegram quando houver notificações do app.</span>
+            </div>
+          </label>
+
+          <div class="settings-form-row">
+            <label for="telegramBotTokenInput">Token do Bot</label>
+            <input type="password" id="telegramBotTokenInput" class="settings-input" placeholder="1234567890:AA... (token do @BotFather)" />
+          </div>
+
+          <div class="settings-form-row">
+            <label for="telegramChatIdInput">Chat ID</label>
+            <input type="text" id="telegramChatIdInput" class="settings-input" placeholder="Ex: 123456789 — ID do seu chat" />
+          </div>
+
+          <div class="settings-form-row">
+            <button id="testTelegramButton" class="settings-btn-outline" type="button">
+              <span class="material-symbols-rounded">send</span> Testar envio no Telegram
+            </button>
+          </div>
+        </div>
+      </section>
       <section id="settingsFoldersView" class="settings-view hidden">
         <h3 class="settings-section-title">Pastas</h3>
 

@@ -18,9 +18,11 @@ const api = {
   // --- Configurações e Sistema ---
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  sendTelegramTest: (data) => ipcRenderer.invoke('telegram:sendTest', data),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkForAppUpdate: () => ipcRenderer.invoke('app:checkForUpdate'),
   getVideosPath: () => ipcRenderer.invoke('system:getVideosPath'),
+  getDefaultOutputDir: () => ipcRenderer.invoke('system:getConverterOutputDir'),
   getDownloadsPath: () => ipcRenderer.invoke('system:getDownloadsPath'),
   getToolsPath: () => ipcRenderer.invoke('system:getToolsPath'),
   isPackaged: () => ipcRenderer.invoke('system:isPackaged'),
@@ -113,6 +115,9 @@ const api = {
   uploadGetQueue: () => ipcRenderer.invoke('upload:getQueue'),
   uploadClearQueue: () => ipcRenderer.invoke('upload:clearQueue'),
   onUploadQueueUpdated: (callback) => ipcRenderer.on('upload:queue-updated', (event, q) => callback(q)),
+
+  // Navegação por Notificação (clique na notificação nativa → troca de tela)
+  onNavigateToScreen: (callback) => registerListener('bds:navigate-to-screen', callback),
   
   // Contas YouTube
   getYoutubeAccounts: () => ipcRenderer.invoke('youtube:get-accounts'),
