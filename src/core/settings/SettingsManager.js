@@ -20,11 +20,14 @@ class SettingsManager {
     this.settingsPath = path.join(configDir, 'settings.json');
 
     this.defaultSettings = {
+      // UI — estado da sidebar (true = colapsada, apenas ícones)
+      sidebarCollapsed: false,
       useDefaultFolder: true,
       mp3Folder: path.join(os.homedir(), 'Music'),
       mp4Folder: path.join(os.homedir(), 'Videos'),
       obsFolder: '',
       shadowplayFolder: '',
+      converterFolder: path.join(os.homedir(), 'Videos', 'Convertido'),
       deviceFolder: path.join(os.homedir(), 'Videos', 'BDSM DEVICES'),
       autoUpdateDeps: false,
       cookiesFile: path.join(dataDir, 'cookies.txt'),
@@ -36,6 +39,22 @@ class SettingsManager {
       errorReportingEnabled: true,
       developerEmail: DEVELOPER_EMAIL,
       errorReportingEndpoint: '',
+      // Notificações nativas e barra de progresso na taskbar
+      notificationsEnabled: true,
+      notifyDownloads: true,
+      notifyConverter: true,
+      notifyCopy: true,
+      notifySilence: true,
+      // Notificações de prazos dos projetos
+      notifyDeadlines: true,
+      // Quantos dias antes do prazo disparar a notificação de "prazo próximo"
+      deadlineNotifyLeadDays: 5,
+      // Horário local (HH:mm) em que os lembretes de prazo são avaliados
+      deadlineNotifyTime: '09:00',
+      // Integração Telegram (opcional): bot criado via @BotFather e chat_id do destinatário
+      telegramNotificationsEnabled: false,
+      telegramBotToken: '',
+      telegramChatId: '',
       // URL base do BDS Update Server (ex: https://updates.bragadigital.com). Deixe vazio
       // para usar apenas o fluxo padrão de checagem por componente via GitHub releases.
       updateServerUrl: ''

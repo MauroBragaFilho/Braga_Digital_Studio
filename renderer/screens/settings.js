@@ -87,6 +87,23 @@ function renderSettings() {
   setChk('autoUpdateInput', s.autoUpdateDeps);
   setChk('autoUpdateGithub', s.autoUpdateGithub !== false);
   setChk('checkUpdatesOnStartInput', s.checkUpdatesOnStart);
+  setChk('notificationsEnabledInput', s.notificationsEnabled !== false);
+  setChk('notifyDownloadsInput', s.notifyDownloads !== false);
+  setChk('notifyConverterInput', s.notifyConverter !== false);
+  setChk('notifyCopyInput', s.notifyCopy !== false);
+  setChk('notifySilenceInput', s.notifySilence !== false);
+  setChk('notifyDeadlinesInput', s.notifyDeadlines !== false);
+
+  // Telegram
+  setChk('telegramNotificationsEnabledInput', s.telegramNotificationsEnabled);
+  setVal('telegramBotTokenInput', s.telegramBotToken);
+  setVal('telegramChatIdInput', s.telegramChatId);
+
+  // Antecedência e horário do lembrete de prazo
+  const leadSelect = document.getElementById('deadlineNotifyLeadDaysInput');
+  if (leadSelect) leadSelect.value = String(s.deadlineNotifyLeadDays ?? 5);
+  const timeInput = document.getElementById('deadlineNotifyTimeInput');
+  if (timeInput) timeInput.value = s.deadlineNotifyTime || '09:00';
 
   // Tema e cor de destaque
   const themeSelect = document.getElementById('themeSelect');
@@ -116,6 +133,41 @@ function toggleFolderInputs() {
    ========================================================================== */
 function bindEvents() {
   document.getElementById('saveSettingsButton')?.addEventListener('click', saveSettings);
+
+  // Exibe/oculta os ajustes de lembrete de prazo conforme o checkbox ativo
+  const deadlineChk = document.getElementById('notifyDeadlinesInput');
+  const deadlineGroup = document.getElementById('deadlineSettingsGroup');
+  const deadlineTimeRow = document.getElementById('deadlineNotifyTimeRow');
+  if (deadlineChk) {
+    const syncDeadlineGroup = () => {
+      const visible = !!deadlineChk.checked;
+      if (deadlineGroup) deadlineGroup.style.display = visible ? '' : 'none';
+      if (deadlineTimeRow) deadlineTimeRow.style.display = visible ? '' : 'none';
+    };
+    deadlineChk.addEventListener('change', syncDeadlineGroup);
+    syncDeadlineGroup();
+  }
+
+  // Botão de teste do Telegram
+  document.getElementById('testTelegramButton')?.addEventListener('click', async () => {
+    const btn = document.getElementById('testTelegramButton');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-rounded">hourglass_top</span> Enviando...'; }
+    try {
+      const result = await window.bds.sendTelegramTest({
+        botToken: document.getElementById('telegramBotTokenInput')?.value,
+        chatId: document.getElementById('telegramChatIdInput')?.value
+      });
+      if (result?.success) {
+        window.bdsModal.alert('Sucesso! A mensagem de teste foi enviada para o seu Telegram.');
+      } else {
+        window.bdsModal.alert('Falha ao enviar: ' + (result?.error || 'Verifique o token e o Chat ID.'));
+      }
+    } catch (err) {
+      window.bdsModal.alert('Falha ao enviar: ' + (err.message || err));
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-rounded">send</span> Testar envio no Telegram'; }
+    }
+  });
 
   document.getElementById('useDefaultFolderInput')?.addEventListener('change', toggleFolderInputs);
 
@@ -236,6 +288,17 @@ async function saveSettings() {
       autoUpdateDeps: document.getElementById('autoUpdateInput')?.checked,
       autoUpdateGithub: document.getElementById('autoUpdateGithub')?.checked,
       checkUpdatesOnStart: document.getElementById('checkUpdatesOnStartInput')?.checked,
+      notificationsEnabled: document.getElementById('notificationsEnabledInput')?.checked,
+      notifyDownloads: document.getElementById('notifyDownloadsInput')?.checked,
+      notifyConverter: document.getElementById('notifyConverterInput')?.checked,
+      notifyCopy: document.getElementById('notifyCopyInput')?.checked,
+      notifySilence: document.getElementById('notifySilenceInput')?.checked,
+      notifyDeadlines: document.getElementById('notifyDeadlinesInput')?.checked,
+      deadlineNotifyLeadDays: Number(document.getElementById('deadlineNotifyLeadDaysInput')?.value) || 5,
+      deadlineNotifyTime: document.getElementById('deadlineNotifyTimeInput')?.value || '09:00',
+      telegramNotificationsEnabled: document.getElementById('telegramNotificationsEnabledInput')?.checked,
+      telegramBotToken: document.getElementById('telegramBotTokenInput')?.value || '',
+      telegramChatId: document.getElementById('telegramChatIdInput')?.value || '',
       theme: document.getElementById('themeSelect')?.value || 'dark',
       accentColor: document.getElementById('accentColorInput')?.value || '#e53935',
       lutPreviewImage: document.getElementById('lutPreviewImageInput')?.value || '',

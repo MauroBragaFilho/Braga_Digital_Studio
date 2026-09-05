@@ -31,13 +31,11 @@ src/logs/
 # Backups e temporários do banco de dados (gerados pelo DBManager)
 *.db.bak
 *.db.tmp
-bds.db.bak
+*.db.bak
 
 # Documentações internas (mantendo os READMEs e a pasta .docs)
 *.md
 !README*.md
-!.docs/
-!.docs/**
 
 # Sessão e cookies temporários
 Partitions/
@@ -67,3 +65,10 @@ desktop.ini
 
 # Arquivos temporários de teste
 tests/
+*.CR2
+.Teste imagem corrompida/
+
+.docs/
+_Archives/
+assets/
+logs/
