@@ -29,6 +29,8 @@ class SettingsManager {
       shadowplayFolder: '',
       converterFolder: path.join(os.homedir(), 'Videos', 'Convertido'),
       deviceFolder: path.join(os.homedir(), 'Videos', 'BDSM DEVICES'),
+      // Pasta monitorada pelo scanner de uploads automáticos para YouTube
+      uploadsFolder: path.join(os.homedir(), 'Videos', 'Uploads'),
       autoUpdateDeps: false,
       cookiesFile: path.join(dataDir, 'cookies.txt'),
       useYoutubeAccount: false,
