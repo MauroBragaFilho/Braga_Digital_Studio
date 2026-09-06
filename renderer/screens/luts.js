@@ -116,8 +116,14 @@ function loadBaseImage(src) {
  * @param {HTMLImageElement} sourceImg - Imagem fonte
  * @param {HTMLCanvasElement} targetCanvas - Canvas destino
  */
-function applyLutToCanvas(lutData, lutSize, sourceImg, targetCanvas) {
+function applyLutToCanvas(lutData, lutSize, sourceImg, targetCanvas, is1D) {
     if (!targetCanvas || !sourceImg || !lutData || !lutData.length || !lutSize) return;
+
+    // LUT 1D (LUT_1D_SIZE): a curva é aplicada em cada canal de forma independente.
+    if (is1D) {
+        applyLut1DToCanvas(lutData, lutSize, sourceImg, targetCanvas);
+        return;
+    }
 
     const maxDim = 640;
     let width = sourceImg.naturalWidth || sourceImg.width || 640;
@@ -215,6 +221,61 @@ function applyLutToCanvas(lutData, lutSize, sourceImg, targetCanvas) {
         pixels[i] = Math.min(255, Math.max(0, Math.round(finalR * 255)));
         pixels[i + 1] = Math.min(255, Math.max(0, Math.round(finalG * 255)));
         pixels[i + 2] = Math.min(255, Math.max(0, Math.round(finalB * 255)));
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+}
+
+/**
+ * Aplica uma LUT 1D (.cube com LUT_1D_SIZE) nos pixels da imagem de referência.
+ * Cada canal (R, G, B) é mapeado independentemente pela curva da LUT 1D.
+ * @param {Array<Array<number>>} lutData - Array de pontos [R, G, B] (0.0 a 1.0)
+ * @param {number} lutSize - Número de pontos da curva 1D (ex: 2, 256, 1024)
+ * @param {HTMLImageElement} sourceImg - Imagem fonte
+ * @param {HTMLCanvasElement} targetCanvas - Canvas destino
+ */
+function applyLut1DToCanvas(lutData, lutSize, sourceImg, targetCanvas) {
+    if (!targetCanvas || !sourceImg || !lutData || !lutData.length || !lutSize) return;
+
+    const maxDim = 640;
+    let width = sourceImg.naturalWidth || sourceImg.width || 640;
+    let height = sourceImg.naturalHeight || sourceImg.height || 360;
+
+    if (width > maxDim || height > maxDim) {
+        if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+        } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+        }
+    }
+
+    targetCanvas.width = width;
+    targetCanvas.height = height;
+
+    const ctx = targetCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    ctx.drawImage(sourceImg, 0, 0, width, height);
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const pixels = imgData.data;
+    const len = pixels.length;
+
+    const maxIdx = lutSize - 1;
+    const table = lutData;
+
+    for (let i = 0; i < len; i += 4) {
+        for (let c = 0; c < 3; c++) {
+            const t = (pixels[i + c] / 255) * maxIdx;
+            const i0 = Math.floor(t);
+            const i1 = Math.min(i0 + 1, maxIdx);
+            const frac = t - i0;
+            const row0 = table[i0] || [0, 0, 0];
+            const row1 = table[i1] || row0;
+            const v = row0[c] * (1 - frac) + row1[c] * frac;
+            pixels[i + c] = Math.min(255, Math.max(0, Math.round(v * 255)));
+        }
     }
 
     ctx.putImageData(imgData, 0, 0);
@@ -667,10 +728,15 @@ async function renderCardThumbnail(lut, imgEl) {
 
         if (!parsed || !parsed.data || !parsed.size) return; // mantém a imagem base como fallback
 
+        // Corrige o tipo (1D/3D) exibido no card e habilita o filtro por tipo
+        lut.type = parsed.is1D ? 'LUT 1D' : 'LUT 3D';
+        const badgeEl = imgEl.closest('.lut-card')?.querySelector('.lut-badge-3d');
+        if (badgeEl) badgeEl.textContent = lut.type;
+
         const offscreen = document.createElement('canvas');
         // applyLutToCanvas já limita as dimensões internamente (maxDim=640),
         // suficiente para uma miniatura nítida sem pesar na geração.
-        applyLutToCanvas(parsed.data, parsed.size, sourceImg, offscreen);
+        applyLutToCanvas(parsed.data, parsed.size, sourceImg, offscreen, parsed.is1D);
 
         const dataUrl = offscreen.toDataURL('image/jpeg', 0.85);
         thumbnailCache.set(lut.path, dataUrl);
@@ -779,13 +845,13 @@ async function renderRealLutPreview(lut, baseImgSrc) {
         if (renderToken !== currentRenderToken || selectedLut !== lut) return;
 
         if (parsed && parsed.data && parsed.size) {
-            applyLutToCanvas(parsed.data, parsed.size, sourceImg, canvas);
+            applyLutToCanvas(parsed.data, parsed.size, sourceImg, canvas, parsed.is1D);
             canvas.classList.remove('hidden');
             if (targetImg) targetImg.style.display = 'none';
 
             // Também prepara para fullscreen se o canvas fullscreen existir
             if (domRefs.fsSliderCanvas) {
-                applyLutToCanvas(parsed.data, parsed.size, sourceImg, domRefs.fsSliderCanvas);
+                applyLutToCanvas(parsed.data, parsed.size, sourceImg, domRefs.fsSliderCanvas, parsed.is1D);
             }
         } else {
             console.warn('[LUTS] Não foi possível obter dados parseados da LUT para preview real:', lut.path, parsed);
@@ -819,13 +885,17 @@ async function updateCubeSection(lut) {
         if (selectedLut !== requestedLut) return;
 
         if (domRefs.insTitle) domRefs.insTitle.textContent = header.title || '—';
-        if (domRefs.insLutSize) domRefs.insLutSize.textContent = header.size ? `${header.size}³` : '—';
+        if (domRefs.insLutSize) {
+            domRefs.insLutSize.textContent = header.size
+                ? (header.is1D ? `${header.size}` : `${header.size}³`)
+                : '—';
+        }
 
         // ✅ CORREÇÃO (bug 3): header.totalEntries agora reflete a contagem REAL de linhas
         // RGB válidas lidas do arquivo (não mais size³ assumido). Se divergir do valor
         // esperado, é sinal de arquivo truncado/corrompido — avisamos visualmente.
         if (domRefs.insLutEntries) {
-            const expected = header.size ? header.size * header.size * header.size : null;
+            const expected = header.size ? (header.is1D ? header.size : header.size * header.size * header.size) : null;
             const countLabel = header.totalEntries != null ? header.totalEntries.toLocaleString('pt-BR') : '—';
             if (expected != null && header.totalEntries !== expected) {
                 domRefs.insLutEntries.textContent = `${countLabel} (esperado: ${expected.toLocaleString('pt-BR')}) ⚠️`;

@@ -29,4 +29,19 @@ module.exports = function registerTelemetryHandlers() {
     if (!report) return null;
     return errorReporter.generateMailtoLink(report);
   });
+
+  // Link mailto a partir de um crash report já salvo em disco (ação explícita do usuário)
+  ipcMain.handle('telemetry:getCrashReportMailto', (_, filePath) => {
+    return errorReporter.generateMailtoFromSavedReport(filePath);
+  });
+
+  // Conteúdo completo de um crash report salvo (para visualização na UI)
+  ipcMain.handle('telemetry:getCrashReportDetails', (_, filePath) => {
+    return errorReporter.getReportDetails(filePath);
+  });
+
+  // Relato manual do usuário (não é bloqueado por errorReportingEnabled: ação explícita)
+  ipcMain.handle('telemetry:generateManualMailto', (_, description) => {
+    return errorReporter.generateManualMailto(description);
+  });
 };

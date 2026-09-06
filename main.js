@@ -66,8 +66,28 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,       // [FASE 1.3] Habilitar sandbox para reduzir superfície de ataque
-      webviewTag: false     // [FASE 1.3] Removido — não é usado no renderer
+      webviewTag: true     // Necessário: tela "Envio" (<webview> do YouTube Studio, partition persist:youtube_studio)
     }
+  });
+
+  // [SEGURANÇA] Restringe o <webview> a hospedar SOMENTE o YouTube Studio e força
+  // o guest SEM nodeIntegration — compensa a reabilitação do webviewTag acima.
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    let url;
+    try {
+      url = new URL(params.src || '');
+    } catch (_) {
+      event.preventDefault();
+      return;
+    }
+    if (url.protocol !== 'https:' || url.hostname !== 'studio.youtube.com') {
+      event.preventDefault();
+      return;
+    }
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
   });
 
   mainWindow.setMenu(null);

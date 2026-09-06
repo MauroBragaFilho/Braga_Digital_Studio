@@ -8,10 +8,12 @@ export function initScreen() {
   setupTabs();
   bindEvents();
   setupCustomSourceModal();
+  setupErrorReportingUI();
   fetchAppVersion();
   loadSettingsCustomSources();
   setupContainerClickHandler();
   applyPendingUpdateCheck();
+  loadCrashReports();
 }
 
 /* ==========================================================================
@@ -58,6 +60,8 @@ function setupTabs() {
       tab.classList.add('active');
       const targetView = document.getElementById(targetId);
       if (targetView) targetView.classList.remove('hidden');
+      // Recarrega a lista de crash reports ao abrir a aba Sistema
+      if (targetId === 'settingsSystemView') loadCrashReports();
     });
   });
 }
@@ -87,6 +91,16 @@ function renderSettings() {
   setChk('autoUpdateInput', s.autoUpdateDeps);
   setChk('autoUpdateGithub', s.autoUpdateGithub !== false);
   setChk('checkUpdatesOnStartInput', s.checkUpdatesOnStart);
+
+  // BDS Update Server (URL base opcional para componentes)
+  setVal('updateServerUrlInput', s.updateServerUrl);
+
+  // Upload para YouTube (pasta do scanner de mídias)
+  setVal('uploadsFolderInput', s.uploadsFolder);
+
+  // Relatório de erros / telemetria
+  setChk('errorReportingEnabledInput', s.errorReportingEnabled !== false);
+  setVal('developerEmailInput', s.developerEmail);
   setChk('notificationsEnabledInput', s.notificationsEnabled !== false);
   setChk('notifyDownloadsInput', s.notifyDownloads !== false);
   setChk('notifyConverterInput', s.notifyConverter !== false);
@@ -176,6 +190,31 @@ function bindEvents() {
   document.getElementById('obsFolderButton')?.addEventListener('click', () => chooseFolder('obsFolderInput'));
   document.getElementById('shadowplayFolderButton')?.addEventListener('click', () => chooseFolder('shadowplayFolderInput'));
   document.getElementById('deviceFolderButton')?.addEventListener('click', () => chooseFolder('deviceFolderInput'));
+
+  // Pasta de uploads do YouTube — seleciona a pasta, escaneia os vídeos e persiste no save
+  document.getElementById('uploadsFolderButton')?.addEventListener('click', async () => {
+    const input = document.getElementById('uploadsFolderInput');
+    const folder = await window.bds.selectFolder(input?.value || '');
+    if (!folder) return;
+    if (input) input.value = folder;
+    try {
+      await window.bds.uploadScanDirectory(folder);
+    } catch (err) {
+      console.error('[SETTINGS] Erro ao escanear a pasta de uploads:', err);
+    }
+  });
+
+  // Relatório de Erros: abrir pasta de crash reports e atualizar a lista
+  document.getElementById('openReportsFolderButton')?.addEventListener('click', () => {
+    if (typeof window.bds?.openCrashReportsFolder === 'function') {
+      try {
+        window.bds.openCrashReportsFolder();
+      } catch (err) {
+        console.error('[SETTINGS] Erro ao abrir pasta de relatórios:', err);
+      }
+    }
+  });
+  document.getElementById('refreshCrashReportsButton')?.addEventListener('click', loadCrashReports);
 
   // LUTs Preview Image Select / Reset
   document.getElementById('lutPreviewImageSelectBtn')?.addEventListener('click', async () => {
@@ -285,9 +324,11 @@ async function saveSettings() {
       obsFolder: document.getElementById('obsFolderInput')?.value,
       shadowplayFolder: document.getElementById('shadowplayFolderInput')?.value,
       deviceFolder: document.getElementById('deviceFolderInput')?.value,
+      uploadsFolder: document.getElementById('uploadsFolderInput')?.value,
       autoUpdateDeps: document.getElementById('autoUpdateInput')?.checked,
       autoUpdateGithub: document.getElementById('autoUpdateGithub')?.checked,
       checkUpdatesOnStart: document.getElementById('checkUpdatesOnStartInput')?.checked,
+      updateServerUrl: document.getElementById('updateServerUrlInput')?.value?.trim() || '',
       notificationsEnabled: document.getElementById('notificationsEnabledInput')?.checked,
       notifyDownloads: document.getElementById('notifyDownloadsInput')?.checked,
       notifyConverter: document.getElementById('notifyConverterInput')?.checked,
@@ -302,6 +343,8 @@ async function saveSettings() {
       theme: document.getElementById('themeSelect')?.value || 'dark',
       accentColor: document.getElementById('accentColorInput')?.value || '#e53935',
       lutPreviewImage: document.getElementById('lutPreviewImageInput')?.value || '',
+      errorReportingEnabled: document.getElementById('errorReportingEnabledInput')?.checked,
+      developerEmail: document.getElementById('developerEmailInput')?.value?.trim() || '',
     });
     state.settings = updatedSettings;
     // Confirma o tema após salvar (garante consistência)
@@ -686,6 +729,234 @@ async function startUnifiedUpdate() {
     setUpdateStatusView('error');
     setStatus('Erro ao atualizar componentes: ' + error.message);
   }
+}
+
+/* ==========================================================================
+   RELATÓRIOS DE ERROS / CRASH REPORTS
+   ========================================================================== */
+let currentCrashReportPath = null;
+let errorReportingUIReady = false;
+
+function setupErrorReportingUI() {
+  if (errorReportingUIReady) return;
+  errorReportingUIReady = true;
+  setupCrashReportListActions();
+  setupCrashDetailsModal();
+  setupReportProblemModal();
+}
+
+async function loadCrashReports() {
+  const container = document.getElementById('crashReportsList');
+  if (!container) return;
+  if (!window.bds?.getCrashReports) return;
+  try {
+    const reports = await window.bds.getCrashReports();
+    renderCrashReports(Array.isArray(reports) ? reports : []);
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao carregar crash reports:', err);
+    container.innerHTML = '<div class="settings-crash-empty"><span class="material-symbols-rounded">error</span> Não foi possível carregar os relatórios.</div>';
+  }
+}
+
+function formatReportDate(iso) {
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (_) {
+    return iso || '';
+  }
+}
+
+function renderCrashReports(reports) {
+  const container = document.getElementById('crashReportsList');
+  if (!container) return;
+
+  if (!reports.length) {
+    container.innerHTML = `
+      <div class="settings-crash-empty">
+        <span class="material-symbols-rounded">verified_user</span>
+        Nenhum relatório de erro registrado até o momento.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = reports.map((r) => `
+    <div class="settings-crash-item">
+      <div class="settings-crash-item-head">
+        <span class="settings-crash-date">${escapeHtml(formatReportDate(r.timestamp))}</span>
+        <span class="settings-crash-source" title="${escapeHtml(r.source || 'unknown')}">${escapeHtml(r.source || 'unknown')}</span>
+      </div>
+      <p class="settings-crash-msg" title="${escapeHtml(r.errorMessage)}">${escapeHtml(r.errorMessage)}</p>
+      <div class="settings-crash-actions">
+        <button class="settings-btn-outline settings-btn-sm" type="button" data-action="email" data-path="${escapeHtml(r.path || '')}">
+          <span class="material-symbols-rounded">mail</span> Enviar por e-mail
+        </button>
+        <button class="settings-btn-outline settings-btn-sm" type="button" data-action="details" data-path="${escapeHtml(r.path || '')}">
+          <span class="material-symbols-rounded">visibility</span> Detalhes
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+function setupCrashReportListActions() {
+  const container = document.getElementById('crashReportsList');
+  if (!container) return;
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const reportPath = btn.dataset.path;
+    if (btn.dataset.action === 'email') {
+      await sendCrashReportByEmail(reportPath);
+    } else if (btn.dataset.action === 'details') {
+      await openCrashReportDetails(reportPath);
+    }
+  });
+}
+
+async function sendCrashReportByEmail(reportPath) {
+  if (!reportPath || !window.bds?.getCrashReportMailto) return;
+  try {
+    setStatus('Gerando e-mail do relatório de erro...');
+    const mailtoUrl = await window.bds.getCrashReportMailto(reportPath);
+    if (!mailtoUrl) {
+      window.bdsModal.alert('Não foi possível gerar o e-mail para este relatório.');
+      return;
+    }
+    if (typeof window.bds.openExternal === 'function') {
+      await window.bds.openExternal(mailtoUrl);
+    } else {
+      window.bdsModal.alert('Não foi possível abrir o cliente de e-mail neste dispositivo.');
+    }
+  } catch (err) {
+    console.error('[SETTINGS] Falha ao enviar relatório por e-mail:', err);
+    window.bdsModal.alert('Falha ao abrir o cliente de e-mail: ' + err.message);
+  }
+}
+
+async function openCrashReportDetails(reportPath) {
+  if (!reportPath || !window.bds?.getCrashReportDetails) return;
+  try {
+    const details = await window.bds.getCrashReportDetails(reportPath);
+    if (!details) {
+      window.bdsModal.alert('Não foi possível carregar os detalhes deste relatório.');
+      return;
+    }
+    currentCrashReportPath = reportPath;
+    fillCrashDetails(details);
+    openSettingsModal('modalSettingsCrashDetails');
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao carregar detalhes do relatório:', err);
+    window.bdsModal.alert('Erro ao carregar detalhes: ' + err.message);
+  }
+}
+
+function fillCrashDetails(d) {
+  const pre = document.getElementById('modalSettingsCrashDetailsBody');
+  if (!pre) return;
+  const sys = d.system || {};
+  const lines = [
+    `Data/Hora: ${d.timestamp || '—'}`,
+    `ID: ${d.id || '—'}`,
+    `Origem: ${d.context?.source || '—'}`,
+    `Fatal: ${d.context?.isFatal ? 'Sim' : 'Não'}${d.context?.action ? ` | Ação: ${d.context.action}` : ''}`,
+    '',
+    `App: ${d.app?.name || 'BDS'} v${d.app?.version || '—'}`,
+    `Sistema: ${sys.platform || ''} ${sys.arch || ''} (${sys.osType || ''}) — CPU: ${sys.cpuModel || '?'} — Mem: ${sys.totalMemoryMB || 0} MB`,
+    '',
+    `Erro: ${d.error?.name || 'Error'} — ${d.error?.message || ''}`,
+    '',
+    'Stack Trace:',
+    d.error?.stack || '(sem stack trace)'
+  ];
+  if (d.localFilePath) lines.push('', `Arquivo local: ${d.localFilePath}`);
+  if (Array.isArray(d.recentLogs) && d.recentLogs.length) {
+    lines.push('', 'Últimas linhas do log:', d.recentLogs.slice(-15).join('\n'));
+  }
+  pre.textContent = lines.join('\n');
+}
+
+function openSettingsModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('active');
+  }
+}
+
+function closeSettingsModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('active');
+  }
+}
+
+function setupCrashDetailsModal() {
+  const modal = document.getElementById('modalSettingsCrashDetails');
+  if (!modal) return;
+  document.getElementById('btnCloseSettingsCrashDetails')?.addEventListener('click', () => closeSettingsModal('modalSettingsCrashDetails'));
+  document.getElementById('modalSettingsCrashDetailsClose')?.addEventListener('click', () => closeSettingsModal('modalSettingsCrashDetails'));
+  document.getElementById('modalSettingsCrashDetailsEmail')?.addEventListener('click', () => {
+    if (currentCrashReportPath) sendCrashReportByEmail(currentCrashReportPath);
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeSettingsModal('modalSettingsCrashDetails');
+  });
+}
+
+function setupReportProblemModal() {
+  const modal = document.getElementById('modalSettingsReportProblem');
+  if (!modal) return;
+  const desc = document.getElementById('modalSettingsReportProblemDesc');
+
+  document.getElementById('reportProblemButton')?.addEventListener('click', () => openSettingsModal('modalSettingsReportProblem'));
+  document.getElementById('btnCloseSettingsReportProblem')?.addEventListener('click', () => closeSettingsModal('modalSettingsReportProblem'));
+  document.getElementById('modalSettingsReportProblemCancel')?.addEventListener('click', () => closeSettingsModal('modalSettingsReportProblem'));
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeSettingsModal('modalSettingsReportProblem');
+  });
+
+  document.getElementById('modalSettingsReportProblemConfirm')?.addEventListener('click', async () => {
+    const description = (desc?.value || '').trim();
+    if (!description) {
+      window.bdsModal.alert('Por favor, descreva o problema antes de gerar o e-mail.');
+      return;
+    }
+    if (!window.bds?.generateManualMailto) return;
+    const confirmBtn = document.getElementById('modalSettingsReportProblemConfirm');
+    const originalHTML = confirmBtn?.innerHTML;
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="material-symbols-rounded">hourglass_top</span> Gerando...';
+    }
+    try {
+      const mailtoUrl = await window.bds.generateManualMailto(description);
+      if (!mailtoUrl) {
+        window.bdsModal.alert('Não foi possível gerar o e-mail de suporte.');
+        return;
+      }
+      closeSettingsModal('modalSettingsReportProblem');
+      if (desc) desc.value = '';
+      if (typeof window.bds.openExternal === 'function') {
+        await window.bds.openExternal(mailtoUrl);
+      }
+      // O relato é salvo localmente pelo processo principal — atualiza a lista.
+      await loadCrashReports();
+    } catch (err) {
+      console.error('[SETTINGS] Erro ao gerar e-mail de suporte:', err);
+      window.bdsModal.alert('Erro ao gerar o e-mail de suporte: ' + err.message);
+    } finally {
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalHTML;
+      }
+    }
+  });
 }
 
 /* ==========================================================================

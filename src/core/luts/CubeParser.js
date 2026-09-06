@@ -5,20 +5,21 @@ const fs = require('node:fs');
 /**
  * CubeParser — Leitura e interpretação de arquivos de LUT 3D (.cube).
  *
- * Suporta metadados (TITLE, LUT_3D_SIZE, DOMAIN_MIN, DOMAIN_MAX)
+ * Suporta metadados (TITLE, LUT_3D_SIZE, LUT_1D_SIZE, DOMAIN_MIN, DOMAIN_MAX)
  * e trios RGB normalizados.
  */
 class CubeParser {
   /**
    * Parse completo de um arquivo .cube.
    * @param {string} filePath - Caminho absoluto do arquivo .cube
-   * @returns {Object} { size, data, title, domainMin, domainMax, headerLines, totalEntries, preview }
+   * @returns {Object} { size, is1D, data, title, domainMin, domainMax, headerLines, totalEntries, preview }
    */
   static parse(filePath) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split(/\r?\n/);
 
     let size = null;
+    let is1D = false;
     let lutData = [];
     let title = null;
     let domainMin = null;
@@ -47,6 +48,17 @@ class CubeParser {
         const sizeMatch = trimmedLine.match(/LUT_3D_SIZE\s+(\d+)/);
         if (sizeMatch) {
           size = parseInt(sizeMatch[1], 10);
+          is1D = false;
+        }
+        continue;
+      }
+
+      if (trimmedLine.startsWith('LUT_1D_SIZE')) {
+        headerLines.push(trimmedLine);
+        const sizeMatch = trimmedLine.match(/LUT_1D_SIZE\s+(\d+)/);
+        if (sizeMatch) {
+          size = parseInt(sizeMatch[1], 10);
+          is1D = true;
         }
         continue;
       }
@@ -67,7 +79,7 @@ class CubeParser {
 
       if (size && !isNaN(size)) {
         const rgbValues = trimmedLine.split(/\s+/).map(parseFloat);
-        if (rgbValues.length === 3) {
+        if (rgbValues.length === 3 && rgbValues.every(v => !isNaN(v))) {
           lutData.push(rgbValues);
         }
       }
@@ -77,12 +89,18 @@ class CubeParser {
       throw new Error('Formato de LUT inválido ou dados ausentes.');
     }
 
-    if (lutData.length !== size * size * size) {
-      throw new Error(`Número de entradas (${lutData.length}) não corresponde ao tamanho (${size}^3 = ${size * size * size})`);
+    const expectedEntries = is1D ? size : size * size * size;
+    if (lutData.length !== expectedEntries) {
+      throw new Error(
+        is1D
+          ? `Número de entradas (${lutData.length}) não corresponde ao tamanho 1D (${size})`
+          : `Número de entradas (${lutData.length}) não corresponde ao tamanho (${size}^3 = ${size * size * size})`
+      );
     }
 
     return {
       size,
+      is1D,
       data: lutData,
       title,
       domainMin,
@@ -96,13 +114,14 @@ class CubeParser {
   /**
    * Parse apenas do cabeçalho/metadados (sem carregar a tabela inteira em memória).
    * @param {string} filePath - Caminho do arquivo .cube
-   * @returns {Object} { title, size, domainMin, domainMax, headerLines, totalEntries, preview }
+   * @returns {Object} { title, size, is1D, domainMin, domainMax, headerLines, totalEntries, preview }
    */
   static parseHeader(filePath) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split(/\r?\n/);
 
     let size = null;
+    let is1D = false;
     let title = null;
     let domainMin = null;
     let domainMax = null;
@@ -130,7 +149,20 @@ class CubeParser {
       if (trimmedLine.startsWith('LUT_3D_SIZE')) {
         headerLines.push(trimmedLine);
         const sizeMatch = trimmedLine.match(/LUT_3D_SIZE\s+(\d+)/);
-        if (sizeMatch) size = parseInt(sizeMatch[1], 10);
+        if (sizeMatch) {
+          size = parseInt(sizeMatch[1], 10);
+          is1D = false;
+        }
+        continue;
+      }
+
+      if (trimmedLine.startsWith('LUT_1D_SIZE')) {
+        headerLines.push(trimmedLine);
+        const sizeMatch = trimmedLine.match(/LUT_1D_SIZE\s+(\d+)/);
+        if (sizeMatch) {
+          size = parseInt(sizeMatch[1], 10);
+          is1D = true;
+        }
         continue;
       }
 
@@ -162,6 +194,7 @@ class CubeParser {
     return {
       title,
       size,
+      is1D,
       domainMin,
       domainMax,
       headerLines,

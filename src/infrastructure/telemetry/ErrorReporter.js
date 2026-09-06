@@ -345,6 +345,90 @@ class ErrorReporter {
       return [];
     }
   }
+
+  /**
+   * Resolve o caminho de um relatório garantindo que esteja dentro de `crashReportsDir`
+   * (proteção contra path traversal quando o caminho vem da UI).
+   * @private
+   * @param {string} filePath - Caminho absoluto ou nome de arquivo dentro de crashReportsDir
+   * @returns {string|null}
+   */
+  _resolveReportPath(filePath) {
+    try {
+      if (!this.crashReportsDir || !filePath) return null;
+      const base = path.resolve(this.crashReportsDir);
+      const fullPath = path.resolve(filePath);
+      if (fullPath !== base && !fullPath.startsWith(base + path.sep)) return null;
+      return fs.existsSync(fullPath) ? fullPath : null;
+    } catch (e) {
+      logger.error('ErrorReporter:_resolveReportPath:error', { error: e.message });
+      return null;
+    }
+  }
+
+  /**
+   * Gera o link mailto de um relatório já salvo em disco (ação explícita do usuário na UI).
+   * @param {string} filePath - Caminho absoluto ou nome do arquivo em crashReportsDir
+   * @returns {string|null}
+   */
+  generateMailtoFromSavedReport(filePath) {
+    const fullPath = this._resolveReportPath(filePath);
+    if (!fullPath) return null;
+    try {
+      const reportData = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      return this.generateMailtoLink(reportData);
+    } catch (e) {
+      logger.error('ErrorReporter:generateMailtoFromSavedReport:error', { error: e.message });
+      return null;
+    }
+  }
+
+  /**
+   * Retorna o conteúdo completo de um relatório salvo para visualização na UI.
+   * @param {string} filePath - Caminho absoluto ou nome do arquivo em crashReportsDir
+   * @returns {Object|null}
+   */
+  getReportDetails(filePath) {
+    const fullPath = this._resolveReportPath(filePath);
+    if (!fullPath) return null;
+    try {
+      return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+    } catch (e) {
+      logger.error('ErrorReporter:getReportDetails:error', { error: e.message });
+      return null;
+    }
+  }
+
+  /**
+   * Gera um relatório manual a partir da descrição do usuário e retorna o link mailto.
+   * É uma ação explícita do usuário (Relatar um Problema), portanto NÃO é bloqueada pela
+   * configuração `errorReportingEnabled`, não dispara envio HTTP automático e a cópia é
+   * salva localmente para constar no histórico de crash reports.
+   * @param {string} description - Descrição do problema informada pelo usuário
+   * @returns {string|null}
+   */
+  generateManualMailto(description) {
+    try {
+      const text = String(description || '').trim();
+      if (!text) return null;
+
+      const errObj = { name: 'ManualReport', message: text, stack: '', code: null };
+      const reportData = this._buildReportPayload(errObj, {
+        source: 'manual-report',
+        isFatal: false,
+        action: 'user-report',
+        metadata: { description: text }
+      });
+
+      const savedPath = this._saveReportToDisk(reportData);
+      reportData.localFilePath = savedPath;
+
+      return this.generateMailtoLink(reportData);
+    } catch (e) {
+      console.error('ErrorReporter:generateManualMailto:error', e);
+      return null;
+    }
+  }
 }
 
 // Instância singleton

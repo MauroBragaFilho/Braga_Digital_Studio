@@ -221,6 +221,18 @@
         </div>
 
         <div class="settings-group">
+          <h4 class="settings-group-title">Upload para YouTube</h4>
+          <p class="settings-hint">Pasta monitorada pelo scanner de uploads automáticos para YouTube.</p>
+          <div class="settings-folder-row">
+            <span class="settings-folder-label">Pasta de Uploads</span>
+            <div class="settings-folder-controls">
+              <input type="text" id="uploadsFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
+              <button id="uploadsFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
           <h4 class="settings-group-title">Pastas Personalizadas da Biblioteca</h4>
           <p class="settings-hint">Cadastre ou remova fontes de mídias personalizadas (Câmeras, Cartão SD, Podcast Studio, etc.).</p>
           <button id="btnSettingsAddCustomSource" class="settings-btn-accent" type="button">
@@ -309,6 +321,14 @@
           </label>
         </div>
 
+        <div class="settings-form-row">
+          <label for="updateServerUrlInput">URL do BDS Update Server</label>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+            <input type="text" id="updateServerUrlInput" class="settings-input" placeholder="https://updates.bragadigital.com (opcional)" />
+            <span class="settings-check-hint">Deixe vazio para usar apenas o fluxo padrão de atualizações via GitHub Releases.</span>
+          </div>
+        </div>
+
         <!-- Atualização do Aplicativo (unificada no painel) -->
         <div class="settings-diagnostics-zone" id="appUpdateZone">
           <h4 class="settings-diagnostics-title">
@@ -341,6 +361,43 @@
           <div class="settings-system-item"><span>Desenvolvedor</span><strong>Braga Dev</strong></div>
           <div class="settings-system-item"><span>Pastas do Aplicativo</span><strong id="sysFolders">Carregando...</strong></div>
           <div class="settings-system-item"><span>Atualizações</span><strong>Automático via Braga Dev</strong></div>
+        </div>
+
+        <!-- Relatório de Erros -->
+        <div class="settings-group" style="margin-top: 4px;">
+          <h4 class="settings-group-title">Relatório de Erros</h4>
+          <label class="settings-check-row">
+            <input type="checkbox" id="errorReportingEnabledInput" />
+            <div>
+              <span class="settings-check-label">Enviar relatórios de erros em segundo plano</span>
+              <span class="settings-check-hint">Quando ativo, o BDS envia automaticamente dados de erros e travamentos ao desenvolvedor.</span>
+            </div>
+          </label>
+          <div class="settings-form-row">
+            <label for="developerEmailInput">E-mail do desenvolvedor</label>
+            <input type="email" id="developerEmailInput" class="settings-input" placeholder="obragafilho00@gmail.com" />
+          </div>
+
+          <div class="settings-crash-actions-bar">
+            <button id="reportProblemButton" class="settings-btn-outline" type="button">
+              <span class="material-symbols-rounded">report</span> Relatar um Problema
+            </button>
+            <button id="openReportsFolderButton" class="settings-btn-outline" type="button">
+              <span class="material-symbols-rounded">folder_open</span> Abrir Pasta
+            </button>
+            <button id="refreshCrashReportsButton" class="settings-btn-outline" type="button" title="Atualizar lista de relatórios">
+              <span class="material-symbols-rounded">refresh</span> Atualizar
+            </button>
+          </div>
+
+          <div class="settings-crash-list-wrap">
+            <span class="settings-check-hint">Relatórios locais de erros e travamentos registrados neste dispositivo:</span>
+            <div id="crashReportsList" class="settings-crash-list">
+              <div class="settings-crash-empty">
+                <span class="material-symbols-rounded">sync</span> Carregando relatórios...
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Diagnóstico e Logs -->
@@ -408,6 +465,60 @@
       <button id="modalSettingsAddCustomSourceCancel" class="settings-btn-outline" type="button">Cancelar</button>
       <button id="modalSettingsAddCustomSourceConfirm" class="settings-btn-primary" type="button">
         <span class="material-symbols-rounded">check_circle</span> Cadastrar & Importar Mídias
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DETALHES DO CRASH REPORT -->
+<div id="modalSettingsCrashDetails" class="settings-modal-overlay hidden">
+  <div class="settings-modal" style="width: 620px;">
+    <div class="settings-modal-header">
+      <h3 class="settings-modal-title">
+        <span class="material-symbols-rounded">bug_report</span>
+        Detalhes do Relatório de Erro
+      </h3>
+      <button id="btnCloseSettingsCrashDetails" class="settings-modal-close" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+    <pre id="modalSettingsCrashDetailsBody" class="settings-crash-details-pre">Carregando...</pre>
+    <div class="settings-modal-footer">
+      <button id="modalSettingsCrashDetailsEmail" class="settings-btn-outline" type="button">
+        <span class="material-symbols-rounded">mail</span> Enviar por e-mail
+      </button>
+      <button id="modalSettingsCrashDetailsClose" class="settings-btn-primary" type="button">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: RELATAR PROBLEMA -->
+<div id="modalSettingsReportProblem" class="settings-modal-overlay hidden">
+  <div class="settings-modal">
+    <div class="settings-modal-header">
+      <h3 class="settings-modal-title">
+        <span class="material-symbols-rounded">report</span>
+        Relatar um Problema
+      </h3>
+      <button id="btnCloseSettingsReportProblem" class="settings-modal-close" type="button">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+    <p class="settings-modal-desc">
+      Descreva o que aconteceu para o desenvolvedor. Será aberto o seu cliente de e-mail com um
+      relatório pré-preenchido, incluindo versão do BDS e informações do sistema para diagnóstico.
+    </p>
+    <div class="settings-modal-form">
+      <div class="settings-form-group">
+        <label class="settings-form-label" for="modalSettingsReportProblemDesc">Descrição do problema</label>
+        <textarea id="modalSettingsReportProblemDesc" class="settings-textarea" rows="5"
+          placeholder="Ex: Ao exportar um vídeo, o BDS travou e fechou inesperadamente."></textarea>
+      </div>
+    </div>
+    <div class="settings-modal-footer">
+      <button id="modalSettingsReportProblemCancel" class="settings-btn-outline" type="button">Cancelar</button>
+      <button id="modalSettingsReportProblemConfirm" class="settings-btn-primary" type="button">
+        <span class="material-symbols-rounded">mail</span> Gerar e-mail de suporte
       </button>
     </div>
   </div>

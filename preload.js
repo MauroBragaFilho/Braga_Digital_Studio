@@ -33,6 +33,9 @@ const api = {
   getCrashReports: () => ipcRenderer.invoke('telemetry:getCrashReports'),
   openCrashReportsFolder: () => ipcRenderer.invoke('telemetry:openReportsFolder'),
   getMailtoErrorLink: (error, context) => ipcRenderer.invoke('telemetry:getMailtoLink', error, context),
+  getCrashReportMailto: (filePath) => ipcRenderer.invoke('telemetry:getCrashReportMailto', filePath),
+  getCrashReportDetails: (filePath) => ipcRenderer.invoke('telemetry:getCrashReportDetails', filePath),
+  generateManualMailto: (description) => ipcRenderer.invoke('telemetry:generateManualMailto', description),
 
   // Controles de Janela
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
