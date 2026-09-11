@@ -1,0 +1,16 @@
+{
+  "_comment": "Configuração de onde o BDS procura por novas versões DO PRÓPRIO APLICATIVO. Isso é diferente do 'BDS Update Server' das ferramentas internas (yt-dlp/FFmpeg), que continua configurável pelo usuário em Configurações > Atualizações (settings.updateServerUrl).",
+
+  "provider": "github-releases",
+
+  "github": {
+    "owner": "MauroBragaFilho",
+    "repo": "Braga_Digital_Studio",
+    "includePrereleases": false
+  },
+
+  "customServer": {
+    "_comment": "Só usado se 'provider' for alterado para 'custom-server'. Deve apontar para um endpoint que devolva JSON no formato { \"version\": \"1.2.3\", \"url\": \"https://.../download\", \"notes\": \"...\" }.",
+    "url": ""
+  }
+}
