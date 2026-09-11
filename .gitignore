@@ -13,7 +13,12 @@ out/
 # Dados, Banco de dados e Configurações locais
 data/
 database/
-config/
+# IMPORTANTE: apenas a config de MÁQUINA local (pasta config/ na raiz) é ignorada.
+# /config/ NÃO pode virar "config/" (sem barra inicial): esse padrão casaria com
+# qualquer pasta nomeada "config" em qualquer nível, incluindo src/config/, que
+# contém appInfo.js e appUpdate.config.json — arquivos OBRIGATÓRIOS no build.
+# Sem eles, o app quebra no startup com "Cannot find module '/config/appInfo'".
+/config/
 
 # Arquivos executáveis / scripts locais de menu e pacotes zip
 bds_menu.bat
