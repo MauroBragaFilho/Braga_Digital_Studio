@@ -53,8 +53,9 @@ jobs:
       - name: Verificar se já existe uma Release para esta versão
         run: |
           TAG="v$(node -p "require('./package.json').version")"
+          echo "== Commit avaliado: $(git rev-parse --short HEAD) | Versão no checkout: $TAG =="
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
-            echo "::error::A tag '$TAG' já existe no repositório. Bump a versão em package.json (ex: npm version patch) antes de rodar este workflow novamente, para não sobrescrever uma Release já publicada."
+            echo "::error::A tag '$TAG' já existe no repositório. Bump a versão em package.json (ex: npm version patch) e dispare um NOVO run pelo botão 'Run workflow' (não use 'Re-run', que reexecuta o commit antigo e repete o erro)."
             exit 1
           fi
           echo "Tag '$TAG' ainda não existe — build pode prosseguir."
