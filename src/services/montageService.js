@@ -9,9 +9,10 @@ const { ffprobeTool } = require('../infrastructure/external-tools/adapters/Ffpro
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 
 class MontageService extends EventEmitter {
-  constructor({ paths }) {
+  constructor({ paths, getSettings }) {
     super();
     this.paths = paths;
+    this.getSettings = getSettings;
     this.currentProcess = null;
     this.cancelRequested = false;
     this.running = false;
@@ -191,7 +192,10 @@ class MontageService extends EventEmitter {
     };
     const targetRes = resMap[resolution] || resMap['1080p'];
     
-    // Detect encoder
+    // Detect encoder (respeita preferências de aceleração de hardware do usuário)
+    if (typeof this.getSettings === 'function') {
+      hardwareDetection.configure(this.getSettings());
+    }
     const targetEncoder = await hardwareDetection.detectEncoder(ffmpeg, codec);
     const qualityArgs = hardwareDetection.getQualitySettings(targetEncoder, quality);
 
@@ -252,6 +256,9 @@ class MontageService extends EventEmitter {
     const filterComplex = filterParts.join(';');
 
     let args = ['-y'];
+    // Decodificação acelerada apenas quando o usuário mantém HW habilitado
+    const settingsHw = hardwareDetection.settings || {};
+    if (settingsHw.useHardwareAcceleration !== false) args.push('-hwaccel', 'auto');
     inputFiles.forEach(f => args.push('-i', f));
     
     args.push('-filter_complex', filterComplex);

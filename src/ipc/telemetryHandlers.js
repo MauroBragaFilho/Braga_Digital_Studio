@@ -19,6 +19,10 @@ module.exports = function registerTelemetryHandlers() {
     return errorReporter.listLocalReports();
   });
 
+  ipcMain.handle('telemetry:clearCrashReports', () => {
+    return errorReporter.clearAllReports();
+  });
+
   ipcMain.handle('telemetry:openReportsFolder', () => {
     errorReporter.openCrashReportsFolder();
     return true;

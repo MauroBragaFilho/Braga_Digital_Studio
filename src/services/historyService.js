@@ -13,11 +13,11 @@ class HistoryService {
 
   constructor(SQL, databaseDir) {
     this.SQL = SQL;
-    
+
     // Define os caminhos exatos para os dois bancos separados
     this.downloadsDbPath = path.join(databaseDir, 'downloads.db');
     this.conversionsDbPath = path.join(databaseDir, 'conversions.db');
-    
+
     // Garante que a pasta pai existe
     fs.mkdirSync(databaseDir, { recursive: true });
 
@@ -66,7 +66,13 @@ class HistoryService {
       );
     `);
 
-    // Salva os arquivos físicos vazios ou atualizados caso tenham acabado de ser criados
+    // [PERF] Timers de persistência em batch — evita exportar e gravar o DB inteiro a cada INSERT
+    this._downloadsDirty = false;
+    this._conversionsDirty = false;
+    this._downloadsSaveTimer = null;
+    this._conversionsSaveTimer = null;
+
+    // Salva os arquivos físicos caso tenham acabado de ser criados
     this.persistDownloads();
     this.persistConversions();
   }
@@ -89,8 +95,8 @@ class HistoryService {
       $status: download.status
     });
     statement.free();
-    
-    this.persistDownloads();
+
+    this._scheduleDownloadsPersist();
     return { changes: 1 };
   }
 
@@ -112,11 +118,29 @@ class HistoryService {
 
   clearDownloads() {
     this.downloadsDb.run('DELETE FROM downloads');
-    this.persistDownloads();
+    this._scheduleDownloadsPersist(true);
     return { changes: 1 };
   }
 
-  persistDownloads() {
+  // [PERF] Batch persist — exporta e grava o DB no disco apenas 1x após 2s de inatividade,
+  // em vez de fazer a cada INSERT (que envolvia exportar o DB inteiro + writeFileSync síncrono).
+  _scheduleDownloadsPersist(force = false) {
+    this._downloadsDirty = true;
+    if (force) {
+      clearTimeout(this._downloadsSaveTimer);
+      this._persistDownloadsNow();
+      return;
+    }
+    if (this._downloadsSaveTimer) return; // já agendado
+    this._downloadsSaveTimer = setTimeout(() => {
+      this._downloadsSaveTimer = null;
+      this._persistDownloadsNow();
+    }, 2000);
+  }
+
+  _persistDownloadsNow() {
+    if (!this._downloadsDirty) return;
+    this._downloadsDirty = false;
     const data = this.downloadsDb.export();
     fs.writeFileSync(this.downloadsDbPath, Buffer.from(data));
   }
@@ -157,7 +181,7 @@ class HistoryService {
     });
 
     statement.free();
-    this.persistConversions();
+    this._scheduleConversionsPersist();
     return { changes: 1 };
   }
 
@@ -188,13 +212,38 @@ class HistoryService {
 
   clearConversions() {
     this.conversionsDb.run('DELETE FROM conversions');
-    this.persistConversions();
+    this._scheduleConversionsPersist(true);
     return { changes: 1 };
   }
 
-  persistConversions() {
+  // [PERF] Batch persist para conversões — mesmo debounce de 2s
+  _scheduleConversionsPersist(force = false) {
+    this._conversionsDirty = true;
+    if (force) {
+      clearTimeout(this._conversionsSaveTimer);
+      this._persistConversionsNow();
+      return;
+    }
+    if (this._conversionsSaveTimer) return;
+    this._conversionsSaveTimer = setTimeout(() => {
+      this._conversionsSaveTimer = null;
+      this._persistConversionsNow();
+    }, 2000);
+  }
+
+  _persistConversionsNow() {
+    if (!this._conversionsDirty) return;
+    this._conversionsDirty = false;
     const data = this.conversionsDb.export();
     fs.writeFileSync(this.conversionsDbPath, Buffer.from(data));
+  }
+
+  persistDownloads() {
+    this._persistDownloadsNow();
+  }
+
+  persistConversions() {
+    this._persistConversionsNow();
   }
 }
 

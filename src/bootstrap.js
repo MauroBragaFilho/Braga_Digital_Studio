@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const path = require('node:path');
 const fs = require('node:fs');
@@ -80,6 +80,10 @@ class Bootstrap {
     const paths = this.paths;
     const settings = this.settingsManager.load();
 
+    // Aplica as preferências de aceleração de hardware (GPU) ao serviço de detecção.
+    const hardwareDetection = require('./core/HardwareDetectionService');
+    hardwareDetection.configure(settings);
+
     // Notificações nativas — refletir preferências do usuário já carregadas.
     notificationCenter.updateSettings(settings);
 
@@ -106,14 +110,14 @@ class Bootstrap {
     await dbManager.init(paths.databaseDir);
     runMigrations();
 
-    // 2. Inicializar ServiÃ§os Core e Infraestrutura
+    // 2. Inicializar Serviços Core e Infraestrutura
     const historyService = await HistoryService.create(paths.databaseDir);
     const downloadService = new DownloadService({ paths, getSettings: () => this.settingsManager.load(), historyService });
     const converterService = new ConverterService({ paths, getSettings: () => this.settingsManager.load(), historyService });
     const thumbnailService = new ThumbnailService({ paths, getSettings: () => this.settingsManager.load() });
     const updateService = new UpdateService({ paths, getSettings: () => this.settingsManager.load() });
-    const montageService = new MontageService({ paths });
-    const silenceService = new SilenceService({ paths });
+    const montageService = new MontageService({ paths, getSettings: () => this.settingsManager.load() });
+    const silenceService = new SilenceService({ paths, getSettings: () => this.settingsManager.load() });
     const metadataServiceInstance = new MetadataService({ paths });
     const videoRecoveryService = new VideoRecoveryService({ paths });
     const rawRecoveryService = new RawRecoveryService({ paths });
@@ -146,7 +150,7 @@ class Bootstrap {
     });
     const watcherService = new LibraryWatcherService(importQueue);
 
-    // Sincronizar bibliotecas das configuraÃ§Ãµes
+    // Sincronizar bibliotecas das configurações
     this._syncLibraries(libManager, settings);
 
     this.services = {
@@ -172,6 +176,32 @@ class Bootstrap {
       importQueue,
       watcherService
     };
+
+    // Auto-limpeza de cache no startup (se habilitado nas configurações)
+    try {
+      const CacheService = require('./core/CacheService');
+      const cacheSvc = new CacheService(this.appPaths, {
+        maxSizeMB: settings.cacheMaxSizeMB || 500,
+        autoClean: !!settings.cacheAutoClean,
+      });
+      const result = cacheSvc.autoCleanIfNeeded();
+      if (result.trimmed) {
+        logger.info(`[Bootstrap] Auto-limpeza de cache no startup: liberado ${result.totalFormatted}`);
+      }
+      // [PERF] Remove apenas arquivos temporários de execuções anteriores (>1h)
+      // [FIX] Agora limitado à pasta temp — NÃO toca em thumbnails/waveforms
+      cacheSvc.cleanStaleTempFiles(60 * 60 * 1000);
+    } catch (err) {
+      logger.warn('Bootstrap:autoCleanCache:error', { error: err.message });
+    }
+
+    // [FIX] Regenera thumbnails ausentes em background (não bloqueia startup).
+    // Lógica compartilhada com o handler IPC e com o clearCache (systemHandlers),
+    // para que a biblioteca nunca fique preta por minutos.
+    // [PERF] O acionamento agora acontece em startBackgroundServices(), encadeado
+    // APÓS a reconciliação de arquivos (watcherService.whenReconcileDone()), para
+    // não competir por I/O com os fs.access() da reconciliação.
+    // setTimeout(...) removido daqui — ver startBackgroundServices().
 
     // 5. Conectar Eventos e Handlers
     this._bindServiceEvents();
@@ -247,7 +277,7 @@ class Bootstrap {
           }
           importQueue.add({ libraryId: lib.id, path: item.outputPath });
         } catch (err) {
-          logger.error('Erro ao adicionar download Ã  biblioteca:', { error: err.message });
+          logger.error('Erro ao adicionar download à biblioteca:', { error: err.message });
         }
       }
     });
@@ -275,10 +305,18 @@ class Bootstrap {
       this.mainWindow?.webContents.send('converter:progress', p);
     });
     converterService.on('fileFinished', (p) => this.mainWindow?.webContents.send('converter:fileFinished', p));
+    // Progresso geral do lote (ponderado por duração) emitido pelo serviço a cada ~500ms
+    converterService.on('overallProgress', (p) => {
+      taskProgressCenter.reportProgress('converter', (p?.percent || 0) / 100);
+      this.mainWindow?.webContents.send('converter:overallProgress', p);
+    });
     converterService.on('finished', (p) => {
       taskProgressCenter.reportIdle('converter');
       if (p?.status === 'error') {
         taskProgressCenter.reportError('converter');
+      } else if (p?.status === 'cancelled') {
+        // Cancelamento: apenas libera o centro de tarefas, sem notificar sucesso.
+        logger.warn('converter:finished:cancelled');
       } else {
         // O payload 'finished' não traz contagem — calculamos pelos itens
         // efetivamente concluídos na fila do serviço.
@@ -373,7 +411,7 @@ class Bootstrap {
       uploadScannerService, libManager, watcherService, lutSyncService
     } = this.services;
 
-    // Registra Handlers por MÃ³dulo
+    // Registra Handlers por Módulo
     require('./ipc/deviceHandlers')(logger, lutSyncService);
     require('./ipc/libraryHandlers')(this.paths, watcherService);
     require('./ipc/systemHandlers')(this.paths);
@@ -401,8 +439,33 @@ class Bootstrap {
         setTimeout(() => watcherService.startAll(), 1000);
       }
       updateService?.applyUpdateServerSettings();
+      // Reaplica as preferências de aceleração de hardware e limpa o cache de encoders.
+      try {
+        const hardwareDetection = require('./core/HardwareDetectionService');
+        hardwareDetection.configure(saved);
+        hardwareDetection.invalidateCache();
+      } catch (_) {}
       return saved;
     });
+
+    // Informações de hardware (GPU + encoders) para a aba Sistema das Configurações.
+    ipcMain.handle('system:getHardwareInfo', async () => {
+      const hardwareDetection = require('./core/HardwareDetectionService');
+      hardwareDetection.configure(this.settingsManager.load());
+      const ffmpegPath = ffmpegTool.resolve({ mustExist: false });
+      return await hardwareDetection.getSystemHardwareInfo(ffmpegPath || null);
+    });
+
+    // Lista de encoders disponíveis no FFmpeg (para validação na tela Conversor).
+    ipcMain.handle('system:checkEncoders', async () => {
+      const hardwareDetection = require('./core/HardwareDetectionService');
+      hardwareDetection.configure(this.settingsManager.load());
+      const ffmpegPath = ffmpegTool.resolve({ mustExist: false });
+      if (!ffmpegPath) return [];
+      const set = await hardwareDetection.listEncoders(ffmpegPath);
+      return [...set].sort();
+    });
+
 
     // Teste do canal Telegram (botão "Testar envio no Telegram" na tela de Configurações)
     ipcMain.handle('telegram:sendTest', async (_, data) => {
@@ -576,11 +639,11 @@ class Bootstrap {
       const bdsmDevices = deviceDiscoveryService.getDevices();
       const sonyDevices = sonyCameraService.getCameras();
 
-      // Quando o mesmo aparelho fÃ­sico jÃ¡ estÃ¡ acessÃ­vel via o app BDSM (que dÃ¡ acesso
-      // direto Ã s gravaÃ§Ãµes do app), suprimimos a entrada MTP genÃ©rica equivalente â€” o
-      // usuÃ¡rio quer trabalhar com as gravaÃ§Ãµes do app, nÃ£o navegar o sistema de arquivos
-      // bruto do dispositivo via MTP. NÃ£o existe um ID compartilhado entre os dois
-      // protocolos, entÃ£o o cruzamento Ã© feito pelo nome do dispositivo (normalizado).
+      // Quando o mesmo aparelho físico já está acessível via o app BDSM (que dá acesso
+      // direto às gravações do app), suprimimos a entrada MTP genérica equivalente — o
+      // usuário quer trabalhar com as gravações do app, não navegar o sistema de arquivos
+      // bruto do dispositivo via MTP. Não existe um ID compartilhado entre os dois
+      // protocolos, então o cruzamento é feito pelo nome do dispositivo (normalizado).
       const normalizeDeviceName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const bdsmNames = new Set(bdsmDevices.map(d => normalizeDeviceName(d.name)));
       const mtpDevicesFiltered = mtpDevices.filter(d => {
@@ -625,7 +688,7 @@ class Bootstrap {
 
     ipcMain.handle('sony:import-items', async (event, { cameraId, items, destFolder }) => {
       const provider = sonyCameraService.getProvider(cameraId);
-      if (!provider) throw new Error(`Provider nÃ£o encontrado para ${cameraId}`);
+      if (!provider) throw new Error(`Provider não encontrado para ${cameraId}`);
 
       if (!fs.existsSync(destFolder)) {
         fs.mkdirSync(destFolder, { recursive: true });
@@ -648,7 +711,7 @@ class Bootstrap {
 
           for (const filePath of files) {
             importedPaths.push(filePath);
-            // Pipeline padrÃ£o da Library: enfileira importaÃ§Ã£o com hash e FFProbe
+            // Pipeline padrão da Library: enfileira importação com hash e FFProbe
             if (this.services.importQueue) {
               const db = dbManager.get();
               let lib = db.prepare("SELECT * FROM libraries WHERE type = 'BDSM_DEVICE' OR type = 'DEVICE' LIMIT 1").get();
@@ -692,7 +755,7 @@ class Bootstrap {
       const win = this.mainWindow || BrowserWindow.getFocusedWindow();
       const result = await dialog.showOpenDialog(win, {
         properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'VÃ­deos', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }]
+        filters: [{ name: 'Vídeos', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }]
       });
       if (!result.canceled && result.filePaths.length > 0) {
         const fileList = [];
@@ -726,6 +789,28 @@ class Bootstrap {
       // 1. Inicia watcher de bibliotecas
       if (this.services.watcherService) {
         this.services.watcherService.startAll();
+
+        // [FIX] Regenera thumbnails ausentes em background — encadeado APÓS a
+        // reconciliação de arquivos terminar, para os processos ffmpeg do regen
+        // NÃO competirem por I/O com os fs.access() da reconciliação.
+        // (Antes rodavam concorrentes: reconciliação 1.6s→13.5s; regen sofria junto.)
+        const ws = this.services.watcherService;
+        Promise.resolve(ws.whenReconcileDone())
+          .then(() => {
+            setTimeout(() => {
+              const { regenerateMissingThumbnails } = require('./core/library/ThumbnailRegenService');
+              regenerateMissingThumbnails({
+                paths: this.paths,
+                dbManager,
+                window: this.mainWindow,
+                batchSize: 10, // [PERF] maior paralelismo = regen ~2x mais rápido
+                logPrefix: '[Bootstrap] RegenThumbs',
+              }).catch((err) => {
+                logger.warn('Bootstrap:regenThumbs:error', { error: err.message });
+              });
+            }, 500); // pequena folga pós-reconciliação
+          })
+          .catch(() => {});
       }
 
       // 2. Inicia descoberta de dispositivos
@@ -734,16 +819,16 @@ class Bootstrap {
 
       // 3. Inicia verificação de prazos dos projetos (lembretes de deadline)
       deadlineNotifier.start(this.settingsManager.load());
-      logger.info('ServiÃ§os em segundo plano inicializados.');
+      logger.info('Serviços em segundo plano inicializados.');
     } catch (err) {
-      logger.error('Erro ao iniciar serviÃ§os em segundo plano:', { error: err.message });
+      logger.error('Erro ao iniciar serviços em segundo plano:', { error: err.message });
     }
   }
 
   async checkInitialDependencies() {
     const { updateService } = this.services;
     
-    // Verifica apenas ferramentas essenciais de execuÃ§Ã£o
+    // Verifica apenas ferramentas essenciais de execução
     const requiredTools = ['ytdlp', 'ffmpeg', 'ffprobe'];
     const missing = requiredTools.filter(tool => {
       try {
@@ -757,24 +842,24 @@ class Bootstrap {
     });
 
     if (missing.length > 0) {
-      logger.info(`Primeira inicializaÃ§Ã£o: Baixando dependÃªncias essenciais ausentes: ${missing.join(', ')}`);
+      logger.info(`Primeira inicialização: Baixando dependências essenciais ausentes: ${missing.join(', ')}`);
       this.mainWindow?.webContents.send('dependencies:downloading');
 
       for (const tool of missing) {
         try {
           await updateService.updateTool(tool);
         } catch (e) {
-          logger.error(`Erro ao baixar ${tool} na inicializaÃ§Ã£o`, { error: e.message });
+          logger.error(`Erro ao baixar ${tool} na inicialização`, { error: e.message });
         }
       }
 
       this.mainWindow?.webContents.send('dependencies:done');
-      logger.info('DependÃªncias iniciais instaladas com sucesso.');
+      logger.info('Dependências iniciais instaladas com sucesso.');
     } else if (this.settingsManager.load().checkUpdatesOnStart) {
-      // Usa checkEverything() (mesmo mÃ©todo do botÃ£o "Verificar AtualizaÃ§Ãµes" em
-      // ConfiguraÃ§Ãµes) para checar app + dependÃªncias num formato { hasUpdates, app,
-      // dependencies } esperado pelo renderer. checkAll() Ã© um mÃ©todo legado com formato
-      // diferente (um objeto por ferramenta) e nÃ£o deve ser usado aqui.
+      // Usa checkEverything() (mesmo método do botão "Verificar Atualizações" em
+      // Configurações) para checar app + dependências num formato { hasUpdates, app,
+      // dependencies } esperado pelo renderer. checkAll() é um método legado com formato
+      // diferente (um objeto por ferramenta) e não deve ser usado aqui.
       updateService.checkEverything().then((result) => {
         this.mainWindow?.webContents.send('updates:checked', result);
       }).catch((error) => {

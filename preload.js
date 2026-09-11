@@ -26,11 +26,14 @@ const api = {
   getDownloadsPath: () => ipcRenderer.invoke('system:getDownloadsPath'),
   getToolsPath: () => ipcRenderer.invoke('system:getToolsPath'),
   isPackaged: () => ipcRenderer.invoke('system:isPackaged'),
+  getHardwareInfo: () => ipcRenderer.invoke('system:getHardwareInfo'),
+  checkEncoders: () => ipcRenderer.invoke('system:checkEncoders'),
 
   // --- Sistema de Telemetria e Relatório de Erros ---
   reportError: (error, context) => ipcRenderer.invoke('telemetry:reportError', error, context),
   getDeveloperEmail: () => ipcRenderer.invoke('telemetry:getDeveloperEmail'),
   getCrashReports: () => ipcRenderer.invoke('telemetry:getCrashReports'),
+  clearCrashReports: () => ipcRenderer.invoke('telemetry:clearCrashReports'),
   openCrashReportsFolder: () => ipcRenderer.invoke('telemetry:openReportsFolder'),
   getMailtoErrorLink: (error, context) => ipcRenderer.invoke('telemetry:getMailtoLink', error, context),
   getCrashReportMailto: (filePath) => ipcRenderer.invoke('telemetry:getCrashReportMailto', filePath),
@@ -216,6 +219,7 @@ const api = {
   onConverterProgress: (cb) => registerListener('converter:progress', cb),
   onConverterFileFinished: (cb) => registerListener('converter:fileFinished', cb),
   onConverterFinished: (cb) => registerListener('converter:finished', cb),
+  onConverterOverallProgress: (cb) => registerListener('converter:overallProgress', cb),
 
   // YouTube
   onYoutubeCode: (cb) => registerListener('youtube:code', cb),
@@ -244,9 +248,13 @@ const api = {
   removeCustomSource: (config) => ipcRenderer.invoke('library:removeCustomSource', config),
   clearLibraryDatabase: () => ipcRenderer.invoke('library:clearDatabase'),
   rescanAllLibrary: () => ipcRenderer.invoke('library:rescanAll'),
+  regenerateMissingThumbnails: (opts) => ipcRenderer.invoke('library:regenerateMissingThumbnails', opts || {}),
+  onThumbsRegenProgress: (cb) => registerListener('bds:thumbs-regen-progress', cb),
   getAllLibraries: () => ipcRenderer.invoke('library:getAll'),
   getLibraryFolderFiles: (folderPath) => ipcRenderer.invoke('library:getFolderFiles', folderPath),
   getStorageInfo: () => ipcRenderer.invoke('system:getStorageInfo'),
+  getCacheInfo: () => ipcRenderer.invoke('system:getCacheInfo'),
+  clearCache: (categoryKey) => ipcRenderer.invoke('system:clearCache', categoryKey),
   openLocalPath: (itemPath) => ipcRenderer.invoke('system:openPath', itemPath),
   exportCookies: (domain, outputPath) => ipcRenderer.invoke('system:exportCookies', domain, outputPath),
   youtubeLogin: () => ipcRenderer.invoke('youtube:login'),
@@ -347,16 +355,16 @@ const api = {
 
 
   // BDSM
-  onBdsmDeviceAdded: (callback) => ipcRenderer.on('bdsm:device_added', (e, device) => callback(device)),
-  onBdsmDeviceRemoved: (callback) => ipcRenderer.on('bdsm:device_removed', (e, deviceId) => callback(deviceId)),
-  onBdsmDeviceUpdated: (callback) => ipcRenderer.on('bdsm:device_updated', (e, device) => callback(device)),
+  onBdsmDeviceAdded: (callback) => registerListener('bdsm:device_added', callback),
+  onBdsmDeviceRemoved: (callback) => registerListener('bdsm:device_removed', callback),
+  onBdsmDeviceUpdated: (callback) => registerListener('bdsm:device_updated', callback),
   getBdsmMedia: (ip, port) => ipcRenderer.invoke('bdsm:getMedia', ip, port),
   getBdsmImportHistory: (deviceId) => ipcRenderer.invoke('bdsm:getImportHistory', deviceId),
   importBdsmMedia: (data) => ipcRenderer.invoke('bdsm:importMedia', data),
-  onBdsmProgress: (callback) => ipcRenderer.on('bdsm:progress', (e, data) => callback(data)),
+  onBdsmProgress: (callback) => registerListener('bdsm:progress', callback),
   analyzeBdsmLutSync: (ip, port) => ipcRenderer.invoke('bdsm:analyzeLutSync', ip, port),
   executeBdsmLutSync: (data) => ipcRenderer.invoke('bdsm:executeLutSync', data),
-  onBdsmLutSyncProgress: (callback) => ipcRenderer.on('bdsm:lutSyncProgress', (e, data) => callback(data)),
+  onBdsmLutSyncProgress: (callback) => registerListener('bdsm:lutSyncProgress', callback),
 
   // Sony Camera a6000 [FASE 2.2] — Removidas APIs mortas (sem handlers IPC correspondentes).
   // As integrações Sony são expostas via `getAllDevices`/`sony:list`/`sony:browse`.

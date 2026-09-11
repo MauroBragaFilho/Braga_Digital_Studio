@@ -994,6 +994,50 @@
   word-break: break-word;
 }
 
+
+/* --- CACHE --- */
+.settings-cache-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.settings-cache-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-cache-item-info strong {
+  font-size: 12px;
+  color: var(--text);
+}
+.settings-cache-item-info span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.settings-cache-clear-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.settings-cache-clear-btn .material-symbols-rounded {
+  font-size: 14px;
+}
+.settings-cache-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.settings-cache-bar strong {
+  color: var(--accent);
+}
+
+
 /* --- UTILS --- */
 .hidden {
   display: none !important;

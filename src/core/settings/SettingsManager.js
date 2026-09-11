@@ -19,6 +19,13 @@ class SettingsManager {
     this.dataDir = dataDir;
     this.settingsPath = path.join(configDir, 'settings.json');
 
+    // [PERF] Cache em memória — evita leitura + regravação do arquivo
+    // a cada chamada de load() (método chamado com frequência por vários
+    // handlers IPC e serviços em background).
+    this._cached = null;
+    this._cacheUpdatedAt = 0;
+    this._CACHE_TTL_MS = 1500;
+
     this.defaultSettings = {
       // UI — estado da sidebar (true = colapsada, apenas ícones)
       sidebarCollapsed: false,
@@ -59,19 +66,46 @@ class SettingsManager {
       telegramChatId: '',
       // URL base do BDS Update Server (ex: https://updates.bragadigital.com). Deixe vazio
       // para usar apenas o fluxo padrão de checagem por componente via GitHub releases.
-      updateServerUrl: ''
+      updateServerUrl: '',
+      // Aceleração de hardware (GPU) para codificação/decodificação de vídeo via FFmpeg.
+      // enabled=false força o uso de CPU (libx264/libx265/libsvtav1).
+      // vendor: 'auto' | 'nvidia' | 'amd' | 'intel' — prioridade na escolha do encoder.
+      useHardwareAcceleration: true,
+      preferredGpuVendor: 'auto',
+      // Cache: limite e limpeza automática
+      cacheMaxSizeMB: 500,
+      cacheAutoClean: false
     };
   }
 
   /**
    * Carrega as configurações existentes mesclando com os padrões.
+   * Utiliza cache em memória para evitar I/O de disco em chamadas frequentes.
    * @returns {Object}
    */
   load() {
+    // Cache fresco: retorna a cópia em memória sem tocar no disco
+    if (this._cached && (Date.now() - this._cacheUpdatedAt) < this._CACHE_TTL_MS) {
+      return { ...this._cached };
+    }
+
+    // Cache expirado: tenta reler do disco apenas se o arquivo existir
+    if (this._cached && fs.existsSync(this.settingsPath)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
+        // Só faz merge/regrava se o disco divergir do cache (normalização rara)
+        if (Object.keys(saved).every(k => this._cached[k] === saved[k])) {
+          this._cacheUpdatedAt = Date.now();
+          return { ...this._cached };
+        }
+      } catch (_) { /* arquivo corrompido cai no fluxo completo abaixo */ }
+    }
+
     if (!fs.existsSync(this.settingsPath)) {
       try {
         fs.writeFileSync(this.settingsPath, JSON.stringify(this.defaultSettings, null, 2), 'utf8');
       } catch (_) {}
+      this._setCache(this.defaultSettings);
       return { ...this.defaultSettings };
     }
 
@@ -81,13 +115,19 @@ class SettingsManager {
       if (!merged.mp3Folder) merged.mp3Folder = this.defaultSettings.mp3Folder;
       if (!merged.mp4Folder) merged.mp4Folder = this.defaultSettings.mp4Folder;
       if (!merged.cookiesFile) merged.cookiesFile = this.defaultSettings.cookiesFile;
-      fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2), 'utf8');
-      return merged;
+      // [PERF] Só regrava o arquivo quando o merge realmente adicionou campos novos
+      const needsWrite = Object.keys(this.defaultSettings).some(k => saved[k] === undefined);
+      if (needsWrite) {
+        fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2), 'utf8');
+      }
+      this._setCache(merged);
+      return { ...merged };
     } catch (error) {
       logger.error('settings:failed_to_read', { error: error.message });
       try {
         fs.writeFileSync(this.settingsPath, JSON.stringify(this.defaultSettings, null, 2), 'utf8');
       } catch (_) {}
+      this._setCache(this.defaultSettings);
       return { ...this.defaultSettings };
     }
   }
@@ -98,10 +138,16 @@ class SettingsManager {
    * @returns {Object} Configurações completas salvas
    */
   save(nextSettings) {
-    const current = this.load();
+    const current = { ...this._cached, ...this.load() };
     const merged = { ...current, ...nextSettings };
     fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2), 'utf8');
+    this._setCache(merged);
     return merged;
+  }
+
+  _setCache(settings) {
+    this._cached = { ...settings };
+    this._cacheUpdatedAt = Date.now();
   }
 }
 

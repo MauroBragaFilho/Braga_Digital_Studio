@@ -9,9 +9,10 @@ const { ffprobeTool } = require('../infrastructure/external-tools/adapters/Ffpro
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 
 class SilenceService extends EventEmitter {
-  constructor({ paths }) {
+  constructor({ paths, getSettings }) {
     super();
     this.paths = paths;
+    this.getSettings = getSettings;
     this.currentProcess = null;
     this.cancelRequested = false;
     this.running = false;
@@ -210,7 +211,13 @@ class SilenceService extends EventEmitter {
         const filterScriptPath = path.join(this.paths.dataDir, `silence_filter_${Date.now()}_${i}.txt`);
         fs.writeFileSync(filterScriptPath, filterComplex, 'utf8');
         
-        const args = ['-y', '-i', filePath, '-filter_complex_script', filterScriptPath];
+        // Aplica preferências atuais do usuário para detecção de hardware
+        if (typeof this.getSettings === 'function') {
+            hardwareDetection.configure(this.getSettings());
+        }
+        const args = ['-y'];
+        if (info.isVideo && (hardwareDetection.settings || {}).useHardwareAcceleration !== false) args.push('-hwaccel', 'auto');
+        args.push('-i', filePath, '-filter_complex_script', filterScriptPath);
         
         if (info.isVideo) {
             args.push('-map', '[vfinal]', '-map', '[afinal]');

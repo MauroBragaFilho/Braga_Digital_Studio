@@ -28,6 +28,50 @@ module.exports = function registerSystemHandlers(paths) {
     return appPaths.downloadsDir;
   });
 
+  ipcMain.handle('system:getCacheInfo', () => {
+    const CacheService = require('../core/CacheService');
+    const SettingsClass = require('../core/settings/SettingsManager');
+    const settings = new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
+    const svc = new CacheService(appPaths, {
+      maxSizeMB: settings.cacheMaxSizeMB || 500,
+      autoClean: !!settings.cacheAutoClean,
+    });
+    return svc.getCacheInfo();
+  });
+
+  ipcMain.handle('system:clearCache', (_, categoryKey) => {
+    const CacheService = require('../core/CacheService');
+    const SettingsClass = require('../core/settings/SettingsManager');
+    const settings = new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
+    const svc = new CacheService(appPaths, {
+      maxSizeMB: settings.cacheMaxSizeMB || 500,
+      autoClean: !!settings.cacheAutoClean,
+    });
+    const result = svc.clearCache(categoryKey || null);
+
+    // [FIX] Após limpar thumbnails, regenera em background IMEDIATAMENTE (sem reiniciar).
+    // Antes, a biblioteca ficava preta até o próximo startup — e o regen de startup
+    // podia nem rodar se o app fosse fechado cedo. Usa a mesma lógica compartilhada
+    // com bootstrap.js/libraryHandlers.js, com progresso incremental na biblioteca.
+    const thumbCleared = Array.isArray(result.cleared) &&
+      result.cleared.some(c => c.key === 'thumbnails' && c.filesRemoved > 0);
+    if (thumbCleared) {
+      const { BrowserWindow } = require('electron');
+      const { regenerateMissingThumbnails: regenerate } = require('../core/library/ThumbnailRegenService');
+      regenerate({
+        paths: appPaths,
+        dbManager: require('../core/database/database'),
+        window: BrowserWindow.getAllWindows()[0] || null,
+        batchSize: 8, // [PERF] paralelismo maior = regen mais rápido pós clearCache
+        logPrefix: '[RegenThumbs]',
+      }).catch((err) => {
+        console.error('Erro ao regenerar thumbnails após clearCache:', err);
+      });
+    }
+
+    return result;
+  });
+
   ipcMain.handle('system:getStorageInfo', async () => {
     const fs = require('fs/promises');
     try {

@@ -74,6 +74,7 @@ class DBManager {
                 this.schedulePersist();
                 
                 try {
+                    // [PERF] Extrai o id diretamente do array retornado por exec()
                     const result = this.db.exec("SELECT last_insert_rowid()")[0];
                     const id = result ? result.values[0][0] : 0;
                     return { lastInsertRowid: id };

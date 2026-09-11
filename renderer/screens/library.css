@@ -546,7 +546,9 @@
   max-width: 360px;
   flex-shrink: 0;
   background: var(--card);
-  border-left: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 16px 16px 16px 12px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -1021,7 +1023,9 @@
     position: absolute;
     right: 0;
     top: 0;
-    height: 100%;
+    bottom: 0;
+    height: auto;
+    margin: 12px;
     z-index: 10;
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
   }

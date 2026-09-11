@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeImage } = require('electron');
 const path = require('node:path');
 
 // Identifica o app para o Windows — necessário para que notificações nativas
@@ -91,6 +91,27 @@ function createWindow() {
   });
 
   mainWindow.setMenu(null);
+
+  // Define o ícone da barra de tarefas via nativeImage — necessário porque
+  // a propriedade "icon" do BrowserWindow nem sempre atualiza o ícone do
+  // Windows Taskbar em modo de desenvolvimento (sem empaquetamento NSIS).
+  const iconPath = path.join(appRoot, 'assets', 'icon.ico');
+  const pngPath = path.join(appRoot, 'assets', 'icon.png');
+  const applyIcon = () => {
+    try {
+      // Prefere o .ico (multi-resolução para a taskbar); usa o .png como fallback.
+      let icon = nativeImage.createFromPath(iconPath);
+      if (icon.isEmpty()) icon = nativeImage.createFromPath(pngPath);
+      if (!icon.isEmpty()) mainWindow.setIcon(icon);
+    } catch (_) { /* ignora se os arquivos não existirem ou estiverem corrompidos */ }
+  };
+  applyIcon();
+  // Reaplica o ícone quando a janela estiver visível e em foco — o Windows só
+  // "pega" o ícone da barra de tarefas depois que a janela é exibida, então
+  // aplicar antes do show pode ser ignorado em modo de desenvolvimento.
+  mainWindow.once('ready-to-show', applyIcon);
+  mainWindow.on('focus', applyIcon);
+
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   bootstrap.setMainWindow(mainWindow);
 }

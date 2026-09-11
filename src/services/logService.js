@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const winston = require('winston');
+const { localDateKey, zonedISO } = require('./timeUtils');
 
 function resolveLogsDir() {
   if (process.env.BMD_LOGS_DIR) {
@@ -29,14 +30,17 @@ try {
 } catch (_) {}
 
 function currentLogFile() {
-  const day = new Date().toISOString().slice(0, 10);
+  const day = localDateKey();
   return path.join(logsDir, `${day}.log`);
 }
 
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
-    winston.format.timestamp(),
+    winston.format.timestamp({
+      // Horário de Curitiba (GMT-3), ex.: 2026-09-09T21:47:19.075-03:00
+      format: () => zonedISO()
+    }),
     winston.format.errors({ stack: true }),
     winston.format.json()
   ),

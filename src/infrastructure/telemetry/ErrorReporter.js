@@ -7,6 +7,7 @@ const https = require('node:https');
 const http = require('node:http');
 const { app, shell } = require('electron');
 const logger = require('../../services/logService');
+const { localDateKey, zonedISO } = require('../../services/timeUtils');
 const { DEVELOPER_EMAIL } = require('../../config/appInfo');
 
 /**
@@ -168,7 +169,7 @@ class ErrorReporter {
 
     return {
       id: `crash_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      timestamp: new Date().toISOString(),
+      timestamp: zonedISO(),
       developerEmail: this.developerEmail,
       app: {
         name: 'Braga Digital Studio (BDS)',
@@ -206,7 +207,7 @@ class ErrorReporter {
    */
   _getRecentLogsSnippet(maxLines = 30) {
     try {
-      const day = new Date().toISOString().slice(0, 10);
+      const day = localDateKey();
       const logFile = path.join(this.logsDir, `${day}.log`);
       if (!fs.existsSync(logFile)) return [];
 
@@ -224,7 +225,7 @@ class ErrorReporter {
    */
   _saveReportToDisk(reportData) {
     try {
-      const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+      const dateStr = zonedISO().replace(/[:.]/g, '-');
       const filename = `crash_${dateStr}.json`;
       const fullPath = path.join(this.crashReportsDir, filename);
       fs.writeFileSync(fullPath, JSON.stringify(reportData, null, 2), 'utf8');
@@ -316,6 +317,31 @@ class ErrorReporter {
    * Lista todos os relatórios de crash salvos localmente.
    * @returns {Array<{ filename: string, path: string, timestamp: Date, error: string }>}
    */
+  /**
+   * Remove todos os relatórios de crash salvos localmente.
+   * @returns {{ deleted: number }} Quantidade de arquivos removidos.
+   */
+  clearAllReports() {
+    let deleted = 0;
+    try {
+      if (!this.crashReportsDir || !fs.existsSync(this.crashReportsDir)) return { deleted: 0 };
+      const files = fs.readdirSync(this.crashReportsDir);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          const fullPath = path.join(this.crashReportsDir, file);
+          try {
+            fs.unlinkSync(fullPath);
+            deleted++;
+          } catch (_) {}
+        }
+      }
+      logger.info('ErrorReporter:clearAllReports', { deleted });
+    } catch (e) {
+      logger.error('ErrorReporter:clearAllReports:error', { error: e.message });
+    }
+    return { deleted };
+  }
+
   listLocalReports() {
     try {
       if (!fs.existsSync(this.crashReportsDir)) return [];

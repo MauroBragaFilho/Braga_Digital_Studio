@@ -1,4 +1,4 @@
-import { setStatus, escapeHtml } from '../app.js';
+import { setStatus, setAppStatus, escapeHtml } from '../app.js';
 
 let corruptFilePath = null;
 let referenceFilePath = null;
@@ -116,6 +116,7 @@ function setupRecoveryListeners() {
   if (window.bds?.recovery?.onProgress) {
     window.bds.recovery.onProgress((data) => {
       updateProgressUI(data);
+      if (data.percent) setAppStatus(`Recuperando ${Math.round(data.percent)}%...`, 'info');
     });
   }
 }
@@ -332,6 +333,7 @@ async function startRecovery() {
   if (btnCancel) btnCancel.classList.remove('hidden');
 
   setStatus('Recuperando vídeo...');
+  setAppStatus('Recuperando vídeo...', 'warning');
   updateProgressUI({ percent: 5, message: 'Iniciando diagnóstico e recuperação...' });
 
   try {
@@ -346,11 +348,13 @@ async function startRecovery() {
       lastRecoveredPath = result.outputPath;
       renderSuccessResult(result);
       setStatus('Vídeo recuperado com sucesso!');
+      setAppStatus('Pronto', 'success');
     }
   } catch (err) {
     console.error('Erro na recuperação:', err);
     showError(err.message || 'Não foi possível concluir a recuperação do vídeo.');
     setStatus('Falha na recuperação.');
+    setAppStatus('Erro na recuperação', 'error');
   } finally {
     isRecovering = false;
     if (progressCard) progressCard.classList.add('hidden');
@@ -364,6 +368,7 @@ async function cancelRecovery() {
   try {
     await window.bds.recovery.cancel();
     setStatus('Recuperação cancelada.');
+    setAppStatus('Pronto', 'info');
   } catch (err) {
     console.error('Erro ao cancelar:', err);
   }
@@ -528,6 +533,7 @@ function setupRawRecoveryListeners() {
   if (window.bds?.recovery?.raw?.onProgress) {
     window.bds.recovery.raw.onProgress((data) => {
       updateRawProgressUI(data);
+      if (data.percent) setAppStatus(`Recuperando RAW ${Math.round(data.percent)}%...`, 'info');
     });
   }
 }
@@ -728,6 +734,7 @@ async function startRawRecovery() {
   if (btnCancel) btnCancel.classList.remove('hidden');
 
   setStatus('Recuperando arquivo RAW...');
+  setAppStatus('Recuperando arquivo RAW...', 'warning');
   updateRawProgressUI({ percent: 5, message: 'Iniciando diagnóstico e recuperação...' });
 
   try {
@@ -741,11 +748,13 @@ async function startRawRecovery() {
       rawLastRecoveredPath = result.outputPath;
       renderRawSuccessResult(result);
       setStatus('Arquivo RAW recuperado com sucesso!');
+      setAppStatus('Pronto', 'success');
     }
   } catch (err) {
     console.error('Erro na recuperação RAW:', err);
     showRawError(err.message || 'Não foi possível concluir a recuperação do RAW.');
     setStatus('Falha na recuperação RAW.');
+    setAppStatus('Erro na recuperação RAW', 'error');
   } finally {
     isRawRecovering = false;
     if (progressCard) progressCard.classList.add('hidden');
@@ -759,6 +768,7 @@ async function cancelRawRecovery() {
   try {
     await window.bds.recovery.raw.cancel();
     setStatus('Recuperação RAW cancelada.');
+    setAppStatus('Pronto', 'info');
   } catch (err) {
     console.error('Erro ao cancelar recuperação RAW:', err);
   }
