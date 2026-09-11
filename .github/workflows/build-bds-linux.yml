@@ -38,8 +38,18 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
+
+      - name: Cache do electron-builder/Electron (evita re-downloads entre runs)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/electron-builder
+            ${{ github.workspace }}/.cache/electron
+          key: electron-builder-linux-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            electron-builder-linux-
 
       - name: Instalar dependências
         run: npm ci
@@ -57,7 +67,31 @@ jobs:
           fi
 
       - name: Build dos pacotes Linux (AppImage + deb)
-        run: npm run build:linux
+        env:
+          # Caches do electron-builder/Electron dentro do workspace (tratados pela action
+          # actions/cache), evitando re-baixar o zip do Electron e as ferramentas AppImage
+          # em toda execução — a causa nº1 de falhas intermitentes de build no CI.
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.cache/electron-builder"
+          mkdir -p "$GITHUB_WORKSPACE/.cache/electron"
+
+          BUILDER="$PWD/node_modules/.bin/electron-builder"
+          MAX_TRIES=3
+          for TRY in 1 2 3; do
+            echo "== electron-builder: tentativa $TRY/$MAX_TRIES =="
+            if "$BUILDER" --linux AppImage deb --publish never; then
+              echo "Pacotes Linux gerados com sucesso."
+              exit 0
+            fi
+            echo "electron-builder falhou. Downloads de Electron/ferramentas AppImage podem falhar de forma intermitente em runners do GitHub Actions — tentando novamente em 20s..."
+            if [ "$TRY" -lt "$MAX_TRIES" ]; then
+              sleep 20
+            fi
+          done
+          echo "::error::electron-builder falhou após $MAX_TRIES tentativas."
+          exit 1
 
       - name: Localizar os pacotes gerados
         id: find_packages

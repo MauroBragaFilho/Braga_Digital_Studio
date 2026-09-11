@@ -500,12 +500,12 @@ class ThumbnailService {
 
     const originalFile = path.join(
       tempDir,
-      `thumb_${Date.now()}.jpg`
+      `thumb_${Date.now()}_${process.pid}.jpg`
     );
 
     const squareFile = path.join(
       tempDir,
-      `thumb_square_${Date.now()}.jpg`
+      `thumb_square_${Date.now()}_${process.pid}.jpg`
     );
 
     await this.downloadThumbnail(
@@ -513,12 +513,16 @@ class ThumbnailService {
       originalFile
     );
 
-    await this.createSquareThumbnail(
-      originalFile,
-      squareFile
-    );
-
-    return squareFile;
+    try {
+      await this.createSquareThumbnail(
+        originalFile,
+        squareFile
+      );
+      return squareFile;
+    } finally {
+      // [PERF] Remove o arquivo temporário original para não acumular lixo em disco
+      try { if (fs.existsSync(originalFile)) fs.unlinkSync(originalFile); } catch (_) {}
+    }
   }
   
 

@@ -1,4 +1,4 @@
-let selectedDeviceId = 'sony_a6000';
+let selectedDeviceId = null;
 let activeInspectorTab = 'geral';
 let appSettings = {};
 
@@ -209,9 +209,7 @@ export async function initScreen(forceRescan = false) {
           }
         });
         
-        if (devicesData.length > 0) {
-          selectedDeviceId = devicesData[0].id;
-        }
+
       }
     } catch (e) {
       console.error('[DEVICES] Erro ao buscar MTP Devices:', e);
@@ -300,6 +298,23 @@ function bindGlobalEvents() {
         modal.classList.remove('active');
       }
       initScreen();
+    });
+  }
+
+  // ESC fecha o inspector de dispositivos
+  if (!window._devInspectorEscBound) {
+    window._devInspectorEscBound = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const panel = document.getElementById('deviceInspector');
+      if (!panel || panel.classList.contains('hidden')) return;
+      // Ignora se um modal estiver aberto
+      const activeModal = document.querySelector('.devices-modal-overlay.active:not(.hidden)');
+      if (activeModal) return;
+      selectedDeviceId = null;
+      renderDevicesGrid();
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
     });
   }
 }
@@ -523,11 +538,13 @@ function renderInspector() {
   const panel = document.getElementById('deviceInspector');
   if (!panel) return;
 
-  const dev = devicesData.find(d => d.id === selectedDeviceId) || devicesData[0];
+  const dev = devicesData.find(d => d.id === selectedDeviceId);
   if (!dev) {
-    panel.innerHTML = '<div style="padding: 20px; color: var(--muted); text-align: center;">Nenhum dispositivo selecionado</div>';
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
     return;
   }
+  panel.classList.remove('hidden');
 
   const tabs = ['geral', 'armazenamento', 'informações', 'configurações'];
   const labels = { geral: 'Geral', armazenamento: 'Armazenamento', informações: 'Informações', configurações: 'Configurações' };
@@ -583,6 +600,7 @@ function renderInspector() {
   document.getElementById('btnCloseInspector')?.addEventListener('click', () => {
     selectedDeviceId = null;
     renderDevicesGrid();
+    panel.classList.add('hidden');
     panel.innerHTML = '';
   });
 }

@@ -135,6 +135,24 @@ function selectProject(id) {
 }
 
 function setupEventListeners() {
+    // ESC fecha o inspector de projetos
+    if (!window._projInspectorEscBound) {
+        window._projInspectorEscBound = true;
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            // Ignora se estiver editando um campo de texto ou com modal aberto
+            const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea') return;
+            if (document.querySelector('.proj-modal-overlay.open')) return;
+            const inspector = document.getElementById('projectInspector');
+            if (inspector && inspector.classList.contains('open')) {
+                inspector.classList.remove('open');
+                selectedProjectId = null;
+                renderGrid();
+            }
+        });
+    }
+
     document.getElementById('btnNewProject')?.addEventListener('click', () => {
         document.getElementById('modalProjectTitle').textContent = 'Novo Projeto';
         document.getElementById('projFormId').value = '';

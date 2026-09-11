@@ -1,4 +1,4 @@
-<div class="settings-container">
+﻿<div class="settings-container">
 
   <!-- CABEÇALHO -->
   <div class="settings-header">
@@ -15,8 +15,11 @@
       <button class="settings-tab active" data-tab="settingsGeneralView" type="button">
         <span class="material-symbols-rounded">tune</span> Geral
       </button>
+      <button class="settings-view hidden" data-tab="settingsDownloadsView" type="button">
+        <span class="material-symbols-rounded">folder</span> Downloads
+      </button>
       <button class="settings-tab" data-tab="settingsFoldersView" type="button">
-        <span class="material-symbols-rounded">folder</span> Pastas
+        <span class="material-symbols-rounded">folder</span> Bibliotecas
       </button>
       <button class="settings-tab" data-tab="settingsLutsView" type="button">
         <span class="material-symbols-rounded">gradient</span> LUTs
@@ -58,6 +61,31 @@
           <div class="settings-form-row">
             <label for="accentColorInput">Cor de Destaque</label>
             <input type="color" id="accentColorInput" class="settings-color-input" value="#e53935" />
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h4 class="settings-group-title">Aceleração de Hardware (GPU)</h4>
+
+          <label class="settings-check-row">
+            <input type="checkbox" id="useHardwareAccelerationInput" />
+            <div>
+              <span class="settings-check-label">Usar aceleração de hardware (GPU) para vídeos</span>
+              <span class="settings-check-hint">
+                Usa NVENC (NVIDIA), QSV (Intel) ou AMF (AMD) para codificar vídeo muito mais rápido
+                em conversões, montagens e remoção de silêncio. Desative caso note problemas de compatibilidade.
+              </span>
+            </div>
+          </label>
+
+          <div class="settings-form-row">
+            <label for="preferredGpuVendorInput">Prefere qual fabricante de GPU?</label>
+            <select id="preferredGpuVendorInput" class="settings-select">
+              <option value="auto">Automático (melhor disponível)</option>
+              <option value="nvidia">NVIDIA (NVENC)</option>
+              <option value="amd">AMD (AMF)</option>
+              <option value="intel">Intel (QSV)</option>
+            </select>
           </div>
         </div>
 
@@ -162,6 +190,12 @@
           </div>
         </div>
       </section>
+      <section id="settingsDownloadsView" class="settings-view hidden">
+        <h3 class="settings-section-title">Downloads</h3>
+
+        
+      </section>
+
       <section id="settingsFoldersView" class="settings-view hidden">
         <h3 class="settings-section-title">Pastas</h3>
 
@@ -359,8 +393,8 @@
         <div class="settings-system-grid">
           <div class="settings-system-item"><span>Versão</span><strong id="sysVersion">Carregando...</strong></div>
           <div class="settings-system-item"><span>Desenvolvedor</span><strong>Braga Dev</strong></div>
-          <div class="settings-system-item"><span>Pastas do Aplicativo</span><strong id="sysFolders">Carregando...</strong></div>
-          <div class="settings-system-item"><span>Atualizações</span><strong>Automático via Braga Dev</strong></div>
+          <div class="settings-system-item"><span>GPU(s) Detectada(s)</span><strong id="sysGpu">Detectando...</strong></div>
+          <div class="settings-system-item"><span>Encoder de Vídeo</span><strong id="sysEncoder">Detectando...</strong></div>
         </div>
 
         <!-- Relatório de Erros -->
@@ -373,11 +407,7 @@
               <span class="settings-check-hint">Quando ativo, o BDS envia automaticamente dados de erros e travamentos ao desenvolvedor.</span>
             </div>
           </label>
-          <div class="settings-form-row">
-            <label for="developerEmailInput">E-mail do desenvolvedor</label>
-            <input type="email" id="developerEmailInput" class="settings-input" placeholder="obragafilho00@gmail.com" />
-          </div>
-
+    
           <div class="settings-crash-actions-bar">
             <button id="reportProblemButton" class="settings-btn-outline" type="button">
               <span class="material-symbols-rounded">report</span> Relatar um Problema
@@ -387,6 +417,9 @@
             </button>
             <button id="refreshCrashReportsButton" class="settings-btn-outline" type="button" title="Atualizar lista de relatórios">
               <span class="material-symbols-rounded">refresh</span> Atualizar
+            </button>
+            <button id="clearCrashReportsButton" class="settings-btn-outline" type="button" title="Limpar todos os relatórios de erro" style="color: #ef5350;">
+              <span class="material-symbols-rounded">delete_sweep</span> Limpar Relatórios
             </button>
           </div>
 
@@ -399,6 +432,46 @@
             </div>
           </div>
         </div>
+
+
+        <!-- Armazenamento -->
+        <div class="settings-group" style="margin-top: 4px;">
+          <h4 class="settings-group-title">Armazenamento</h4>
+          <p class="settings-check-hint">Gerencia o armazenamento temporário do aplicativo (thumbnails, waveforms e arquivos temporários).</p>
+
+          <label class="settings-check-row">
+            <input type="checkbox" id="cacheAutoCleanInput" />
+            <div>
+              <span class="settings-check-label">Limpeza automática quando exceder o limite</span>
+              <span class="settings-check-hint">Quando ativo, o BDS remove os arquivos mais antigos no início de cada execução até o limite definido abaixo.</span>
+            </div>
+          </label>
+
+          <div class="settings-form-row">
+            <label for="cacheMaxSizeInput">Limite máximo de armazenamento (MB)</label>
+            <input type="number" id="cacheMaxSizeInput" class="settings-input" min="50" max="10000" step="50" placeholder="500" />
+          </div>
+
+          <div class="settings-cache-bar" style="margin-top: 12px;">
+            <span class="settings-check-hint">Uso atual: <strong id="cacheTotalSize">Calculando...</strong></span>
+          </div>
+
+          <div id="cacheCategoriesList" class="settings-crash-list">
+            <div class="settings-crash-empty">
+              <span class="material-symbols-rounded">sync</span> Carregando informações do armazenamento...
+            </div>
+          </div>
+
+          <div class="settings-crash-actions-bar" style="margin-top: 8px;">
+            <button id="refreshCacheButton" class="settings-btn-outline" type="button">
+              <span class="material-symbols-rounded">refresh</span> Atualizar
+            </button>
+            <button id="clearCacheButton" class="settings-btn-danger" type="button">
+              <span class="material-symbols-rounded">delete_sweep</span> Limpar Tudo
+            </button>
+          </div>
+        </div>
+
 
         <!-- Diagnóstico e Logs -->
         <div class="settings-diagnostics-zone">

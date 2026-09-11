@@ -185,6 +185,10 @@ function applySidebarCollapsed(collapsed) {
     if (icon) icon.textContent = collapsed ? 'menu' : 'menu_open';
   }
 
+  // Tooltip do BDS: indica que pode expandir quando colapsado
+  const brand = document.querySelector('.sidebar .brand');
+  if (brand) brand.title = collapsed ? 'Expandir menu' : '';
+
   // Em janelas estreitas (barra inferior) os rótulos continuam visíveis: aqui o
   // CSS trata o override visual e não há tooltips a adicionar/remover.
   if (isNarrow) return;
@@ -570,6 +574,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
+      // Notifica a tela ativa anterior para limpar listeners/menus temporários
+      const prevActive = contentContainer.querySelector('.view.active');
+      if (prevActive) {
+        const prevName = (prevActive.id || '').replace(/View$/, '');
+        if (prevName && prevName !== screenName) {
+          try {
+            const prevModule = await import(`./screens/${prevName}.js`);
+            if (typeof prevModule.onLeave === 'function') prevModule.onLeave();
+          } catch (_) {}
+        }
+      }
+
       // Oculta todas as views ativas
       const views = contentContainer.querySelectorAll('.view');
       views.forEach(v => {
@@ -694,33 +710,56 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       
       updateStorage();
-      setInterval(updateStorage, 10000);
+      // [PERF] Atualização de storage — pausa quando a aba está oculta
+      // e usa intervalo mais longo (30s) pois espaço em disco muda lentamente
+      let _storageInterval = setInterval(updateStorage, 30000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          clearInterval(_storageInterval);
+          _storageInterval = null;
+        } else if (!_storageInterval) {
+          updateStorage();
+          _storageInterval = setInterval(updateStorage, 30000);
+        }
+      });
     }
   }
 
-  // Sidebar colapsável (icon rail) — toggle manual + atalho Ctrl+B
+  // Sidebar colapsável (icon rail) — toggle manual + atalho Ctrl+B + clique no brand
+  const toggleSidebarFn = () => {
+    const next = !document.querySelector('.sidebar')?.classList.contains('collapsed');
+    applySidebarCollapsed(next);
+    if (state.settings) state.settings.sidebarCollapsed = next;
+    if (window.bds?.saveSettings) {
+      window.bds.saveSettings({ sidebarCollapsed: next }).catch(() => {});
+    }
+  };
+
   const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
   if (sidebarToggleBtn) {
-    const toggleSidebar = () => {
-      const next = !document.querySelector('.sidebar')?.classList.contains('collapsed');
-      applySidebarCollapsed(next);
-      if (state.settings) state.settings.sidebarCollapsed = next;
-      if (window.bds?.saveSettings) {
-        window.bds.saveSettings({ sidebarCollapsed: next }).catch(() => {});
-      }
-    };
-    sidebarToggleBtn.addEventListener('click', toggleSidebar);
+    sidebarToggleBtn.addEventListener('click', toggleSidebarFn);
     // Atalho Ctrl+B (não interfere ao digitar em campos de texto)
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
         const tag = document.activeElement?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
         e.preventDefault();
-        toggleSidebar();
+        toggleSidebarFn();
       }
     });
   }
 
+  // Clique no BDS (brand) expande a sidebar quando colapsada
+  const brandMark = document.querySelector('.sidebar .brand');
+  if (brandMark) {
+    brandMark.addEventListener('click', (e) => {
+      // Ignora cliques originados do botão toggle (evita duplo-toggle por bubbling)
+      if (e.target.closest('#sidebarToggleBtn')) return;
+      if (document.querySelector('.sidebar')?.classList.contains('collapsed')) {
+        toggleSidebarFn();
+      }
+    });
+  }
   // Configuração dos cliques de navegação da Sidebar
   tabButtons.forEach(button => {
     button.addEventListener('click', () => {

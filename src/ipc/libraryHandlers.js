@@ -297,19 +297,36 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
   });
 
   ipcMain.handle('library:getFolderFiles', async (event, folderPath) => {
-    if (!folderPath || !fs.existsSync(folderPath)) return [];
-    const mediaExts = ['.mp4', '.mkv', '.mov', '.avi', '.wmv', '.flv', '.webm', '.mts', '.m2ts',
-                       '.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.wma', '.alac', '.aiff',
-                       '.ac3', '.dts', '.3gp', '.mpg', '.mpeg', '.m4v', '.ts', '.vob'];
+    if (!folderPath) return [];
     try {
-      const files = fs.readdirSync(folderPath);
+      // [PERF] Usa fs.promises.readdir (assíncrono) em vez de readdirSync,
+      // para não bloquear o event loop do processo principal durante a leitura do diretório.
+      const exists = await fs.promises.access(folderPath).then(() => true).catch(() => false);
+      if (!exists) return [];
+      const mediaExts = new Set(['.mp4', '.mkv', '.mov', '.avi', '.wmv', '.flv', '.webm', '.mts', '.m2ts',
+                         '.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.wma', '.alac', '.aiff',
+                         '.ac3', '.dts', '.3gp', '.mpg', '.mpeg', '.m4v', '.ts', '.vob']);
+      const files = await fs.promises.readdir(folderPath);
       return files
-        .filter(f => mediaExts.includes(path.extname(f).toLowerCase()))
+        .filter(f => mediaExts.has(path.extname(f).toLowerCase()))
         .map(f => path.join(folderPath, f));
     } catch (e) {
       console.error('Erro ao ler pasta:', e);
       return [];
     }
+  });
+
+  // [FIX] Regenera thumbnails ausentes — usado no startup quando thumbnails foram deletadas indevidamente.
+  // Lógica compartilhada com o bootstrap e com o clearCache (systemHandlers).
+  ipcMain.handle('library:regenerateMissingThumbnails', async (event, { batchSize = 8 } = {}) => {
+    const { regenerateMissingThumbnails: regenerate } = require('../core/library/ThumbnailRegenService');
+    return regenerate({
+      paths,
+      dbManager: require('../core/database/database'),
+      window: BrowserWindow.getAllWindows()[0] || null,
+      batchSize,
+      logPrefix: '[RegenThumbs]',
+    });
   });
 };
 

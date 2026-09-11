@@ -475,6 +475,7 @@ function setupSilenceIPCListeners() {
           silenceList[itemIdx].status = payload.status || 'Processando';
         }
 
+        setAppStatus(`Removendo silêncio ${Math.round(payload.percent || 0)}%...`, 'info');
         renderSilenceTable();
         updateSilenceStepperVisuals();
       }
@@ -492,6 +493,7 @@ function setupSilenceIPCListeners() {
           item.status = 'Concluído';
         });
 
+        setAppStatus('Pronto', 'success');
         renderSilenceTable();
         updateSilenceStepperVisuals();
 
@@ -505,6 +507,9 @@ function setupSilenceIPCListeners() {
           msg = `Sucesso! Silêncio removido de ${payload.processedCount} arquivo(s).\nSalvos em: ${outFolder}`;
         }
         window.bdsModal.alert(msg);
+      } else {
+        exportSilenceState.active = false;
+        setAppStatus('Erro', 'error');
       }
     });
   }

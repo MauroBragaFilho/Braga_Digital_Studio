@@ -31,7 +31,7 @@
       </div>
     </div>
 
-    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+    <span class="material-symbols-rounded stepper-arrow" aria-hidden="true">chevron_right</span>
 
     <!-- PASSO 2: FORMATO & CODEC -->
     <div id="step2ItemConverter" class="step-item">
@@ -42,7 +42,7 @@
       </div>
     </div>
 
-    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+    <span class="material-symbols-rounded stepper-arrow" aria-hidden="true">chevron_right</span>
 
     <!-- PASSO 3: CONVERTER & EXPORTAR -->
     <div id="step3ItemConverter" class="step-item">
@@ -58,7 +58,7 @@
   <div class="converter-main-panel">
     
     <!-- COLUNA PRINCIPAL (ESQUERDA/CENTRO): TABELA DE CONVERSÃO COM BARRA EM UMA LINHA -->
-    <div class="converter-content-panel">
+    <div id="converterQueueDropZone" class="converter-content-panel">
       
       <!-- Cabeçalho da Tabela & Botões em Uma Linha -->
       <div class="converter-panel-header">
@@ -67,23 +67,30 @@
         </div>
 
         <div class="converter-action-group">
-          <button id="btnAddConverterFiles" class="converter-btn converter-btn-primary" type="button">
-            <span class="material-symbols-rounded">add</span>
-            Adicionar
-          </button>
-
-          <button id="btnImportConverterFromLibrary" class="converter-btn converter-btn-secondary" type="button">
-            <span class="material-symbols-rounded">video_library</span>
-            Biblioteca
-          </button>
-          
-          <button id="btnAddConverterFolder" class="converter-btn converter-btn-secondary" type="button">
-            <span class="material-symbols-rounded">folder</span>
-            Pasta
-          </button>
+          <div class="converter-add-wrapper">
+            <button id="btnAddConverterFiles" class="converter-btn converter-btn-primary" type="button" aria-haspopup="menu" aria-expanded="false">
+              <span class="material-symbols-rounded" aria-hidden="true">add</span>
+              Adicionar
+              <span class="material-symbols-rounded converter-add-arrow" aria-hidden="true">arrow_drop_down</span>
+            </button>
+            <div id="converterAddMenu" class="converter-add-menu hidden" role="menu">
+              <button class="converter-add-menu-btn" data-action="file" type="button" role="menuitem">
+                <span class="material-symbols-rounded" aria-hidden="true">note_add</span>
+                Arquivo
+              </button>
+              <button class="converter-add-menu-btn" data-action="library" type="button" role="menuitem">
+                <span class="material-symbols-rounded" aria-hidden="true">video_library</span>
+                Biblioteca
+              </button>
+              <button class="converter-add-menu-btn" data-action="folder" type="button" role="menuitem">
+                <span class="material-symbols-rounded" aria-hidden="true">folder</span>
+                Pasta
+              </button>
+            </div>
+          </div>
 
           <button id="btnClearConverterQueue" class="converter-btn converter-btn-secondary" type="button">
-            <span class="material-symbols-rounded">delete_sweep</span>
+            <span class="material-symbols-rounded" aria-hidden="true">delete_sweep</span>
             Limpar Fila
           </button>
 
@@ -117,6 +124,18 @@
       <!-- Rodapé da Tabela -->
       <div class="converter-footer">
         <div>Duração total dos arquivos: <strong id="converterTotalDuration">—</strong></div>
+        <div class="converter-batch-summary" aria-live="polite">
+          <span id="converterBatchStatus">Aguardando</span>
+          <span id="converterBatchCount">0/0</span>
+        </div>
+      </div>
+
+      <!-- Barra de progresso geral do lote (visível durante e após a conversão) -->
+      <div id="converterBatchProgress" class="converter-batch-progress hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="converter-batch-progress-track">
+          <div id="converterBatchProgressFill" class="converter-batch-progress-fill" style="width: 0%;"></div>
+        </div>
+        <span id="converterBatchEta" class="converter-batch-eta hidden"></span>
       </div>
     </div>
 
@@ -126,70 +145,77 @@
       <div class="converter-config-panel">
         <h3 class="converter-config-title">PARÂMETROS DE CONVERSÃO</h3>
         
-        <!-- FORMATO DE SAÍDA -->
+        <!-- FORMATO DE SAÍDA (TOGGLE) -->
         <div class="converter-config-group">
           <label class="converter-label">Formato de Saída</label>
-          <select id="selConverterOutFormat" class="converter-select">
-            <option value="mp4">MP4 (Vídeo)</option>
-            <option value="mp3">MP3 (Áudio)</option>
-          </select>
+          <div id="converterFormatToggle" class="converter-format-toggle mp4-active" role="group" aria-label="Formato de saída">
+            <button type="button" class="converter-format-btn" data-format="mp4" aria-pressed="true">MP4</button>
+            <button type="button" class="converter-format-btn" data-format="mp3" aria-pressed="false">MP3</button>
+          </div>
         </div>
 
-        <!-- CODEC DE VÍDEO -->
-        <div id="converterCodecContainer" class="converter-config-group">
-          <label class="converter-label">Codec de Vídeo</label>
-          <select id="selConverterCodec" class="converter-select">
-            <option value="libx264">H.264 (Maior Compatibilidade)</option>
-            <option value="libx265">H.265 / HEVC (Menor Tamanho)</option>
-          </select>
+        <!-- BLOCO DE VÍDEO (oculto em modo MP3) -->
+        <div id="converterVideoSettings">
+
+          <!-- CODEC DE VÍDEO (H264 / H265) -->
+          <div id="converterCodecContainer" class="converter-config-group">
+            <label class="converter-label">Codec de Vídeo</label>
+            <div id="converterCodecToggle" class="converter-codec-toggle" role="group" aria-label="Codec de vídeo">
+              <button type="button" id="btnCodecH264" class="converter-codec-btn active" data-codec="libx264">H264</button>
+              <button type="button" id="btnCodecH265" class="converter-codec-btn" data-codec="libx265">H265</button>
+            </div>
+            <span id="converterCodecHint" class="converter-hint-text hidden"></span>
+          </div>
+
+          <!-- RESOLUÇÃO DA SAÍDA -->
+          <div id="converterResolutionContainer" class="converter-config-group">
+            <label class="converter-label">Resolução de Vídeo</label>
+            <select id="selConverterResolution" class="converter-select">
+              <option value="original">Original da Mídia</option>
+              <option value="2160">4K Ultra HD (2160p)</option>
+              <option value="1440">2K Quad HD (1440p)</option>
+              <option value="1080">Full HD (1080p)</option>
+              <option value="720">HD (720p)</option>
+              <option value="480">SD (480p)</option>
+            </select>
+          </div>
+
+          <!-- BITRATE DE VÍDEO (SLIDER + NUMÉRICO) -->
+          <div id="converterBitrateContainer" class="converter-config-group">
+            <div class="converter-bitrate-header">
+              <label class="converter-label">Bitrate de Vídeo</label>
+              <span id="converterBitrateValue" class="converter-bitrate-display">10 Mbps</span>
+            </div>
+            <div class="converter-bitrate-controls">
+              <input type="range" id="rangeConverterBitrate" class="converter-bitrate-slider" min="1" max="100" step="1" value="10" aria-label="Bitrate de vídeo em Mbps" />
+              <input type="number" id="numConverterBitrate" class="converter-bitrate-input" min="1" max="100" step="1" value="10" aria-label="Bitrate de vídeo numérico" />
+              <span class="converter-bitrate-unit">Mbps</span>
+            </div>
+          </div>
+
         </div>
 
-        <!-- RESOLUÇÃO DA SAÍDA -->
-        <div id="converterResolutionContainer" class="converter-config-group">
-          <label class="converter-label">Resolução de Vídeo</label>
-          <select id="selConverterResolution" class="converter-select">
-            <option value="original">Original da Mídia</option>
-            <option value="2160">4K Ultra HD (2160p)</option>
-            <option value="1440">2K Quad HD (1440p)</option>
-            <option value="1080">Full HD (1080p)</option>
-            <option value="720">HD (720p)</option>
-            <option value="480">SD (480p)</option>
+        <!-- CODEC DE ÁUDIO -->
+        <div id="converterAudioCodecContainer" class="converter-config-group">
+          <label class="converter-label">Codec de Áudio</label>
+          <select id="selConverterAudioCodec" class="converter-select">
+            <option value="aac" selected>AAC (Padrão)</option>
+            <option value="libmp3lame" data-label-ok="MP3">MP3</option>
+            <option value="pcm_s16le" data-label-ok="PCM (Sem perdas)">PCM (Sem perdas)</option>
           </select>
-        </div>
-
-        <!-- QUALIDADE DO VÍDEO (CRF / BITRATE) -->
-        <div id="converterVideoQualityContainer" class="converter-config-group">
-          <label class="converter-label">Qualidade do Vídeo</label>
-          <select id="selConverterVideoQuality" class="converter-select">
-            <option value="crf-18">Alta (CRF 18 — Quase sem perdas)</option>
-            <option value="crf-23" selected>Padrão (CRF 23 — Balanceado)</option>
-            <option value="crf-28">Compacto (CRF 28 — Menor tamanho)</option>
-            <option value="bitrate-50000k">Ultra HD (50 Mbps — 4K)</option>
-            <option value="bitrate-20000k">Alta Definição (20 Mbps — 1080p)</option>
-            <option value="bitrate-8000k">HD (8 Mbps — 720p)</option>
-            <option value="bitrate-4000k">SD (4 Mbps — 480p)</option>
-          </select>
-        </div>
-
-        <!-- VELOCIDADE DE CODIFICAÇÃO (PRESET) -->
-        <div id="converterPresetContainer" class="converter-config-group">
-          <label class="converter-label">Velocidade de Codificação</label>
-          <select id="selConverterPreset" class="converter-select">
-            <option value="ultrafast">Ultra Rápido (Menor Compressão)</option>
-            <option value="fast">Rápido</option>
-            <option value="medium" selected>Médio (Recomendado)</option>
-            <option value="slow">Lento (Melhor Compressão)</option>
-          </select>
+          <span id="converterAudioCodecHint" class="converter-hint-text hidden"></span>
         </div>
 
         <!-- BITRATE DE ÁUDIO -->
-        <div class="converter-config-group">
-          <label class="converter-label">Qualidade do Áudio</label>
+        <div id="converterAudioBitrateContainer" class="converter-config-group">
+          <label class="converter-label">Bitrate de Áudio</label>
           <select id="selConverterAudioBitrate" class="converter-select">
-            <option value="128k">128 kbps (Padrão)</option>
+            <option value="128k">128 kbps</option>
             <option value="192k" selected>192 kbps (Alta Qualidade)</option>
+            <option value="256k">256 kbps</option>
             <option value="320k">320 kbps (Qualidade Máxima)</option>
           </select>
+          <span id="converterAudioBitrateHint" class="converter-hint-text hidden">PCM gera arquivos maiores (sem compressão).</span>
         </div>
 
         <!-- PASTA DE DESTINO DA CONVERSÃO -->
@@ -197,17 +223,21 @@
           <label class="converter-label">Pasta de Destino</label>
           <div class="converter-input-group">
             <input type="text" id="outConverterFolder" class="converter-input" placeholder="Selecione uma pasta de destino..." />
-            <button id="btnSelectConverterDestFolder" title="Selecionar Pasta" class="converter-icon-btn" type="button">
-              <span class="material-symbols-rounded">folder_open</span>
+            <button id="btnSelectConverterDestFolder" title="Selecionar Pasta" aria-label="Selecionar pasta de destino" class="converter-icon-btn" type="button">
+              <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
             </button>
           </div>
         </div>
 
-        <!-- BOTÃO PRINCIPAL DE PROCESSAMENTO -->
+        <!-- BOTÕES DE PROCESSAMENTO -->
         <div class="converter-start-group">
           <button id="btnStartConverterQueue" class="converter-btn converter-btn-start" type="button">
-            <span class="material-symbols-rounded">sync</span>
+            <span class="material-symbols-rounded" aria-hidden="true">sync</span>
             Converter Todos os Arquivos
+          </button>
+          <button id="btnCancelConverterQueue" class="converter-btn converter-btn-cancel hidden" type="button">
+            <span class="material-symbols-rounded" aria-hidden="true">stop</span>
+            Cancelar Conversão
           </button>
         </div>
       </div>
@@ -219,8 +249,8 @@
     <div class="converter-modal">
       <div class="converter-modal-header">
         <h3>Importar da Biblioteca</h3>
-        <button id="btnCloseConverterLibModal" class="converter-modal-close-btn" type="button">
-          <span class="material-symbols-rounded">close</span>
+        <button id="btnCloseConverterLibModal" class="converter-modal-close-btn" type="button" aria-label="Fechar janela de importação da biblioteca">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
         </button>
       </div>
 

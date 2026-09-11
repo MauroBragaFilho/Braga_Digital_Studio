@@ -41,8 +41,18 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
+
+      - name: Cache do electron-builder/Electron (evita re-downloads entre runs)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/electron-builder
+            ${{ github.workspace }}/.cache/electron
+          key: electron-builder-win-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            electron-builder-win-
 
       - name: Instalar dependências
         run: npm ci
@@ -68,7 +78,34 @@ jobs:
           # de código automaticamente (não configurado neste momento) — gera instalador
           # sem assinatura, que é o comportamento esperado até haver um certificado.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win nsis
+          # Força os caches do electron-builder/Electron para dentro do workspace
+          # (a action actions/cache restaura/grava essas pastas entre runs), evitando
+          # re-baixar o zip do Electron, NSIS e winCodeSign em toda execução — a causa
+          # nº1 de falhas intermitentes de build no GitHub Actions.
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\.cache\electron-builder" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\.cache\electron" | Out-Null
+
+          $builder = Join-Path $PWD 'node_modules\.bin\electron-builder.cmd'
+          $maxTries = 3
+          $code = 1
+          for ($try = 1; $try -le $maxTries; $try++) {
+            Write-Host "== electron-builder: tentativa $try/$maxTries =="
+            & $builder --win nsis --publish never
+            $code = $LASTEXITCODE
+            if ($code -eq 0) {
+              Write-Host "Instalador Windows gerado com sucesso."
+              break
+            }
+            Write-Host "electron-builder falhou (código $code). Downloads de Electron/NSIS/winCodeSign podem falhar de forma intermitente em runners do GitHub Actions — tentando novamente em 20s..."
+            if ($try -lt $maxTries) { Start-Sleep -Seconds 20 }
+          }
+          if ($code -ne 0) {
+            Write-Error "electron-builder falhou após $maxTries tentativas (código $code)."
+            exit $code
+          }
 
       - name: Localizar o instalador gerado
         id: find_installer

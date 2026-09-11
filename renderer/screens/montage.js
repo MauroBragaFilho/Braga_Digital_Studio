@@ -1,3 +1,5 @@
+import { setAppStatus } from '../app.js';
+
 let mainVideosList = [];
 let selectedVideoIds = new Set();
 let thumbsDir = '';
@@ -729,15 +731,18 @@ function bindEvents() {
       try {
         exportState = { active: true, completed: false, current: 1, total: mainVideosList.length, percent: 0 };
         updateStepperVisuals();
+        setAppStatus('Montando vídeos...', 'info');
 
         await window.bds.enqueueMontage(exportConfig);
 
         exportState = { active: false, completed: true, current: mainVideosList.length, total: mainVideosList.length, percent: 100 };
         updateStepperVisuals();
+        setAppStatus('Pronto', 'success');
         window.bdsModal.alert(`Sucesso! Todos os ${mainVideosList.length} vídeos foram exportados com sucesso em ${destFolder}.`);
       } catch (err) {
         exportState.active = false;
         updateStepperVisuals();
+        setAppStatus('Erro na montagem', 'error');
         window.bdsModal.alert('Erro ao enviar montagem para o motor FFmpeg: ' + err.message);
       }
     }
@@ -766,6 +771,8 @@ function setupIPCListeners() {
         mainVideosList[idx].status = 'Renderizando';
       }
 
+      setAppStatus(`Renderizando ${Math.round(payload.percent || 0)}%...`, 'info');
+
       renderMainVideosTable();
       updateStepperVisuals();
     });
@@ -783,8 +790,12 @@ function setupIPCListeners() {
           item.status = 'Concluído';
         });
 
+        setAppStatus('Pronto', 'success');
         renderMainVideosTable();
         updateStepperVisuals();
+      } else if (payload && payload.status === 'error') {
+        exportState.active = false;
+        setAppStatus('Erro na montagem', 'error');
       }
     });
   }

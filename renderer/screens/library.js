@@ -31,6 +31,22 @@ export async function initScreen() {
     }
   }
 
+  // ESC fecha o inspector da biblioteca
+  if (!window._libInspectorEscBound) {
+    window._libInspectorEscBound = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      // Ignora se estiver editando um campo de texto ou com modal aberto
+      const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (document.querySelector('.lib-modal-overlay.active')) return;
+      const inspector = document.getElementById('libraryInspector');
+      if (inspector && inspector.classList.contains('active')) {
+        closeInspector();
+      }
+    });
+  }
+
   // View toggles
   document.getElementById('btnViewGrid')?.addEventListener('click', () => setViewMode('grid'));
   document.getElementById('btnViewList')?.addEventListener('click', () => setViewMode('list'));
@@ -95,6 +111,22 @@ export async function initScreen() {
         loadFilterOptions();
         fetchMedia();
       }, 50); 
+    });
+  }
+
+  // [FIX] Atualiza a biblioteca PROGRESSIVAMENTE durante a regeneração de thumbnails
+  // (com debounce), não apenas quando o processo termina — para que as thumbnails
+  // apareçam assim que forem geradas em background, sem biblioteca preta por minutos.
+  if (window.bds && window.bds.onThumbsRegenProgress && !window.libraryThumbsRegenRegistered) {
+    window.libraryThumbsRegenRegistered = true;
+    let thumbsRegenTimer = null;
+    window.bds.onThumbsRegenProgress((data) => {
+      if (!data || !data.total) return;
+      clearTimeout(thumbsRegenTimer);
+      // Ao concluir, atualiza rápido; durante, espera ~1s para agregar vários lotes
+      thumbsRegenTimer = setTimeout(() => {
+        fetchMedia();
+      }, data.processed >= data.total ? 400 : 1200);
     });
   }
   

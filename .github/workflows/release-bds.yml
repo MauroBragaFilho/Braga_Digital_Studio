@@ -72,8 +72,18 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
+
+      - name: Cache do electron-builder/Electron (evita re-downloads entre runs)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/electron-builder
+            ${{ github.workspace }}/.cache/electron
+          key: electron-builder-win-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            electron-builder-win-
 
       - name: Instalar dependências
         run: npm ci
@@ -96,7 +106,30 @@ jobs:
         shell: pwsh
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win nsis
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\.cache\electron-builder" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\.cache\electron" | Out-Null
+
+          $builder = Join-Path $PWD 'node_modules\.bin\electron-builder.cmd'
+          $maxTries = 3
+          $code = 1
+          for ($try = 1; $try -le $maxTries; $try++) {
+            Write-Host "== electron-builder: tentativa $try/$maxTries =="
+            & $builder --win nsis --publish never
+            $code = $LASTEXITCODE
+            if ($code -eq 0) {
+              Write-Host "Instalador Windows gerado com sucesso."
+              break
+            }
+            Write-Host "electron-builder falhou (código $code). Downloads de Electron/NSIS/winCodeSign podem falhar de forma intermitente em runners do GitHub Actions — tentando novamente em 20s..."
+            if ($try -lt $maxTries) { Start-Sleep -Seconds 20 }
+          }
+          if ($code -ne 0) {
+            Write-Error "electron-builder falhou após $maxTries tentativas (código $code)."
+            exit $code
+          }
 
       - name: Localizar o instalador gerado
         id: find_installer
@@ -138,8 +171,18 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
+
+      - name: Cache do electron-builder/Electron (evita re-downloads entre runs)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/electron-builder
+            ${{ github.workspace }}/.cache/electron
+          key: electron-builder-linux-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            electron-builder-linux-
 
       - name: Instalar dependências
         run: npm ci
@@ -157,7 +200,28 @@ jobs:
           fi
 
       - name: Build dos pacotes Linux (AppImage + deb)
-        run: npm run build:linux
+        env:
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.cache/electron-builder"
+          mkdir -p "$GITHUB_WORKSPACE/.cache/electron"
+
+          BUILDER="$PWD/node_modules/.bin/electron-builder"
+          MAX_TRIES=3
+          for TRY in 1 2 3; do
+            echo "== electron-builder: tentativa $TRY/$MAX_TRIES =="
+            if "$BUILDER" --linux AppImage deb --publish never; then
+              echo "Pacotes Linux gerados com sucesso."
+              exit 0
+            fi
+            echo "electron-builder falhou. Downloads de Electron/ferramentas AppImage podem falhar de forma intermitente em runners do GitHub Actions — tentando novamente em 20s..."
+            if [ "$TRY" -lt "$MAX_TRIES" ]; then
+              sleep 20
+            fi
+          done
+          echo "::error::electron-builder falhou após $MAX_TRIES tentativas."
+          exit 1
 
       - name: Localizar os pacotes gerados
         id: find_packages

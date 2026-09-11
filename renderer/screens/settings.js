@@ -14,6 +14,8 @@ export function initScreen() {
   setupContainerClickHandler();
   applyPendingUpdateCheck();
   loadCrashReports();
+  loadCacheInfo();
+  loadHardwareInfo();
 }
 
 /* ==========================================================================
@@ -61,7 +63,11 @@ function setupTabs() {
       const targetView = document.getElementById(targetId);
       if (targetView) targetView.classList.remove('hidden');
       // Recarrega a lista de crash reports ao abrir a aba Sistema
-      if (targetId === 'settingsSystemView') loadCrashReports();
+      if (targetId === 'settingsSystemView') {
+        loadCrashReports();
+        loadHardwareInfo();
+        loadCacheInfo();
+      }
     });
   });
 }
@@ -126,12 +132,22 @@ function renderSettings() {
   const accentInput = document.getElementById('accentColorInput');
   if (accentInput) accentInput.value = s.accentColor || '#e53935';
 
+  // Armazenamento (cache)
+  setChk('cacheAutoCleanInput', s.cacheAutoClean);
+  const cacheMaxSize = document.getElementById('cacheMaxSizeInput');
+  if (cacheMaxSize) cacheMaxSize.value = s.cacheMaxSizeMB || 500;
+
   // LUTs Preview Image
   setVal('lutPreviewImageInput', s.lutPreviewImage);
   const lutThumb = document.getElementById('settingsLutPreviewThumb');
   if (lutThumb) {
     lutThumb.src = s.lutPreviewImage ? `file://${s.lutPreviewImage}` : './assets/lut_preview.jpg';
   }
+
+  // Aceleração de Hardware (GPU)
+  setChk('useHardwareAccelerationInput', s.useHardwareAcceleration !== false);
+  const hwVendor = document.getElementById('preferredGpuVendorInput');
+  if (hwVendor) hwVendor.value = s.preferredGpuVendor || 'auto';
 
   toggleFolderInputs();
 }
@@ -215,6 +231,25 @@ function bindEvents() {
     }
   });
   document.getElementById('refreshCrashReportsButton')?.addEventListener('click', loadCrashReports);
+  document.getElementById('clearCrashReportsButton')?.addEventListener('click', async () => {
+    if (typeof window.bds?.clearCrashReports !== 'function') return;
+    const confirmed = await window.bdsModal.confirm(
+      'Tem certeza que deseja excluir todos os relatórios de erro?\nEsta ação não pode ser desfeita.'
+    );
+    if (!confirmed) return;
+    try {
+      const result = await window.bds.clearCrashReports();
+      if (result && result.deleted > 0) {
+        await loadCrashReports();
+        window.bdsModal.alert(`${result.deleted} relatório(s) removido(s) com sucesso.`);
+      } else {
+        window.bdsModal.alert('Nenhum relatório encontrado para excluir.');
+      }
+    } catch (err) {
+      console.error('[SETTINGS] Erro ao limpar crash reports:', err);
+      window.bdsModal.alert('Ocorreu um erro ao tentar limpar os relatórios.');
+    }
+  });
 
   // LUTs Preview Image Select / Reset
   document.getElementById('lutPreviewImageSelectBtn')?.addEventListener('click', async () => {
@@ -301,6 +336,52 @@ function bindEvents() {
       window.bdsModal.alert('Erro ao limpar banco de dados: ' + e.message);
     }
   });
+
+  // Armazenamento — Atualizar informações
+  document.getElementById('refreshCacheButton')?.addEventListener('click', loadCacheInfo);
+
+  // Armazenamento — Limpar tudo
+  document.getElementById('clearCacheButton')?.addEventListener('click', async () => {
+    const confirm = await window.bdsModal.confirm(
+      'Tem certeza que deseja limpar TODO o armazenamento temporário?\n' +
+      'Isso removerá thumbnails, waveforms e arquivos temporários.\n' +
+      'As conversões e projetos não serão afetados, mas os arquivos poderão ser regenerados na próxima vez que forem necessários.'
+    );
+    if (!confirm) return;
+    try {
+      setStatus('Limpando armazenamento...');
+      const result = await window.bds.clearCache(null);
+      setStatus('Armazenamento limpo com sucesso.');
+      window.bdsModal.alert(`Armazenamento limpo! ${result.totalFormatted} liberados.`);
+      loadCacheInfo();
+    } catch (e) {
+      setStatus('Erro ao limpar armazenamento: ' + e.message);
+      window.bdsModal.alert('Erro ao limpar armazenamento: ' + e.message);
+    }
+  });
+
+  // Armazenamento — Limpar categoria individual (delegação de eventos)
+  const cacheList = document.getElementById('cacheCategoriesList');
+  if (cacheList) {
+    cacheList.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-clear-cache]');
+      if (!btn) return;
+      const key = btn.dataset.clearCache;
+      const label = btn.dataset.label;
+      const ok = await window.bdsModal.confirm(`Limpar o armazenamento de "${label}"? Os arquivos serão regenerados quando necessários.`);
+      if (!ok) return;
+      try {
+        setStatus(`Limpando ${label}...`);
+        const result = await window.bds.clearCache(key);
+        setStatus(`${label} limpos com sucesso.`);
+        window.bdsModal.alert(`${label} limpos! ${result.totalFormatted} liberados.`);
+        loadCacheInfo();
+      } catch (err) {
+        window.bdsModal.alert('Erro ao limpar: ' + err.message);
+      }
+    });
+  }
+
 }
 
 async function chooseFolder(inputId) {
@@ -345,6 +426,10 @@ async function saveSettings() {
       lutPreviewImage: document.getElementById('lutPreviewImageInput')?.value || '',
       errorReportingEnabled: document.getElementById('errorReportingEnabledInput')?.checked,
       developerEmail: document.getElementById('developerEmailInput')?.value?.trim() || '',
+      useHardwareAcceleration: document.getElementById('useHardwareAccelerationInput')?.checked !== false,
+      preferredGpuVendor: document.getElementById('preferredGpuVendorInput')?.value || 'auto',
+      cacheAutoClean: document.getElementById('cacheAutoCleanInput')?.checked === true,
+      cacheMaxSizeMB: Number(document.getElementById('cacheMaxSizeInput')?.value) || 500,
     });
     state.settings = updatedSettings;
     // Confirma o tema após salvar (garante consistência)
@@ -373,6 +458,106 @@ async function fetchAppVersion() {
     }
   } catch (err) {
     console.error('[SETTINGS] Erro ao buscar versão:', err);
+  }
+}
+
+/* ==========================================================================
+   ARMAZENAMENTO / CACHE
+   ========================================================================== */
+async function loadCacheInfo() {
+  const listEl = document.getElementById('cacheCategoriesList');
+  const totalEl = document.getElementById('cacheTotalSize');
+  if (!listEl && !totalEl) return;
+
+  // Estado de carregamento
+  if (listEl) listEl.innerHTML = '<div class="settings-crash-empty"><span class="material-symbols-rounded">sync</span> Calculando...</div>';
+  if (totalEl) totalEl.textContent = 'Calculando...';
+
+  if (!window.bds?.getCacheInfo) {
+    if (listEl) listEl.innerHTML = '<div class="settings-crash-empty">IPC getCacheInfo não encontrado. Reinicie o aplicativo.</div>';
+    return;
+  }
+
+  try {
+    const info = await window.bds.getCacheInfo();
+    if (totalEl) totalEl.textContent = info.totalFormatted;
+
+    if (!listEl) return;
+    if (!info.categories || info.categories.length === 0) {
+      listEl.innerHTML = '<div class="settings-crash-empty">Nenhum item de armazenamento encontrado.</div>';
+      return;
+    }
+
+    listEl.innerHTML = info.categories.map(cat => `
+      <div class="settings-cache-item">
+        <div class="settings-cache-item-info">
+          <strong>${cat.label}</strong>
+          <span>${cat.sizeFormatted}</span>
+        </div>
+        <button class="settings-btn-outline settings-cache-clear-btn" type="button"
+                data-clear-cache="${cat.key}" data-label="${cat.label}">
+          <span class="material-symbols-rounded">delete</span> Limpar
+        </button>
+      </div>
+    `).join('');
+
+    // Atualiza indicadores do limite
+    const maxInput = document.getElementById('cacheMaxSizeInput');
+    if (maxInput && !maxInput.value) maxInput.value = info.maxSizeMB || 500;
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao carregar informações de cache:', err);
+    if (listEl) listEl.innerHTML = `<div class="settings-crash-empty">Erro ao carregar armazenamento: ${escapeHtml(err.message || err)}</div>`;
+  }
+}
+
+
+/* ==========================================================================
+   ACELERAÇÃO DE HARDWARE / GPU
+/** Retorna true quando o encoder é de hardware (GPU). */
+function _isGpu(encoder) {
+  const e = String(encoder || '').toLowerCase();
+  return e.includes('nvenc') || e.includes('qsv') || e.includes('amf');
+}
+
+// Busca no processo principal as GPUs (WMI) e os encoders de vídeo
+// selecionados (HardwareDetectionService) para exibição na aba Sistema.
+async function loadHardwareInfo() {
+  const gpuEl = document.getElementById('sysGpu');
+  const encEl = document.getElementById('sysEncoder');
+  if (!gpuEl && !encEl) return;
+
+  try {
+    const info = await window.bds.getHardwareInfo();
+    if (!info) return;
+
+    if (gpuEl) {
+      const gpus = Array.isArray(info.gpus) ? info.gpus : [];
+      if (gpus.length > 0) {
+        // Exibe apenas o modelo da GPU (ex: "GeForce GTX 1650").
+        const labels = gpus.map((g) => {
+          return g.model || g.name || 'GPU';
+        });
+        // Remove duplicatas mantendo a ordem.
+        gpuEl.textContent = [...new Set(labels)].join(' + ');
+      } else {
+        gpuEl.textContent = info.useHardwareAcceleration
+          ? 'Nenhuma GPU com codificação detectada (CPU)'
+          : 'Aceleração de hardware desativada';
+      }
+    }
+
+    if (encEl) {
+      const selected = info.selected || {};
+      const labels = [];
+      if (selected.h264) labels.push(`H.264: ${_isGpu(selected.h264) ? 'GPU' : 'CPU'}`);
+      if (selected.hevc) labels.push(`HEVC: ${_isGpu(selected.hevc) ? 'GPU' : 'CPU'}`);
+      if (selected.av1) labels.push(`AV1: ${_isGpu(selected.av1) ? 'GPU' : 'CPU'}`);
+      encEl.textContent = labels.length > 0 ? labels.join(' | ') : '—';
+    }
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao carregar informações de hardware:', err);
+    if (gpuEl) gpuEl.textContent = 'Indisponível';
+    if (encEl) encEl.textContent = 'Indisponível';
   }
 }
 
