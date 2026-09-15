@@ -40,16 +40,6 @@
         <h3 class="settings-section-title">Geral</h3>
 
         <div class="settings-group">
-          <label class="settings-check-row">
-            <input type="checkbox" id="autoUpdateGithub" />
-            <div>
-              <span class="settings-check-label">Atualização Automática (GitHub)</span>
-              <span class="settings-check-hint">Verifica e baixa atualizações automaticamente do repositório oficial.</span>
-            </div>
-          </label>
-        </div>
-
-        <div class="settings-group">
           <h4 class="settings-group-title">Temas</h4>
           <div class="settings-form-row">
             <label for="themeSelect">Tema</label>
@@ -72,19 +62,18 @@
             <div>
               <span class="settings-check-label">Usar aceleração de hardware (GPU) para vídeos</span>
               <span class="settings-check-hint">
-                Usa NVENC (NVIDIA), QSV (Intel) ou AMF (AMD) para codificar vídeo muito mais rápido
-                em conversões, montagens e remoção de silêncio. Desative caso note problemas de compatibilidade.
+                Usa a GPU para codificar vídeo muito mais rápido. Desative caso note problemas de compatibilidade.
               </span>
             </div>
           </label>
 
           <div class="settings-form-row">
-            <label for="preferredGpuVendorInput">Prefere qual fabricante de GPU?</label>
+            <label for="preferredGpuVendorInput">Escolha a GPU utilizada</label>
             <select id="preferredGpuVendorInput" class="settings-select">
               <option value="auto">Automático (melhor disponível)</option>
-              <option value="nvidia">NVIDIA (NVENC)</option>
-              <option value="amd">AMD (AMF)</option>
-              <option value="intel">Intel (QSV)</option>
+              <option value="nvidia">NVIDIA</option>
+              <option value="amd">AMD</option>
+              <option value="intel">Intel</option>
             </select>
           </div>
         </div>
@@ -158,7 +147,7 @@
           </div>
         </div>
 
-        <div class="settings-group">
+        <div class="settings-group settings-view hidden">
           <h4 class="settings-group-title">Telegram <span style="font-weight: normal; font-size: 12px; opacity: .6;">(opcional)</span></h4>
           <p class="settings-check-hint" style="margin-bottom: 10px;">
             Receba os mesmos avisos no seu celular. Crie um bot com o @BotFather no Telegram, copie o token e informe o ID do seu chat.
@@ -197,10 +186,10 @@
       </section>
 
       <section id="settingsFoldersView" class="settings-view hidden">
-        <h3 class="settings-section-title">Pastas</h3>
+        <h3 class="settings-section-title">Bibiotecas</h3>
 
         <div class="settings-group">
-          <h4 class="settings-group-title">Local de Download (Vídeos e Áudios)</h4>
+          <h4 class="settings-group-title">Local de Download</h4>
 
           <label class="settings-check-row">
             <input type="checkbox" id="useDefaultFolderInput" />
@@ -211,14 +200,14 @@
 
           <div id="customFoldersGroup" class="settings-folder-list">
             <div class="settings-folder-row">
-              <span class="settings-folder-label">Pasta de destino para Áudio (MP3)</span>
+              <span class="settings-folder-label">Pasta de destino para Áudio</span>
               <div class="settings-folder-controls">
                 <input type="text" id="mp3FolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
                 <button id="mp3FolderButton" class="settings-btn-outline" type="button">Alterar</button>
               </div>
             </div>
             <div class="settings-folder-row">
-              <span class="settings-folder-label">Pasta de destino para Vídeo (MP4)</span>
+              <span class="settings-folder-label">Pasta de destino para Vídeo</span>
               <div class="settings-folder-controls">
                 <input type="text" id="mp4FolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
                 <button id="mp4FolderButton" class="settings-btn-outline" type="button">Alterar</button>
@@ -245,7 +234,7 @@
               </div>
             </div>
             <div class="settings-folder-row">
-              <span class="settings-folder-label">Pasta de importação de Dispositivos (BDSM)</span>
+              <span class="settings-folder-label">Pasta de importação de Dispositivos</span>
               <div class="settings-folder-controls">
                 <input type="text" id="deviceFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
                 <button id="deviceFolderButton" class="settings-btn-outline" type="button">Alterar</button>
@@ -254,7 +243,7 @@
           </div>
         </div>
 
-        <div class="settings-group">
+        <div class="settings-group settings-view hidden">
           <h4 class="settings-group-title">Upload para YouTube</h4>
           <p class="settings-hint">Pasta monitorada pelo scanner de uploads automáticos para YouTube.</p>
           <div class="settings-folder-row">
@@ -355,21 +344,13 @@
           </label>
         </div>
 
-        <div class="settings-form-row">
-          <label for="updateServerUrlInput">URL do BDS Update Server</label>
-          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
-            <input type="text" id="updateServerUrlInput" class="settings-input" placeholder="https://updates.bragadigital.com (opcional)" />
-            <span class="settings-check-hint">Deixe vazio para usar apenas o fluxo padrão de atualizações via GitHub Releases.</span>
-          </div>
-        </div>
-
         <!-- Atualização do Aplicativo (unificada no painel) -->
         <div class="settings-diagnostics-zone" id="appUpdateZone">
           <h4 class="settings-diagnostics-title">
             <span class="material-symbols-rounded">system_update</span> Atualização do Aplicativo (BDS)
           </h4>
           <p class="settings-diagnostics-text" id="appUpdateStatusText">
-            Verifique se há uma nova versão do Braga Digital Studio disponível nas releases do GitHub.
+            Verifique se há uma nova versão do Braga Digital Studio disponível.
           </p>
           <button class="settings-btn-outline" id="checkAppUpdateButton" type="button">
             <span class="material-symbols-rounded">system_update</span> Verificar Atualização do BDS
@@ -419,15 +400,15 @@
               <span class="material-symbols-rounded">refresh</span> Atualizar
             </button>
             <button id="clearCrashReportsButton" class="settings-btn-outline" type="button" title="Limpar todos os relatórios de erro" style="color: #ef5350;">
-              <span class="material-symbols-rounded">delete_sweep</span> Limpar Relatórios
+              <span class="material-symbols-rounded">delete_sweep</span> Limpar Erros
             </button>
           </div>
 
           <div class="settings-crash-list-wrap">
-            <span class="settings-check-hint">Relatórios locais de erros e travamentos registrados neste dispositivo:</span>
+            <span class="settings-check-hint">Erros locais de erros e travamentos registrados neste dispositivo:</span>
             <div id="crashReportsList" class="settings-crash-list">
               <div class="settings-crash-empty">
-                <span class="material-symbols-rounded">sync</span> Carregando relatórios...
+                <span class="material-symbols-rounded">sync</span> Carregando Erros...
               </div>
             </div>
           </div>

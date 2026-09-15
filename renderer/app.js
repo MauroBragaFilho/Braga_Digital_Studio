@@ -1,3 +1,10 @@
+import { mediaPreviewSystem } from './components/preview/MediaPreviewSystem.js';
+import { initSliderSync } from './slider-sync.js';
+
+// Expõe openPreview e mediaPreviewSystem globalmente
+window.mediaPreviewSystem = mediaPreviewSystem;
+window.openPreview = (media, collection = []) => mediaPreviewSystem.open(media, collection);
+
 // Estado global que as telas podem ler/gravar se necessário
 export const state = {
   settings: null,
@@ -168,11 +175,12 @@ function getSidebarTitlesLabels() {
   return _sidebarLabels;
 }
 
+// Abaixo deste valor a sidebar vira barra inferior e deve colapsar automaticamente
+const SIDEBAR_NARROW_BREAKPOINT = 980;
+
 function applySidebarCollapsed(collapsed) {
   const sidebar = document.querySelector('.sidebar');
   if (!sidebar) return;
-
-  const isNarrow = window.innerWidth <= 980;
 
   document.querySelector('.app-shell')?.classList.toggle('collapsed', collapsed);
   sidebar.classList.toggle('collapsed', collapsed);
@@ -188,10 +196,6 @@ function applySidebarCollapsed(collapsed) {
   // Tooltip do BDS: indica que pode expandir quando colapsado
   const brand = document.querySelector('.sidebar .brand');
   if (brand) brand.title = collapsed ? 'Expandir menu' : '';
-
-  // Em janelas estreitas (barra inferior) os rótulos continuam visíveis: aqui o
-  // CSS trata o override visual e não há tooltips a adicionar/remover.
-  if (isNarrow) return;
 
   // Tooltips com o nome da tela quando colapsada (sem perda de títulos manuais)
   document.querySelectorAll('.sidebar .tab-button').forEach(btn => {
@@ -521,6 +525,9 @@ window.bdsModal = {
 // ------------------------
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Inicializa o componente global de range sliders (sync --slider-value)
+  initSliderSync();
+
   const contentContainer = document.getElementById('dynamic-content');
   const tabButtons = document.querySelectorAll('.tab-button');
 
@@ -749,6 +756,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Responsividade: em janelas estreitas/tamanho mínimo a sidebar colapsa
+  // automaticamente (trilho de ícones); ao alargar, restaura a preferência salva.
+  let _sidebarResizeTimer = null;
+  const updateSidebarForWindowSize = () => {
+    clearTimeout(_sidebarResizeTimer);
+    _sidebarResizeTimer = setTimeout(() => {
+      const isNarrow = window.innerWidth <= SIDEBAR_NARROW_BREAKPOINT;
+      applySidebarCollapsed(isNarrow ? true : (state.settings?.sidebarCollapsed === true));
+    }, 120);
+  };
+  window.addEventListener('resize', updateSidebarForWindowSize);
+
   // Clique no BDS (brand) expande a sidebar quando colapsada
   const brandMark = document.querySelector('.sidebar .brand');
   if (brandMark) {
@@ -956,8 +975,9 @@ async function initGlobalElectronListeners() {
   state.settings = await window.bds.getSettings();
   // Aplica tema e cor de destaque sem flash, antes do primeiro render
   applyTheme(state.settings.theme, state.settings.accentColor);
-  // Reaplica o estado persistido da sidebar (colapsada/expandida)
-  applySidebarCollapsed(state.settings.sidebarCollapsed === true);
+  // Reaplica o estado persistido da sidebar (colapsada/expandida); em janela
+  // estreita/tamanho mínimo, colapsa automaticamente para liberar espaço.
+  applySidebarCollapsed(window.innerWidth <= SIDEBAR_NARROW_BREAKPOINT || state.settings.sidebarCollapsed === true);
 
   // ── Downloads: Queue Manager (canal correto com `id` nos payloads) ──────────
 

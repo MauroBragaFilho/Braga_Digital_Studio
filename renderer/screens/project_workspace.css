@@ -1539,8 +1539,8 @@
 
 .ws-scrubber {
   width: 100%;
-  accent-color: var(--accent);
   cursor: pointer;
+  --slider-fill-color: var(--accent, #e53935);
 }
 
 .ws-waveform-canvas {

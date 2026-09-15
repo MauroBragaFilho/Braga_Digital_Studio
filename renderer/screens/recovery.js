@@ -60,8 +60,8 @@ function bindEvents() {
 
   // Botões do Card de Sucesso
   document.getElementById('btnPlayRecoveredVideo')?.addEventListener('click', () => {
-    if (lastRecoveredPath && window.bdsFloatingPlayer) {
-      window.bdsFloatingPlayer.play(lastRecoveredPath, 'Vídeo Recuperado');
+    if (lastRecoveredPath && window.bdsPlayer) {
+      window.bdsPlayer.play(lastRecoveredPath, 'Vídeo Recuperado');
     }
   });
 

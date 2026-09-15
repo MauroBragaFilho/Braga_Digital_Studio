@@ -331,13 +331,16 @@
 }
 .volume-slider {
   width: 80px;
-  accent-color: #fff;
-  height: 4px;
   cursor: pointer;
   min-height: auto;
   padding: 0;
   border: none;
   background: transparent;
+  --slider-width: 80px;
+  --slider-fill-color: #fff;
+  --slider-thumb-color: #fff;
+  --slider-track-height: 4px;
+  --slider-thumb-size: 12px;
 }
 .fullscreen-btn {
   border-radius: 4px;

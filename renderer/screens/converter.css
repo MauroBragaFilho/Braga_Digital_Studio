@@ -922,9 +922,9 @@
 .converter-bitrate-slider {
   flex: 1;
   min-width: 0;
-  height: 6px;
-  accent-color: var(--accent, #e53935);
   cursor: pointer;
+  --slider-fill-color: var(--accent, #e53935);
+  --slider-track-height: 6px;
 }
 
 .converter-bitrate-input {

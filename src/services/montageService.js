@@ -328,6 +328,45 @@ class MontageService extends EventEmitter {
     if (!pid) return;
     processRunner.cancel(pid);
   }
+
+  /**
+   * API de fila exposta pelo preload (montage:cancelJob, montage:removeJob,
+   * montage:clearQueue, montage:getQueue).
+   *
+   * A engine atual é monoprocesso (lote síncrono), portanto estes métodos
+   * mantêm o contrato de forma segura e idempotente SEM alterar a lógica do
+   * motor (enqueueMontage / runSingleRender / cancelMontage).
+   */
+
+  async cancelJob(_id) {
+    const result = await this.cancelMontage();
+    this.emit('queue-updated', this.getQueue());
+    return result;
+  }
+
+  async removeJob(_id) {
+    // Não há fila individual persistente — remoção é no-op seguro.
+    return { ok: true, removed: 0 };
+  }
+
+  async clearQueue() {
+    // Não há fila persistente — limpeza é no-op seguro.
+    return { ok: true, cleared: 0 };
+  }
+
+  async getQueue() {
+    if (!this.running) return [];
+    return [
+      {
+        id: 'current',
+        name: this.currentBatchItem?.fileName || 'Montagem em andamento',
+        status: 'running',
+        current: this.currentBatchItem?.currentFile || 1,
+        total: this.currentBatchItem?.totalFiles || 1,
+        percent: 0
+      }
+    ];
+  }
 }
 
 module.exports = MontageService;
