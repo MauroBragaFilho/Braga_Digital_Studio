@@ -103,7 +103,7 @@ export async function initScreen(forceRescan = false) {
              devicesData.push({
                 id: 'bdsm_' + device.id,
                 title: dName,
-                category: 'BDSM Mobile App',
+                category: 'BDS Mobile',
                 categoryColor: '#f25c05',
                 connectionText: connectionLabel,
                 statusDotColor: '#4caf50',
@@ -120,7 +120,7 @@ export async function initScreen(forceRescan = false) {
                   connection: connectionDetail,
                   ip: device.ip,
                   battery: device.battery != null ? `${device.battery}%` : 'N/A',
-                  app: `BDSM v${device.app_version || '1.0'}`,
+                  app: `BDS Mobile v${device.app_version || '1.0'}`,
                   status: 'Sincronização Ativa'
                 },
                 storage: {
@@ -659,7 +659,7 @@ function renderInspectorTabContent(dev) {
         <div class="row"><span class="label">Firmware:</span> <strong>v3.20</strong></div>
         <div class="row"><span class="label">Número de Série:</span> <strong>S01-9948210-B</strong></div>
         <div class="row"><span class="label">Última Sincronização:</span> <strong>Hoje às 14:32</strong></div>
-        <div class="row"><span class="label">Origem de Ingestão:</span> <strong>BDSM_DEVICE</strong></div>
+        <div class="row"><span class="label">Origem de Ingestão:</span> <strong>BDS Mobile</strong></div>
       </div>
     `;
   }

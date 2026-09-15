@@ -1,364 +1,407 @@
-<div class="montage-screen-container">
-  
-  <!-- 1. CABEÇALHO DA TELA & BOTÃO SALVAR -->
-  <div class="montage-header">
-    <div class="montage-description">
-      <p>Monte seu vídeo combinando abertura, vídeos principais e finalização.</p>
-    </div>
-    
-    <button id="btnSaveProject" class="montage-btn-save" type="button">
-      <span class="material-symbols-rounded">save</span>
-      Salvar Projeto
-    </button>
-  </div>
+﻿<div class="montage-screen-container">
 
-  <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
-  <div id="montageDebugBanner" class="montage-debug-banner hidden">
-    <div class="montage-debug-header">
-      <span class="montage-debug-title">
+  <!-- ============ CABEÇALHO ============ -->
+  <header class="mg-header">
+    <div class="mg-header-left">
+      <span class="material-symbols-rounded mg-header-icon">movie_filter</span>
+      <div class="mg-header-text">
+        <h1 class="mg-header-title">Montagem de Vídeos</h1>
+        <p class="mg-header-sub">Motor de montagem em lote — abertura, vídeos principais e finalização.</p>
+      </div>
+    </div>
+    <div class="mg-header-right">
+      <button id="btnSaveProject" class="mg-btn mg-btn-ghost" type="button" title="Salvar a sessão de montagem no armazenamento local">
+        <span class="material-symbols-rounded">save</span>
+        Salvar Projeto
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ BANNER DE ERRO ============ -->
+  <div id="montageDebugBanner" class="mg-debug-banner hidden">
+    <div class="mg-debug-header">
+      <span class="mg-debug-title">
         <span class="material-symbols-rounded">error</span>
         [ERRO DETECTADO NO SISTEMA]
       </span>
-      <button id="btnCloseDebugBanner" class="montage-debug-close-btn" type="button">Fechar Erro</button>
+      <button id="btnCloseDebugBanner" class="mg-btn mg-btn-ghost mg-btn-sm" type="button">Fechar Erro</button>
     </div>
-    <pre id="montageLogOutput" class="montage-log-output"></pre>
+    <pre id="montageLogOutput" class="mg-log-output"></pre>
   </div>
 
-  <!-- 2. STEPPER BAR (PASSO A PASSO NUMERADO COM STATUS DINÂMICO) -->
-  <div class="montage-stepper">
-    
-    <!-- PASSO 1: ABERTURA -->
-    <div id="step1Item" class="step-item">
-      <div id="step1Badge" class="step-badge step-badge-pending">1</div>
-      <div>
+  <!-- ============ STEPPER ============ -->
+  <div class="mg-stepper">
+
+    <div id="step1Item" class="step-item mg-step">
+      <div id="step1Badge" class="step-badge">1</div>
+      <div class="step-texts">
         <div class="step-title">ABERTURA</div>
-        <div id="step1Sub" class="step-subtitle step-text-pending">Defina a abertura do vídeo</div>
+        <div id="step1Sub" class="step-subtitle">Defina a abertura do vídeo</div>
       </div>
     </div>
-    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+    <span class="material-symbols-rounded mg-stepper-arrow">chevron_right</span>
 
-    <!-- PASSO 2: VÍDEOS PRINCIPAIS -->
-    <div id="step2Item" class="step-item">
-      <div id="step2Badge" class="step-badge step-badge-pending">2</div>
-      <div>
+    <div id="step2Item" class="step-item mg-step">
+      <div id="step2Badge" class="step-badge">2</div>
+      <div class="step-texts">
         <div class="step-title">VÍDEOS PRINCIPAIS</div>
-        <div id="step2Sub" class="step-subtitle step-text-pending">Adicione os vídeos principais</div>
+        <div id="step2Sub" class="step-subtitle">Adicione os vídeos principais</div>
       </div>
     </div>
-    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+    <span class="material-symbols-rounded mg-stepper-arrow">chevron_right</span>
 
-    <!-- PASSO 3: FINALIZAÇÃO -->
-    <div id="step3Item" class="step-item">
-      <div id="step3Badge" class="step-badge step-badge-pending">3</div>
-      <div>
+    <div id="step3Item" class="step-item mg-step">
+      <div id="step3Badge" class="step-badge">3</div>
+      <div class="step-texts">
         <div class="step-title">FINALIZAÇÃO</div>
-        <div id="step3Sub" class="step-subtitle step-text-pending">Defina a finalização do vídeo</div>
+        <div id="step3Sub" class="step-subtitle">Defina a finalização do vídeo</div>
       </div>
     </div>
-    <span class="material-symbols-rounded stepper-arrow">chevron_right</span>
+    <span class="material-symbols-rounded mg-stepper-arrow">chevron_right</span>
 
-    <!-- PASSO 4: EXPORTAR / PROGRESSO -->
-    <div id="step4Item" class="step-item">
-      <div id="step4Badge" class="step-badge step-badge-pending">4</div>
-      <div>
+    <div id="step4Item" class="step-item mg-step">
+      <div id="step4Badge" class="step-badge">4</div>
+      <div class="step-texts">
         <div id="step4Title" class="step-title">EXPORTAR</div>
-        <div id="step4Sub" class="step-subtitle step-text-pending">Configure e exporte seu vídeo</div>
+        <div id="step4Sub" class="step-subtitle">Configure e exporte seu vídeo</div>
       </div>
     </div>
   </div>
 
-  <!-- 3. PAINEL PRINCIPAL EM COLUNAS -->
-  <div class="montage-main-layout">
-    
-    <!-- COLUNA 1 (ESQUERDA): ABERTURA, FINALIZAÇÃO, DURAÇÃO FIXA -->
-    <div class="montage-sidebar">
-      
-      <!-- ABERTURA CARD -->
-      <div class="montage-card">
-        <div class="montage-card-header">
-          <div class="montage-card-title-group">
-            <span>ABERTURA (Comum)</span>
-            <span class="material-symbols-rounded montage-card-info" title="Vídeo de vinheta exibido antes de cada item">info</span>
+  <!-- ============ WORKBENCH 3 COLUNAS ============ -->
+  <div class="mg-workbench">
+
+    <!-- ===== RAIL ESQUERDA ===== -->
+    <aside class="mg-rail mg-rail-left">
+
+      <!-- ABERTURA -->
+      <section class="mg-card">
+        <div class="mg-card-head">
+          <span class="mg-card-title">ABERTURA <span class="mg-card-common">(comum)</span></span>
+          <span class="material-symbols-rounded mg-card-info" title="Vídeo de vinheta exibido antes de cada item">info</span>
+        </div>
+        <div class="mg-video-preview">
+          <div class="mg-video-thumb">
+            <img id="imgIntroThumb" class="mg-video-thumb-img hidden" alt="Miniatura da abertura" onerror="this.classList.add('hidden')" />
+            <span id="phIntroIcon" class="material-symbols-rounded mg-video-thumb-ph">movie</span>
+          </div>
+          <div class="mg-video-info">
+            <div id="lblIntroName" class="mg-video-name">Nenhuma</div>
+            <div id="lblIntroDuration" class="mg-video-dur">00:00:00</div>
+            <div id="lblIntroRes" class="mg-video-res">-</div>
           </div>
         </div>
-
-        <div class="montage-video-preview">
-          <div class="montage-video-thumb">
-            <img id="imgIntroThumb" class="montage-video-thumb-img hidden" onError="this.classList.add('hidden')" />
-            <span id="phIntroIcon" class="material-symbols-rounded montage-video-thumb-placeholder">movie</span>
-          </div>
-          <div class="montage-video-info">
-            <div id="lblIntroName" class="montage-video-name">Nenhuma</div>
-            <div id="lblIntroDuration" class="montage-video-duration">00:00:00</div>
-            <div id="lblIntroRes" class="montage-video-resolution">-</div>
-          </div>
-        </div>
-
-        <div class="montage-card-actions">
-          <button id="btnSelectIntro" class="montage-btn-secondary" type="button">
+        <div class="mg-card-actions">
+          <button id="btnSelectIntro" class="mg-btn mg-btn-secondary" type="button">
             <span class="material-symbols-rounded">edit</span>
             Alterar Abertura
           </button>
-          <button id="btnRemoveIntro" class="montage-btn-danger" title="Remover abertura" type="button">
+          <button id="btnRemoveIntro" class="mg-btn mg-btn-danger mg-btn-icon" type="button" title="Remover abertura">
             <span class="material-symbols-rounded">delete</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- FINALIZAÇÃO CARD -->
-      <div class="montage-card">
-        <div class="montage-card-header">
-          <div class="montage-card-title-group">
-            <span>FINALIZAÇÃO (Comum)</span>
-            <span class="material-symbols-rounded montage-card-info" title="Vídeo de encerramento exibido após cada item">info</span>
+      <!-- FINALIZAÇÃO -->
+      <section class="mg-card">
+        <div class="mg-card-head">
+          <span class="mg-card-title">FINALIZAÇÃO <span class="mg-card-common">(comum)</span></span>
+          <span class="material-symbols-rounded mg-card-info" title="Vídeo de encerramento exibido após cada item">info</span>
+        </div>
+        <div class="mg-video-preview">
+          <div class="mg-video-thumb">
+            <img id="imgOutroThumb" class="mg-video-thumb-img hidden" alt="Miniatura da finalização" onerror="this.classList.add('hidden')" />
+            <span id="phOutroIcon" class="material-symbols-rounded mg-video-thumb-ph">movie</span>
+          </div>
+          <div class="mg-video-info">
+            <div id="lblOutroName" class="mg-video-name">Nenhuma</div>
+            <div id="lblOutroDuration" class="mg-video-dur">00:00:00</div>
+            <div id="lblOutroRes" class="mg-video-res">-</div>
           </div>
         </div>
-
-        <div class="montage-video-preview">
-          <div class="montage-video-thumb">
-            <img id="imgOutroThumb" class="montage-video-thumb-img hidden" onError="this.classList.add('hidden')" />
-            <span id="phOutroIcon" class="material-symbols-rounded montage-video-thumb-placeholder">movie</span>
-          </div>
-          <div class="montage-video-info">
-            <div id="lblOutroName" class="montage-video-name">Nenhuma</div>
-            <div id="lblOutroDuration" class="montage-video-duration">00:00:00</div>
-            <div id="lblOutroRes" class="montage-video-resolution">-</div>
-          </div>
-        </div>
-
-        <div class="montage-card-actions">
-          <button id="btnSelectOutro" class="montage-btn-secondary" type="button">
+        <div class="mg-card-actions">
+          <button id="btnSelectOutro" class="mg-btn mg-btn-secondary" type="button">
             <span class="material-symbols-rounded">edit</span>
             Alterar Finalização
           </button>
-          <button id="btnRemoveOutro" class="montage-btn-danger" title="Remover finalização" type="button">
+          <button id="btnRemoveOutro" class="mg-btn mg-btn-danger mg-btn-icon" type="button" title="Remover finalização">
             <span class="material-symbols-rounded">delete</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- DURAÇÃO FIXA CARD (COM SELEÇÃO DE PORCENTAGEM PADRÃO) -->
-      <div class="montage-card">
-        <div class="montage-card-header">
-          <div class="montage-card-title-group">
-            <span>DURAÇÃO FIXA</span>
-            <span class="material-symbols-rounded montage-card-info">info</span>
+<!-- DURAÇÃO -->
+      <section class="mg-card" id="mgDurationCard">
+        <div class="mg-card-head">
+          <span class="mg-card-title">DURAÇÃO</span>
+          <span class="material-symbols-rounded mg-card-info" title="Controle o aproveitamento de cada vídeo: em % do original ou em duração fixa">info</span>
+        </div>
+
+        <div class="mg-seg" id="mgDurModeSeg">
+          <button type="button" class="mg-seg-btn active" data-mode="percent">% do original</button>
+          <button type="button" class="mg-seg-btn" data-mode="fixed">Duração fixa</button>
+        </div>
+
+        <div class="mg-global-ctl" id="mgGlobalPctWrap">
+          <div class="mg-slider-row">
+            <input type="range" id="sliderGlobalPct" class="mg-slider" min="1" max="100" value="100" />
+            <div class="mg-num-wrap">
+              <input type="number" id="numGlobalPct" class="mg-input mg-input-num" min="1" max="100" value="100" />
+              <span class="mg-num-suffix">%</span>
+            </div>
           </div>
-          <span class="montage-card-subtitle">Porcentagem Padrão</span>
+          <p class="mg-card-hint">Padrão aplicado aos vídeos ainda não personalizados.</p>
         </div>
 
-        <div class="montage-global-pct-control">
-          <input type="range" id="sliderGlobalPct" class="montage-slider" min="1" max="100" value="100" />
-          <div class="montage-global-pct-input-wrap">
-            <input type="number" id="numGlobalPct" class="montage-input-pct" min="1" max="100" value="100" />
-            <span class="montage-pct-label">%</span>
+        <div class="mg-global-ctl hidden" id="mgGlobalFixedWrap">
+          <div class="mg-slider-row">
+            <input type="text" id="numGlobalFixed" class="mg-input" placeholder="ex.: 0:30 (mm:ss) ou 45 (segundos)" />
           </div>
+          <p class="mg-card-hint">Duração fixa padrão para vídeos ainda não personalizados (limitada à duração original).</p>
         </div>
 
-        <p class="montage-global-pct-help">
-          Define a % inicial aplicada aos novos vídeos da fila (alterar vídeos individuais não muda este valor).
-        </p>
-      </div>
-    </div>
+        <button id="btnApplyDurationBulk" class="mg-btn mg-btn-primary mg-btn-block" type="button">
+          <span class="material-symbols-rounded">tune</span>
+          Aplicar aos selecionados
+        </button>
+      </section>
+    </aside>
 
-    <!-- COLUNA 2 (CENTRO): VÍDEOS PRINCIPAIS & TABELA COM BOTÕES EM UMA LINHA -->
-    <div class="montage-content-panel">
-      
-      <!-- Cabeçalho da Tabela & Botões de Ação em UMA ÚNICA LINHA -->
-      <div class="montage-table-header">
-        <div class="montage-table-title-group">
-          <span>VÍDEOS PRINCIPAIS (<span id="mainCount">0</span>)</span>
-        </div>
+    <!-- ===== PALCO (LISTA VIRTUALIZADA) ===== -->
+    <section class="mg-stage">
 
-        <!-- Barra de Botões em Uma Linha com Texto Curto -->
-        <div class="montage-table-actions">
-          <button id="btnAddMainVideos" class="montage-btn-primary" type="button">
-            <span class="material-symbols-rounded">add</span>
-            Adicionar
-          </button>
-
-          <button id="btnImportFromLibrary" class="montage-btn-secondary" type="button">
-            <span class="material-symbols-rounded">video_library</span>
-            Biblioteca
-          </button>
-          
-          <button id="btnAddFolder" class="montage-btn-secondary" type="button">
-            <span class="material-symbols-rounded">folder</span>
-            Pasta
-          </button>
-
-          <button id="btnClearQueue" class="montage-btn-secondary" type="button">
-            <span class="material-symbols-rounded">delete_sweep</span>
-            Limpar Fila
-          </button>
-
-          <select id="selSortOrder" class="montage-select-sort">
-            <option value="default">Por Importação</option>
-            <option value="name_asc">Por Nome (A-Z)</option>
-            <option value="duration_desc">Por Duração (Maior)</option>
+      <div class="mg-toolbar">
+        <div class="mg-toolbar-left">
+          <span class="mg-toolbar-title">VÍDEOS PRINCIPAIS <strong id="mainCount">0</strong></span>
+          <select id="selSortOrder" class="mg-select mg-select-sort">
+            <option value="default" data-label-ok="Por Importação">Por Importação</option>
+            <option value="name_asc" data-label-ok="Por Nome (A-Z)">Por Nome (A-Z)</option>
+            <option value="duration_desc" data-label-ok="Por Duração (Maior)">Por Duração (Maior)</option>
           </select>
         </div>
+        <div class="mg-toolbar-right">
+          <button id="btnAddMainVideos" class="mg-btn mg-btn-primary" type="button">
+            <span class="material-symbols-rounded">add</span> Adicionar
+          </button>
+          <button id="btnImportFromLibrary" class="mg-btn mg-btn-secondary" type="button">
+            <span class="material-symbols-rounded">video_library</span> Biblioteca
+          </button>
+          <button id="btnAddFolder" class="mg-btn mg-btn-secondary" type="button">
+            <span class="material-symbols-rounded">folder</span> Pasta
+          </button>
+          <button id="btnClearQueue" class="mg-btn mg-btn-ghost mg-danger-text" type="button">
+            <span class="material-symbols-rounded">delete_sweep</span> Limpar Fila
+          </button>
+        </div>
       </div>
 
-      <!-- Tabela Sem As Colunas de Áudio/Alinhamento + Com % UTILIZADO DO VÍDEO -->
-      <div class="montage-table-container">
-        <table class="montage-table">
-          <thead>
-            <tr class="montage-table-head">
-              <th>#</th>
-              <th>VÍDEO</th>
-              <th>DURAÇÃO ORIGINAL</th>
-              <th>% UTILIZADO DO VÍDEO</th>
-              <th>DURAÇÃO FINAL</th>
-              <th>STATUS</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="montageMainBody">
-            <!-- Populado via JS -->
-          </tbody>
-        </table>
+      <div id="mgSelectionBar" class="mg-selection-bar hidden">
+        <span class="mg-selection-count">Selecionados: <strong id="selectedCount">0</strong></span>
+        <button id="btnSelectAll" class="mg-btn mg-btn-ghost mg-btn-sm" type="button">Selecionar todos</button>
+        <button id="btnClearSelection" class="mg-btn mg-btn-ghost mg-btn-sm" type="button">Limpar seleção</button>
+        <button id="btnRemoveSelected" class="mg-btn mg-btn-danger mg-btn-sm" type="button">
+          <span class="material-symbols-rounded">delete</span> Remover selecionados
+        </button>
       </div>
 
-      <!-- Rodapé da Tabela -->
-      <div class="montage-table-footer">
-        <div>Duração total dos vídeos principais: <strong id="mainTotalDuration">00:00:00</strong></div>
-        <div class="montage-table-help">Alterar a % de um vídeo afeta apenas aquele vídeo.</div>
+      <div class="mg-list-head">
+        <span class="mg-col mg-col-num">#</span>
+        <span class="mg-col mg-col-check"><input type="checkbox" id="mgCheckAll" title="Selecionar todos" /></span>
+        <span class="mg-col mg-col-name">NOME</span>
+        <span class="mg-col mg-col-dur">DURAÇÃO</span>
+        <span class="mg-col mg-col-ctl">USO DO VÍDEO</span>
+        <span class="mg-col mg-col-final">FINAL</span>
+        <span class="mg-col mg-col-status">STATUS</span>
+        <span class="mg-col mg-col-x"></span>
       </div>
-    </div>
 
-    <!-- COLUNA 3 (DIREITA): CONFIGURAÇÕES DE SAÍDA S/ PRORES + PASTA VÍDEOS/MONTAGEM -->
-    <div class="montage-config-panel">
-      
-      <div class="montage-config-section">
-        <h3 class="montage-config-title">CONFIGURAÇÕES DE SAÍDA</h3>
-        
-        <div class="montage-config-form">
-          <div class="montage-form-group">
-            <label>Resolução</label>
-            <select id="selRes" class="montage-select">
-              <option value="1080p" selected>1080p (Full HD)</option>
-              <option value="720p">720p (HD)</option>
-              <option value="1440p">1440p (Quad HD)</option>
-              <option value="2160p">2160p (4K)</option>
+      <div class="mg-virtual" id="mgVirtualArea">
+        <div class="mg-rows" id="montageMainBody"></div>
+      </div>
+
+      <div class="mg-list-footer">
+        <span>Total dos principais: <strong id="mainTotalDuration">00:00:00</strong></span>
+        <span class="mg-list-help">Clique numa linha para selecionar · Ctrl/Cmd = múltiplo · Shift = intervalo · Arraste pela alça para reordenar · Solte arquivos aqui.</span>
+      </div>
+    </section>
+<!-- ===== RAIL DIREITA: SAÍDA ===== -->
+    <aside class="mg-rail mg-rail-right">
+
+      <section class="mg-card">
+        <div class="mg-card-head">
+          <span class="mg-card-title">SAÍDA</span>
+          <span class="material-symbols-rounded mg-card-info" title="Configurações aplicadas pelo motor FFmpeg ao exportar">info</span>
+        </div>
+
+        <div class="mg-form-grid">
+          <div class="mg-form-group">
+            <label for="selRes">Resolução</label>
+            <select id="selRes" class="mg-select">
+              <option value="1080p" selected data-label-ok="1080p (Full HD)">1080p (Full HD)</option>
+              <option value="720p" data-label-ok="720p (HD)">720p (HD)</option>
+              <option value="1440p" data-label-ok="1440p (Quad HD)">1440p (Quad HD)</option>
+              <option value="2160p" data-label-ok="2160p (4K)">2160p (4K)</option>
             </select>
           </div>
 
-          <div class="montage-form-group">
-            <label>FPS</label>
-            <select id="selFps" class="montage-select">
-              <option value="30" selected>30</option>
-              <option value="24">24</option>
-              <option value="60">60</option>
-              <option value="original">Manter original</option>
+          <div class="mg-form-group">
+            <label for="selFps">FPS</label>
+            <select id="selFps" class="mg-select">
+              <option value="30" selected data-label-ok="30">30</option>
+              <option value="24" data-label-ok="24">24</option>
+              <option value="60" data-label-ok="60">60</option>
+              <option value="Manter original" data-label-ok="Manter original">Manter original</option>
             </select>
           </div>
 
-          <div class="montage-form-group">
-            <label>Codec</label>
-            <select id="selCodec" class="montage-select">
-              <option value="H.264" selected>H.264</option>
-              <option value="H.265">H.265 (HEVC)</option>
+          <div class="mg-form-group">
+            <label for="selCodec">Codec</label>
+            <select id="selCodec" class="mg-select">
+              <option value="H.264" selected data-label-ok="H.264">H.264</option>
+              <option value="H.265" data-label-ok="H.265 (HEVC)">H.265 (HEVC)</option>
             </select>
           </div>
 
-          <div class="montage-form-group">
-            <label>Qualidade</label>
-            <select id="selQuality" class="montage-select">
-              <option value="Alta" selected>Alta</option>
-              <option value="Média">Média</option>
-              <option value="Máxima">Máxima</option>
-              <option value="Baixa">Baixa</option>
+          <div class="mg-form-group">
+            <label for="selQuality">Qualidade</label>
+            <select id="selQuality" class="mg-select">
+              <option value="Máxima" data-label-ok="Máxima">Máxima</option>
+              <option value="Alta" selected data-label-ok="Alta">Alta</option>
+              <option value="Média" data-label-ok="Média">Média</option>
+              <option value="Baixa" data-label-ok="Baixa">Baixa</option>
             </select>
           </div>
 
-          <div class="montage-form-group">
-            <label>Formato</label>
-            <select id="selFormat" class="montage-select">
-              <option value="MP4" selected>MP4</option>
-              <option value="MKV">MKV</option>
-              <option value="MOV">MOV</option>
+          <div class="mg-form-group">
+            <label for="selFormat">Formato</label>
+            <select id="selFormat" class="mg-select">
+              <option value="MP4" selected data-label-ok="MP4">MP4</option>
+              <option value="MKV" data-label-ok="MKV">MKV</option>
+              <option value="MOV" data-label-ok="MOV">MOV</option>
             </select>
           </div>
 
-          <div class="montage-form-group">
-            <label>Pasta de Destino</label>
-            <div class="montage-input-group">
-              <input type="text" id="txtDestFolder" class="montage-input" placeholder="Pasta de destino..." />
-              <button id="btnSelectDestFolder" title="Selecionar Pasta" class="montage-btn-icon">
+          <div class="mg-form-group">
+            <label for="txtOutputName">Nome base do arquivo</label>
+            <input type="text" id="txtOutputName" class="mg-input" value="Montagem" placeholder="Montagem" />
+          </div>
+
+          <div class="mg-form-group mg-form-span">
+            <label for="txtDestFolder">Pasta de destino</label>
+            <div class="mg-input-group">
+              <input type="text" id="txtDestFolder" class="mg-input" placeholder="Pasta de destino..." readonly />
+              <button id="btnSelectDestFolder" class="mg-btn mg-btn-secondary mg-btn-icon" type="button" title="Selecionar pasta">
                 <span class="material-symbols-rounded">folder_open</span>
               </button>
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="mg-card mg-summary-card">
+        <div class="mg-card-head">
+          <span class="mg-card-title">LINHA DO TEMPO</span>
+        </div>
+        <div class="mg-summary-rows">
+          <div class="mg-summary-row"><span>Abertura</span><strong id="sumIntroDur">00:00:00</strong></div>
+          <div class="mg-summary-row"><span>Vídeos principais</span><strong id="sumMainDur">00:00:00</strong></div>
+          <div class="mg-summary-row"><span>Finalização</span><strong id="sumOutroDur">00:00:00</strong></div>
+          <div class="mg-summary-row mg-summary-total"><span>Total (por vídeo)</span><strong id="sumTotalDur">00:00:00</strong></div>
+          <div class="mg-summary-row"><span>Arquivos na fila</span><strong id="sumTotalCount">0</strong></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+<!-- ============ BARRA INFERIOR / FOOTER DE PROGRESSO ============ -->
+  <div class="mg-bottom-bar" id="mgBottomBar">
+    <!-- Barra de progresso da exportação (visível apenas durante renderização) -->
+    <div id="mgExportProgressTrack" class="mg-export-progress-track hidden">
+      <div id="mgExportProgressFill" class="mg-export-progress-fill"></div>
+    </div>
+    <div class="mg-bottom-inner">
+      <div class="mg-status-message" id="mgStatusMessage">
+        <span id="mgStatusIcon" class="material-symbols-rounded mg-status-icon">check_circle</span>
+        <span id="mgStatusText">Projeto pronto para ser processado pelo motor de montagem BDS.</span>
+      </div>
+      <div class="mg-bottom-actions">
+        <span id="mgExportPercent" class="mg-export-percent hidden">0%</span>
+        <span id="mgExportFileInfo" class="mg-export-file-info hidden"></span>
+        <button id="btnCancelExport" class="mg-btn mg-btn-danger hidden" type="button">
+          <span class="material-symbols-rounded">stop_circle</span>
+          Cancelar
+        </button>
+        <button id="btnExportAll" class="mg-btn mg-btn-export" type="button">
+          <span class="material-symbols-rounded">upload</span>
+          Exportar Todos os Vídeos
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- 4. PAINEL INFERIOR: BOTÕES DE AÇÃO -->
-  <div class="montage-bottom-bar">
-    <div class="montage-status-message">
-      <span class="material-symbols-rounded montage-status-icon">check_circle</span>
-      <span>Projeto pronto para ser processado pelo motor de montagem BDS.</span>
-    </div>
-
-    <div class="montage-bottom-actions">
-      <button id="btnExportAll" class="montage-btn-export" type="button">
-        <span class="material-symbols-rounded">upload</span>
-        Exportar Todos os Vídeos
-      </button>
-    </div>
-  </div>
-
-  <!-- MODAL PARA ESCOLHER A ORIGEM DA BIBLIOTECA (BDSM, OBS, NVIDIA, TODAS) -->
-  <div id="librarySelectModal" class="montage-modal-overlay hidden">
-    <div class="montage-modal">
-      
-      <div class="montage-modal-header">
-        <h3 class="montage-modal-title">
-          <span class="material-symbols-rounded montage-modal-icon">video_library</span>
+  <!-- ============ MODAL BIBLIOTECA ============ -->
+  <div id="librarySelectModal" class="mg-modal-overlay hidden">
+    <div class="mg-modal">
+      <div class="mg-modal-header">
+        <h3 class="mg-modal-title">
+          <span class="material-symbols-rounded mg-modal-icon">video_library</span>
           Selecione a Biblioteca
         </h3>
-        <button id="btnCloseLibModal" class="montage-modal-close-btn" type="button">
+        <button id="btnCloseLibModal" class="mg-btn mg-btn-ghost mg-btn-icon" type="button" title="Fechar">
           <span class="material-symbols-rounded">close</span>
         </button>
       </div>
 
-      <p class="montage-modal-text">De qual origem você deseja puxar os vídeos para a fila de montagem?</p>
+      <p class="mg-modal-text">De qual origem você deseja puxar os vídeos para a fila de montagem?</p>
 
-      <div class="montage-modal-options">
+      <div class="mg-modal-options">
         <button class="montage-lib-option" data-origin="BDSM_DEVICE" type="button">
-          <div class="montage-lib-option-text">
-            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-bdsm">smartphone</span>
-            <span>Dispositivos BDSM</span>
-          </div>
-          <span class="material-symbols-rounded">chevron_right</span>
+          <span class="material-symbols-rounded mg-lib-icon mg-lib-icon-bdsm">smartphone</span>
+          <span>Dispositivos Móveis</span>
+          <span class="material-symbols-rounded mg-lib-chevr">chevron_right</span>
         </button>
-
         <button class="montage-lib-option" data-origin="OBS" type="button">
-          <div class="montage-lib-option-text">
-            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-obs">videocam</span>
-            <span>OBS Studio</span>
-          </div>
-          <span class="material-symbols-rounded">chevron_right</span>
+          <span class="material-symbols-rounded mg-lib-icon mg-lib-icon-obs">videocam</span>
+          <span>OBS Studio</span>
+          <span class="material-symbols-rounded mg-lib-chevr">chevron_right</span>
         </button>
-
         <button class="montage-lib-option" data-origin="SHADOWPLAY" type="button">
-          <div class="montage-lib-option-text">
-            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-shadowplay">sports_esports</span>
-            <span>NVIDIA ShadowPlay</span>
-          </div>
-          <span class="material-symbols-rounded">chevron_right</span>
+          <span class="material-symbols-rounded mg-lib-icon mg-lib-icon-shadowplay">sports_esports</span>
+          <span>NVIDIA ShadowPlay</span>
+          <span class="material-symbols-rounded mg-lib-chevr">chevron_right</span>
         </button>
-
         <button class="montage-lib-option" data-origin="ALL" type="button">
-          <div class="montage-lib-option-text">
-            <span class="material-symbols-rounded montage-lib-icon montage-lib-icon-all">video_library</span>
-            <span>Todas as Mídias da Biblioteca</span>
-          </div>
-          <span class="material-symbols-rounded">chevron_right</span>
+          <span class="material-symbols-rounded mg-lib-icon mg-lib-icon-all">video_library</span>
+          <span>Todas as Mídias da Biblioteca</span>
+          <span class="material-symbols-rounded mg-lib-chevr">chevron_right</span>
         </button>
       </div>
     </div>
   </div>
+
+  <!-- ============ INPUTS DE ARQUIVO OCULTOS ============ -->
+  <input type="file" id="phSelectMainVideoList" class="hidden" multiple accept="video/*" />
+  <input type="file" id="phSelectIntroFile" class="hidden" accept="video/*" />
+  <input type="file" id="phSelectOutroFile" class="hidden" accept="video/*" />
+  <input type="file" id="phSelectDestFolder" class="hidden" webkitdirectory directory />
+  <input type="file" id="phAddFolderInput" class="hidden" webkitdirectory multiple />
+
+  <div id="phModalOverlay" class="mg-modal-overlay hidden">
+    <div class="mg-modal">
+      <div class="mg-modal-header">
+        <h3 class="mg-modal-title">
+          <span class="material-symbols-rounded mg-modal-icon">info</span>
+          <span id="phModalTitle">Atenção</span>
+        </h3>
+        <button id="btnClosePhModal" class="mg-btn mg-btn-ghost mg-btn-icon" type="button" title="Fechar">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+      <p id="phModalMessage" class="mg-modal-text"></p>
+      <div class="mg-modal-actions">
+        <button id="btnConfirmPhModal" class="mg-btn mg-btn-primary" type="button">Confirmar</button>
+        <button id="btnCancelPhModal" class="mg-btn mg-btn-ghost" type="button">Cancelar</button>
+      </div>
+    </div>
+  </div>
 </div>
+<!-- fim montage.html -->

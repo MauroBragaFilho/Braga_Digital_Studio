@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const path = require('node:path');
 const fs = require('node:fs');
@@ -31,6 +31,7 @@ const SilenceService = require('./services/silenceService');
 const MetadataService = require('./services/metadataService');
 const VideoRecoveryService = require('./services/videoRecoveryService');
 const RawRecoveryService = require('./services/rawRecoveryService');
+const PhotoPreviewService = require('./services/photoPreviewService');
 const sonyCameraService = require('./core/devices/SonyCameraService');
 
 const MtpService = require('./core/MtpService');
@@ -164,6 +165,7 @@ class Bootstrap {
       metadataService: metadataServiceInstance,
       videoRecoveryService,
       rawRecoveryService,
+      photoPreviewService: new PhotoPreviewService({ paths: this.paths }),
       projectService,
       sequenceBuilder,
       premiereExporter,
@@ -416,6 +418,7 @@ class Bootstrap {
     require('./ipc/libraryHandlers')(this.paths, watcherService);
     require('./ipc/systemHandlers')(this.paths);
     require('./ipc/recoveryHandlers')(videoRecoveryService, this.paths, rawRecoveryService);
+    require('./ipc/photoPreviewHandlers')(this.services.photoPreviewService);
     require('./ipc/youtubeHandlers')();
     require('./ipc/projectHandlers')(projectService, premiereExporter, bdsproPackageService, this.paths, waveformService, audioSyncService, sequenceBuilder);
     require('./ipc/lutHandlers')(this.lutManager);

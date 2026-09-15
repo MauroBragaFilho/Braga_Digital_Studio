@@ -110,6 +110,89 @@ select {
   font-size: 13px;
 }
 
+/* ==========================================================================
+   2.1 RANGE SLIDERS - COMPONENTE GLOBAL
+   ==========================================================================
+   Substitui o fill nativo do Chromium (accent-color) por um track/thumb
+   customizado. O fill nativo termina no CENTRO do thumb e nunca atinge a
+   borda direita do track em 100% (sobra ~meio thumb). Aqui o track usa um
+   gradiente lateral controlado por --slider-value (0%..100%), atualizado pelo
+   helper global em slider-sync.js. Geometria: o thumb viaja de borda a borda
+   do track e o fill termina exatamente no centro do thumb em qualquer valor.
+
+   Tokens sobrescrevíveis por tela/classe:
+     --slider-width       largura do input (padrão 100%)
+     --slider-track-height altura do track (padrão 6px)
+     --slider-thumb-size  diâmetro do thumb (padrão 14px)
+     --slider-fill-color  cor do trecho preenchido
+     --slider-thumb-color cor do thumb (padrão = fill)
+     --slider-track-color cor do trecho vazio do track
+   ========================================================================== */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-width, 100%);
+  height: var(--slider-thumb-size, 14px);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  --slider-width: 100%;
+  --slider-track-height: 6px;
+  --slider-thumb-size: 14px;
+  --slider-fill-color: var(--accent, #e53935);
+  --slider-thumb-color: var(--slider-fill-color);
+  --slider-track-color: rgba(255, 255, 255, 0.14);
+  --slider-value: 0%;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: var(--slider-track-height, 6px);
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--slider-fill-color, var(--accent, #e53935)) 0,
+    var(--slider-fill-color, var(--accent, #e53935)) var(--slider-value, 0%),
+    var(--slider-track-color, rgba(255, 255, 255, 0.14)) var(--slider-value, 0%),
+    var(--slider-track-color, rgba(255, 255, 255, 0.14)) 100%
+  );
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-thumb-size, 14px);
+  height: var(--slider-thumb-size, 14px);
+  margin-top: calc((var(--slider-track-height, 6px) - var(--slider-thumb-size, 14px)) / 2);
+  border-radius: 50%;
+  background: var(--slider-thumb-color, var(--slider-fill-color, var(--accent, #e53935)));
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Light theme: track vazio com contraste maior */
+[data-theme="light"] input[type="range"] {
+  --slider-track-color: rgba(0, 0, 0, 0.24);
+}
+
+/* Firefox (equivalente) — mantém o componente funcional em previews web */
+input[type="range"]::-moz-range-track {
+  height: var(--slider-track-height, 6px);
+  border-radius: 999px;
+  background: var(--slider-track-color, rgba(255, 255, 255, 0.14));
+}
+input[type="range"]::-moz-range-progress {
+  height: var(--slider-track-height, 6px);
+  border-radius: 999px;
+  background: var(--slider-fill-color, var(--accent, #e53935));
+}
+input[type="range"]::-moz-range-thumb {
+  width: var(--slider-thumb-size, 14px);
+  height: var(--slider-thumb-size, 14px);
+  border: none;
+  border-radius: 50%;
+  background: var(--slider-thumb-color, var(--slider-fill-color, var(--accent, #e53935)));
+}
 button {
   border: 0;
   cursor: pointer;
@@ -431,35 +514,45 @@ button:disabled {
   .sidebar-footer {
     display: none;
   }
-  .app-shell.collapsed {
-    grid-template-columns: 1fr;
-  }
   .sidebar-toggle-btn {
     display: none;
   }
-  /* Em janelas estreitas (barra inferior) a sidebar nunca fica em modo rail:
-     mesmo com a classe .collapsed presente, os rótulos continuam visíveis. */
-  .sidebar.collapsed .tabs {
+  /* Em janelas estreitas (tamanho mínimo), a sidebar colapsada vira um trilho
+     de ícones na lateral esquerda — idêntico ao modo desktop colapsado. */
+  .app-shell.collapsed {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+  }
+  .app-shell.collapsed .sidebar {
+    flex-direction: column;
+    width: auto;
+    border-top: none;
+    border-right: 1px solid var(--line);
     padding: 0;
   }
-  .sidebar.collapsed .tab-button {
+  .app-shell.collapsed .sidebar .tabs {
+    flex-direction: column;
+    padding: 12px 0;
+    gap: 4px;
     justify-content: flex-start;
-    padding: 8px 12px;
-    font-size: 12px;
-    line-height: normal;
-    gap: 6px;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
-  .sidebar.collapsed .tab-button .material-symbols-rounded {
-    font-size: inherit;
-    line-height: inherit;
+  .app-shell.collapsed .sidebar .tab-button {
+    justify-content: center;
+    padding: 12px;
+    font-size: 0;
+    line-height: 0;
+    gap: 0;
   }
-  .sidebar.collapsed .tab-button.active {
-    border-left-color: var(--accent);
+  .app-shell.collapsed .sidebar .tab-button .material-symbols-rounded {
+    font-size: 22px;
+    line-height: 1;
   }
-  .sidebar.collapsed .tab-button.active::after {
-    display: none;
+  .app-shell.collapsed .sidebar .tab-button.active::after {
+    display: block;
   }
-  .sidebar.collapsed .sidebar-footer {
+  .app-shell.collapsed .sidebar .sidebar-footer {
     display: none;
   }
   .tabs {

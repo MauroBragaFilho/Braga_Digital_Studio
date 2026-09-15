@@ -366,6 +366,10 @@ const api = {
   executeBdsmLutSync: (data) => ipcRenderer.invoke('bdsm:executeLutSync', data),
   onBdsmLutSyncProgress: (callback) => registerListener('bdsm:lutSyncProgress', callback),
 
+  // Photo Preview
+  photoGetMetadata: (filePath) => ipcRenderer.invoke('photo:getMetadata', filePath),
+  photoGetRenderablePath: (filePath, options) => ipcRenderer.invoke('photo:getRenderablePath', filePath, options),
+
   // Sony Camera a6000 [FASE 2.2] — Removidas APIs mortas (sem handlers IPC correspondentes).
   // As integrações Sony são expostas via `getAllDevices`/`sony:list`/`sony:browse`.
   // As APIs `sony-camera:*` do preload apontavam para handlers inexistentes e não eram usadas no renderer;

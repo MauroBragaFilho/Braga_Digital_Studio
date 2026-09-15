@@ -136,7 +136,7 @@
             <span id="lblSensitivity" style="font-size: 12px; font-weight: 700; color: #f25c05;">-30 dB</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="sliderSensitivity" min="-60" max="-10" step="1" value="-30" style="flex: 1; accent-color: #f25c05; cursor: pointer;" />
+            <input type="range" id="sliderSensitivity" min="-60" max="-10" step="1" value="-30" style="flex: 1; --slider-fill-color: #f25c05; cursor: pointer;" />
             <input type="number" id="numSensitivity" min="-60" max="-10" value="-30" style="width: 52px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; color: #ffffff; font-weight: 700; text-align: center; font-size: 11px; height: 32px; outline: none;" />
           </div>
         </div>
@@ -148,7 +148,7 @@
             <span id="lblMinDuration" style="font-size: 12px; font-weight: 700; color: #ffffff;">0.5 s (500ms)</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="sliderMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="flex: 1; accent-color: #f25c05; cursor: pointer;" />
+            <input type="range" id="sliderMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="flex: 1; --slider-fill-color: #f25c05; cursor: pointer;" />
             <input type="number" id="numMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="width: 52px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; color: #ffffff; font-weight: 700; text-align: center; font-size: 11px; height: 32px; outline: none;" />
           </div>
         </div>
@@ -201,7 +201,7 @@
         <button class="btn-silence-lib-option" data-origin="BDSM_DEVICE" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
           <div style="display: flex; align-items: center; gap: 10px;">
             <span class="material-symbols-rounded" style="color: #f25c05;">smartphone</span>
-            <span>Dispositivos BDSM</span>
+            <span>Dispositivos Móveis</span>
           </div>
           <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
         </button>

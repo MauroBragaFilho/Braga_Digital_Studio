@@ -98,8 +98,18 @@ export async function initScreen() {
   // Inspector Buttons
   document.getElementById('closeInspectorBtn')?.addEventListener('click', closeInspector);
   document.getElementById('btnPlayMedia')?.addEventListener('click', () => {
-    if (currentInspectorMedia && window.bdsPlayer) {
+    if (currentInspectorMedia && window.openPreview) {
+      window.openPreview(currentInspectorMedia, mediaItems);
+    } else if (currentInspectorMedia && window.bdsPlayer) {
       window.bdsPlayer.play(currentInspectorMedia.filepath, currentInspectorMedia.filename);
+    }
+  });
+
+  // Clique na thumbnail do inspetor também abre o preview
+  document.getElementById('inspectorThumbnail')?.addEventListener('click', (e) => {
+    if (e.target.closest('#closeInspectorBtn')) return;
+    if (currentInspectorMedia && window.openPreview) {
+      window.openPreview(currentInspectorMedia, mediaItems);
     }
   });
 
@@ -483,6 +493,19 @@ function setupDelegatedMediaClicks() {
       if (media) openInspector(media);
     }
   });
+
+  // Duplo clique abre o Preview diretamente com a coleção
+  container.addEventListener('dblclick', (e) => {
+    const item = e.target.closest('.media-clickable');
+    if (!item) return;
+    if (e.target.closest('.lib-card-checkbox') || e.target.closest('.lib-card-badge-fav') || e.target.closest('.lib-list-fav-btn')) return;
+
+    const id = parseInt(item.getAttribute('data-id'));
+    const media = mediaItems.find(m => m.id === id);
+    if (media && window.openPreview) {
+      window.openPreview(media, mediaItems);
+    }
+  });
 }
 
 function updateSelectionVisuals() {
@@ -669,7 +692,11 @@ function openInspector(media) {
 
   const btnPlayMedia = document.getElementById('btnPlayMedia');
   if (btnPlayMedia) {
-    btnPlayMedia.style.display = isPhoto ? 'none' : 'flex';
+    btnPlayMedia.style.display = 'flex';
+    const icon = btnPlayMedia.querySelector('.material-symbols-rounded');
+    if (icon) {
+      icon.textContent = isPhoto ? 'visibility' : 'play_arrow';
+    }
   }
 
   const thumbDuration = document.getElementById('inspectorThumbDuration');
