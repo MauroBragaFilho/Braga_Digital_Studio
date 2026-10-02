@@ -4,6 +4,9 @@ const https = require('node:https');
 const http = require('node:http');
 const { URL } = require('node:url');
 const logger = require('../../services/logService');
+const { nextHop } = require('../../core/modules/FileDownloader');
+
+const MAX_REDIRECTS = 5;
 
 /**
  * ManifestClient — Consulta o manifest.json de um BDS Update Server central.
@@ -71,7 +74,7 @@ class ManifestClient {
     };
   }
 
-  _requestJson(urlString) {
+  _requestJson(urlString, redirects = 0) {
     return new Promise((resolve, reject) => {
       let parsed;
       try {
@@ -84,7 +87,10 @@ class ManifestClient {
       const req = client.get(parsed, { headers: { 'User-Agent': 'BDS-UpdateClient' }, timeout: this.timeoutMs }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
-          return this._requestJson(res.headers.location).then(resolve, reject);
+          if (redirects >= MAX_REDIRECTS) return reject(new Error('Redirecionamentos demais ao consultar o Update Server.'));
+          let hop;
+          try { hop = nextHop(parsed, res.headers.location, {}); } catch (err) { return reject(err); }
+          return this._requestJson(hop.url, redirects + 1).then(resolve, reject);
         }
         if (res.statusCode !== 200) {
           res.resume();

@@ -149,6 +149,11 @@ export function initScreen() {
   controller.actions.load();
 }
 
+/** Ao voltar para a tela (view em cache): recria controller/listeners removidos em onLeave. */
+export function onEnter() {
+  if (!controller) initScreen();
+}
+
 export function onLeave() {
   if (unsubscribe) unsubscribe();
   if (controller) controller.destroy();

@@ -3,6 +3,7 @@
 const { ipcMain, safeStorage } = require('electron');
 const AIService = require('../services/ai/AIService');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
+const { wrap } = require('./wrap');
 
 /**
  * Handlers IPC da IA. Todos devolvem { ok, data } ou { ok:false, error } para que o
@@ -11,11 +12,6 @@ const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 module.exports = function registerAiHandlers(paths) {
   const configDir = (paths && paths.configDir) || appPaths.configDir;
   const ai = new AIService({ configDir, safeStorage });
-
-  const wrap = (fn) => async (_event, ...args) => {
-    try { return { ok: true, data: await fn(...args) }; }
-    catch (err) { return { ok: false, error: err?.message || String(err) }; }
-  };
 
   ipcMain.handle('ai:getConfig', wrap(() => ai.getPublicConfig()));
   ipcMain.handle('ai:saveConfig', wrap((patch) => ai.saveConfig(patch && typeof patch === 'object' ? patch : {})));

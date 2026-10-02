@@ -1,4 +1,6 @@
-import { els, setAppStatus, escapeHtml } from '../app.js';
+import { els, setAppStatus } from '../app.js';
+import { escapeHtml } from '../utils/escape.js';
+import { enhanceModals } from '../utils/modal.js';
 
 
 let projectsList = [];
@@ -7,6 +9,7 @@ let selectedProjectId = null;
 export function initScreen() {
     loadProjects();
     setupEventListeners();
+    enhanceModals(document.getElementById('projectsView') || document, '.proj-modal-overlay');
 }
 
 function formatBytes(bytes) {
@@ -134,25 +137,29 @@ function selectProject(id) {
     }
 }
 
-function setupEventListeners() {
-    // ESC fecha o inspector de projetos
-    if (!window._projInspectorEscBound) {
-        window._projInspectorEscBound = true;
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
-            // Ignora se estiver editando um campo de texto ou com modal aberto
-            const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
-            if (tag === 'input' || tag === 'textarea') return;
-            if (document.querySelector('.proj-modal-overlay.open')) return;
-            const inspector = document.getElementById('projectInspector');
-            if (inspector && inspector.classList.contains('open')) {
-                inspector.classList.remove('open');
-                selectedProjectId = null;
-                renderGrid();
-            }
-        });
+/** ESC fecha o inspector de projetos (roteado pelo despachante central do app.js). */
+export function onKeyDown(e) {
+    if (e.key !== 'Escape') return;
+    // Ignora se estiver editando um campo de texto ou com modal aberto
+    const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    if (document.querySelector('.proj-modal-overlay.open')) return;
+    const inspector = document.getElementById('projectInspector');
+    if (inspector && inspector.classList.contains('open')) {
+        inspector.classList.remove('open');
+        selectedProjectId = null;
+        renderGrid();
     }
+}
 
+// Sem listeners globais próprios: onLeave/onEnter apenas atualizam a lista ao voltar
+export function onLeave() {}
+
+export function onEnter() {
+    loadProjects();
+}
+
+function setupEventListeners() {
     document.getElementById('btnNewProject')?.addEventListener('click', () => {
         document.getElementById('modalProjectTitle').textContent = 'Novo Projeto';
         document.getElementById('projFormId').value = '';
@@ -280,9 +287,8 @@ function setupEventListeners() {
         if (!proj) return;
 
         try {
-            const folderRes = await window.bds.selectFolder();
-            if (folderRes && folderRes.filePaths && folderRes.filePaths.length > 0) {
-                const destFolder = folderRes.filePaths[0];
+            const destFolder = await window.bds.selectFolder(); // caminho escolhido, ou null se cancelou
+            if (destFolder) {
                 const sanitizedName = (proj.name || 'Projeto').replace(/[\\/:*?"<>|]/g, '_');
                 const outputPath = `${destFolder}\\${sanitizedName}.bdspro`;
                 
@@ -484,30 +490,24 @@ function setupRelinkModalListeners() {
     });
 }
 
-function openProjectWorkspace(id) {
-    // Para abrir o workspace, usamos a lógica parecida com a sidebar no app.js
-    // Mas o workspace será uma tela completamente nova que substitui o visual
-    // Precisamos injetar essa tela.
-    
-    // Armazena no state global do app.js
-    import('../app.js').then(app => {
-        app.state.currentProjectId = id;
-        
-        // Simula clique num "tab-button" fantasma
-        const contentContainer = document.getElementById('dynamic-content');
-        fetch('./screens/project_workspace.html').then(res => res.text()).then(htmlContent => {
-            contentContainer.innerHTML = '';
-            const viewSection = document.createElement('section');
-            viewSection.id = `project_workspaceView`;
-            viewSection.className = 'view active'; 
-            viewSection.innerHTML = htmlContent;
-            contentContainer.appendChild(viewSection);
-            
-            document.getElementById('globalPageTitle').textContent = 'Workspace do Projeto';
-            
-            import('./project_workspace.js').then(m => {
-                if (m.initScreen) m.initScreen();
-            }).catch(e => console.error("Failed to load workspace JS", e));
-        });
-    });
+async function openProjectWorkspace(id) {
+    // Reutiliza o fluxo de loadScreen (onLeave da tela atual, CSS/HTML, init) do app.js
+    const app = await import('../app.js');
+    app.state.currentProjectId = id;
+
+    // Workspace em cache pertence a outro projeto: limpa (onLeave antes de remover) para recarregar
+    const stale = document.getElementById('project_workspaceView');
+    if (stale) {
+        try {
+            const m = await import('./project_workspace.js');
+            if (typeof m.onLeave === 'function') await m.onLeave();
+        } catch (e) { console.error('Falha ao finalizar workspace anterior', e); }
+        stale.remove();
+    }
+
+    if (typeof window.bdsLoadScreen === 'function') {
+        await window.bdsLoadScreen('project_workspace');
+        const title = document.getElementById('globalPageTitle');
+        if (title) title.textContent = 'Workspace do Projeto';
+    }
 }

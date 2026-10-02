@@ -1,12 +1,12 @@
 const EventEmitter = require('node:events');
 const path = require('node:path');
 const fs = require('node:fs');
-const { spawn } = require('node:child_process');
 const logger = require('./logService');
 const hardwareDetection = require('../core/HardwareDetectionService');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
+const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
 
 class MontageService extends EventEmitter {
   constructor({ paths, getSettings }) {
@@ -14,6 +14,8 @@ class MontageService extends EventEmitter {
     this.paths = paths;
     this.getSettings = getSettings;
     this.currentProcess = null;
+    this.currentJobId = null;
+    this.currentBatchItem = null;
     this.cancelRequested = false;
     this.running = false;
   }
@@ -25,62 +27,52 @@ class MontageService extends EventEmitter {
   async probeFile(filePath) {
     const ffprobe = ffprobeTool.resolve();
 
-    return new Promise((resolve, reject) => {
-      const child = spawn(
-        ffprobe,
-        [
-          '-v', 'error',
-          '-print_format', 'json',
-          '-show_format',
-          '-show_streams',
-          filePath
-        ],
-        { windowsHide: true }
-      );
+    let result;
+    try {
+      result = await toolRunner.run(ffprobe, [
+        '-v', 'error',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        filePath
+      ], { timeout: 30000 });
+    } catch (err) {
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao ler o arquivo.');
+      throw err;
+    }
 
-      let stdout = '';
-      let stderr = '';
+    if (result.code !== 0) {
+      throw new Error(result.stderr || 'Erro ao ler o arquivo.');
+    }
 
-      child.stdout.on('data', chunk => stdout += chunk.toString('utf8'));
-      child.stderr.on('data', chunk => stderr += chunk.toString('utf8'));
+    try {
+      const data = JSON.parse(result.stdout);
+      const videoStream = data.streams.find(s => s.codec_type === 'video');
 
-      child.on('error', reject);
-      child.on('close', code => {
-        if (code !== 0) {
-          return reject(new Error(stderr || 'Erro ao ler arquivo com ffprobe.'));
+      let duration = parseFloat(data.format?.duration || 0);
+      if (duration === 0 && videoStream?.duration) {
+        duration = parseFloat(videoStream.duration);
+      }
+
+      let fps = 0;
+      if (videoStream && videoStream.r_frame_rate) {
+        const [num, den] = videoStream.r_frame_rate.split('/');
+        if (den && num) {
+          fps = parseFloat(num) / parseFloat(den);
         }
-        try {
-          const data = JSON.parse(stdout);
-          const videoStream = data.streams.find(s => s.codec_type === 'video');
-          
-          let duration = parseFloat(data.format?.duration || 0);
-          if (duration === 0 && videoStream?.duration) {
-              duration = parseFloat(videoStream.duration);
-          }
+      }
 
-          let fps = 0;
-          if (videoStream && videoStream.r_frame_rate) {
-            const [num, den] = videoStream.r_frame_rate.split('/');
-            if (den && num) {
-              fps = parseFloat(num) / parseFloat(den);
-            }
-          }
-
-          resolve({
-            duration: Number.isFinite(duration) ? duration : 0,
-            width: videoStream?.width || 0,
-            height: videoStream?.height || 0,
-            fps: Number.isFinite(fps) ? fps : 0,
-            hasAudio: data.streams.some(s => s.codec_type === 'audio')
-          });
-        } catch (err) {
-          reject(new Error(`Falha ao ler JSON do ffprobe: ${err.message}`));
-        }
-      });
-    });
+      return {
+        duration: Number.isFinite(duration) ? duration : 0,
+        width: videoStream?.width || 0,
+        height: videoStream?.height || 0,
+        fps: Number.isFinite(fps) ? fps : 0,
+        hasAudio: data.streams.some(s => s.codec_type === 'audio')
+      };
+    } catch (err) {
+      throw new Error(`Falha ao interpretar os dados do arquivo: ${err.message}`);
+    }
   }
-
-
 
   async enqueueMontage(config) {
     if (this.running) {
@@ -102,6 +94,7 @@ class MontageService extends EventEmitter {
     
     this.running = true;
     this.cancelRequested = false;
+    this.currentJobId = config.jobId || null;
 
     try {
       for (let i = 0; i < totalCount; i++) {
@@ -156,6 +149,7 @@ class MontageService extends EventEmitter {
       this.running = false;
       this.currentProcess = null;
       this.currentBatchItem = null;
+      this.currentJobId = null;
     }
   }
 
@@ -165,6 +159,7 @@ class MontageService extends EventEmitter {
     }
     this.running = true;
     this.cancelRequested = false;
+    this.currentJobId = config.jobId || null;
 
     try {
       await this.runSingleRender(config);
@@ -176,6 +171,7 @@ class MontageService extends EventEmitter {
     } finally {
       this.running = false;
       this.currentProcess = null;
+      this.currentJobId = null;
     }
   }
 
@@ -272,7 +268,7 @@ class MontageService extends EventEmitter {
     logger.info('montage:start-single', { encoder: targetEncoder, resolution, inputs: inputIndex });
 
     return new Promise((resolve, reject) => {
-        const child = spawn(ffmpeg, args, { windowsHide: true });
+        const child = processRunner.spawn(ffmpeg, args);
         this.currentProcess = child;
         
         let stderr = '';
@@ -303,15 +299,31 @@ class MontageService extends EventEmitter {
             this.emit('log', text);
         });
 
-        child.on('error', reject);
+        // Remove o arquivo de saída parcial (ffmpeg interrompido/falho deixa um contêiner inválido)
+        const removePartialOutput = () => {
+            try {
+                if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+            } catch (cleanupErr) {
+                logger.warn('montage:cleanup', { error: cleanupErr.message });
+            }
+        };
+
+        child.on('error', (err) => {
+            this.currentProcess = null;
+            removePartialOutput();
+            reject(err);
+        });
         child.on('close', (code) => {
+            this.currentProcess = null;
             if (this.cancelRequested) {
+                removePartialOutput();
                 return resolve();
             }
             if (code === 0) {
                 return resolve();
             }
-            reject(new Error(`FFmpeg finalizou com código ${code}`));
+            removePartialOutput();
+            reject(new Error(`O motor de mídia finalizou com código ${code}`));
         });
     });
   }
@@ -319,39 +331,57 @@ class MontageService extends EventEmitter {
   async cancelMontage() {
     this.cancelRequested = true;
     if (!this.currentProcess) return { ok: true };
-    
-    await this.killProcessTree(this.currentProcess.pid);
+
+    // Mata a árvore e espera o término real (o 'close' remove o arquivo parcial)
+    await this.killProcessTree(this.currentProcess);
     return { ok: true };
   }
 
-  async killProcessTree(pid) {
-    if (!pid) return;
-    processRunner.cancel(pid);
+  /** @param {import('child_process').ChildProcess|number} childOrPid */
+  async killProcessTree(childOrPid) {
+    if (!childOrPid) return;
+    await processRunner.cancel(childOrPid);
+  }
+
+  /** O id informado pelo renderer identifica o job em andamento? (ids ausentes/'current' valem para o atual) */
+  _matchesCurrentJob(id) {
+    if (!this.running) return false;
+    if (id === undefined || id === null || id === '' || id === 'current') return true;
+    return id === this.currentJobId || id === this.currentBatchItem?.fileName;
   }
 
   /**
    * API de fila exposta pelo preload (montage:cancelJob, montage:removeJob,
    * montage:clearQueue, montage:getQueue).
    *
-   * A engine atual é monoprocesso (lote síncrono), portanto estes métodos
-   * mantêm o contrato de forma segura e idempotente SEM alterar a lógica do
-   * motor (enqueueMontage / runSingleRender / cancelMontage).
+   * A engine é monoprocesso (lote síncrono): há no máximo UM job ativo, identificado por
+   * `config.jobId` (informado pelo renderer em enqueueMontage), 'current' ou o nome do arquivo
+   * de saída. Ids que não casam com o job ativo NÃO cancelam nada.
    */
 
-  async cancelJob(_id) {
+  async cancelJob(id) {
+    if (!this._matchesCurrentJob(id)) {
+      return { ok: false, error: 'Job não encontrado ou já finalizado.' };
+    }
     const result = await this.cancelMontage();
-    this.emit('queue-updated', this.getQueue());
+    this.emit('queue-updated', await this.getQueue());
     return result;
   }
 
-  async removeJob(_id) {
-    // Não há fila individual persistente — remoção é no-op seguro.
-    return { ok: true, removed: 0 };
+  async removeJob(id) {
+    // Remover o job ativo equivale a cancelá-lo; qualquer outro id não existe na fila.
+    if (!this._matchesCurrentJob(id)) return { ok: true, removed: 0 };
+    await this.cancelMontage();
+    this.emit('queue-updated', await this.getQueue());
+    return { ok: true, removed: 1 };
   }
 
   async clearQueue() {
-    // Não há fila persistente — limpeza é no-op seguro.
-    return { ok: true, cleared: 0 };
+    // Limpar a fila = cancelar o lote em andamento (não há itens pendentes persistidos).
+    if (!this.running) return { ok: true, cleared: 0 };
+    await this.cancelMontage();
+    this.emit('queue-updated', await this.getQueue());
+    return { ok: true, cleared: 1 };
   }
 
   async getQueue() {

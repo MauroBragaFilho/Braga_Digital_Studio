@@ -1,4 +1,5 @@
 import { setAppStatus } from '../app.js';
+import { escapeHtml, escapeAttr } from '../utils/escape.js';
 let silenceList = [];
 let thumbsDir = '';
 let exportSilenceState = {
@@ -22,17 +23,30 @@ function logSilenceScreen(msg, type = 'info') {
   console.log(`[SILENCE-${type.toUpperCase()}]:`, msg);
 }
 
+// Handlers de erro via addEventListener, removidos em onLeave
+let errorHandlers = null;
+function installErrorHandlers() {
+  removeErrorHandlers();
+  const onError = (e) => logSilenceScreen(`Erro JS: ${e.message} (Linha: ${e.lineno})`, 'error');
+  const onRejection = (e) => logSilenceScreen(`Rejeição de Promessa: ${e.reason?.message || e.reason}`, 'error');
+  window.addEventListener('error', onError);
+  window.addEventListener('unhandledrejection', onRejection);
+  errorHandlers = { onError, onRejection };
+}
+function removeErrorHandlers() {
+  if (!errorHandlers) return;
+  window.removeEventListener('error', errorHandlers.onError);
+  window.removeEventListener('unhandledrejection', errorHandlers.onRejection);
+  errorHandlers = null;
+}
+
+export function onLeave() { removeErrorHandlers(); }
+export function onEnter() { if (!errorHandlers) installErrorHandlers(); }
+
 export async function initScreen() {
   logSilenceScreen('Inicializando tela de Remover Silêncio...', 'info');
 
-  window.onerror = function(msg, url, lineNo, columnNo, error) {
-    logSilenceScreen(`Erro JS: ${msg} (Linha: ${lineNo})`, 'error');
-    return false;
-  };
-
-  window.onunhandledrejection = function(event) {
-    logSilenceScreen(`Rejeição de Promessa: ${event.reason?.message || event.reason}`, 'error');
-  };
+  installErrorHandlers();
 
   if (window.bds && window.bds.getThumbDir) {
     try {
@@ -176,7 +190,7 @@ function renderSilenceTable() {
     const thumbHtml = isAudio
       ? `<div style="width: 56px; height: 34px; background: rgba(33, 150, 243, 0.15); border: 1px solid rgba(33, 150, 243, 0.3); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #2196f3; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; flex-shrink: 0;">ÁUDIO</div>`
       : `<div style="width: 56px; height: 34px; background: #000; border-radius: 4px; overflow: hidden; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line);">
-          <img src="${item.thumbnail}" style="width: 100%; height: 100%; object-fit: cover;" onError="this.style.display='none'" />
+          <img src="${escapeAttr(item.thumbnail)}" style="width: 100%; height: 100%; object-fit: cover;" onError="this.style.display='none'" />
           <span class="material-symbols-rounded" style="color: var(--muted); font-size: 16px; position: absolute;">movie</span>
          </div>`;
 
@@ -189,8 +203,8 @@ function renderSilenceTable() {
           <div style="display: flex; align-items: center; gap: 10px;">
             ${thumbHtml}
             <div style="min-width: 0; flex: 1;">
-              <div style="font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.name}">${item.name}</div>
-              <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Formato: ${ext}</div>
+              <div style="font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeAttr(item.name)}">${escapeHtml(item.name)}</div>
+              <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Formato: ${escapeHtml(ext)}</div>
             </div>
           </div>
         </td>
@@ -203,7 +217,7 @@ function renderSilenceTable() {
         <td style="padding: 10px 12px; width: 160px;">
           <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700;">
-              <span style="color: ${item.status === 'Concluído' ? '#4caf50' : ((item.progress || 0) > 0 ? 'var(--accent)' : 'var(--muted)')};">${item.status || 'Pronto'}</span>
+              <span style="color: ${item.status === 'Concluído' ? '#4caf50' : ((item.progress || 0) > 0 ? 'var(--accent)' : 'var(--muted)')};">${escapeHtml(item.status || 'Pronto')}</span>
               <span style="color: #ffffff;">${Math.round(item.progress || 0)}%</span>
             </div>
             <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; overflow: hidden; border: 1px solid var(--line);">

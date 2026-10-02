@@ -545,3 +545,8 @@
   color: #d1d5db;
   letter-spacing: 0.4px;
 }
+
+/* --- Responsivo: painéis laterais ocupam a largura disponível em janelas estreitas --- */
+@media (max-width: 900px) {
+  .photo-metadata-panel, .photo-histogram-panel { width: calc(100% - 36px); max-width: 320px; }
+}

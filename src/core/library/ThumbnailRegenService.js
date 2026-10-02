@@ -1,8 +1,10 @@
 'use strict';
 
 const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 const logger = require('../../services/logService');
+const { isAudio } = require('../media/MediaTypes');
 
 /**
  * Regenera thumbnails ausentes — thumbnail registrada no DB, arquivo ausente no disco.
@@ -49,17 +51,21 @@ async function regenerateMissingThumbnails({
   const t0 = Date.now();
   // Busca mídias com thumbnail registrada no DB mas arquivo ausente no disco.
   // [FIX] Exclui mídias marcadas missing=1 (fonte não existe mais — nunca regeneraria).
+  // Inclui também mídias SEM miniatura registrada (ex.: importadas por um caminho que não a gerava),
+  // exceto áudio, que não tem imagem para extrair.
   const rows = db.prepare(`
     SELECT id, uuid, filepath, thumbnail, duration, filename
     FROM media
-    WHERE thumbnail IS NOT NULL AND thumbnail != ''
-      AND (status = 'READY' OR status IS NULL)
+    WHERE (status = 'READY' OR status IS NULL)
       AND (missing = 0 OR missing IS NULL)
   `).all();
 
+  // Um único readdir da pasta de miniaturas, comparado por Set (em vez de existsSync por linha)
+  let present;
+  try { present = new Set(await fsp.readdir(thumbDir)); } catch { present = new Set(); }
   const missing = rows.filter((r) => {
-    const thumbPath = path.join(thumbDir, r.thumbnail);
-    try { return !fs.existsSync(thumbPath); } catch { return true; }
+    if (!r.thumbnail) return !isAudio(r.filename || r.filepath || '');
+    return !present.has(r.thumbnail);
   }).slice(0, limit > 0 ? limit : undefined);
 
   if (missing.length === 0) {
@@ -92,8 +98,12 @@ async function regenerateMissingThumbnails({
     await Promise.allSettled(batch.map(async (row) => {
       try {
         // Verifica se o arquivo original ainda existe
-        if (!fs.existsSync(row.filepath)) { failed++; return; }
+        const srcOk = await fsp.access(row.filepath).then(() => true).catch(() => false);
+        if (!srcOk) { failed++; return; }
         await thumbGen.generate(row.filepath, row.uuid, row.duration || 0);
+        if (!row.thumbnail) {
+          db.prepare('UPDATE media SET thumbnail = ? WHERE id = ?').run(`${row.uuid}.jpg`, row.id);
+        }
         regenerated++;
       } catch (err) {
         logger.warn(`${logPrefix} Falha ao regenerar thumb id=${row.id}: ${err.message}`);

@@ -45,7 +45,7 @@ class AudioSyncService {
                 return;
             }
             if (!this.ffmpegPath || !fs.existsSync(this.ffmpegPath)) {
-                reject(new Error(`FFmpeg não encontrado em: "${this.ffmpegPath}". Verifique se as dependências foram baixadas corretamente.`));
+                reject(new Error('Motor de mídia não encontrado. Verifique se as dependências foram baixadas corretamente.'));
                 return;
             }
 
@@ -89,11 +89,11 @@ class AudioSyncService {
             let stderrOutput = '';
             proc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
 
-            proc.on('error', (err) => reject(new Error(`Falha ao executar FFmpeg: ${err.message}`)));
+            proc.on('error', (err) => reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`)));
 
             proc.on('close', (code) => {
                 if (code !== 0 && envelope.length === 0) {
-                    reject(new Error(`FFmpeg finalizou com código ${code}: ${stderrOutput.slice(0, 500)}`));
+                    reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(0, 500)}`));
                     return;
                 }
                 if (sampleCount > 0) {

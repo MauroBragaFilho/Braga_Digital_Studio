@@ -25,7 +25,7 @@ class SilenceService extends EventEmitter {
       let stdout = '';
       child.stdout.on('data', chunk => stdout += chunk.toString());
       child.on('close', code => {
-        if (code !== 0) return reject(new Error('Erro no ffprobe'));
+        if (code !== 0) return reject(new Error('Erro ao ler o arquivo'));
         const video = data.streams.find(s => s.codec_type === 'video');
         const audioStreams = data.streams.filter(s => s.codec_type === 'audio').map((s, idx) => ({
           index: idx,
@@ -272,14 +272,14 @@ class SilenceService extends EventEmitter {
                         if (fs.existsSync(outPath)) {
                             try { fs.unlinkSync(outPath); } catch (e) {}
                         }
-                        return reject(new Error(`O FFmpeg gerou um arquivo de 0 bytes. Log: ${ffmpegErrLog.slice(-300)}`));
+                        return reject(new Error(`O motor de mídia gerou um arquivo de 0 bytes. Log: ${ffmpegErrLog.slice(-300)}`));
                     }
                 }
 
                 if (fs.existsSync(outPath) && fs.statSync(outPath).size === 0) {
                     try { fs.unlinkSync(outPath); } catch (e) {}
                 }
-                reject(new Error(`Falha no FFmpeg (código ${code}): ${ffmpegErrLog.slice(-300)}`));
+                reject(new Error(`Falha no motor de mídia (código ${code}): ${ffmpegErrLog.slice(-300)}`));
             });
         });
       }

@@ -1,3 +1,10 @@
+let statusTimer = null;
+
+export function onLeave() {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+}
+
 export async function initScreen() {
     console.log('[UPLOAD] Inicializando tela do YouTube Studio...');
 
@@ -26,10 +33,11 @@ async function syncCookiesForYtDlp() {
 
             if (result && result.success) {
                 if (statusBar && statusText) {
-                    statusText.textContent = '✓ Cookies sincronizados com sucesso. yt-dlp autenticado.';
+                    statusText.textContent = '✓ Cookies sincronizados com sucesso. Download autenticado.';
                     statusBar.classList.add('active');
                     // Auto-hide após 5 segundos
-                    setTimeout(() => statusBar.classList.remove('active'), 5000);
+                    clearTimeout(statusTimer);
+                    statusTimer = setTimeout(() => statusBar.classList.remove('active'), 5000);
                 }
                 console.log('[UPLOAD] Cookies sincronizados com sucesso.');
             } else {

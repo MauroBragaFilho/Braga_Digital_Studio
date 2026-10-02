@@ -43,7 +43,7 @@ goto menu
 color 0c
 cls
 echo Gerando versao portable...
-call npm run build:portable
+call npm run build:win:portable
 pause
 goto menu
 

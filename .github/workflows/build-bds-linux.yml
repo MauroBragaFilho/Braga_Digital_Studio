@@ -54,6 +54,12 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Verificações de qualidade (sintaxe, lint, testes)
+        run: |
+          npm run check
+          npm run lint
+          npm test
+
       - name: Garantir pasta data/ (populada em runtime, não versionada)
         run: |
           mkdir -p data

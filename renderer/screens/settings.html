@@ -137,6 +137,15 @@
             <input type="checkbox" id="rememberWindowBoundsInput" class="st-switch" />
           </label>
         </div>
+
+        <div class="st-card" id="sidebarOrderCard">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">swap_vert</span> Menu lateral e atalhos</h4>
+          <p class="st-card-desc">Escolha a ordem das telas no menu lateral: arraste os itens ou use as setas. A Home fica sempre em primeiro. Pressione <kbd class="st-kbd">Ctrl</kbd> + <kbd class="st-kbd">1</kbd> a <kbd class="st-kbd">9</kbd> em qualquer tela para abrir a tela daquela posição.</p>
+          <ol id="sidebarOrderList" class="st-order-list" aria-label="Ordem das telas no menu lateral"></ol>
+          <div class="st-order-actions">
+            <button id="sidebarOrderResetButton" class="settings-btn-outline" type="button">Restaurar ordem padrão</button>
+          </div>
+        </div>
       </section>
 
       <!-- ================= NOTIFICAÇÕES ================= -->
@@ -306,7 +315,7 @@
           <div class="st-row">
             <div class="st-row-text">
               <label class="st-row-label" for="converterDefaultCodecInput">Codec de vídeo</label>
-              <span class="st-row-hint">H265 gera arquivos menores, mas depende do suporte do FFmpeg e do equipamento.</span>
+              <span class="st-row-hint">H265 gera arquivos menores, mas depende do suporte do motor de conversão e do equipamento.</span>
             </div>
             <div class="st-row-control">
               <select id="converterDefaultCodecInput" class="settings-select">

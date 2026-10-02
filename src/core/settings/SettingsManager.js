@@ -77,6 +77,7 @@ class SettingsManager {
       cacheAutoClean: false,
       // Interface e janela
       defaultStartScreen: 'home',      // tela aberta ao iniciar o app
+      sidebarOrder: [],                // ordem das telas no menu lateral (vazio = padrão; Home é sempre a primeira)
       reduceMotion: false,             // desliga animações e transições
       rememberWindowBounds: false,     // lembra tamanho/posição da janela
       windowBounds: null,              // { x, y, width, height, maximized } — gravado pelo main.js
@@ -176,6 +177,14 @@ class SettingsManager {
     oneOf('converterDefaultAudioBitrate', ['128k', '192k', '256k', '320k']);
     bool('reduceMotion');
     bool('rememberWindowBounds');
+
+    // Ordem do menu lateral: só ids de tela válidos (a Home é fixa e não entra), sem repetição.
+    if ('sidebarOrder' in out) {
+      const list = Array.isArray(out.sidebarOrder) ? out.sidebarOrder : [];
+      out.sidebarOrder = [...new Set(list.filter(
+        (v) => typeof v === 'string' && /^[a-z_]{1,30}$/.test(v) && v !== 'home'
+      ))].slice(0, 30);
+    }
 
     if ('converterDefaultVideoBitrate' in out) {
       const n = Math.round(Number(out.converterDefaultVideoBitrate));

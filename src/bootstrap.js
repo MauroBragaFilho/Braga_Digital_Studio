@@ -4,6 +4,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { ipcMain, dialog, BrowserWindow, app } = require('electron');
+const { maskSettings, restoreMaskedSecrets, isMasked } = require('./ipc/settingsSecrets');
+const { assertAbsolutePath } = require('./ipc/validate');
 
 const logger = require('./services/logService');
 const { DEVELOPER_EMAIL } = require('./config/appInfo');
@@ -72,9 +74,31 @@ class Bootstrap {
     this.mainWindow = window;
     taskProgressCenter.setMainWindow(window);
     notificationCenter.setMainWindow(window);
+    // setNavigateHandler substitui o handler anterior: reativar a janela (activate) não duplica callbacks.
     notificationCenter.setNavigateHandler((screen) => {
-      this.mainWindow?.webContents.send('bds:navigate-to-screen', screen);
+      this._send('bds:navigate-to-screen', screen);
     });
+    // Libera a referência quando a janela é destruída (activate cria outra via setMainWindow).
+    if (window && typeof window.once === 'function') {
+      window.once('closed', () => {
+        if (this.mainWindow === window) this.mainWindow = null;
+      });
+    }
+  }
+
+  /**
+   * Envia um evento ao renderer somente se a janela existir e não tiver sido destruída
+   * (eventos de serviços podem chegar depois do fechamento da janela).
+   */
+  _send(channel, payload) {
+    const win = this.mainWindow;
+    try {
+      if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+        win.webContents.send(channel, payload);
+      }
+    } catch (err) {
+      logger.warn('Bootstrap:send:error', { channel, error: err.message });
+    }
   }
 
   async init() {
@@ -247,28 +271,28 @@ class Bootstrap {
     const { downloadService, converterService, montageService, silenceService, metadataService, importQueue } = this.services;
 
     // Discovery Events
-    deviceDiscoveryService.on('device_added', (d) => this.mainWindow?.webContents.send('bdsm:device_added', d));
-    deviceDiscoveryService.on('device_removed', (id) => this.mainWindow?.webContents.send('bdsm:device_removed', id));
-    deviceDiscoveryService.on('device_updated', (d) => this.mainWindow?.webContents.send('bdsm:device_updated', d));
+    deviceDiscoveryService.on('device_added', (d) => this._send('bdsm:device_added', d));
+    deviceDiscoveryService.on('device_removed', (id) => this._send('bdsm:device_removed', id));
+    deviceDiscoveryService.on('device_updated', (d) => this._send('bdsm:device_updated', d));
 
     // [FASE 2.2] Sony Camera Events — unificados para canais do preload
-    sonyCameraService.on('camera_connected', (cam) => this.mainWindow?.webContents.send('sony-camera:connected', cam));
-    sonyCameraService.on('camera_status_updated', (status) => this.mainWindow?.webContents.send('sony-camera:status-update', status));
+    sonyCameraService.on('camera_connected', (cam) => this._send('sony-camera:connected', cam));
+    sonyCameraService.on('camera_status_updated', (status) => this._send('sony-camera:status-update', status));
 
     // Media Library Events
-    EventBus.on('MEDIA_IMPORTED', (m) => this.mainWindow?.webContents.send('bds:media-imported', m));
-    EventBus.on('MEDIA_REMOVED', (p) => this.mainWindow?.webContents.send('bds:media-removed', p));
-    EventBus.on('MEDIA_UPDATED', (p) => this.mainWindow?.webContents.send('bds:media-updated', p));
+    EventBus.on('MEDIA_IMPORTED', (m) => this._send('bds:media-imported', m));
+    EventBus.on('MEDIA_REMOVED', (p) => this._send('bds:media-removed', p));
+    EventBus.on('MEDIA_UPDATED', (p) => this._send('bds:media-updated', p));
 
     // Download Events
-    downloadService.on('downloads:added', (item) => this.mainWindow?.webContents.send('downloads:added', item));
-    downloadService.on('downloads:updated', (queue) => this.mainWindow?.webContents.send('downloads:updated', queue));
+    downloadService.on('downloads:added', (item) => this._send('downloads:added', item));
+    downloadService.on('downloads:updated', (queue) => this._send('downloads:updated', queue));
     downloadService.on('downloads:progress', (data) => {
       taskProgressCenter.reportProgress('downloads', (data.progress || 0) / 100);
-      this.mainWindow?.webContents.send('downloads:progress', data);
+      this._send('downloads:progress', data);
     });
     downloadService.on('downloads:completed', (item) => {
-      this.mainWindow?.webContents.send('downloads:completed', item);
+      this._send('downloads:completed', item);
       if (item.outputPath && importQueue) {
         try {
           const db = dbManager.get();
@@ -285,32 +309,32 @@ class Bootstrap {
     });
     downloadService.on('downloads:failed', (data) => {
       taskProgressCenter.reportError('downloads');
-      this.mainWindow?.webContents.send('downloads:failed', data);
+      this._send('downloads:failed', data);
     });
-    downloadService.on('downloads:removed', (id) => this.mainWindow?.webContents.send('downloads:removed', id));
+    downloadService.on('downloads:removed', (id) => this._send('downloads:removed', id));
     downloadService.on('downloads:queue-completed', () => {
       taskProgressCenter.reportIdle('downloads');
       notificationCenter.notifyTaskCompleted('downloads', {});
-      this.mainWindow?.webContents.send('downloads:queue-completed');
+      this._send('downloads:queue-completed');
     });
-    downloadService.on('queue', (payload) => this.mainWindow?.webContents.send('download:queue', payload));
-    downloadService.on('progress', (payload) => this.mainWindow?.webContents.send('download:progress', payload));
-    downloadService.on('finished', (payload) => this.mainWindow?.webContents.send('download:finished', payload));
-    downloadService.on('youtube:code', (data) => this.mainWindow?.webContents.send('youtube:code', data));
-    downloadService.on('youtube:auth-status', (status) => this.mainWindow?.webContents.send('youtube:auth-status', status));
+    downloadService.on('queue', (payload) => this._send('download:queue', payload));
+    downloadService.on('progress', (payload) => this._send('download:progress', payload));
+    downloadService.on('finished', (payload) => this._send('download:finished', payload));
+    downloadService.on('youtube:code', (data) => this._send('youtube:code', data));
+    downloadService.on('youtube:auth-status', (status) => this._send('youtube:auth-status', status));
 
     // Converter Events
-    converterService.on('queue', (p) => this.mainWindow?.webContents.send('converter:queue', p));
-    converterService.on('fileStarted', (p) => this.mainWindow?.webContents.send('converter:fileStarted', p));
+    converterService.on('queue', (p) => this._send('converter:queue', p));
+    converterService.on('fileStarted', (p) => this._send('converter:fileStarted', p));
     converterService.on('progress', (p) => {
       taskProgressCenter.reportProgress('converter', (p?.progress || 0) / 100);
-      this.mainWindow?.webContents.send('converter:progress', p);
+      this._send('converter:progress', p);
     });
-    converterService.on('fileFinished', (p) => this.mainWindow?.webContents.send('converter:fileFinished', p));
+    converterService.on('fileFinished', (p) => this._send('converter:fileFinished', p));
     // Progresso geral do lote (ponderado por duração) emitido pelo serviço a cada ~500ms
     converterService.on('overallProgress', (p) => {
       taskProgressCenter.reportProgress('converter', (p?.percent || 0) / 100);
-      this.mainWindow?.webContents.send('converter:overallProgress', p);
+      this._send('converter:overallProgress', p);
     });
     converterService.on('finished', (p) => {
       taskProgressCenter.reportIdle('converter');
@@ -325,19 +349,19 @@ class Bootstrap {
         const count = converterService.getQueue().filter((it) => it.status === 'Concluído').length;
         notificationCenter.notifyTaskCompleted('converter', { count });
       }
-      this.mainWindow?.webContents.send('converter:finished', p);
+      this._send('converter:finished', p);
     });
 
     // Montage Events
-    montageService.on('progress', (p) => this.mainWindow?.webContents.send('montage:progress', p));
-    montageService.on('finished', (p) => this.mainWindow?.webContents.send('montage:finished', p));
-    montageService.on('queue-updated', (q) => this.mainWindow?.webContents.send('montage:queue-updated', q));
-    montageService.on('log', (t) => this.mainWindow?.webContents.send('montage:log', t));
+    montageService.on('progress', (p) => this._send('montage:progress', p));
+    montageService.on('finished', (p) => this._send('montage:finished', p));
+    montageService.on('queue-updated', (q) => this._send('montage:queue-updated', q));
+    montageService.on('log', (t) => this._send('montage:log', t));
 
     // Silence Events
     silenceService.on('progress', (p) => {
       taskProgressCenter.reportProgress('silence', (p?.percent || 0) / 100);
-      this.mainWindow?.webContents.send('silence:progress', p);
+      this._send('silence:progress', p);
     });
     silenceService.on('finished', (p) => {
       taskProgressCenter.reportIdle('silence');
@@ -348,33 +372,33 @@ class Bootstrap {
         // último arquivo — o NotificationCenter cai no texto genérico.
         notificationCenter.notifyTaskCompleted('silence', { file: p?.lastFile });
       }
-      this.mainWindow?.webContents.send('silence:finished', p);
+      this._send('silence:finished', p);
     });
-    silenceService.on('log', (p) => this.mainWindow?.webContents.send('silence:log', p));
+    silenceService.on('log', (p) => this._send('silence:log', p));
 
     // Metadata Events
-    metadataService.on('progress', (p) => this.mainWindow?.webContents.send('metadata:progress', p));
-    metadataService.on('log', (p) => this.mainWindow?.webContents.send('metadata:log', p));
+    metadataService.on('progress', (p) => this._send('metadata:progress', p));
+    metadataService.on('log', (p) => this._send('metadata:log', p));
 
     // Recovery Events
     const { videoRecoveryService, rawRecoveryService, updateService } = this.services;
-    videoRecoveryService.on('progress', (p) => this.mainWindow?.webContents.send('recovery:progress', p));
-    videoRecoveryService.on('stage', (p) => this.mainWindow?.webContents.send('recovery:stage', p));
-    videoRecoveryService.on('finished', (p) => this.mainWindow?.webContents.send('recovery:finished', p));
-    videoRecoveryService.on('error', (p) => this.mainWindow?.webContents.send('recovery:error', p));
+    videoRecoveryService.on('progress', (p) => this._send('recovery:progress', p));
+    videoRecoveryService.on('stage', (p) => this._send('recovery:stage', p));
+    videoRecoveryService.on('finished', (p) => this._send('recovery:finished', p));
+    videoRecoveryService.on('error', (p) => this._send('recovery:error', p));
 
-    rawRecoveryService.on('progress', (p) => this.mainWindow?.webContents.send('recovery:raw:progress', p));
-    rawRecoveryService.on('stage', (p) => this.mainWindow?.webContents.send('recovery:raw:stage', p));
-    rawRecoveryService.on('finished', (p) => this.mainWindow?.webContents.send('recovery:raw:finished', p));
-    rawRecoveryService.on('error', (p) => this.mainWindow?.webContents.send('recovery:raw:error', p));
+    rawRecoveryService.on('progress', (p) => this._send('recovery:raw:progress', p));
+    rawRecoveryService.on('stage', (p) => this._send('recovery:raw:stage', p));
+    rawRecoveryService.on('finished', (p) => this._send('recovery:raw:finished', p));
+    rawRecoveryService.on('error', (p) => this._send('recovery:raw:error', p));
 
     // Update Events
-    updateService.on('progress', (p) => this.mainWindow?.webContents.send('updates:progress', p));
-    updateService.on('completed', (p) => this.mainWindow?.webContents.send('updates:completed', p));
+    updateService.on('progress', (p) => this._send('updates:progress', p));
+    updateService.on('completed', (p) => this._send('updates:completed', p));
 
     // Hardware Provider Events
-    UsbService.on('progress', (data) => this.mainWindow?.webContents.send('mtp:import-progress', data));
-    MtpService.on('progress', (data) => this.mainWindow?.webContents.send('mtp:import-progress', data));
+    UsbService.on('progress', (data) => this._send('mtp:import-progress', data));
+    MtpService.on('progress', (data) => this._send('mtp:import-progress', data));
 
     // Upload & Sony Events
     // Cópia de arquivos (upload p/ YouTube) — Opção A: refletir o progresso
@@ -398,7 +422,7 @@ class Bootstrap {
         notificationCenter.notifyTaskCompleted('copy', { count });
       }
 
-      this.mainWindow?.webContents.send('upload:queue-updated', q);
+      this._send('upload:queue-updated', q);
     });
     // [FASE 2.2] Sony — eventos 'connected'/'photo-taken' já capturados no bloco acima via camera_connected
     // Não registrar listeners duplicados para o mesmo serviço
@@ -416,7 +440,7 @@ class Bootstrap {
     // Registra Handlers por Módulo
     require('./ipc/deviceHandlers')(logger, lutSyncService);
     require('./ipc/libraryHandlers')(this.paths, watcherService);
-    require('./ipc/systemHandlers')(this.paths);
+    require('./ipc/systemHandlers')(this.paths, this.settingsManager);
     require('./ipc/recoveryHandlers')(videoRecoveryService, this.paths, rawRecoveryService);
     require('./ipc/photoPreviewHandlers')(this.services.photoPreviewService);
     require('./ipc/youtubeHandlers')();
@@ -425,11 +449,19 @@ class Bootstrap {
     require('./ipc/telemetryHandlers')();
     require('./ipc/jobHandlers')();
     require('./ipc/aiHandlers')(this.paths);
+    // O ModuleManager é guardado para ser cancelado no encerramento do app.
+    this.moduleManager = require('./ipc/moduleHandlers')(this.paths);
 
     // Settings
-    ipcMain.handle('settings:get', () => this.settingsManager.load());
+    // Segredos (token do Telegram) são mascarados antes de chegar ao renderer.
+    ipcMain.handle('settings:get', () => maskSettings(this.settingsManager.load()));
     ipcMain.handle('settings:save', (_, settings) => {
-      const saved = this.settingsManager.save(settings);
+      if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+        throw new Error('Configurações inválidas.');
+      }
+      // Campo ainda mascarado = não alterado: preserva o valor real guardado no main.
+      const toSave = restoreMaskedSecrets(settings, this.settingsManager.load());
+      const saved = this.settingsManager.save(toSave);
       notificationCenter.updateSettings(saved);
       // Sincroniza o canal Telegram com as preferências (token, chat id, flag)
       telegramDeliveryChannel.updateSettings(saved);
@@ -449,7 +481,7 @@ class Bootstrap {
         hardwareDetection.configure(saved);
         hardwareDetection.invalidateCache();
       } catch (_) {}
-      return saved;
+      return maskSettings(saved);
     });
 
     // Informações de hardware (GPU + encoders) para a aba Sistema das Configurações.
@@ -473,27 +505,41 @@ class Bootstrap {
 
     // Teste do canal Telegram (botão "Testar envio no Telegram" na tela de Configurações)
     ipcMain.handle('telegram:sendTest', async (_, data) => {
-      const token = String(data?.botToken || '').trim();
+      let token = String(data?.botToken || '').trim();
       const chatId = String(data?.chatId || '').trim();
+      // Token mascarado (não alterado na tela): usa o valor real guardado no main.
+      if (isMasked(token)) token = String(this.settingsManager.load().telegramBotToken || '').trim();
       if (!token || !chatId) {
         return { success: false, error: 'Token do bot e Chat ID são obrigatórios.' };
       }
+      if (!/^\d+:[\w-]+$/.test(token)) {
+        return { success: false, error: 'Formato de token inválido (esperado 123456:ABC...).' };
+      }
+      if (!/^(-?\d{1,20}|@[A-Za-z0-9_]{4,64})$/.test(chatId)) {
+        return { success: false, error: 'Chat ID inválido.' };
+      }
       try {
-        const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        // O formato do token garante caracteres seguros; o ":" é mantido literal (aceito no caminho da URL).
+        const safeToken = encodeURIComponent(token).replace(/%3A/gi, ':');
+        const response = await fetch(`https://api.telegram.org/bot${safeToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
             text: '✅ Notificações do Braga Digital Studio funcionando!'
-          })
+          }),
+          signal: AbortSignal.timeout(15000)
         });
         if (!response.ok) {
-          const errBody = await response.text();
-          return { success: false, error: `Telegram respondeu HTTP ${response.status}: ${errBody.slice(0, 200)}` };
+          // Não devolve o corpo da resposta (pode conter detalhes do bot/conta).
+          const hint = response.status === 401 ? ' (token inválido)' : response.status === 400 ? ' (Chat ID inválido ou o bot ainda não conversou com você)' : '';
+          return { success: false, error: `Telegram respondeu HTTP ${response.status}${hint}.` };
         }
         return { success: true };
       } catch (err) {
-        return { success: false, error: err.message || 'Falha de rede ao contatar o Telegram.' };
+        // A mensagem de erro de rede pode conter a URL (e portanto o token): não a repassa.
+        logger.warn('telegram:sendTest:error', { name: err?.name });
+        return { success: false, error: err?.name === 'TimeoutError' ? 'Tempo esgotado ao contatar o Telegram.' : 'Falha de rede ao contatar o Telegram.' };
       }
     });
 
@@ -528,21 +574,45 @@ class Bootstrap {
     // Dialogs
     ipcMain.handle('dialog:selectFolder', async (_, fallbackPath) => {
       const win = this.mainWindow || BrowserWindow.getFocusedWindow();
-      const options = { defaultPath: fallbackPath || os.homedir(), properties: ['openDirectory', 'createDirectory'] };
+      const safeDefault = typeof fallbackPath === 'string' && fallbackPath && path.isAbsolute(fallbackPath) ? fallbackPath : os.homedir();
+      const options = { defaultPath: safeDefault, properties: ['openDirectory', 'createDirectory'] };
       const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : result.filePaths[0];
     });
 
+    // Somente opções conhecidas e seguras do renderer são repassadas ao diálogo nativo.
+    const SAFE_DIALOG_PROPERTIES = new Set(['openFile', 'multiSelections', 'openDirectory', 'showHiddenFiles']);
+    const sanitizeDialogOptions = (custom) => {
+      const out = { properties: ['openFile', 'multiSelections'] };
+      if (!custom || typeof custom !== 'object') return out;
+      if (typeof custom.title === 'string') out.title = custom.title.slice(0, 200);
+      if (typeof custom.buttonLabel === 'string') out.buttonLabel = custom.buttonLabel.slice(0, 60);
+      if (typeof custom.defaultPath === 'string' && path.isAbsolute(custom.defaultPath)) out.defaultPath = custom.defaultPath;
+      if (Array.isArray(custom.properties)) {
+        const props = custom.properties.filter((p) => SAFE_DIALOG_PROPERTIES.has(p));
+        if (props.length) out.properties = props;
+      }
+      if (Array.isArray(custom.filters)) {
+        out.filters = custom.filters
+          .filter((f) => f && typeof f.name === 'string' && Array.isArray(f.extensions))
+          .slice(0, 20)
+          .map((f) => ({
+            name: f.name.slice(0, 100),
+            extensions: f.extensions.filter((e) => typeof e === 'string' && /^[A-Za-z0-9*_-]{1,12}$/.test(e)).slice(0, 100)
+          }))
+          .filter((f) => f.extensions.length > 0);
+      }
+      return out;
+    };
+
     ipcMain.handle('dialog:selectFiles', async (_, customOptions) => {
-      const defaultOptions = { properties: ['openFile', 'multiSelections'] };
-      const options = customOptions ? { ...defaultOptions, ...customOptions } : defaultOptions;
+      const options = sanitizeDialogOptions(customOptions);
       const win = this.mainWindow || BrowserWindow.getFocusedWindow();
       const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return result.canceled ? [] : result.filePaths;
     });
 
     // YouTube & Downloads
-    ipcMain.handle('startYoutubeAuth', () => downloadService.startYoutubeAuth());
     ipcMain.handle('media:metadata', (_, url) => thumbnailService.getMetadata(url));
     ipcMain.handle('media:inspectPlaylist', (_, url) => thumbnailService.inspectPlaylist(url));
     ipcMain.handle('media:expandPlaylist', (_, url) => thumbnailService.expandPlaylist(url));
@@ -550,7 +620,7 @@ class Bootstrap {
     ipcMain.handle('youtube:get-accounts', () => []);
     ipcMain.handle('youtube:exportCookies', async () => {
       try {
-        const cookiesPath = path.join(this.paths.dataDir, 'youtube_cookies.txt');
+        const cookiesPath = CookiesService.getDefaultCookiesPath('youtube');
         const success = await CookiesService.exportNetscapeCookies('youtube.com', cookiesPath, 'persist:youtube_studio');
         if (success) {
           this.settingsManager.save({ cookiesFile: cookiesPath });
@@ -618,7 +688,9 @@ class Bootstrap {
     ipcMain.handle('updates:checkSystem', () => updateService.checkSystem());
     ipcMain.handle('updates:check', () => updateService.checkSystem());
     ipcMain.handle('updates:checkLegacy', () => updateService.checkAll());
-    ipcMain.handle('updates:updateTool', (_, tool) => updateService.updateTool(tool));
+    // allowUnverified: o usuário confirmou instalar um componente cuja fonte não publica checksum
+    ipcMain.handle('updates:updateTool', (_, tool, opts) =>
+      updateService.updateTool(tool, null, { allowUnverified: opts?.allowUnverified === true }));
     ipcMain.handle('updates:rollbackTool', (_, tool) => updateService.rollbackTool(tool));
     ipcMain.handle('updates:updateAll', async () => {
       return await updateService.updateAll();
@@ -690,23 +762,34 @@ class Bootstrap {
       return await provider.getDeviceStatus();
     });
 
-    ipcMain.handle('sony:import-items', async (event, { cameraId, items, destFolder }) => {
+    ipcMain.handle('sony:import-items', async (event, payload) => {
+      const { cameraId, items, destFolder } = payload || {};
       const provider = sonyCameraService.getProvider(cameraId);
       if (!provider) throw new Error(`Provider não encontrado para ${cameraId}`);
 
-      if (!fs.existsSync(destFolder)) {
-        fs.mkdirSync(destFolder, { recursive: true });
-      }
+      // Validação de entrada: lista limitada de itens e pasta de destino absoluta (criada se necessário)
+      if (!Array.isArray(items) || items.length === 0) return { imported: [], failed: [] };
+      if (items.length > 5000) throw new Error('Itens demais em uma única importação.');
+      const destDir = assertAbsolutePath(destFolder, 'Pasta de destino');
+      if (path.parse(destDir).root === destDir) throw new Error('A pasta de destino não pode ser a raiz de um drive.');
+      fs.mkdirSync(destDir, { recursive: true });
 
       const importedPaths = [];
+      const failed = [];
       let index = 0;
+
+      const sendProgress = (data) => {
+        try { if (!event.sender.isDestroyed()) event.sender.send('sony:import-progress', data); } catch (_) { /* janela fechada */ }
+      };
 
       for (const item of items) {
         index++;
+        const label = item && (item.title || item.filename);
         try {
-          const files = await provider.import(item, destFolder, (progress) => {
-            event.sender.send('sony:import-progress', {
-              currentItem: item.title || item.filename,
+          if (!item || typeof item !== 'object') throw new Error('Item inválido.');
+          const files = await provider.import(item, destDir, (progress) => {
+            sendProgress({
+              currentItem: label,
               itemIndex: index,
               totalItems: items.length,
               ...progress
@@ -731,23 +814,30 @@ class Bootstrap {
             }
           }
         } catch (e) {
-          logger.error(`[Sony Import] Erro ao importar ${item.title || item.filename}: ${e.message}`);
+          failed.push({ item: label, error: e.message });
+          logger.error(`[Sony Import] Erro ao importar ${label}: ${e.message}`);
         }
       }
 
-      return importedPaths;
+      // Informa ao chamador os importados e as falhas por item (resultado parcial).
+      return { imported: importedPaths, failed };
     });
 
     // Upload & Scanner
     ipcMain.handle('upload:scanDirectory', async (_, customDir) => {
       const settings = this.settingsManager.load();
-      const targetDir = customDir || settings.uploadsFolder || path.join(os.homedir(), 'Videos', 'Uploads');
-      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+      // Caminho vindo do renderer precisa ser absoluto; o handler NÃO cria diretórios (só varre o que existe).
+      const targetDir = customDir ? assertAbsolutePath(customDir, 'Pasta de uploads')
+        : (settings.uploadsFolder || path.join(os.homedir(), 'Videos', 'Uploads'));
+      let isDir = false;
+      try { isDir = fs.statSync(targetDir).isDirectory(); } catch (_) { /* inexistente */ }
+      if (!isDir) return [];
       return uploadScannerService.scanDirectory(targetDir);
     });
     ipcMain.handle('upload:selectFolder', async () => {
       const win = this.mainWindow || BrowserWindow.getFocusedWindow();
-      const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+      const dialogOptions = { properties: ['openDirectory'] };
+      const result = win ? await dialog.showOpenDialog(win, dialogOptions) : await dialog.showOpenDialog(dialogOptions);
       if (!result.canceled && result.filePaths.length > 0) {
         const selectedDir = result.filePaths[0];
         this.settingsManager.save({ uploadsFolder: selectedDir });
@@ -757,10 +847,11 @@ class Bootstrap {
     });
     ipcMain.handle('upload:selectFiles', async () => {
       const win = this.mainWindow || BrowserWindow.getFocusedWindow();
-      const result = await dialog.showOpenDialog(win, {
+      const dialogOptions = {
         properties: ['openFile', 'multiSelections'],
         filters: [{ name: 'Vídeos', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }]
-      });
+      };
+      const result = win ? await dialog.showOpenDialog(win, dialogOptions) : await dialog.showOpenDialog(dialogOptions);
       if (!result.canceled && result.filePaths.length > 0) {
         const fileList = [];
         for (const filePath of result.filePaths) {
@@ -847,17 +938,19 @@ class Bootstrap {
 
     if (missing.length > 0) {
       logger.info(`Primeira inicialização: Baixando dependências essenciais ausentes: ${missing.join(', ')}`);
-      this.mainWindow?.webContents.send('dependencies:downloading');
+      this._send('dependencies:downloading');
 
       for (const tool of missing) {
         try {
-          await updateService.updateTool(tool);
+          // Primeira instalação de um essencial ausente: sem ele o app não funciona, então instala
+          // mesmo que a fonte não publique checksum (o toolUpdater registra o aviso no log).
+          await updateService.updateTool(tool, null, { allowUnverified: true });
         } catch (e) {
           logger.error(`Erro ao baixar ${tool} na inicialização`, { error: e.message });
         }
       }
 
-      this.mainWindow?.webContents.send('dependencies:done');
+      this._send('dependencies:done');
       logger.info('Dependências iniciais instaladas com sucesso.');
     } else if (this.settingsManager.load().checkUpdatesOnStart) {
       // Usa checkEverything() (mesmo método do botão "Verificar Atualizações" em
@@ -865,31 +958,78 @@ class Bootstrap {
       // dependencies } esperado pelo renderer. checkAll() é um método legado com formato
       // diferente (um objeto por ferramenta) e não deve ser usado aqui.
       updateService.checkEverything().then((result) => {
-        this.mainWindow?.webContents.send('updates:checked', result);
+        this._send('updates:checked', result);
       }).catch((error) => {
         logger.warn('updates:startup_check_failed', { error: error.message });
       });
     }
   }
 
+  /**
+   * Encerramento ordenado (idempotente): cancela/pausa serviços em andamento, para watchers e
+   * descoberta de dispositivos e, por fim, grava o banco de forma síncrona.
+   *
+   * Cada etapa é isolada (uma falha não impede as demais) e o conjunto de cancelamentos tem um
+   * prazo total (`timeoutMs`); a gravação do banco sempre roda por último, mesmo após timeout.
+   */
+  async shutdown({ timeoutMs = 5000 } = {}) {
+    if (this._shutdownPromise) return this._shutdownPromise;
+
+    this._shutdownPromise = (async () => {
+      const s = this.services || {};
+      const step = async (name, fn) => {
+        try { await fn(); }
+        catch (err) { logger.warn('Bootstrap:shutdown:step_error', { step: name, error: err && err.message }); }
+      };
+
+      const cancellations = [
+        // Fila de downloads: pausa (mantém itens pendentes para a próxima sessão)
+        step('download', () => s.downloadService?.pause?.()),
+        step('converter', async () => { if (s.converterService?.isRunning?.()) await s.converterService.cancelCurrent(); }),
+        step('montage', () => s.montageService?.cancelMontage?.()),
+        step('silence', () => s.silenceService?.cancel?.()),
+        step('metadata', () => s.metadataService?.cancel?.()),
+        step('videoRecovery', () => s.videoRecoveryService?.cancel?.()),
+        step('rawRecovery', () => s.rawRecoveryService?.cancel?.()),
+        // AudioSyncService/WaveformService não expõem cancelamento: seus ffmpeg têm timeout próprio.
+        step('audioSync', () => s.audioSyncService?.cancel?.()),
+        step('waveform', () => s.waveformService?.cancel?.()),
+        step('jobManager', () => require('./core/jobs/JobManager').jobManager?.cancelAll?.()),
+        step('upload', () => {
+          // UploadService mantém janelas invisíveis de automação em activeUploads
+          for (const win of UploadService.activeUploads?.values?.() || []) {
+            try { if (win && !win.isDestroyed()) win.destroy(); } catch (_) { /* já destruída */ }
+          }
+          UploadService.activeUploads?.clear?.();
+        }),
+        step('modules', () => this.moduleManager?.cancel?.())
+      ];
+
+      let timer;
+      const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve('timeout'), timeoutMs); });
+      const outcome = await Promise.race([Promise.allSettled(cancellations).then(() => 'done'), deadline]);
+      clearTimeout(timer);
+      if (outcome === 'timeout') logger.warn('Bootstrap:shutdown:timeout', { timeoutMs });
+
+      // Watchers, descoberta de dispositivos, câmeras Sony e lembretes de prazo
+      await step('watchers', () => s.watcherService?.stopAll?.());
+      await step('deadline', () => deadlineNotifier.stop());
+      await step('discovery', () => deviceDiscoveryService?.stop?.());
+      await step('sony', () => sonyCameraService?.stop?.());
+
+      // Gravação final do banco: síncrona, para não perder dados ao sair
+      await step('database', () => {
+        if (typeof dbManager.persistSync === 'function') dbManager.persistSync();
+        else if (typeof dbManager.persist === 'function') dbManager.persist();
+      });
+    })();
+
+    return this._shutdownPromise;
+  }
+
+  /** @deprecated Mantido por compatibilidade; use shutdown(). */
   async cleanup() {
-    const { downloadService, converterService, watcherService } = this.services;
-    try {
-      if (downloadService && typeof downloadService.pause === 'function') {
-        downloadService.pause();
-      }
-    } catch (_) {}
-
-    try {
-      if (converterService && typeof converterService.isRunning === 'function' && converterService.isRunning()) {
-        await converterService.cancelCurrent();
-      }
-    } catch (_) {}
-
-    try { watcherService?.stopAll(); } catch (_) {}
-    try { deadlineNotifier.stop(); } catch (_) {}
-    try { deviceDiscoveryService?.stop(); } catch (_) {}
-    try { sonyCameraService?.stop?.(); } catch (_) {}
+    return this.shutdown();
   }
 }
 

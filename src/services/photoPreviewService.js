@@ -344,7 +344,7 @@ class PhotoPreviewService {
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve(outputPath);
         } else {
-          reject(new Error(`FFmpeg finalizou com código ${code}`));
+          reject(new Error(`O motor de mídia finalizou com código ${code}`));
         }
       });
       child.on('error', reject);
@@ -365,7 +365,7 @@ class PhotoPreviewService {
       let stdout = '';
       child.stdout.on('data', d => { stdout += d.toString('utf8'); });
       child.on('close', code => {
-        if (code !== 0) return reject(new Error(`FFprobe error code ${code}`));
+        if (code !== 0) return reject(new Error(`Erro ao analisar a imagem (código ${code})`));
         try {
           resolve(JSON.parse(stdout));
         } catch (e) {

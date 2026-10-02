@@ -9,7 +9,9 @@
 })();
 
 // Agora sim, importa as dependências
-import { setAppStatus, escapeHtml } from '../app.js';
+import { setAppStatus } from '../app.js';
+import { escapeHtml, escapeAttr } from '../utils/escape.js';
+import { enhanceModals } from '../utils/modal.js';
 
 let projectId = null;
 let project = null;
@@ -52,7 +54,7 @@ export async function initScreen() {
 
     await loadInitialData();
     setupEventListeners();
-    setupMonitorKeyboardShortcuts();
+    enhanceModals(document.getElementById('project_workspaceView') || document, '.ws-modal-overlay');
   } catch (e) {
     console.error('[WORKSPACE] Erro na inicialização:', e);
     setAppStatus('Erro ao carregar workspace', 'error');
@@ -901,7 +903,7 @@ function createMediaGridCard(pm) {
   card.dataset.pmId = pm.pm_id;
 
   const thumbInner = isAudio
-    ? `<canvas class="ws-media-card-wave" data-uuid="${pm.uuid || ''}" data-path="${pm.filepath ? pm.filepath.replace(/"/g, '&quot;') : ''}"></canvas>`
+    ? `<canvas class="ws-media-card-wave" data-uuid="${escapeAttr(pm.uuid || '')}" data-path="${escapeAttr(pm.filepath || '')}"></canvas>`
     : (!thumbUrl ? `<span class="material-symbols-rounded">${isPhoto ? 'image' : 'movie'}</span>` : '');
 
   card.innerHTML = `
@@ -912,7 +914,7 @@ function createMediaGridCard(pm) {
     </div>
     <div class="ws-media-card-info">
       <div class="ws-media-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-      <div class="ws-media-card-meta">${pm.width && pm.height ? `${pm.width}x${pm.height} · ` : ''}${pm.extension || ''}</div>
+      <div class="ws-media-card-meta">${pm.width && pm.height ? `${pm.width}x${pm.height} · ` : ''}${escapeHtml(pm.extension || '')}</div>
     </div>
   `;
 
@@ -1073,7 +1075,7 @@ function createMediaNode(pm) {
   const thumbUrl = pm.thumbnail_path ? `url('file:///${pm.thumbnail_path.replace(/\\/g, '/')}')` : '';
 
   const thumbHtml = isAudio
-    ? `<canvas class="ws-bin-media-thumb ws-bin-media-thumb-wave" data-uuid="${pm.uuid || ''}" data-path="${pm.filepath ? pm.filepath.replace(/"/g, '&quot;') : ''}"></canvas>`
+    ? `<canvas class="ws-bin-media-thumb ws-bin-media-thumb-wave" data-uuid="${escapeAttr(pm.uuid || '')}" data-path="${escapeAttr(pm.filepath || '')}"></canvas>`
     : `<div class="ws-bin-media-thumb" style="background-image:${thumbUrl};">${!thumbUrl ? `<span class="material-symbols-rounded">${icon}</span>` : ''}</div>`;
 
   el.innerHTML = `
@@ -1405,7 +1407,7 @@ async function loadWaveformForMonitor(pm) {
       };
       muteBtn.addEventListener('click', () => { isMuted = !isMuted; applyMute(); });
 
-      label.innerHTML = `<span><span style="color:#22c55e;">A${i+1}</span> (${stream.codec_name || 'audio'})</span><span>${escapeHtml(stream.title || '')}</span>`;
+      label.innerHTML = `<span><span style="color:#22c55e;">A${i+1}</span> (${escapeHtml(stream.codec_name || 'audio')})</span><span>${escapeHtml(stream.title || '')}</span>`;
       label.appendChild(muteBtn);
       trackWrap.appendChild(label);
 
@@ -1518,8 +1520,21 @@ function monitorStepFrame(dir) {
   monitorEl.currentTime = Math.max(0, Math.min(monitorEl.duration || 0, monitorEl.currentTime + (dir / fps)));
 }
 
-function setupMonitorKeyboardShortcuts() {
-  document.addEventListener('keydown', (e) => {
+let wsCleanups = [];
+
+export function onLeave() {
+  wsCleanups.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  wsCleanups = [];
+  try { teardownMonitorTrackAudio(); } catch (_) { /* noop */ }
+  if (monitorEl) {
+    try { monitorEl.pause(); } catch (_) { /* noop */ }
+    monitorEl = null;
+  }
+  monitorMedia = null;
+}
+
+/** Atalhos do monitor (I/O/K/J/L/Espaço), roteados pelo despachante central do app.js. */
+export function onKeyDown(e) {
     if (centerTab !== 'monitor' || !monitorEl) return;
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
@@ -1549,7 +1564,6 @@ function setupMonitorKeyboardShortcuts() {
       default:
         break;
     }
-  });
 }
 
 // ==========================================================================

@@ -1,12 +1,20 @@
 'use strict';
 
-const https = require('node:https');
-const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const logger = require('../../services/logService');
+const { downloadFile, fetchJson } = require('../../core/modules/FileDownloader');
+const { processRunner } = require('./ProcessRunner');
+
+/** Algoritmos de digest aceitos (md5/sha1 são fracos demais para validar um instalador). */
+const SUPPORTED_DIGESTS = new Set(['sha256', 'sha384', 'sha512']);
+
+/** URL sem query string/fragmento (a query pode carregar tokens): só para logs. */
+function safeUrl(u) {
+  try { const p = new URL(u); return `${p.protocol}//${p.host}${p.pathname}`; } catch (_) { return '(url inválida)'; }
+}
 
 const CONFIG_PATH = path.join(__dirname, '..', '..', 'config', 'appUpdate.config.json');
 
@@ -47,16 +55,14 @@ class AppUpdateChecker {
       return this._noUpdateResult(currentVersion);
     }
 
-    const { owner, repo, includePrereleases } = config.github || {};
+    const { owner, repo } = config.github || {};
     if (!owner || !repo) {
       logger.warn('AppUpdateChecker:missing_github_config');
       return this._noUpdateResult(currentVersion);
     }
 
     try {
-      const release = includePrereleases
-        ? await this._fetchLatestIncludingPrereleases(owner, repo)
-        : await this._fetchJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+      const release = await this._getLatestRelease();
 
       if (!release || !release.tag_name) {
         return this._noUpdateResult(currentVersion);
@@ -119,19 +125,22 @@ class AppUpdateChecker {
     return chosen.digest || null;
   }
 
+  /** Release mais recente conforme appUpdate.config.json (ou null se não configurada). */
+  async _getLatestRelease() {
+    const { owner, repo, includePrereleases } = this._loadConfig().github || {};
+    if (!owner || !repo) return null;
+    return includePrereleases
+      ? await this._fetchLatestIncludingPrereleases(owner, repo)
+      : await this._fetchJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
+  }
+
   /**
    * Retorna o URL do instalador da versão mais recente (se houver).
    * @returns {Promise<string|null>}
    */
   async getLatestInstallerUrl() {
-    const config = this._loadConfig();
-    const { owner, repo, includePrereleases } = config.github || {};
-    if (!owner || !repo) return null;
     try {
-      const release = includePrereleases
-        ? await this._fetchLatestIncludingPrereleases(owner, repo)
-        : await this._fetchJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`);
-      return this._findInstallerUrl(release);
+      return this._findInstallerUrl(await this._getLatestRelease());
     } catch (error) {
       logger.error('AppUpdateChecker:getLatestInstallerUrl:error', { error: error.message });
       return null;
@@ -139,28 +148,56 @@ class AppUpdateChecker {
   }
 
   /**
-   * Baixa o instalador da versão mais recente para destPath.
-   * Se expectedDigest for fornecido (ex: "sha256:abcdef..."), verifica a integridade
-   * do arquivo após o download; lança erro se não corresponder.
+   * Baixa o instalador da versão mais recente para destPath e confere o SHA-256.
+   *
+   * O URL e o digest precisam vir da MESMA release. Quem já consultou a release (checkForUpdate)
+   * deve passar `installerUrl` e `expectedDigest` — assim, uma release publicada entre a consulta
+   * e o download não faz o digest de uma versão ser comparado com o arquivo de outra. Sem
+   * `installerUrl`, a release é consultada aqui uma única vez e URL e digest saem dela.
+   *
    * @param {string} destPath - Caminho de destino (_setup.exe).
    * @param {(received:number, total:number)=>void} [onProgress] - Callback de progresso em bytes.
-   * @param {string} [expectedDigest] - Digest esperado no formato "sha256:abcdef..." (opcional).
-   * @returns {Promise<{path: string, size: number}>}
+   * @param {string|null} [expectedDigest] - Digest "sha256:abcdef..." (opcional; ver acima).
+   * @param {string|null} [installerUrl] - URL do instalador da release já consultada (opcional).
+   * @returns {Promise<{path: string, size: number, sha256: string}>}
    */
-  async downloadLatestInstaller(destPath, onProgress, expectedDigest) {
-    const url = await this.getLatestInstallerUrl();
+  async downloadLatestInstaller(destPath, onProgress, expectedDigest = null, installerUrl = null) {
+    let url = installerUrl || null;
+    let digest = expectedDigest || null;
+
+    if (!url) {
+      const release = await this._getLatestRelease();
+      url = this._findInstallerUrl(release);
+      if (!digest) digest = this._findInstallerDigest(release);
+    }
     if (!url) {
       throw new Error('Nenhum instalador (.exe) encontrado na release mais recente.');
     }
+
     const result = await this._downloadFile(url, destPath, onProgress);
 
-    // Verificação de integridade SHA-256 (quando digest disponível).
-    if (expectedDigest) {
-      const valid = this._verifyFileDigest(result.path, expectedDigest);
-      if (!valid) {
+    if (digest) {
+      const check = await this._checkDigest(result, digest);
+      if (!check.ok) {
         try { fs.rmSync(result.path, { force: true }); } catch (_) { /* noop */ }
-        throw new Error('Integridade do instalador verificada com falha (SHA-256 não corresponde). O arquivo foi removido por segurança.');
+        if (check.invalid) {
+          throw new Error(
+            'Integridade do instalador não pôde ser verificada: o digest publicado na release está em formato ou algoritmo não suportado. ' +
+            'O arquivo foi removido por segurança. Baixe o instalador manualmente pela página da release.'
+          );
+        }
+        throw new Error(
+          'Integridade do instalador verificada com falha: o SHA-256 do arquivo baixado ' +
+          `(${String(check.actual).slice(0, 12)}…) é diferente do publicado na release (${String(check.expected).slice(0, 12)}…). ` +
+          'O arquivo foi removido por segurança. Tente novamente; se persistir, baixe o instalador manualmente pela página da release.'
+        );
       }
+      result.verified = true;
+    } else {
+      // Política existente: release sem digest (anterior ao suporte da GitHub API) ainda pode ser
+      // instalada, mas o chamador é informado via `verified:false` (updateService expõe digestVerified).
+      result.verified = false;
+      logger.warn('AppUpdateChecker:download:no_digest', { url: safeUrl(url) });
     }
 
     return result;
@@ -179,7 +216,8 @@ class AppUpdateChecker {
     const timeoutMs = opts.timeoutMs || 180000;
 
     return new Promise((resolve) => {
-      logger.info('AppUpdateChecker:installSilently:start', { installerPath, args });
+      // Não registra o caminho completo (contém o diretório do usuário) nem os argumentos.
+      logger.info('AppUpdateChecker:installSilently:start', { installer: path.basename(String(installerPath)), argCount: args.length });
       let child;
       try {
         child = spawn(installerPath, args, { windowsHide: true, detached: false });
@@ -192,9 +230,11 @@ class AppUpdateChecker {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        try { child.kill(); } catch (_) { /* noop */ }
-        logger.warn('AppUpdateChecker:installSilently:timeout');
-        resolve({ success: false, exitCode: null, timedOut: true });
+        // Mata a árvore inteira (o instalador NSIS pode ter filhos) e só então resolve.
+        processRunner.cancel(child).then(() => {
+          logger.warn('AppUpdateChecker:installSilently:timeout');
+          resolve({ success: false, exitCode: null, timedOut: true });
+        });
       }, timeoutMs);
 
       child.on('error', (err) => {
@@ -222,81 +262,70 @@ class AppUpdateChecker {
   }
 
   /**
-   * Baixa um arquivo da internet para dest, seguindo redirects e reportando progresso.
-   * @returns {Promise<{path: string, size: number}>}
+   * Baixa um arquivo para dest via FileDownloader (redirecionamentos absolutos/relativos, máx. 5,
+   * https->http bloqueado, SHA-256 calculado durante o download, tamanho conferido). Rejeita —
+   * sem deixar arquivo parcial — em: HTTP != 200, laço de redirecionamento, timeout, conexão
+   * encerrada antes do fim e tamanho diferente do Content-Length.
+   * Instaladores não retomam parciais de execuções anteriores (poderiam ser de outra versão).
+   * @returns {Promise<{path: string, size: number, sha256: string}>}
    */
-  _downloadFile(url, dest, onProgress) {
-    return new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(dest);
-      let received = 0;
-      let total = 0;
-
-      const cleanup = () => {
-        try { file.close(); } catch (_) { /* noop */ }
-        try { fs.rmSync(dest, { force: true }); } catch (_) { /* noop */ }
-      };
-
-      const doGet = (targetUrl) => {
-        const client = targetUrl.startsWith('http://') ? http : https;
-        const req = client.get(targetUrl, { headers: { 'User-Agent': 'BDS-AppUpdateChecker' }, timeout: 30000 }, (res) => {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            res.resume();
-            file.close();
-            fs.rmSync(dest, { force: true });
-            return doGet(res.headers.location);
-          }
-          if (res.statusCode !== 200) {
-            res.resume();
-            cleanup();
-            return reject(new Error(`HTTP ${res.statusCode} ao baixar instalador.`));
-          }
-          total = parseInt(res.headers['content-length'] || '0', 10);
-          received = 0;
-          res.on('data', (chunk) => {
-            received += chunk.length;
-            if (onProgress) onProgress(received, total);
-          });
-          res.pipe(file);
-        });
-
-        req.on('timeout', () => req.destroy(new Error('Timeout ao baixar instalador.')));
-        req.on('error', (err) => { cleanup(); reject(err); });
-      };
-
-      file.on('finish', () => {
-        file.close(() => resolve({ path: dest, size: received }));
+  async _downloadFile(url, dest, onProgress) {
+    try { fs.rmSync(`${dest}.part`, { force: true }); } catch (_) { /* noop */ }
+    try {
+      return await downloadFile({
+        url,
+        dest,
+        userAgent: 'BDS-AppUpdateChecker',
+        attempts: 2,
+        backoffMs: 500,
+        onProgress: onProgress ? (p) => onProgress(p.receivedBytes, p.totalBytes) : null
       });
-      file.on('error', (err) => { cleanup(); reject(err); });
-
-      doGet(url);
-    });
+    } catch (err) {
+      try { fs.rmSync(`${dest}.part`, { force: true }); } catch (_) { /* noop */ }
+      try { fs.rmSync(dest, { force: true }); } catch (_) { /* noop */ }
+      throw err;
+    }
   }
 
   /**
-   * Verifica a integridade de um arquivo calculando seu SHA-256 e comparando com o digest
-   * esperado. Formato do digest: "sha256:abcdef..." (conforme GitHub API).
-   * @param {string} filePath - Caminho do arquivo a verificar.
-   * @param {string} expectedDigest - Digest esperado (ex: "sha256:e3b0c44298fc...").
-   * @returns {boolean} true se o digest corresponder, false caso contrário.
+   * Confere o digest "algoritmo:hex" publicado pela release. Para sha256 usa o hash já
+   * calculado durante o download; sha384/sha512 são calculados lendo o arquivo em fluxo.
+   *
+   * Formato inválido ou algoritmo desconhecido/fraco => ok:false com `invalid:true` (o chamador
+   * rejeita o instalador). A ausência total de digest é tratada fora daqui (ver
+   * downloadLatestInstaller: `verified:false`).
+   * @returns {Promise<{ok: boolean, invalid?: boolean, expected: string, actual: string}>}
    */
-  _verifyFileDigest(filePath, expectedDigest) {
+  async _checkDigest(result, expectedDigest) {
+    const raw = String(expectedDigest || '');
+    const sep = raw.indexOf(':');
+    const algorithm = sep > 0 ? raw.slice(0, sep).trim().toLowerCase() : '';
+    const expectedHash = sep > 0 ? raw.slice(sep + 1).trim() : '';
+    if (!algorithm || !/^[0-9a-fA-F]+$/.test(expectedHash) || !SUPPORTED_DIGESTS.has(algorithm)) {
+      logger.warn('AppUpdateChecker:verifyDigest:invalid_format', { algorithm: algorithm || null });
+      return { ok: false, invalid: true, expected: '', actual: '' };
+    }
+    let actual;
     try {
-      const [algorithm, expectedHash] = expectedDigest.split(':');
-      if (!algorithm || !expectedHash) {
-        logger.warn('AppUpdateChecker:verifyDigest:invalid_format', { expectedDigest });
-        return false;
-      }
-      const data = fs.readFileSync(filePath);
-      const actualHash = createHash(algorithm).update(data).digest('hex');
-      const match = actualHash.toLowerCase() === expectedHash.toLowerCase();
-      if (!match) {
-        logger.error('AppUpdateChecker:verifyDigest:mismatch', { algorithm, expectedHash, actualHash });
-      }
-      return match;
+      actual = algorithm === 'sha256' ? result.sha256 : await this._hashFile(result.path, algorithm);
     } catch (err) {
       logger.error('AppUpdateChecker:verifyDigest:error', { error: err.message });
-      return false;
+      return { ok: false, expected: expectedHash, actual: 'indisponível' };
     }
+    const ok = actual.toLowerCase() === expectedHash.toLowerCase();
+    if (!ok) logger.error('AppUpdateChecker:verifyDigest:mismatch', { algorithm, expectedHash, actualHash: actual });
+    return { ok, expected: expectedHash, actual };
+  }
+
+  /** Hash de um arquivo lido em fluxo (não carrega o arquivo inteiro na memória). */
+  _hashFile(filePath, algorithm) {
+    return new Promise((resolve, reject) => {
+      const hash = createHash(algorithm);
+      fs.createReadStream(filePath)
+        .on('data', (chunk) => hash.update(chunk))
+        .on('error', reject)
+        .on('end', () => resolve(hash.digest('hex')));
+    });
   }
 
   /** Comparação simples de versionamento semântico (major.minor.patch). */
@@ -315,37 +344,9 @@ class AppUpdateChecker {
     return { hasUpdate: false, currentVersion, latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null, installerDigest: null };
   }
 
+  /** GET de JSON (GitHub API) via FileDownloader.fetchJson: redirecionamentos limitados, https->http bloqueado. */
   _fetchJson(urlString) {
-    return new Promise((resolve, reject) => {
-      const req = https.get(
-        urlString,
-        { headers: { 'User-Agent': 'BDS-AppUpdateChecker' }, timeout: 8000 },
-        (res) => {
-          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            res.resume();
-            return this._fetchJson(res.headers.location).then(resolve, reject);
-          }
-          if (res.statusCode !== 200) {
-            res.resume();
-            return reject(new Error(`GitHub API respondeu com status ${res.statusCode} para ${urlString}`));
-          }
-
-          let raw = '';
-          res.setEncoding('utf8');
-          res.on('data', (chunk) => { raw += chunk; });
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(raw));
-            } catch (err) {
-              reject(new Error(`Resposta inválida (não é JSON) da GitHub API: ${err.message}`));
-            }
-          });
-        }
-      );
-
-      req.on('timeout', () => req.destroy(new Error(`Timeout ao consultar GitHub API (${urlString})`)));
-      req.on('error', reject);
-    });
+    return fetchJson(urlString, { timeoutMs: 8000, userAgent: 'BDS-AppUpdateChecker' });
   }
 }
 

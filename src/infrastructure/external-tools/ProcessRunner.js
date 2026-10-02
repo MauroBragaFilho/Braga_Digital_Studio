@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { spawn } = require('node:child_process');
 
@@ -29,50 +29,89 @@ class ProcessRunner {
   }
 
   /**
-   * Cancela um processo em execução de forma multiplataforma.
+   * Cancela um processo (e sua árvore de filhos) de forma multiplataforma.
    *
-   * @param {import('child_process').ChildProcess|number} childOrPid - Processo ou PID a cancelar
+   * Devolve uma Promise que resolve quando o processo realmente terminou ('exit'/'close'),
+   * ou quando o PID não existe mais. Nunca rejeita. Quando recebe só o PID não há como
+   * observar o término: resolve ao final do taskkill/kill.
+   *
+   * Windows: taskkill /PID <pid> /T /F; se falhar (código != 0, exceto 128 = processo
+   * já inexistente), registra e cai para child.kill().
+   * Linux/macOS: SIGTERM e SIGKILL após 3s.
+   *
+   * @param {import('child_process').ChildProcess|number} childOrPid
+   * @param {{ waitMs?: number }} [opts] waitMs: espera máxima pelo término (padrão 8000)
+   * @returns {Promise<void>}
    */
-  cancel(childOrPid) {
-    if (!childOrPid) return;
+  cancel(childOrPid, opts = {}) {
+    if (!childOrPid) return Promise.resolve();
+    const waitMs = opts.waitMs || 8000;
 
     let pid = null;
-    let childProcess = null;
-
+    let child = null;
     if (typeof childOrPid === 'number') {
       pid = childOrPid;
     } else if (typeof childOrPid === 'object') {
-      if (childOrPid.exitCode !== null) return;
+      // exitCode OU signalCode preenchidos indicam que o processo já terminou
+      if (childOrPid.exitCode !== null && childOrPid.exitCode !== undefined) return Promise.resolve();
+      if (childOrPid.signalCode) return Promise.resolve();
       pid = childOrPid.pid;
-      childProcess = childOrPid;
+      child = childOrPid;
     }
+    if (!pid) return Promise.resolve();
 
-    if (!pid) return;
+    // Promessa de término observável (apenas quando temos o ChildProcess)
+    const exited = child
+      ? new Promise((resolve) => {
+        const done = () => resolve();
+        child.once('exit', done);
+        child.once('close', done);
+        const t = setTimeout(done, waitMs);
+        if (t.unref) t.unref();
+      })
+      : null;
 
-    if (process.platform === 'win32') {
-      // No Windows, taskkill com /T encerra processo e todos os filhos
-      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
-      killer.on('error', () => {}); // Ignorar erros silenciosamente
-    } else {
-      // Linux/macOS: SIGTERM primeiro, SIGKILL como fallback após 3s
+    const fallbackKill = (signal) => {
       try {
-        if (childProcess && typeof childProcess.kill === 'function') {
-          childProcess.kill('SIGTERM');
-        } else {
-          process.kill(pid, 'SIGTERM');
+        if (child && typeof child.kill === 'function') child.kill(signal);
+        else process.kill(pid, signal);
+      } catch (_) { /* processo já terminou */ }
+    };
+
+    const killed = new Promise((resolve) => {
+      if (process.platform === 'win32') {
+        let killer;
+        try {
+          killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+        } catch (_) {
+          fallbackKill();
+          return resolve();
         }
-        const timeout = setTimeout(() => {
-          try {
-            if (childProcess && typeof childProcess.kill === 'function') {
-              childProcess.kill('SIGKILL');
-            } else {
-              process.kill(pid, 'SIGKILL');
-            }
-          } catch (_) {}
-        }, 3000);
+        killer.on('error', () => { fallbackKill(); resolve(); });
+        killer.on('close', (code) => {
+          if (code !== 0 && code !== 128) {
+            this._log('warn', 'ProcessRunner:taskkill:nonzero', { pid, code });
+            fallbackKill();
+          }
+          resolve();
+        });
+      } else {
+        fallbackKill('SIGTERM');
+        const timeout = setTimeout(() => fallbackKill('SIGKILL'), 3000);
         if (timeout.unref) timeout.unref();
-      } catch (_) {}
-    }
+        if (child) child.once('exit', () => clearTimeout(timeout));
+        resolve();
+      }
+    });
+
+    return killed.then(() => exited).catch(() => {});
+  }
+
+  _log(level, msg, meta) {
+    try {
+      // require tardio: evita dependência circular/carga do winston em quem só usa o runner
+      require('../../services/logService')[level](msg, meta);
+    } catch (_) { /* noop */ }
   }
 }
 

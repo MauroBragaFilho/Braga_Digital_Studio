@@ -1,4 +1,7 @@
 import { mediaPreviewSystem } from './components/preview/MediaPreviewSystem.js';
+import { escapeHtml } from './utils/escape.js';
+import { maskEngineNames } from './utils/engineNames.js';
+import { t } from './strings.js';
 import { initSliderSync } from './slider-sync.js';
 
 // Expõe openPreview e mediaPreviewSystem globalmente
@@ -20,7 +23,7 @@ export const state = {
 export let els = {};
 
 export function setAppStatus(text, type = 'success') {
-  if (els.stateText) els.stateText.textContent = text;
+  if (els.stateText) els.stateText.textContent = maskEngineNames(text);
   if (els.stateDot) {
     els.stateDot.className = 'state-dot';
     if (type) {
@@ -74,16 +77,11 @@ function updateDOMReferences() {
 
 // Atalho global para o status que os submódulos podem usar
 export function setStatus(text) {
-  if (els.statusText) els.statusText.textContent = text;
+  if (els.statusText) els.statusText.textContent = maskEngineNames(text);
 }
 
-// Função utilitária exportada para higienizar strings contra XSS nos submódulos
-export function escapeHtml(value) {
-  if (value == null) return '';
-  return String(value).replace(/[&<>'"]/g, 
-    match => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[match])
-  );
-}
+// Reexporta o utilitário único de escape
+export { escapeHtml };
 
 /* ==========================================================================
    SISTEMA DE TEMAS
@@ -144,6 +142,8 @@ export function applyAccentColor(hex) {
  */
 export function applyUiPreferences(settings = {}) {
   document.documentElement.classList.toggle('reduce-motion', settings.reduceMotion === true);
+  // Só reordena quando a preferência veio no objeto (prévias parciais, como { reduceMotion }, não mexem no menu)
+  if (Array.isArray(settings.sidebarOrder)) applySidebarOrder(settings.sidebarOrder);
 }
 
 export function applyTheme(theme = 'dark', accentColor = '#e53935') {
@@ -166,22 +166,93 @@ function getTabLabel(btn) {
   return clone.textContent.trim();
 }
 
-let _sidebarTooltipTitles = null; // guarda títulos originais (evita sobrescrever títulos manuais)
-let _sidebarLabels = null;        // labels gerados automaticamente (para detectar títulos manuais)
+/* ==========================================================================
+   ORDEM DO MENU LATERAL + ATALHOS Ctrl+1..9
+   A Home é sempre a 1ª aba. As demais seguem a ordem escolhida em Configurações
+   (settings.sidebarOrder); telas fora da lista ficam depois, na ordem original.
+   Ctrl+N abre a N-ésima aba VISÍVEL (abas ocultas, ex.: só de desenvolvimento, não contam).
+   ========================================================================== */
+
+const MAX_TAB_SHORTCUTS = 9;
+let _defaultTabOrder = null;
+
+function getTabButtons() {
+  return [...document.querySelectorAll('.sidebar .tabs .tab-button')];
+}
+
+function isTabVisible(btn) {
+  return !btn.classList.contains('hidden') && btn.style.display !== 'none';
+}
+
+/** Ordem original das abas (a do index.html), capturada uma única vez antes de qualquer reordenação. */
+export function getDefaultTabOrder() {
+  if (!_defaultTabOrder) _defaultTabOrder = getTabButtons().map(b => b.getAttribute('data-view'));
+  return [..._defaultTabOrder];
+}
+
+/** Abas visíveis, na ordem atual do menu: [{ view, label, icon }]. */
+export function getVisibleSidebarTabs() {
+  return getTabButtons().filter(isTabVisible).map(b => ({
+    view: b.getAttribute('data-view'),
+    label: getTabLabel(b),
+    icon: b.querySelector('.material-symbols-rounded')?.textContent?.trim() || 'circle'
+  }));
+}
+
+/** Rótulo do atalho de uma aba pela posição entre as visíveis (1 = Home), ou '' se não houver. */
+export function tabShortcutLabel(position) {
+  return position >= 1 && position <= MAX_TAB_SHORTCUTS ? `Ctrl+${position}` : '';
+}
+
+function isSidebarCollapsed() {
+  return document.querySelector('.sidebar')?.classList.contains('collapsed') === true;
+}
+
+/** Dica de cada aba: "Nome (Ctrl+N)" no menu recolhido, só "Ctrl+N" no expandido. */
+function refreshTabTooltips() {
+  const collapsed = isSidebarCollapsed();
+  getTabButtons().forEach(btn => {
+    const shortcut = btn.getAttribute('data-shortcut') || '';
+    btn.title = collapsed
+      ? (shortcut ? `${getTabLabel(btn)} (${shortcut})` : getTabLabel(btn))
+      : shortcut;
+  });
+}
+
+/** Recalcula os atalhos conforme a ordem e a visibilidade atuais das abas. */
+export function updateTabShortcuts() {
+  let position = 0;
+  getTabButtons().forEach(btn => {
+    const label = isTabVisible(btn) ? tabShortcutLabel(++position) : '';
+    if (label) {
+      btn.setAttribute('data-shortcut', label);
+      btn.setAttribute('aria-keyshortcuts', `Control+${position}`);
+    } else {
+      btn.removeAttribute('data-shortcut');
+      btn.removeAttribute('aria-keyshortcuts');
+    }
+  });
+  refreshTabTooltips();
+}
 
 /**
- * Labels de tela gerados automaticamente (Home, Downloads, ...).
- * Usado para não sobrescrever títulos manuais com valores derivados.
- * @returns {Set<string>}
+ * Reordena as abas do menu lateral.
+ * @param {string[]} [order] — ids de tela na ordem desejada (a Home é ignorada: fica sempre primeiro)
  */
-function getSidebarTitlesLabels() {
-  if (!_sidebarLabels) {
-    _sidebarLabels = new Set();
-    document.querySelectorAll('.sidebar .tab-button').forEach(b => {
-      _sidebarLabels.add(getTabLabel(b));
-    });
-  }
-  return _sidebarLabels;
+export function applySidebarOrder(order) {
+  const nav = document.querySelector('.sidebar .tabs');
+  if (!nav) return;
+  const known = getDefaultTabOrder();
+  const wanted = (Array.isArray(order) ? order : []).filter(v => typeof v === 'string' && v !== 'home' && known.includes(v));
+  const byView = new Map(getTabButtons().map(b => [b.getAttribute('data-view'), b]));
+  const seen = new Set();
+  ['home', ...wanted, ...known].forEach(view => {
+    if (seen.has(view)) return;
+    seen.add(view);
+    const btn = byView.get(view);
+    if (btn) nav.appendChild(btn); // mover o mesmo elemento preserva os listeners de clique
+  });
+  updateTabShortcuts();
 }
 
 // Abaixo deste valor a sidebar vira barra inferior e deve colapsar automaticamente
@@ -206,18 +277,8 @@ function applySidebarCollapsed(collapsed) {
   const brand = document.querySelector('.sidebar .brand');
   if (brand) brand.title = collapsed ? 'Expandir menu' : '';
 
-  // Tooltips com o nome da tela quando colapsada (sem perda de títulos manuais)
-  document.querySelectorAll('.sidebar .tab-button').forEach(btn => {
-    if (!_sidebarTooltipTitles) _sidebarTooltipTitles = new Map();
-    if (!_sidebarTooltipTitles.has(btn)) {
-      // Primeira vez: captura o título original (vazio ou manual)
-      _sidebarTooltipTitles.set(btn, btn.title);
-    } else if (collapsed && !getSidebarTitlesLabels().has(btn.title)) {
-      // Título manual definido depois da primeira colapsagem: atualiza o registro
-      _sidebarTooltipTitles.set(btn, btn.title);
-    }
-    btn.title = collapsed ? getTabLabel(btn) : (_sidebarTooltipTitles.get(btn) || '');
-  });
+  // Tooltips: nome da tela + atalho quando colapsada; só o atalho quando expandida
+  refreshTabTooltips();
 }
 
 // --- MODAL GLOBAL BDS ---
@@ -244,8 +305,8 @@ window.bdsModal = {
     return new Promise((resolve) => {
       if (!this._modal) this.init();
 
-      this._title.textContent = title;
-      this._message.innerHTML = String(message).replace(/\n/g, '<br/>');
+      this._title.textContent = maskEngineNames(title);
+      this._message.innerHTML = escapeHtml(maskEngineNames(message)).replace(/\n/g, '<br/>');
       
       this._icon.textContent = (isConfirm || isPrompt) ? 'help' : 'info';
       this._icon.style.color = (isConfirm || isPrompt) ? '#ffb300' : 'var(--accent)'; 
@@ -270,6 +331,7 @@ window.bdsModal = {
         this._btnConfirm.removeEventListener('click', onConfirm);
         this._btnCancel.removeEventListener('click', onCancel);
         if (this._input) this._input.removeEventListener('keydown', onKeyDown);
+        this._modal.removeEventListener('cancel', onNativeCancel);
         this._modal.close();
       };
 
@@ -280,6 +342,9 @@ window.bdsModal = {
         if (e.key === 'Escape') onCancel();
       };
 
+      // Esc nativo do <dialog>: resolve a promise como cancelamento (evita promise pendente)
+      const onNativeCancel = (e) => { e.preventDefault(); onCancel(); };
+      this._modal.addEventListener('cancel', onNativeCancel);
       this._btnConfirm.addEventListener('click', onConfirm);
       this._btnCancel.addEventListener('click', onCancel);
       if (isPrompt && this._input) {
@@ -315,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recuperação e Montagem Automática ainda estão em otimização; ficam disponíveis apenas
   // quando o BDS roda a partir do código-fonte (não empacotado). Assume-se "empacotado" por
   // padrão (fail-safe) até a checagem real do processo principal responder.
-  const DEV_ONLY_SCREENS = ['recovery', 'montage', 'ai'];
+  const DEV_ONLY_SCREENS = ['recovery', 'montage', 'ai', 'modules'];
   let isPackagedApp = true;
 
   function applyDevOnlyVisibility() {
@@ -330,7 +395,10 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.style.display = '';
       }
     });
+    updateTabShortcuts(); // abas ocultas não ocupam número de atalho
   }
+
+  getDefaultTabOrder(); // captura a ordem original do menu antes de qualquer reordenação
 
   applyDevOnlyVisibility(); // aplica o estado fail-safe (oculto) imediatamente
 
@@ -353,6 +421,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('[APP] Erro inesperado ao checar isPackaged:', err);
   }
 
+  let activeModule = null;
+  let activeModuleName = null;
+
   async function loadScreen(screenName) {
     // Defesa extra: mesmo que a aba tenha sido acionada por outro caminho (não pelo clique
     // visível do botão), builds empacotadas nunca carregam os módulos restritos.
@@ -360,16 +431,24 @@ document.addEventListener('DOMContentLoaded', () => {
       screenName = 'home';
     }
 
+    // Remove bloco de erro anterior (se houver)
+    contentContainer.querySelectorAll('.screen-error').forEach(n => n.remove());
+
     try {
-      // Notifica a tela ativa anterior para limpar listeners/menus temporários
+      // Notifica a tela ativa anterior (módulo guardado em activeModule) para limpar listeners/timers
       const prevActive = contentContainer.querySelector('.view.active');
       if (prevActive) {
         const prevName = (prevActive.id || '').replace(/View$/, '');
         if (prevName && prevName !== screenName) {
           try {
-            const prevModule = await import(`./screens/${prevName}.js`);
-            if (typeof prevModule.onLeave === 'function') prevModule.onLeave();
-          } catch (_) {}
+            if (activeModule && activeModuleName === prevName && typeof activeModule.onLeave === 'function') {
+              await activeModule.onLeave();
+            }
+          } catch (leaveErr) {
+            console.error(`[APP] Erro em onLeave de "${prevName}":`, leaveErr);
+          }
+          activeModule = null;
+          activeModuleName = null;
         }
       }
 
@@ -383,29 +462,27 @@ document.addEventListener('DOMContentLoaded', () => {
       let viewSection = document.getElementById(`${screenName}View`);
 
       if (!viewSection) {
-        // 0. INJEÇÃO DINÂMICA DE CSS MODULAR (Lazy Loading)
+        // 0. INJEÇÃO DINÂMICA DE CSS MODULAR (Lazy Loading) — aguarda load/error para evitar FOUC
         const cssId = `css-modular-${screenName}`;
+        let cssPromise = Promise.resolve();
         if (!document.getElementById(cssId)) {
-          try {
-            // Verifica se o arquivo CSS existe antes de injetar para evitar erros 404 no console
-            const cssCheck = await fetch(`./screens/${screenName}.css`, { method: 'HEAD' });
-            if (cssCheck.ok) {
-              const link = document.createElement('link');
-              link.id = cssId;
-              link.rel = 'stylesheet';
-              link.href = `./screens/${screenName}.css`;
-              document.head.appendChild(link);
-            }
-          } catch (e) {
-            // CSS não existe ou falha de rede, ignora silenciosamente
-          }
+          const link = document.createElement('link');
+          link.id = cssId;
+          link.rel = 'stylesheet';
+          link.href = `./screens/${screenName}.css`;
+          cssPromise = new Promise((resolve) => {
+            link.addEventListener('load', resolve, { once: true });
+            link.addEventListener('error', () => { link.remove(); resolve(); }, { once: true }); // tela sem CSS dedicado
+            setTimeout(resolve, 3000); // não trava a navegação
+          });
+          document.head.appendChild(link);
         }
 
         // 1. Carrega o HTML da tela solicitada (apenas na primeira vez)
-        const response = await fetch(`./screens/${screenName}.html`);
+        const [response] = await Promise.all([fetch(`./screens/${screenName}.html`), cssPromise]);
         if (!response.ok) throw new Error(`Não foi possível carregar a tela: ${screenName}`);
         const htmlContent = await response.text();
-        
+
         viewSection = document.createElement('section');
         viewSection.id = `${screenName}View`;
         viewSection.className = 'view active';
@@ -418,13 +495,19 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. Importa dinamicamente o arquivo JS da tela correspondente e inicializa
         try {
           const screenModule = await import(`./screens/${screenName}.js`);
+          activeModule = screenModule;
+          activeModuleName = screenName;
           if (screenModule.initScreen) {
             screenModule.initScreen();
           }
         } catch (jsError) {
           console.log(`A tela ${screenName} não possui um arquivo JS dedicado ou ele falhou.`, jsError);
           if (screenName === 'home') {
-            viewSection.innerHTML = `<p style="padding: 20px; color: red;">Erro de import: ${jsError.message} <br/> ${jsError.stack}</p>`;
+            viewSection.innerHTML = '';
+            const p = document.createElement('p');
+            p.style.cssText = 'padding: 20px; color: var(--danger, red);';
+            p.textContent = `Erro de import: ${jsError.message}`;
+            viewSection.appendChild(p);
           }
         }
       } else {
@@ -432,18 +515,55 @@ document.addEventListener('DOMContentLoaded', () => {
         viewSection.classList.add('active');
         viewSection.classList.remove('hidden');
         updateDOMReferences();
-        
-        // Em telas dinâmicas como biblioteca, disparar um refresh passivo
-        if (screenName === 'library') {
-          import('./screens/library.js').then(m => m.fetchMedia && m.fetchMedia()).catch(() => {});
-        }
+
+        try {
+          const screenModule = await import(`./screens/${screenName}.js`);
+          activeModule = screenModule;
+          activeModuleName = screenName;
+          // Re-registra listeners globais removidos em onLeave e atualiza dados se necessário
+          if (typeof screenModule.onEnter === 'function') await screenModule.onEnter();
+        } catch (_) { /* tela sem JS dedicado */ }
       }
 
     } catch (error) {
-      console.error('Erro ao modularizar a tela:', error);
-      contentContainer.innerHTML = `<p style="padding: 20px; color: red;">Erro ao carregar a página.</p>`;
+      console.error('Erro ao carregar a tela:', error);
+      contentContainer.querySelectorAll('.view').forEach(v => { v.classList.remove('active'); v.classList.add('hidden'); });
+      const box = document.createElement('div');
+      box.className = 'view active screen-error';
+      box.setAttribute('role', 'alert');
+      box.style.cssText = 'padding:40px;text-align:center;';
+      const msg = document.createElement('p');
+      msg.style.color = 'var(--danger, #ff6b63)';
+      msg.textContent = t('screen.loadError');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'bds-btn-secondary';
+      btn.textContent = t('common.retry');
+      btn.addEventListener('click', () => { box.remove(); loadScreen(screenName); });
+      box.append(msg, btn);
+      contentContainer.appendChild(box);
     }
   }
+
+  window.bdsLoadScreen = loadScreen;
+
+  // Ctrl+1..9: abre a tela na posição correspondente do menu lateral (1 = Home).
+  // Vale também dentro de campos de texto (Ctrl+número não digita nada) e é ignorado com um diálogo aberto.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
+    if (document.querySelector('dialog[open]')) return;
+    const btn = getTabButtons().filter(isTabVisible)[Number(e.key) - 1];
+    if (!btn) return;
+    e.preventDefault();
+    btn.click();
+  });
+
+  // Despachante central de teclado: roteia keydown para screen.onKeyDown(e) da tela ativa
+  document.addEventListener('keydown', (e) => {
+    if (activeModule && typeof activeModule.onKeyDown === 'function') {
+      try { activeModule.onKeyDown(e); } catch (err) { console.error('[APP] Erro em onKeyDown:', err); }
+    }
+  });
 
   // Storage Polling
   const storageIndicators = document.getElementById('storageIndicators');
@@ -473,14 +593,14 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="storage-indicator">
                 <div class="storage-header">
                   <span class="storage-name">Computador</span>
-                  <span class="storage-percent">${info.pc.percent}% ocupado</span>
+                  <span class="storage-percent">${escapeHtml(info.pc.percent)}% ocupado</span>
                 </div>
                 <div class="storage-bar">
                   <div class="storage-fill ${isCritical ? 'critical' : ''}" style="width: ${info.pc.percent}%"></div>
                 </div>
                 <div class="storage-footer">
-                  <span>${info.pc.free} livres</span>
-                  <span>${info.pc.total}</span>
+                  <span>${escapeHtml(info.pc.free)} livres</span>
+                  <span>${escapeHtml(info.pc.total)}</span>
                 </div>
               </div>
             `;
@@ -491,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
           storageIndicators.innerHTML = html;
           storageIndicators.classList.add('active');
         } catch(e) {
-          storageIndicators.innerHTML = `<span style="color:red">Erro IPC: ${e.message}</span>`;
+          storageIndicators.innerHTML = `<span style="color:red">Erro IPC: ${escapeHtml(e.message)}</span>`;
           storageIndicators.classList.add('active');
         }
       };
@@ -931,7 +1051,7 @@ window.bds?.onConverterFileFinished?.((data) => {
     if (result && result.hasUpdates) {
       if (badge) badge.classList.remove('hidden');
       window.bdsModal?.alert?.(
-        'Há atualizações disponíveis para o BDS (aplicativo e/ou componentes internos como yt-dlp/FFmpeg). ' +
+        'Há atualizações disponíveis para o BDS (aplicativo e/ou componentes internos). ' +
         'Abra Configurações → Atualizações para instalar.'
       );
     } else if (badge) {

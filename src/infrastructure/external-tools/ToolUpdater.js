@@ -2,13 +2,14 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const https = require('node:https');
-const http = require('node:http');
-const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { getExecutableName, resolveCanonicalToolKey } = require('./ToolManifest');
 const { toolResolver } = require('./ToolResolver');
 const logger = require('../../services/logService');
+const { downloadFile, sha256File, fetchJson } = require('../../core/modules/FileDownloader');
+const { extractZip, assertSafeEntries, captureOutput } = require('../../core/modules/ZipExtractor');
+const { toolRunner } = require('./ToolRunner');
+const { processRunner } = require('./ProcessRunner');
 
 const BACKUPS_DIRNAME = '.component-backups';
 const MANIFEST_DIRNAME = '.component-manifests';
@@ -44,14 +45,12 @@ class ToolUpdater {
   }
 
   /**
-   * Calcula o hash SHA-256 de um arquivo (usado para verificação de integridade e detecção
-   * de corrupção após cópia/download).
+   * Calcula o hash SHA-256 de um arquivo em fluxo (usado para verificação de integridade e
+   * detecção de corrupção após cópia/download). Não carrega o arquivo inteiro na memória.
+   * @returns {Promise<string>}
    */
   _computeSha256(filePath) {
-    const hash = crypto.createHash('sha256');
-    const data = fs.readFileSync(filePath);
-    hash.update(data);
-    return hash.digest('hex');
+    return sha256File(filePath);
   }
 
   /**
@@ -159,14 +158,14 @@ class ToolUpdater {
    * @param {string} rawToolKey
    * @param {object} manifestEntry - { version, sha256, url }
    */
-  checkAgainstManifest(rawToolKey, manifestEntry) {
+  async checkAgainstManifest(rawToolKey, manifestEntry) {
     const toolKey = resolveCanonicalToolKey(rawToolKey);
     const exeName = getExecutableName(toolKey);
     const target = path.join(this._toolsDir, exeName);
     const isInstalled = fs.existsSync(target);
     const localManifest = this._readManifest(toolKey);
 
-    const installedSha256 = isInstalled ? this._computeSha256(target) : null;
+    const installedSha256 = isInstalled ? await this._computeSha256(target) : null;
     const needsUpdate = !isInstalled || !manifestEntry?.sha256 || installedSha256 !== manifestEntry.sha256;
 
     return {
@@ -240,8 +239,14 @@ class ToolUpdater {
   /**
    * Executa atualização atômica de um componente interno com staging, smoke-test e rollback,
    * a partir de uma release do GitHub.
+   *
+   * Se a fonte não publica checksum, NÃO instala: devolve `{ needsConfirmation: true, reason: 'NO_CHECKSUM' }`.
+   * Reexecute com `opts.allowUnverified = true` após confirmação explícita do usuário.
+   * @param {string} rawToolKey
+   * @param {Function} [onProgress]
+   * @param {{ allowUnverified?: boolean }} [opts]
    */
-  async update(rawToolKey, onProgress) {
+  async update(rawToolKey, onProgress, opts = {}) {
     const toolKey = resolveCanonicalToolKey(rawToolKey);
 
     if (toolKey === 'ytdlp') {
@@ -296,7 +301,22 @@ class ToolUpdater {
     const expectedDigest = release ? this._findAssetDigest(release, downloadUrl) : null;
 
     if (!expectedDigest) {
-      logUpdater(`Aviso: fonte de ${toolKey} não publica checksum verificável (${repoInfo.useGitTags ? 'download de tag/código-fonte do Git' : 'release sem digest'}); integridade do download não verificada por hash.`);
+      const reason = repoInfo.useGitTags ? 'download de tag/código-fonte do Git' : 'release sem digest';
+      logUpdater(`Fonte de ${toolKey} não publica checksum verificável (${reason}).`);
+      if (!opts.allowUnverified) {
+        // Não instala em silêncio algo cuja integridade não pode ser verificada: devolve um
+        // estado que exige confirmação explícita (reexecutar com { allowUnverified: true }).
+        logger.warn('toolUpdater:update:needs_confirmation', { tool: toolKey, reason });
+        if (onProgress) onProgress(100);
+        return {
+          tool: toolKey,
+          needsConfirmation: true,
+          reason: 'NO_CHECKSUM',
+          version: latestTag,
+          message: `A fonte de ${toolKey} não publica checksum (SHA-256); a integridade do download não pode ser verificada. Confirme para instalar mesmo assim.`
+        };
+      }
+      logUpdater(`Instalação sem checksum de ${toolKey} confirmada explicitamente (allowUnverified).`);
     }
 
     const result = await this._stagedInstall({
@@ -368,7 +388,7 @@ class ToolUpdater {
 
     try {
       // 1. Download para Staging
-      await this._downloadFile(downloadUrl, downloadDest, (bytesReceived, totalBytes) => {
+      const downloaded = await this._downloadFile(downloadUrl, downloadDest, (bytesReceived, totalBytes) => {
         if (onProgress && totalBytes > 0) {
           onProgress(15 + Math.round((bytesReceived / totalBytes) * 55));
         }
@@ -376,7 +396,7 @@ class ToolUpdater {
 
       // 2. Verificação de checksum (SHA-256)
       if (expectedSha256) {
-        const gotDigest = this._computeSha256(downloadDest);
+        const gotDigest = downloaded.sha256;
         if (gotDigest.toLowerCase() !== expectedSha256.toLowerCase()) {
           throw new Error(`Falha de integridade: checksum do download não confere para ${exeName} (esperado ${expectedSha256.slice(0, 12)}..., obtido ${gotDigest.slice(0, 12)}...).`);
         }
@@ -450,7 +470,7 @@ class ToolUpdater {
       if (!testVersion && versionArgs.length > 0) {
         logUpdater(`Aviso de validação: smoke-test retornou vazio para ${stagedExe}`);
       }
-      const stagedSha256 = this._computeSha256(stagedExe);
+      const stagedSha256 = await this._computeSha256(stagedExe);
 
       // 5. Backup temporário da versão atual instalada (para rollback imediato em caso de falha na troca)
       if (fs.existsSync(target)) {
@@ -498,7 +518,7 @@ class ToolUpdater {
 
       // 7. Validação pós-instalação: confirma que a cópia final não foi corrompida e que o
       //    executável instalado (não apenas o staged) realmente executa.
-      const installedSha256 = this._computeSha256(target);
+      const installedSha256 = await this._computeSha256(target);
       const postSwapVersion = await this._getVersion(target, versionArgs);
       const copyIntact = installedSha256 === stagedSha256;
       const executes = versionArgs.length === 0 || Boolean(postSwapVersion);
@@ -693,7 +713,7 @@ class ToolUpdater {
         versionArgs: ['-h'],
         downloadUrl: (tag, platform) => {
           if (platform !== 'win32') {
-            throw new Error('Download automático do untrunc está disponível apenas para Windows nesta versão (o release do anthwlock/untrunc só publica binário pré-compilado para Windows). Recuperação de vídeo por enquanto é uma funcionalidade exclusiva do Windows.');
+            throw new Error('O download automático do motor de recuperação está disponível apenas para Windows nesta versão. A recuperação de vídeo, por enquanto, é uma funcionalidade exclusiva do Windows.');
           }
           // Releases do anthwlock/untrunc para Windows contêm untrunc_x64.zip
           return 'https://github.com/anthwlock/untrunc/releases/latest/download/untrunc_x64.zip';
@@ -741,16 +761,19 @@ class ToolUpdater {
     return config;
   }
 
+  /**
+   * Executa `<exe> <args>` (timeout de 10s; a árvore de processos é encerrada no estouro) e
+   * devolve a primeira linha da saída, ou null se falhar/não existir.
+   */
   async _getVersion(exe, args) {
-    return new Promise((resolve) => {
-      if (!fs.existsSync(exe)) return resolve(null);
-      const child = spawn(exe, args, { windowsHide: true });
-      let output = '';
-      child.stdout.on('data', (c) => { output += c.toString('utf8'); });
-      child.stderr.on('data', (c) => { output += c.toString('utf8'); });
-      child.on('error', () => resolve(null));
-      child.on('close', () => resolve(output.split(/\r?\n/)[0]?.trim() || null));
-    });
+    if (!fs.existsSync(exe)) return null;
+    try {
+      const r = await toolRunner.run(exe, args, { timeout: 10000 });
+      const output = `${r.stdout}${r.stderr}`;
+      return output.split(/\r?\n/)[0]?.trim() || null;
+    } catch (_) {
+      return null;
+    }
   }
 
   async _fetchLatestTag(owner, repo) {
@@ -794,45 +817,38 @@ class ToolUpdater {
     }
   }
 
+  /** GET de JSON da API do GitHub (redirecionamentos limitados; https->http bloqueado). */
   _requestJson(url) {
-    return new Promise((resolve, reject) => {
-      const req = https.get(url, {
-        headers: { 'User-Agent': 'BragaDigitalStudio/1.0', 'Accept': 'application/vnd.github+json' }
-      }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          resolve(this._requestJson(res.headers.location)); return;
-        }
-        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode} ao consultar ${url}`)); res.resume(); return; }
-        let data = '';
-        res.on('data', (c) => { data += c; });
-        res.on('end', () => { try { resolve(JSON.parse(data)); } catch (e) { reject(e); } });
-      });
-      req.on('error', reject);
-      req.setTimeout(20000, () => req.destroy(new Error('Timeout ao consultar atualização.')));
+    return fetchJson(url, {
+      timeoutMs: 20000,
+      userAgent: 'BragaDigitalStudio/1.0',
+      headers: { Accept: 'application/vnd.github+json' }
     });
   }
 
-  _downloadFile(url, dest, onProgress) {
-    return new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(dest);
-      const client = url.startsWith('http://') ? http : https;
-      const req = client.get(url, { headers: { 'User-Agent': 'BragaDigitalStudio/1.0' } }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          file.close(); fs.rmSync(dest, { force: true });
-          resolve(this._downloadFile(res.headers.location, dest, onProgress)); return;
-        }
-        if (res.statusCode !== 200) {
-          file.close(); fs.rmSync(dest, { force: true });
-          reject(new Error(`HTTP ${res.statusCode} ao baixar componente.`)); return;
-        }
-        const total = parseInt(res.headers['content-length'] || '0', 10);
-        let received = 0;
-        res.on('data', (chunk) => { received += chunk.length; if (onProgress) onProgress(received, total); });
-        res.pipe(file);
-        file.on('finish', () => file.close(resolve));
+  /**
+   * Baixa um arquivo para dest via FileDownloader (redirecionamentos absolutos/relativos, no
+   * máximo 5; https->http bloqueado; tentativas com retomada; SHA-256 calculado durante o
+   * download). Rejeita — sem deixar arquivo parcial — em: HTTP != 200, laço de redirecionamento,
+   * timeout, conexão encerrada antes do fim e tamanho diferente do Content-Length.
+   * @returns {Promise<{path: string, size: number, sha256: string}>}
+   */
+  async _downloadFile(url, dest, onProgress) {
+    try {
+      return await downloadFile({
+        url,
+        dest,
+        userAgent: 'BragaDigitalStudio/1.0',
+        attempts: 3,
+        backoffMs: 400,
+        onProgress: onProgress ? (p) => onProgress(p.receivedBytes, p.totalBytes) : null
       });
-      req.on('error', (err) => { file.close(); fs.rmSync(dest, { force: true }); reject(err); });
-    });
+    } catch (err) {
+      // Instalação de componente não retoma entre execuções: descarta o parcial.
+      try { fs.rmSync(`${dest}.part`, { force: true }); } catch (_) { /* noop */ }
+      try { fs.rmSync(dest, { force: true }); } catch (_) { /* noop */ }
+      throw err;
+    }
   }
 
   /**
@@ -859,48 +875,46 @@ class ToolUpdater {
   async _extractTar(tarPath, destination) {
     fs.mkdirSync(destination, { recursive: true });
 
+    // Proteção contra zip-slip: lista as entradas e rejeita qualquer uma fora do destino.
+    try {
+      const listing = await captureOutput('tar', ['-tf', tarPath]);
+      assertSafeEntries(listing.split('\n'), destination);
+    } catch (err) {
+      if (/inseguro/.test(err.message)) throw err;
+      throw new Error(`Comando 'tar' não disponível ou falhou ao validar o arquivo: ${err.message}. Em sistemas Linux mínimos/containers, instale o pacote 'tar' (geralmente já vem por padrão).`);
+    }
+
     return new Promise((resolve, reject) => {
-      const child = spawn('tar', ['-xf', tarPath, '-C', destination]);
+      const child = spawn('tar', ['-xf', tarPath, '-C', destination], { windowsHide: true });
       let stderr = '';
+      let settled = false;
+      const timer = setTimeout(() => {
+        processRunner.cancel(child).then(() => {
+          if (!settled) { settled = true; reject(new Error('Tempo esgotado ao extrair o arquivo tar.')); }
+        });
+      }, 15 * 60 * 1000);
+      if (timer.unref) timer.unref();
       child.stderr?.on('data', (d) => { stderr += d.toString('utf8'); });
       child.on('error', (err) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
         reject(new Error(`Comando 'tar' não disponível ou falhou ao iniciar: ${err.message}. Em sistemas Linux mínimos/containers, instale o pacote 'tar' (geralmente já vem por padrão).`));
       });
       child.on('close', (code) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
         if (code === 0) resolve();
         else reject(new Error(`Falha na extração do arquivo tar (código ${code}): ${stderr.slice(0, 300)}`));
       });
     });
   }
 
+  /** Extrai .zip via ZipExtractor (tar.exe/unzip com argumentos em array, anti zip-slip, timeout). */
   async _extractZip(zipPath, destination) {
     fs.mkdirSync(destination, { recursive: true });
-    
-    // Tenta primeiro com AdmZip
-    try {
-      const AdmZip = require('adm-zip');
-      const zip = new AdmZip(zipPath);
-      zip.extractAllTo(destination, true);
-      return;
-    } catch (zipErr) {
-      logUpdater(`AdmZip falhou, usando descompactador do sistema: ${zipErr.message}`);
-    }
-
-    // Fallback para descompactadores do sistema operacional
-    return new Promise((resolve, reject) => {
-      if (process.platform === 'win32') {
-        const child = spawn('powershell.exe', [
-          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-          `Expand-Archive -LiteralPath "${zipPath}" -DestinationPath "${destination}" -Force`
-        ], { windowsHide: true });
-        child.on('error', reject);
-        child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Falha na extração de arquivo (${code})`)));
-      } else {
-        const child = spawn('unzip', ['-o', zipPath, '-d', destination]);
-        child.on('error', reject);
-        child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Falha na extração de arquivo (${code})`)));
-      }
-    });
+    return extractZip(zipPath, destination, { timeoutMs: 15 * 60 * 1000 });
   }
 
   _findFile(root, fileName) {

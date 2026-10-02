@@ -1,0 +1,47 @@
+<div class="mod-screen" id="modRoot">
+
+  <header class="mod-header">
+    <div class="mod-header-text">
+      <h2 class="mod-title">Módulos</h2>
+      <p class="mod-subtitle">Recursos opcionais que você instala só se quiser. O BDS funciona normalmente sem eles.</p>
+    </div>
+    <span id="modDisk" class="mod-chip" title="Espaço livre no disco dos módulos">—</span>
+  </header>
+
+  <div id="modNotice" class="mod-notice hidden" role="status" aria-live="polite"></div>
+
+  <!-- Operação em andamento (download, instalação, transcrição) -->
+  <section id="modProgress" class="mod-progress hidden" aria-live="polite">
+    <div class="mod-progress-head">
+      <strong id="modProgressLabel">—</strong>
+      <button id="modProgressCancel" class="mod-btn mod-btn-danger mod-btn-sm" type="button">
+        <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span> Cancelar
+      </button>
+    </div>
+    <div class="mod-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="modBar">
+      <div class="mod-bar-fill" id="modBarFill"></div>
+    </div>
+    <div class="mod-progress-info">
+      <span id="modProgressMsg">—</span>
+      <span id="modProgressStats" class="mod-muted"></span>
+    </div>
+  </section>
+
+  <section class="mod-card" id="modWhisper" aria-label="Legendas e Transcrição (Whisper)">
+    <div id="modWhisperHead"></div>
+    <div id="modEngine"></div>
+    <div id="modModels"></div>
+    <div id="modCuda"></div>
+    <div id="modTranscribe"></div>
+  </section>
+
+  <section class="mod-card mod-card-soon" aria-label="Mais módulos">
+    <div class="mod-soon">
+      <span class="material-symbols-rounded" aria-hidden="true">extension</span>
+      <div>
+        <strong>Mais módulos em breve</strong>
+        <span class="mod-muted">Novos recursos opcionais aparecerão aqui, cada um instalado separadamente.</span>
+      </div>
+    </div>
+  </section>
+</div>

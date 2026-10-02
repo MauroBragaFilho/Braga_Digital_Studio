@@ -1,4 +1,4 @@
-import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences } from '../app.js';
+import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences, getVisibleSidebarTabs, getDefaultTabOrder, tabShortcutLabel } from '../app.js';
 
 let customSources = [];
 
@@ -15,6 +15,7 @@ export function initScreen() {
   setupSettingsSearch();
   setupSaveBar();
   setupSettingsExtras();
+  setupSidebarOrder();
   loadAiSummary();
   hideDevOnlySettings();
   applyPendingUpdateCheck();
@@ -161,6 +162,7 @@ function renderSettings() {
   if (startScreen) startScreen.value = s.defaultStartScreen || 'home';
   setChk('reduceMotionInput', s.reduceMotion === true);
   setChk('rememberWindowBoundsInput', s.rememberWindowBounds === true);
+  renderSidebarOrderList();
 
   // Padrões do Conversor
   const setSel = (id, value, fallback) => {
@@ -460,6 +462,7 @@ async function saveSettings() {
       cacheMaxSizeMB: Number(document.getElementById('cacheMaxSizeInput')?.value) || 500,
       converterFolder: document.getElementById('converterFolderInput')?.value || '',
       defaultStartScreen: document.getElementById('defaultStartScreenInput')?.value || 'home',
+      sidebarOrder: collectSidebarOrder(),
       reduceMotion: document.getElementById('reduceMotionInput')?.checked === true,
       rememberWindowBounds: document.getElementById('rememberWindowBoundsInput')?.checked === true,
       converterDefaultFormat: document.getElementById('converterDefaultFormatInput')?.value,
@@ -493,6 +496,141 @@ let savedBarTimer = null;
 function syncNotifyModules() {
   const on = document.getElementById('notificationsEnabledInput')?.checked !== false;
   document.getElementById('notifyModulesGroup')?.classList.toggle('st-disabled', !on);
+}
+
+/* ==========================================================================
+   MENU LATERAL: ordem das telas (e atalhos Ctrl+1..9, que seguem essa ordem)
+   A lista na tela é a fonte da ordem pendente; só vira configuração ao salvar.
+   ========================================================================== */
+
+/** Desenha a lista a partir do menu real (abas visíveis, na ordem atual). */
+function renderSidebarOrderList() {
+  const list = document.getElementById('sidebarOrderList');
+  if (!list) return;
+  list.innerHTML = getVisibleSidebarTabs().map((tab) => {
+    const fixed = tab.view === 'home';
+    const label = escapeHtml(tab.label);
+    const moves = fixed ? '' : `
+      <button type="button" class="st-order-move" data-dir="-1" aria-label="Mover ${label} para cima"><span class="material-symbols-rounded" aria-hidden="true">keyboard_arrow_up</span></button>
+      <button type="button" class="st-order-move" data-dir="1" aria-label="Mover ${label} para baixo"><span class="material-symbols-rounded" aria-hidden="true">keyboard_arrow_down</span></button>`;
+    return `<li class="st-order-item${fixed ? ' is-fixed' : ''}" data-view="${escapeHtml(tab.view)}"${fixed ? ' title="A Home fica sempre em primeiro"' : ' draggable="true"'}>
+      <span class="material-symbols-rounded st-order-grip" aria-hidden="true">${fixed ? 'lock' : 'drag_indicator'}</span>
+      <span class="material-symbols-rounded st-order-icon" aria-hidden="true">${escapeHtml(tab.icon)}</span>
+      <span class="st-order-label">${label}</span>
+      <kbd class="st-kbd st-order-shortcut"></kbd>
+      <span class="st-order-moves">${moves}</span>
+    </li>`;
+  }).join('');
+  refreshSidebarOrderBadges();
+}
+
+/** Atualiza os atalhos mostrados e o estado das setas conforme a posição atual de cada item. */
+function refreshSidebarOrderBadges() {
+  const items = [...(document.getElementById('sidebarOrderList')?.children || [])];
+  items.forEach((li, i) => {
+    const kbd = li.querySelector('.st-order-shortcut');
+    const label = tabShortcutLabel(i + 1);
+    if (kbd) { kbd.textContent = label; kbd.classList.toggle('hidden', !label); }
+    const up = li.querySelector('[data-dir="-1"]');
+    const down = li.querySelector('[data-dir="1"]');
+    if (up) up.disabled = i <= 1;               // logo abaixo da Home é o limite superior
+    if (down) down.disabled = i === items.length - 1;
+  });
+}
+
+/** Ordem pendente (sem a Home, que é sempre a primeira). */
+function collectSidebarOrder() {
+  const list = document.getElementById('sidebarOrderList');
+  if (!list) return undefined; // tela ainda sem a lista: não altera a preferência salva
+  return [...list.children].map(li => li.dataset.view).filter(v => v && v !== 'home');
+}
+
+function setupSidebarOrder() {
+  const list = document.getElementById('sidebarOrderList');
+  if (!list) return;
+
+  // Setas (acessível por teclado)
+  list.addEventListener('click', (e) => {
+    const btn = e.target.closest('.st-order-move');
+    if (!btn || btn.disabled) return;
+    const li = btn.closest('.st-order-item');
+    const dir = Number(btn.dataset.dir);
+    if (dir < 0) {
+      const prev = li.previousElementSibling;
+      if (prev && !prev.classList.contains('is-fixed')) list.insertBefore(li, prev);
+    } else if (li.nextElementSibling) {
+      list.insertBefore(li.nextElementSibling, li);
+    }
+    refreshSidebarOrderBadges();
+    markSettingsDirty();
+    (li.querySelector(`[data-dir="${dir}"]:not(:disabled)`) || li.querySelector('.st-order-move:not(:disabled)'))?.focus();
+  });
+
+  // Arrastar e soltar (a Home não é arrastável nem recebe item acima dela)
+  let dragging = null;
+  let orderBeforeDrag = '';
+  const currentOrder = () => (collectSidebarOrder() || []).join(',');
+  list.addEventListener('dragstart', (e) => {
+    const li = e.target.closest('.st-order-item');
+    if (!li || li.classList.contains('is-fixed')) { e.preventDefault(); return; }
+    dragging = li;
+    orderBeforeDrag = currentOrder();
+    li.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', li.dataset.view);
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const over = e.target.closest('.st-order-item');
+    if (!over || over === dragging) return;
+    const rect = over.getBoundingClientRect();
+    const after = over.classList.contains('is-fixed') || e.clientY > rect.top + rect.height / 2;
+    const ref = after ? over.nextElementSibling : over;
+    if (ref !== dragging) list.insertBefore(dragging, ref);
+  });
+  list.addEventListener('dragend', () => {
+    if (!dragging) return;
+    dragging.classList.remove('is-dragging');
+    dragging = null;
+    refreshSidebarOrderBadges();
+    if (currentOrder() !== orderBeforeDrag) markSettingsDirty();
+  });
+
+  // Restaurar a ordem original do menu
+  document.getElementById('sidebarOrderResetButton')?.addEventListener('click', () => {
+    const defaults = getDefaultTabOrder();
+    const items = [...list.children].sort((a, b) => defaults.indexOf(a.dataset.view) - defaults.indexOf(b.dataset.view));
+    items.forEach(li => list.appendChild(li));
+    refreshSidebarOrderBadges();
+    markSettingsDirty();
+  });
+}
+
+/**
+ * Componentes cuja fonte não publica checksum (SHA-256) NÃO são instalados sozinhos nas atualizações:
+ * o resultado traz `needsConfirmation`. Pergunta ao usuário e, se confirmar, instala só esses.
+ * @param {{ needsConfirmation?: Array<{ id?: string, tool?: string, version?: string }> }} [deps]
+ * @returns {Promise<number>} quantidade instalada após a confirmação
+ */
+async function confirmUnverifiedUpdates(deps) {
+  const pending = deps?.needsConfirmation || [];
+  if (!pending.length || !window.bds?.updateTool) return 0;
+  const names = pending.map(p => `• ${p.tool || p.id}${p.version ? ` ${p.version}` : ''}`).join('\n');
+  const ok = await window.bdsModal.confirm(
+    `A fonte destes componentes não publica checksum (SHA-256), então a integridade do download não pode ser verificada:\n\n${names}\n\nInstalar mesmo assim?`
+  );
+  if (!ok) return 0;
+  let installed = 0;
+  for (const p of pending) {
+    try {
+      await window.bds.updateTool(p.tool || p.id, { allowUnverified: true });
+      installed++;
+    } catch (err) {
+      console.error('[SETTINGS] Falha ao instalar componente sem checksum:', p.tool || p.id, err);
+    }
+  }
+  return installed;
 }
 
 /** Marca a cor de destaque atual entre as cores sugeridas. */
@@ -561,6 +699,7 @@ export function onLeave() {
     applyTheme(s.theme, s.accentColor);
     applyUiPreferences(s);
   }
+  renderSidebarOrderList(); // descarta uma ordem não salva e reflete o menu real ao voltar
   settingsDirty = false;
   clearTimeout(savedBarTimer);
 }
@@ -737,8 +876,8 @@ async function loadCacheInfo() {
     listEl.innerHTML = info.categories.map(cat => `
       <div class="settings-cache-item">
         <div class="settings-cache-item-info">
-          <strong>${cat.label}</strong>
-          <span>${cat.sizeFormatted}</span>
+          <strong>${escapeHtml(cat.label)}</strong>
+          <span>${escapeHtml(cat.sizeFormatted)}</span>
         </div>
         <button class="settings-btn-outline settings-cache-clear-btn" type="button"
                 data-clear-cache="${cat.key}" data-label="${cat.label}">
@@ -887,6 +1026,7 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
 
   try {
     const result = await window.bds.updateEverything();
+    await confirmUnverifiedUpdates(result?.dependencies);
     const appUpdate = result?.appUpdate;
 
     if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
@@ -1105,6 +1245,7 @@ async function startUnifiedUpdate() {
     // Fluxo unificado disponível.
     const appUpdate = result?.appUpdate;
     const deps = result?.dependencies;
+    await confirmUnverifiedUpdates(deps);
 
     if (fill) fill.style.width = '100%';
     if (percentEl) percentEl.textContent = '100%';

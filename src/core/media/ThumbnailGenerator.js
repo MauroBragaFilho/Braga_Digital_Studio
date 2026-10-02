@@ -3,6 +3,10 @@ const { execFile } = require('child_process');
 const util = require('util');
 const path = require('path');
 const fs = require('fs');
+const { isRaw: isRawPath, isImage, findSiblingJpg } = require('./MediaTypes');
+const ffmpegLimiter = require('./FfmpegLimiter');
+
+const FFMPEG_TIMEOUT_MS = 45000;
 const execFilePromise = util.promisify(execFile);
 
 class ThumbnailGenerator {
@@ -49,28 +53,40 @@ class ThumbnailGenerator {
 
         // Lógica para arquivos RAW: tenta usar o JPG como fonte rápida se existir
         let thumbSource = videoPath;
-        const isRaw = videoPath.match(/\.(arw|cr2|cr3|nef|dng|raf|rw2|orf)$/i);
+        const isRaw = isRawPath(videoPath);
         if (isRaw) {
-            const dir = path.dirname(videoPath);
-            const base = path.parse(videoPath).name;
-            if (fs.existsSync(path.join(dir, base + '.jpg'))) thumbSource = path.join(dir, base + '.jpg');
-            else if (fs.existsSync(path.join(dir, base + '.JPG'))) thumbSource = path.join(dir, base + '.JPG');
-            else if (fs.existsSync(path.join(dir, base + '.jpeg'))) thumbSource = path.join(dir, base + '.jpeg');
-            else if (fs.existsSync(path.join(dir, base + '.JPEG'))) thumbSource = path.join(dir, base + '.JPEG');
+            const sibling = findSiblingJpg(videoPath);
+            if (sibling) thumbSource = sibling;
         }
 
         // Comando FFmpeg: seek rápido (-ss antes de -i), extrai 1 frame (-vframes 1) em JPG de alta qualidade (-q:v 2)
         const isPhoto = thumbSource.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i) || isRaw;
         let args;
         
-        if (isPhoto) {
-            args = ['-i', thumbSource, '-vf', 'scale=320:-1', '-vframes', '1', '-q:v', '2', '-y', outputPath];
-        } else {
-            args = ['-ss', timeString, '-i', thumbSource, '-vframes', '1', '-q:v', '2', '-y', outputPath];
-        }
+        // yuvj420p (faixa total) é o que o encoder MJPEG aceita; vídeos de câmera (ex.: Sony, faixa
+        // limitada ou 10 bits) falhavam com "Non full-range YUV is non-standard" e ficavam sem miniatura.
+        const toJpegFormat = 'format=yuvj420p';
+        const run = (extra, filters) => execFilePromise(
+            this.ffmpegPath,
+            [...extra, '-vf', filters, '-vframes', '1', '-q:v', '2', '-y', outputPath],
+            { windowsHide: true, timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' }
+        );
 
         try {
-            await execFilePromise(this.ffmpegPath, args);
+          await ffmpegLimiter.run(async () => {
+            if (isPhoto) {
+                await run(['-i', thumbSource], `scale=320:-1,${toJpegFormat}`);
+            } else {
+                try {
+                    await run(['-ss', timeString, '-i', thumbSource], toJpegFormat);
+                    if (fs.statSync(outputPath).size === 0) throw new Error('Miniatura vazia');
+                } catch (firstErr) {
+                    if (timeString === '00:00:00.000') throw firstErr;
+                    // Ponto de busca inválido (vídeo curto/duração incorreta): tenta o primeiro frame
+                    await run(['-i', thumbSource], toJpegFormat);
+                }
+            }
+          });
             return outputPath;
         } catch (error) {
             logger.error(`[ThumbnailGenerator] Falha ao gerar miniatura para ${videoPath}:`, error.message);

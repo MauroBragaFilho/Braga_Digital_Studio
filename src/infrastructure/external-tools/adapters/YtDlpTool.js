@@ -42,7 +42,7 @@ class YtDlpTool {
     const args = channel === 'stable' ? ['-U'] : ['--update-to', channel];
     const result = await this.run(args);
     if (result.code !== 0) {
-      throw new Error(`yt-dlp self-update falhou (código ${result.code}): ${result.stderr || result.stdout}`);
+      throw new Error(`Falha ao atualizar o motor de download (código ${result.code}): ${result.stderr || result.stdout}`);
     }
     return result;
   }

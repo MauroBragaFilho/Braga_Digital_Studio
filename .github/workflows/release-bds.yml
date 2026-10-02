@@ -18,6 +18,8 @@ name: Release BDS (Windows + Linux)
 # quem preferir empurrar uma tag manualmente ou rebuildar uma única plataforma isolada.
 #
 # Pré-requisitos (mesmos dos workflows individuais):
+#   - Versão: o workflow NAO altera a versão. Antes de disparar, rode localmente `npm version patch --no-git-tag-version`
+#     (ou minor/major), commite o package.json e dê push. (O antigo script `prebuild` foi removido.)
 #   - assets/icon.ico (Windows) e assets/icon.png (Linux) precisam existir no repositório.
 #   - A pasta data/ não precisa estar versionada — cada job cria uma vazia antes do build.
 
@@ -88,6 +90,12 @@ jobs:
 
       - name: Instalar dependências
         run: npm ci
+
+      - name: Verificações de qualidade (sintaxe, lint, testes)
+        run: |
+          npm run check
+          npm run lint
+          npm test
 
       - name: Garantir pasta data/ (populada em runtime, não versionada)
         shell: pwsh
@@ -187,6 +195,12 @@ jobs:
 
       - name: Instalar dependências
         run: npm ci
+
+      - name: Verificações de qualidade (sintaxe, lint, testes)
+        run: |
+          npm run check
+          npm run lint
+          npm test
 
       - name: Garantir pasta data/ (populada em runtime, não versionada)
         run: |
