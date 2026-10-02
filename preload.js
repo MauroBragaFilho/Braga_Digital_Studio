@@ -40,10 +40,8 @@ const api = {
   getDeveloperEmail: () => ipcRenderer.invoke('telemetry:getDeveloperEmail'),
   getCrashReports: () => ipcRenderer.invoke('telemetry:getCrashReports'),
   clearCrashReports: () => ipcRenderer.invoke('telemetry:clearCrashReports'),
-  openCrashReportsFolder: () => ipcRenderer.invoke('telemetry:openReportsFolder'),
+  sendCrashReports: () => ipcRenderer.invoke('telemetry:sendReports'),
   getMailtoErrorLink: (error, context) => ipcRenderer.invoke('telemetry:getMailtoLink', error, context),
-  getCrashReportMailto: (filePath) => ipcRenderer.invoke('telemetry:getCrashReportMailto', filePath),
-  getCrashReportDetails: (filePath) => ipcRenderer.invoke('telemetry:getCrashReportDetails', filePath),
   generateManualMailto: (description) => ipcRenderer.invoke('telemetry:generateManualMailto', description),
 
   // Controles de Janela

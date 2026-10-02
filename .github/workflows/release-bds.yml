@@ -1,33 +1,52 @@
 name: Release BDS (Windows + Linux)
 
-# Builda o BDS para Windows E Linux em paralelo, num único disparo, e publica os dois numa
-# ÚNICA Release do GitHub — usando a versão já presente em package.json como tag
-# automaticamente (não precisa rodar "git tag" manualmente).
+# Builda o BDS para Windows E Linux em paralelo e publica os dois numa ÚNICA Release do GitHub.
 #
-# Como disparar:
-#   Aba Actions -> "Release BDS (Windows + Linux)" -> "Run workflow".
+# Quando roda (automático):
+#   - A cada push na branch main (ex.: merge de uma branch de trabalho). Commits em outras
+#     branches só rodam o CI (ci.yml), sem gerar instalador.
+#   - Manual: aba Actions -> "Release BDS (Windows + Linux)" -> "Run workflow".
+#   - Para um commit na main NÃO gerar release, coloque [skip release] na mensagem do commit.
+#   - Alterações só de documentação (*.md, .docs/) não disparam o build.
+#
+# Versão (automática):
+#   - Parte da versão do package.json. Se a tag dessa versão já existir, usa a próxima versão
+#     de correção livre (1.0.1 -> 1.0.2 -> ...). Os instaladores já saem com essa versão.
+#   - Depois que a Release é publicada, o workflow registra a versão nova no package.json e
+#     dá push em main com a mensagem "chore(release): vX.Y.Z [skip release]" (não gera outro build).
+#   - Para uma versão maior (minor/major), suba antes no package.json: `npm version minor --no-git-tag-version`.
 #
 # Por que um workflow único em vez dos dois separados (build-bds-release.yml /
 # build-bds-linux.yml) disparados por tag: criar uma tag automaticamente usando o token padrão
-# do GitHub Actions NÃO dispara outros workflows (é uma proteção anti-recursão do próprio
-# GitHub) — então não dava para simplesmente automatizar "criar tag -> workflows por tag
-# assumem dali". Em vez disso, este workflow builda os dois sistemas operacionais como jobs
-# paralelos e só cria a tag/Release no final, quando os dois builds já terminaram com sucesso.
+# do GitHub Actions NÃO dispara outros workflows (proteção anti-recursão do próprio GitHub).
+# Este workflow builda os dois sistemas como jobs paralelos e só cria a tag/Release no final,
+# quando os dois builds já terminaram com sucesso.
 #
 # Os workflows build-bds-release.yml e build-bds-linux.yml continuam existindo à parte, para
 # quem preferir empurrar uma tag manualmente ou rebuildar uma única plataforma isolada.
 #
 # Pré-requisitos (mesmos dos workflows individuais):
-#   - Versão: o workflow NAO altera a versão. Antes de disparar, rode localmente `npm version patch --no-git-tag-version`
-#     (ou minor/major), commite o package.json e dê push. (O antigo script `prebuild` foi removido.)
 #   - assets/icon.ico (Windows) e assets/icon.png (Linux) precisam existir no repositório.
 #   - A pasta data/ não precisa estar versionada — cada job cria uma vazia antes do build.
+#   - Em Settings -> Actions -> General, "Workflow permissions" deve permitir leitura e escrita
+#     (e, se a branch main tiver proteção, o github-actions[bot] precisa poder dar push nela).
 
 on:
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.docs/**'
+      - 'LICENSE'
 
 permissions:
   contents: write
+
+# Um release por vez: pushes seguidos entram em fila, para não disputar a mesma versão.
+concurrency:
+  group: release-bds
+  cancel-in-progress: false
 
 jobs:
   # ------------------------------------------------------------------------------------
@@ -36,31 +55,36 @@ jobs:
   # diferentes (ex: se o package.json mudasse entre um job e outro).
   # ------------------------------------------------------------------------------------
   determine-version:
+    # [skip release] na mensagem do commit pula o build (e, por dependência, todos os jobs abaixo).
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       tag: ${{ steps.get_version.outputs.tag }}
+      bumped: ${{ steps.get_version.outputs.bumped }}
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: Ler versão do package.json
+      - name: Escolher a versão da Release (próxima livre a partir do package.json)
         id: get_version
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          BASE="$VERSION"
+          TAGS=$(git ls-remote --tags origin)
+          BUMPED=false
+          while echo "$TAGS" | grep -q "refs/tags/v$VERSION$"; do
+            if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::A tag 'v$VERSION' já existe e a versão não é X.Y.Z; ajuste o package.json manualmente."
+              exit 1
+            fi
+            VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')
+            BUMPED=true
+          done
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Versão detectada: $VERSION (tag: v$VERSION)"
-
-      - name: Verificar se já existe uma Release para esta versão
-        run: |
-          TAG="v$(node -p "require('./package.json').version")"
-          echo "== Commit avaliado: $(git rev-parse --short HEAD) | Versão no checkout: $TAG =="
-          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
-            echo "::error::A tag '$TAG' já existe no repositório. Bump a versão em package.json (ex: npm version patch) e dispare um NOVO run pelo botão 'Run workflow' (não use 'Re-run', que reexecuta o commit antigo e repete o erro)."
-            exit 1
-          fi
-          echo "Tag '$TAG' ainda não existe — build pode prosseguir."
+          echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
+          echo "Commit avaliado: $(git rev-parse --short HEAD) | package.json: $BASE | Release: v$VERSION (bump automático: $BUMPED)"
 
   # ------------------------------------------------------------------------------------
   # Build Windows (mesmos passos validados em build-bds-release.yml)
@@ -96,6 +120,10 @@ jobs:
           npm run check
           npm run lint
           npm test
+
+      - name: Aplicar a versão da Release no build
+        shell: pwsh
+        run: npm version "${{ needs.determine-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Garantir pasta data/ (populada em runtime, não versionada)
         shell: pwsh
@@ -201,6 +229,9 @@ jobs:
           npm run check
           npm run lint
           npm test
+
+      - name: Aplicar a versão da Release no build
+        run: npm version "${{ needs.determine-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Garantir pasta data/ (populada em runtime, não versionada)
         run: |
@@ -335,3 +366,25 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Registra no package.json a versão que acabou de ser publicada, para o repositório não
+      # ficar para trás. Se falhar (ex.: main protegida), a Release continua válida: o próximo
+      # run simplesmente escolhe de novo a próxima versão livre.
+      - name: Checkout de main para registrar a versão
+        if: ${{ needs.determine-version.outputs.bumped == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Commit da versão no package.json
+        if: ${{ needs.determine-version.outputs.bumped == 'true' }}
+        continue-on-error: true
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          git add package.json package-lock.json
+          git commit -m "chore(release): v$VERSION [skip release]"
+          git pull --rebase origin main
+          git push origin HEAD:main

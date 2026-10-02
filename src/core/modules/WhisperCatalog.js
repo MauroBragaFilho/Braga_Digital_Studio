@@ -51,7 +51,7 @@ function getModel(id) {
 }
 
 const REFERENCE_NOTE =
-  'Velocidade e memória são valores de referência do projeto Whisper (OpenAI), comparáveis entre si; ' +
-  'no seu computador variam, e o faster-whisper costuma usar menos memória.';
+  'Velocidade e memória são valores de referência dos modelos, comparáveis entre si; ' +
+  'no seu computador variam, e o motor costuma usar menos memória.';
 
 module.exports = { WHISPER_MODELS, DEFAULT_MODEL_ID, REFERENCE_NOTE, getModel };
