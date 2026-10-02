@@ -8,11 +8,11 @@
   --mg-line-soft: var(--line, #2a2a2a);
   --mg-text: var(--text, #f5f5f5);
   --mg-muted: var(--muted, #a0a0a0);
-  --mg-accent: var(--accent, #e53935);
-  --mg-accent-soft: var(--accent-light, rgba(229, 57, 53, 0.14));
+  --mg-accent: var(--accent, var(--danger));
+  --mg-accent-soft: var(--accent-light, color-mix(in srgb, var(--danger) 14%, transparent));
   --mg-accent-border: color-mix(in srgb, var(--accent) 45%, transparent);
   --mg-orange: #f25c05;
-  --mg-green: #4caf50;
+  --mg-green: var(--success);
   --mg-cols: 30px 22px minmax(170px, 1fr) 78px 178px 78px 96px 28px;
   display: flex;
   flex-direction: column;
@@ -68,9 +68,9 @@
 .mg-btn-ghost { border-color: var(--mg-line); color: var(--mg-muted); background: transparent; }
 .mg-btn-ghost:hover:not(:disabled) { border-color: var(--mg-muted); color: var(--mg-text); }
 
-.mg-btn-danger { background: rgba(229, 57, 53, 0.16); border-color: var(--mg-accent-border); color: #ff6b63; }
-.mg-btn-danger:hover:not(:disabled) { background: rgba(229, 57, 53, 0.28); }
-.mg-danger-text { color: #ff6b63 !important; }
+.mg-btn-danger { background: color-mix(in srgb, var(--danger) 16%, transparent); border-color: var(--mg-accent-border); color: var(--danger-fg); }
+.mg-btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 28%, transparent); }
+.mg-danger-text { color: var(--danger-fg) !important; }
 .mg-danger-text:hover:not(:disabled) { border-color: var(--mg-accent-border) !important; color: #ff8a84 !important; }
 
 .mg-btn-export {
@@ -95,7 +95,7 @@
   font-size: 12px;
 }
 .mg-selection-count { color: var(--mg-muted); }
-.mg-selection-count strong { color: #ff6b63; }
+.mg-selection-count strong { color: var(--danger-fg); }
 
 /* Cabeçalho */
 .mg-header {
@@ -111,7 +111,7 @@
 
 /* Banner de erro */
 .mg-debug-banner {
-  background: rgba(229, 57, 53, 0.10);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   border: 1px solid var(--mg-accent-border);
   border-radius: 9px;
   padding: 10px 14px;
@@ -120,7 +120,7 @@
   gap: 8px;
 }
 .mg-debug-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.mg-debug-title { display: inline-flex; align-items: center; gap: 6px; color: #ff6b63; font-weight: 800; font-size: 12px; }
+.mg-debug-title { display: inline-flex; align-items: center; gap: 6px; color: var(--danger-fg); font-weight: 800; font-size: 12px; }
 .mg-log-output {
   margin: 0;
   max-height: 130px;
@@ -252,7 +252,7 @@
   flex: 1;
   min-width: 0;
   cursor: pointer;
-  --slider-fill-color: var(--mg-accent, #e53935);
+  --slider-fill-color: var(--mg-accent, var(--danger));
 }
 .mg-num-wrap {
   display: flex;
@@ -536,7 +536,7 @@
 .mg-row.selected { border-left-color: var(--mg-accent); }
 .mg-row.exporting { border-left-color: var(--mg-orange); background: rgba(242, 92, 5, 0.07); }
 .mg-row.done { border-left-color: var(--mg-green); background: rgba(76, 175, 80, 0.06); }
-.mg-row.error { border-left-color: var(--mg-accent); background: rgba(229, 57, 53, 0.07); }
+.mg-row.error { border-left-color: var(--mg-accent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .mg-row.cancelled, .mg-row.removed { opacity: 0.6; }
 
 .mg-row-num { font-family: Consolas, monospace; font-size: 11px; color: var(--mg-muted); text-align: left; font-variant-numeric: tabular-nums; }
@@ -645,7 +645,7 @@
 .mg-pill.queued { color: #4fc3f7; background: rgba(79, 195, 247, 0.13); }
 .mg-pill.exporting { color: var(--mg-orange); background: rgba(242, 92, 5, 0.16); }
 .mg-pill.done { color: var(--mg-green); background: rgba(76, 175, 80, 0.15); }
-.mg-pill.error { color: #ff6b63; background: rgba(229, 57, 53, 0.16); }
+.mg-pill.error { color: var(--danger-fg); background: color-mix(in srgb, var(--danger) 16%, transparent); }
 .mg-pill.removed { color: var(--mg-muted); background: color-mix(in srgb, var(--mg-text) 5%, transparent); text-decoration: line-through; }
 .mg-pill.cancelled { color: #b39ddb; background: rgba(179, 157, 219, 0.14); }
 .mg-pill.exporting::before {
@@ -661,7 +661,7 @@
   opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
 .mg-row:hover .mg-x-btn, .mg-x-btn:focus-visible { opacity: 1; }
-.mg-x-btn:hover { color: #ff6b63; background: rgba(229, 57, 53, 0.14); }
+.mg-x-btn:hover { color: var(--danger-fg); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .mg-x-btn:disabled { visibility: hidden; }
 
 /* Estado vazio */

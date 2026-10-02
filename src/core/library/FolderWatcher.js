@@ -3,11 +3,11 @@ const chokidar = require('chokidar');
 const path = require('path');
 const EventBus = require('../EventBus');
 
-const SUPPORTED_EXTENSIONS = new Set(
-    ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4a', '.mp3', '.flac', '.wav', '.ogg', 
-     '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.heic',
-     '.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.rw2', '.orf']
-);
+const { SUPPORTED_EXTENSIONS, isJpeg, findSiblingRaw } = require('../media/MediaTypes');
+
+const JPG_DEFER_MS = 6000;      // espera o RAW irmão chegar antes de indexar um JPG
+const MAX_RESTARTS = 3;
+const RESTART_DELAY_MS = 5000;
 
 class FolderWatcher {
     constructor(libraryId, folderPath, importQueue) {
@@ -15,9 +15,13 @@ class FolderWatcher {
         this.folderPath = folderPath;
         this.importQueue = importQueue;
         this.watcher = null;
+        this.restarts = 0;
+        this.stopped = false;
+        this.pendingJpgs = new Map(); // caminho -> timer (JPG aguardando o RAW irmão)
     }
 
     start() {
+        this.stopped = false;
         logger.info(`[FolderWatcher] Monitorando lib #${this.libraryId}: ${this.folderPath}`);
         
         // ignoreInitial: true -> Evita reprocessar arquivos existentes no startup, capturando apenas novas adições/modificações
@@ -53,7 +57,8 @@ class FolderWatcher {
         this.watcher
             .on('add', filePath => this.handleFileEvent('CREATE', filePath))
             .on('change', filePath => this.handleFileEvent('CHANGE', filePath))
-            .on('unlink', filePath => this.handleFileEvent('DELETE', filePath));
+            .on('unlink', filePath => this.handleFileEvent('DELETE', filePath))
+            .on('error', err => this._handleError(err));
     }
 
     handleFileEvent(eventType, filePath) {
@@ -63,18 +68,12 @@ class FolderWatcher {
             return;
         }
 
-        // Lógica de Desduplicação: Se for JPG, checa se tem RAW
-        const isJpg = ext === '.jpg' || ext === '.jpeg';
-        if (isJpg && (eventType === 'CREATE' || eventType === 'CHANGE')) {
-            const dir = path.dirname(filePath);
-            const base = path.parse(filePath).name;
-            const rawExts = ['.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.rw2', '.orf'];
-            const fs = require('fs');
-            for (const rawExt of rawExts) {
-                if (fs.existsSync(path.join(dir, base + rawExt)) || fs.existsSync(path.join(dir, base + rawExt.toUpperCase()))) {
-                    return; // Ignora o evento deste JPG pois o RAW existe
-                }
-            }
+        // Deduplicação RAW/JPG (função única): o RAW tem prioridade sobre o JPG irmão
+        if (isJpeg(filePath) && (eventType === 'CREATE' || eventType === 'CHANGE')) {
+            if (findSiblingRaw(filePath)) return; // RAW já existe: ignora o JPG
+            // O JPG pode chegar antes do RAW: adia e reavalia (cancela se o RAW aparecer)
+            this._deferJpg(eventType, filePath);
+            return;
         }
 
         const eventPayload = {
@@ -85,15 +84,42 @@ class FolderWatcher {
         };
 
         if (eventType === 'CREATE' || eventType === 'CHANGE') {
-            this.importQueue.add({ libraryId: this.libraryId, path: filePath });
+            this.importQueue.add({ libraryId: this.libraryId, path: filePath, event: eventType });
         } else if (eventType === 'DELETE') {
             EventBus.emit('MEDIA_REMOVED', eventPayload);
         }
     }
 
+    _deferJpg(eventType, filePath) {
+        if (this.pendingJpgs.has(filePath)) return;
+        const timer = setTimeout(() => {
+            this.pendingJpgs.delete(filePath);
+            if (this.stopped) return;
+            if (findSiblingRaw(filePath)) return; // RAW chegou: mantém só o RAW
+            this.importQueue.add({ libraryId: this.libraryId, path: filePath, event: eventType });
+        }, JPG_DEFER_MS);
+        if (timer.unref) timer.unref();
+        this.pendingJpgs.set(filePath, timer);
+    }
+
+    _handleError(err) {
+        logger.error(`[FolderWatcher] Erro no watcher da lib #${this.libraryId} (${this.folderPath}): ${err && (err.message || err)}`);
+        if (this.stopped || this.restarts >= MAX_RESTARTS) return;
+        this.restarts++;
+        logger.warn(`[FolderWatcher] Reiniciando watcher da lib #${this.libraryId} (tentativa ${this.restarts}/${MAX_RESTARTS})`);
+        const old = this.watcher;
+        this.watcher = null;
+        if (old) { try { Promise.resolve(old.close()).catch(() => {}); } catch (_) {} }
+        const t = setTimeout(() => { if (!this.stopped && !this.watcher) this.start(); }, RESTART_DELAY_MS);
+        if (t.unref) t.unref();
+    }
+
     stop() {
+        this.stopped = true;
+        for (const t of this.pendingJpgs.values()) clearTimeout(t);
+        this.pendingJpgs.clear();
         if (this.watcher) {
-            this.watcher.close();
+            try { Promise.resolve(this.watcher.close()).catch(() => {}); } catch (_) {}
             this.watcher = null;
         }
     }

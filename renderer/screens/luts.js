@@ -425,10 +425,18 @@ export async function initScreen() {
     }
 
     // 4. Setup Sliders com tratamento de erro
-    try {
-        if (sliderInstances.main?.destroy) sliderInstances.main.destroy();
-        if (sliderInstances.fullscreen?.destroy) sliderInstances.fullscreen.destroy();
+    bindSliders();
 
+    // 5. Carrega LUTs
+    await loadLuts(); // Chamada inicial
+
+    // 6. A liberação de memória (modal .cube bruto) e dos listeners de window dos sliders
+    // acontece em onLeave(), chamado pelo app.js ao trocar de tela.
+}
+
+function bindSliders() {
+    try {
+        destroySliders();
         if (domRefs.sliderContainer && domRefs.sliderOverlay && domRefs.sliderDivider) {
             sliderInstances.main = setupSlider(domRefs.sliderContainer, domRefs.sliderOverlay, domRefs.sliderDivider);
         }
@@ -437,35 +445,23 @@ export async function initScreen() {
         }
     } catch (e) {
         console.error('[LUTS] Erro ao configurar sliders:', e);
-        // Opcional: Desabilitar sliders no UI ou alertar, mas a tela pode continuar
     }
-
-
-    // 5. Carrega LUTs
-    await loadLuts(); // Chamada inicial
-
-    // 6. ✅ CORREÇÃO (bug 5): como o app.js nunca desmonta telas já visitadas (apenas
-    // esconde via classe 'hidden' e as mantém em cache no DOM), qualquer conteúdo pesado
-    // que esta tela acumule (ex: o preview do arquivo .cube bruto, que pode ter até
-    // RAW_CONTENT_MAX_BYTES de texto/nós) ficaria retido na memória indefinidamente,
-    // mesmo com o usuário navegando para outras abas. Observamos a própria seção da tela
-    // e, assim que ela for escondida, liberamos essa memória (fecha o modal e limpa o
-    // conteúdo bruto). É reconstruído normalmente na próxima vez que o usuário abrir o
-    // modal, então não há perda funcional.
-    setupScreenHideCleanup();
 }
 
-function setupScreenHideCleanup() {
-    const viewSection = document.getElementById('lutsView');
-    if (!viewSection || typeof MutationObserver === 'undefined') return;
+function destroySliders() {
+    if (sliderInstances.main?.destroy) sliderInstances.main.destroy();
+    if (sliderInstances.fullscreen?.destroy) sliderInstances.fullscreen.destroy();
+    sliderInstances = {};
+}
 
-    const observer = new MutationObserver(() => {
-        if (viewSection.classList.contains('hidden')) {
-            closeCubeRawModal(); // já limpa domRefs.cubeRawContent
-        }
-    });
+/** Ao sair da tela: remove listeners de window dos sliders e libera o conteúdo pesado do modal .cube. */
+export function onLeave() {
+    destroySliders();
+    try { closeCubeRawModal(); } catch (_) { /* noop */ }
+}
 
-    observer.observe(viewSection, { attributes: true, attributeFilter: ['class'] });
+export function onEnter() {
+    bindSliders();
 }
 
 function setViewMode(mode) {
@@ -573,7 +569,7 @@ async function loadLuts() {
   } catch (err) {
     console.error('[LUTS] Erro ao carregar LUTs no frontend:', err);
     // Opcional: Mostrar mensagem de erro na tela
-    domRefs.lutsGrid.innerHTML = `<div class="luts-error">Erro ao carregar: ${err.message || 'Falha desconhecida'}</div>`;
+    domRefs.lutsGrid.innerHTML = `<div class="luts-error">Erro ao carregar: ${escapeHtmlFunc(err.message || "Falha desconhecida")}</div>`;
     domRefs.emptyState?.classList.add('hidden');
     // Opcional: Alertar via bdsModal
     // window.bdsModal?.alert(`Erro ao carregar LUTs: ${err.message}`);
@@ -689,7 +685,7 @@ function renderLutCard(lut, dateStr) {
     // Enquanto a miniatura real (com a LUT aplicada) é gerada, mostra a imagem base "crua"
     return `
         <img src="./assets/lut_preview.jpg" class="lut-card-img lut-card-img-loading" onerror="this.style.display='none'">
-        <span class="lut-badge-3d">${lutType}</span>
+        <span class="lut-badge-3d">${escapeHtmlFunc(lutType)}</span>
         <div class="lut-checkbox"><span class="material-symbols-rounded">check</span></div>
 
         <div class="lut-card-body">

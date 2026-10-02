@@ -1,19 +1,48 @@
 const logger = require('../../services/logService');
-const fs = require('fs');
 const path = require('path');
 const dbManager = require('../database/database');
-const HashGenerator = require('./HashGenerator');
 const MediaScanner = require('./MediaScanner');
 const FFProbe = require('../ffmpeg/FFProbe');
-const { v4: uuidv4 } = require('uuid');
+const ThumbnailGenerator = require('./ThumbnailGenerator');
+const { ffmpegTool } = require('../../infrastructure/external-tools/adapters/FfmpegTool');
+const { appPaths } = require('../../infrastructure/filesystem/AppPaths');
+const { ingestFile } = require('./MediaIngest');
+const { isSupported, isAudio } = require('./MediaTypes');
 
 class MediaImporter {
     /**
      * @param {Object} options
      * @param {string} options.ffprobePath - Caminho para o executável do ffprobe
+     * @param {string} [options.ffmpegPath] - Caminho do ffmpeg (padrão: ferramenta resolvida)
+     * @param {string} [options.thumbnailsDir] - Pasta das miniaturas (padrão: AppPaths)
      */
-    constructor({ ffprobePath }) {
+    constructor({ ffprobePath, ffmpegPath, thumbnailsDir }) {
         this.ffprobe = new FFProbe({ ffprobePath });
+        this.ffmpegPath = ffmpegPath;
+        this.thumbnailsDir = thumbnailsDir;
+        this._thumbnailGen = null;
+    }
+
+    _getThumbnailGenerator() {
+        if (!this._thumbnailGen) {
+            this._thumbnailGen = new ThumbnailGenerator({
+                ffmpegPath: this.ffmpegPath || ffmpegTool.resolve({ mustExist: false }),
+                thumbnailsDir: this.thumbnailsDir || appPaths.thumbnailsDir,
+            });
+        }
+        return this._thumbnailGen;
+    }
+
+    /** Gera a miniatura da mídia; devolve o nome do arquivo ou null (falha não derruba a importação). */
+    async _generateThumbnail(filePath, filename, uuid, duration) {
+        if (isAudio(filename)) return null;
+        try {
+            await this._getThumbnailGenerator().generate(filePath, uuid, duration);
+            return `${uuid}.jpg`;
+        } catch (err) {
+            logger.warn(`[MediaImporter] Sem thumbnail para ${filename}: ${err.message}`);
+            return null;
+        }
     }
 
     /**
@@ -45,79 +74,23 @@ class MediaImporter {
      */
     async importFile(library, filePath) {
         const filename = path.basename(filePath);
-        
+
         // Validação de extensão para ignorar exes, dlls e arquivos não suportados
-        const SUPPORTED_EXTENSIONS = new Set([
-            '.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4a', '.mp3', '.flac', '.wav', '.ogg', 
-            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.heic',
-            '.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.rw2', '.orf'
-        ]);
-        const ext = path.extname(filename).toLowerCase();
-        if (!SUPPORTED_EXTENSIONS.has(ext)) {
-            return;
-        }
+        if (!isSupported(filename)) return;
 
-        const db = dbManager.get();
-        
         try {
-            // 1. Gera Hash para verificação de duplicidade
-            const hash = await HashGenerator.generate(filePath);
-            
-            // Verifica se o hash já existe
-            const existing = db.prepare('SELECT id FROM media WHERE hash = ?').get(hash);
-            if (existing) {
-                logger.info(`[MediaImporter] Arquivo ignorado (já existe): ${path.basename(filePath)}`);
-                return { id: existing.id, created: false };
-            }
-
-            // 2. Coleta Metadados usando FFProbe
-            const info = await this.ffprobe.analyze(filePath);
-            const filename = path.basename(filePath);
-
-            // Pega a data de modificação real do arquivo
-            const stats = fs.statSync(filePath);
-            const recordedAt = stats.mtime.toISOString();
-
-            // Determina o álbum a partir do nome da pasta
-            const dir = path.dirname(filePath);
-            let album = path.basename(dir);
-            if (!album || album === '.' || album === path.parse(dir).root) {
-                album = null;
-            }
-
-            // 3. Salva no banco de dados
-            const fileUuid = uuidv4();
-            const audioTrackCount = (info.audio_streams && info.audio_streams.length) ? info.audio_streams.length : (info.audio_codec ? 1 : 0);
-            const stmt = db.prepare(`
-                INSERT INTO media (
-                    library_id, uuid, origin, filename, filepath, filesize, duration,
-                    width, height, fps, video_codec, audio_codec, audio_track_count, bitrate, hash, recorded_at, album
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `);
-
-            const info2 = stmt.run(
-                library.id,
-                fileUuid,
-                library.type,
-                filename,
+            // Mesmo pipeline do ImportWorker (origem, álbum, recorded_at, audio_track_count, miniatura, READY)
+            const result = await ingestFile({
+                db: dbManager.get(),
+                ffprobe: this.ffprobe,
+                library,
                 filePath,
-                info.filesize,
-                info.duration,
-                info.width,
-                info.height,
-                info.fps,
-                info.video_codec,
-                info.audio_codec,
-                audioTrackCount,
-                info.bitrate,
-                hash,
-                recordedAt,
-                album
-            );
-
-            logger.info(`[MediaImporter] Arquivo importado: ${filename}`);
-            return { id: info2.lastInsertRowid, created: true };
-
+                emit: false, // os handlers IPC já notificam a UI ao final
+                generateThumbnail: (fp, uuid, duration) => this._generateThumbnail(fp, filename, uuid, duration),
+            });
+            if (!result) return;
+            if (result.created) logger.info(`[MediaImporter] Arquivo importado: ${filename}`);
+            return { id: result.id, created: result.created };
         } catch (error) {
             logger.error(`[MediaImporter] Falha ao importar ${filePath}: ${error.stack || error.message || error}`);
         }

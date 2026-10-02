@@ -1,8 +1,9 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
 const logger = require('./logService');
+const { assertHttpUrl, redactUrl } = require('./urlValidator');
+const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ytDlpTool } = require('../infrastructure/external-tools/adapters/YtDlpTool');
 const { spotDlTool } = require('../infrastructure/external-tools/adapters/SpotDlTool');
@@ -318,61 +319,31 @@ class ThumbnailService {
 
   async runSpotifyMetadata(url) {
     const exe = spotDlTool.resolve();
-    return new Promise((resolve, reject) => {
-      const child = spawn(
-        exe,
-        [
-          'save',
-          url,
-          '--save-file',
-          '-'
-        ],
-        {
-          windowsHide: true,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
-        }
-      );
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', chunk => {
-        stdout += chunk.toString('utf8');
+    let result;
+    try {
+      result = await toolRunner.run(exe, ['save', url, '--save-file', '-'], {
+        timeout: 90000,
+        env: { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
       });
-      child.stderr.on('data', chunk => {
-        stderr += chunk.toString('utf8');
-      });
-      child.on('close', code => {
-        if (code !== 0) {
-          return reject(
-            new Error(stderr)
-          );
-        }
-        try {
-          const jsonMatch =
-            stdout.match(/\[\s*\{[\s\S]*\}\s*\]/);
-
-        if (!jsonMatch) {
-
-            throw new Error(
-                `Resposta inesperada do SpotDL:\n${stdout}`
-            );
-
-        }
-
-        const parsed =
-            JSON.parse(jsonMatch[0]);
-          resolve(parsed);
-        } catch (err) {
-          reject(
-            new Error(
-              `Erro ao interpretar JSON Spotify: ${err.message}`
-            )
-          );
-        }
-      });
-    });
+    } catch (err) {
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao analisar metadados do Spotify.');
+      throw err;
+    }
+    if (result.code !== 0) {
+      throw new Error(result.stderr);
+    }
+    try {
+      const jsonMatch = result.stdout.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (!jsonMatch) {
+        throw new Error('Resposta inesperada do motor de download.');
+      }
+      return JSON.parse(jsonMatch[0]);
+    } catch (err) {
+      throw new Error(`Erro ao interpretar JSON Spotify: ${err.message}`);
+    }
   }
 
-  runYtDlpJson(url, args) {
+  async runYtDlpJson(url, args) {
     const exe = ytDlpTool.resolve();
 
     const finalArgs = [...args];
@@ -380,47 +351,32 @@ class ThumbnailService {
     if (cookiesFile && fs.existsSync(cookiesFile)) {
       finalArgs.push('--cookies', cookiesFile);
     }
-    finalArgs.push(url);
+    // '--' encerra as opções: a URL nunca é interpretada como flag do yt-dlp.
+    finalArgs.push('--', url);
 
-    logger.info('metadata:start', { url });
+    logger.info('metadata:start', { url: redactUrl(url) });
 
-    return new Promise((resolve, reject) => {
-      const child = spawn(exe, finalArgs, {
-        windowsHide: true,
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+    let result;
+    try {
+      result = await toolRunner.run(exe, finalArgs, {
+        timeout: 15000,
+        env: { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
       });
-      let stdout = '';
-      let stderr = '';
-      let timer = null;
+    } catch (err) {
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao analisar metadados.');
+      throw err;
+    }
 
-      timer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch (_) {}
-        reject(new Error('Tempo limite excedido ao analisar metadados.'));
-      }, 15000);
+    if (result.code !== 0) {
+      logger.warn('metadata:failed', { code: result.code, stderr: String(result.stderr || '').slice(-500) });
+      throw new Error(result.stderr.trim() || `O motor de download finalizou com código ${result.code}`);
+    }
 
-      child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
-      child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        if (code !== 0) {
-          logger.warn('metadata:failed', { code, stderr });
-          reject(new Error(stderr.trim() || `yt-dlp finalizou com código ${code}`));
-          return;
-        }
-
-        try {
-          resolve(JSON.parse(stdout));
-        } catch (error) {
-          reject(new Error(`Falha ao ler JSON do yt-dlp: ${error.message}`));
-        }
-      });
-    });
+    try {
+      return JSON.parse(result.stdout);
+    } catch (error) {
+      throw new Error(`Falha ao interpretar a resposta do motor de download: ${error.message}`);
+    }
   }
 
   assertExecutable(exePath) {
@@ -432,89 +388,61 @@ class ThumbnailService {
   }
 
   assertValidUrl(url) {
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Protocolo inválido');
-    } catch {
-      throw new Error('Informe uma URL válida.');
-    }
+    // Validador único (http/https) compartilhado com downloadService/metadataService
+    assertHttpUrl(url);
   }
-  
+
   async downloadThumbnail(url, outputFile) {
     const ytDlp = ytDlpTool.resolve();
+    assertHttpUrl(url);
 
-    return new Promise((resolve, reject) => {
-      const child = spawn(
-        ytDlp,
-        [
-          '--skip-download',
-          '--write-thumbnail',
-          '--convert-thumbnails',
-          'jpg',
-          '-o',
-          path.basename(outputFile, '.jpg'),
-          url
-        ],
-        {
-          cwd: path.dirname(outputFile),
-          windowsHide: true,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
-        }
-      );
-
-      child.on('close', code => {
-        if (code === 0) {
-          resolve(outputFile);
-        } else {
-          reject(
-            new Error(
-              `Falha ao baixar thumbnail (${code})`
-            )
-          );
-        }
+    let result;
+    try {
+      result = await toolRunner.run(ytDlp, [
+        '--skip-download',
+        '--write-thumbnail',
+        '--convert-thumbnails',
+        'jpg',
+        '-o',
+        path.basename(outputFile, '.jpg'),
+        '--',
+        url
+      ], {
+        cwd: path.dirname(outputFile),
+        timeout: 60000,
+        env: { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
       });
-    });
+    } catch (err) {
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao baixar a miniatura.');
+      throw err;
+    }
+
+    if (result.code === 0) return outputFile;
+    throw new Error(`Falha ao baixar thumbnail (${result.code})`);
   }
 
   async createSquareThumbnail(inputFile, outputFile) {
     const ffmpeg = ffmpegTool.resolve();
 
-    return new Promise((resolve, reject) => {
-      const child = spawn(
-        ffmpeg,
-        [
-          '-y',
-          '-i',
-          inputFile,
-          '-vf',
-          'scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080',
-          '-q:v',
-          '2',
-          outputFile
-        ],
-        {
-          windowsHide: true
-        }
-      );
+    let result;
+    try {
+      result = await toolRunner.run(ffmpeg, [
+        '-y',
+        '-i',
+        inputFile,
+        '-vf',
+        'scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080',
+        '-q:v',
+        '2',
+        outputFile
+      ], { timeout: 60000 });
+    } catch (err) {
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao gerar a miniatura.');
+      throw err;
+    }
 
-      let stderr = '';
-
-      child.stderr.on('data', chunk => {
-        stderr += chunk.toString();
-      });
-
-      child.on('close', code => {
-        if (code === 0) {
-          resolve(outputFile);
-        } else {
-          reject(
-            new Error(
-              stderr || `FFmpeg retornou ${code}`
-            )
-          );
-        }
-      });
-    });
+    if (result.code === 0) return outputFile;
+    throw new Error(result.stderr || `O motor de mídia retornou ${result.code}`);
   }
 
   async createSquareThumbnailFromUrl(thumbnailUrl, videoUrl) {

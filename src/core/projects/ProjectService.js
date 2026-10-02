@@ -362,15 +362,23 @@ class ProjectService {
 
     getSyncGroups(projectId) {
         const groups = this.db.prepare(`SELECT * FROM sync_groups WHERE project_id = ? ORDER BY id ASC`).all(projectId);
-        const stmtItems = this.db.prepare(`
+        if (groups.length === 0) return [];
+        // Uma única consulta (o wrapper libera a statement após cada .all, então não dá para reutilizar em loop)
+        const allItems = this.db.prepare(`
             SELECT sgi.*, m.filename, m.filepath, m.duration, m.uuid
             FROM sync_group_items sgi
             JOIN media m ON sgi.media_id = m.id
-            WHERE sgi.sync_group_id = ?
-        `);
+            WHERE sgi.sync_group_id IN (SELECT id FROM sync_groups WHERE project_id = ?)
+            ORDER BY sgi.id ASC
+        `).all(projectId);
+        const byGroup = new Map();
+        for (const it of allItems) {
+            if (!byGroup.has(it.sync_group_id)) byGroup.set(it.sync_group_id, []);
+            byGroup.get(it.sync_group_id).push(it);
+        }
         return groups.map(g => ({
             ...g,
-            items: stmtItems.all(g.id)
+            items: byGroup.get(g.id) || []
         }));
     }
 

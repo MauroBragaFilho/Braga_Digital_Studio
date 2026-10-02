@@ -3,8 +3,8 @@ const { EventEmitter } = require('events');
 class EventBus extends EventEmitter {
     constructor() {
         super();
-        // Aumentando limite caso tenhamos muitos listeners no futuro
-        this.setMaxListeners(20);
+        // Vários serviços escutam MEDIA_IMPORTED/MEDIA_REMOVED; evita warnings espúrios
+        this.setMaxListeners(50);
     }
 }
 

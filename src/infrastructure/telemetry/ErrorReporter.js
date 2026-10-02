@@ -4,11 +4,11 @@ const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
-const http = require('node:http');
 const { app, shell } = require('electron');
 const logger = require('../../services/logService');
 const { localDateKey, zonedISO } = require('../../services/timeUtils');
 const { DEVELOPER_EMAIL } = require('../../config/appInfo');
+const { redact, redactDeep } = require('../../services/redact');
 
 /**
  * ErrorReporter — Sistema de captura, diagnóstico e envio de relatórios de erros para o desenvolvedor.
@@ -23,6 +23,10 @@ const { DEVELOPER_EMAIL } = require('../../config/appInfo');
  * - Persistência local em logs/crash-reports/
  * - Envio assíncrono via HTTP POST (Webhook / API) com rate limiting
  * - Geração de link mailto com relatório formatado
+ *
+ * Privacidade: todo payload (mensagem, stack, metadata, logs recentes) passa por redact() antes de
+ * ser salvo, enviado ou virar mailto — sem diretório do usuário, query strings, tokens, cookies,
+ * e-mails (exceto o do desenvolvedor) ou chaves longas. O endpoint de telemetria exige https.
  */
 class ErrorReporter {
   constructor() {
@@ -115,10 +119,14 @@ class ErrorReporter {
       const savedPath = this._saveReportToDisk(reportData);
       reportData.localFilePath = savedPath;
 
-      // 2. Dispara envio HTTP para endpoint (se configurado)
+      // 2. Dispara envio HTTP para endpoint (se configurado) — somente https
       const targetUrl = settings.errorReportingEndpoint || this.endpointUrl;
       if (targetUrl) {
-        this._dispatchHttp(targetUrl, reportData).catch(() => {});
+        if (this._isHttpsEndpoint(targetUrl)) {
+          this._dispatchHttp(targetUrl, reportData).catch(() => {});
+        } else {
+          logger.warn('ErrorReporter:endpoint_rejected', { reason: 'o endpoint de telemetria precisa usar https' });
+        }
       }
 
       return reportData;
@@ -158,7 +166,24 @@ class ErrorReporter {
   }
 
   /**
-   * Constrói o payload completo de diagnóstico.
+   * Remove dados pessoais/sensíveis de texto ou objeto (ver services/redact.js).
+   * @param {string|object} value
+   */
+  redact(value) {
+    return typeof value === 'string' ? redact(value) : redactDeep(value);
+  }
+
+  /** Endpoint de telemetria só é aceito com https: (o relatório contém dados do sistema). */
+  _isHttpsEndpoint(urlStr) {
+    try {
+      return new URL(urlStr).protocol === 'https:';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Constrói o payload completo de diagnóstico (já redigido).
    * @private
    */
   _buildReportPayload(errObj, context) {
@@ -190,29 +215,51 @@ class ErrorReporter {
         electronVersion: process.versions.electron || null,
         chromeVersion: process.versions.chrome || null
       },
-      error: errObj,
-      context: {
-        source: context.source || 'unspecified',
-        isFatal: !!context.isFatal,
-        action: context.action || null,
-        metadata: context.metadata || {}
+      error: {
+        name: redact(errObj.name),
+        message: redact(errObj.message),
+        stack: redact(errObj.stack),
+        code: errObj.code
       },
-      recentLogs: this._getRecentLogsSnippet(30)
+      context: {
+        source: redact(context.source || 'unspecified'),
+        isFatal: !!context.isFatal,
+        action: context.action ? redact(String(context.action)) : null,
+        metadata: redactDeep(context.metadata || {})
+      },
+      recentLogs: this._getRecentLogsSnippet(30).map((line) => redact(line))
     };
   }
 
   /**
-   * Obtém as últimas linhas do arquivo de log do dia.
+   * Obtém as últimas linhas do arquivo de log ATUAL (o nome muda a cada dia: o logService
+   * recalcula a cada escrita e expõe getCurrentLogFile()). Lê só o final do arquivo.
    * @private
    */
   _getRecentLogsSnippet(maxLines = 30) {
     try {
-      const day = localDateKey();
-      const logFile = path.join(this.logsDir, `${day}.log`);
+      let logFile = null;
+      if (typeof logger.getCurrentLogFile === 'function') logFile = logger.getCurrentLogFile();
+      if (!logFile || !fs.existsSync(logFile)) {
+        const day = localDateKey();
+        logFile = path.join(this.logsDir || '', `${day}.log`);
+      }
       if (!fs.existsSync(logFile)) return [];
 
-      const content = fs.readFileSync(logFile, 'utf8');
+      const size = fs.statSync(logFile).size;
+      const readBytes = Math.min(size, 128 * 1024);
+      const fd = fs.openSync(logFile, 'r');
+      let content;
+      try {
+        const buffer = Buffer.alloc(readBytes);
+        fs.readSync(fd, buffer, 0, readBytes, size - readBytes);
+        content = buffer.toString('utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
       const lines = content.split(/\r?\n/).filter(Boolean);
+      // Se começou no meio do arquivo, a primeira linha pode estar cortada
+      if (readBytes < size) lines.shift();
       return lines.slice(-maxLines);
     } catch (_) {
       return [];
@@ -243,10 +290,13 @@ class ErrorReporter {
   _dispatchHttp(urlStr, data) {
     return new Promise((resolve, reject) => {
       try {
-        const payload = JSON.stringify(data);
+        // Última linha de defesa: redige também campos preenchidos depois (ex.: localFilePath)
+        const payload = JSON.stringify(redactDeep(data));
         const urlObj = new URL(urlStr);
-        const isHttps = urlObj.protocol === 'https:';
-        const client = isHttps ? https : http;
+        if (urlObj.protocol !== 'https:') {
+          return reject(new Error('O endpoint de telemetria precisa usar https.'));
+        }
+        const client = https;
 
         const req = client.request(urlObj, {
           method: 'POST',
@@ -438,7 +488,7 @@ class ErrorReporter {
       const text = String(description || '').trim();
       if (!text) return null;
 
-      const errObj = { name: 'ManualReport', message: text, stack: '', code: null };
+      const errObj = { name: 'ManualReport', message: text, stack: '', code: null }; // redigido em _buildReportPayload
       const reportData = this._buildReportPayload(errObj, {
         source: 'manual-report',
         isFatal: false,

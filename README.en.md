@@ -1,8 +1,8 @@
 # Braga Digital Studio (BDS) 🎬
 
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
-[![Electron](https://img.shields.io/badge/Electron-19.0.0-blue)](https://www.electronjs.org/)
-[![NodeJS](https://img.shields.io/badge/Node.js-18.x-green)](https://nodejs.org/)
+[![Electron](https://img.shields.io/badge/Electron-43-blue)](https://www.electronjs.org/)
+[![NodeJS](https://img.shields.io/badge/Node.js-22%2B-green)](https://nodejs.org/)
 
 *[Leia em Português](README.md)*
 
@@ -38,7 +38,7 @@ Braga Digital Studio (formerly Braga Media Downloader) is an advanced and profes
 
 ## 📦 Installation & Setup (Development)
 
-Ensure you have **Node.js** installed on your machine (version 18 or higher).
+Ensure you have **Node.js** installed on your machine (version 22 or higher).
 
 1. **Clone the repository:**
    ```bash
@@ -65,6 +65,49 @@ npm run build
 ```
 
 This command will bundle the source code along with its binaries and output the final installer file into the `dist/` folder. The installer includes all official icons and runs as a standalone desktop application.
+
+## 🧪 Quality, Scripts & CI
+
+| Script | What it does |
+|---|---|
+| `npm start` | Runs the app in development mode |
+| `npm run check` | Syntax-checks every `.js` file (ES modules in the renderer) |
+| `npm run lint` | ESLint (flat config in `eslint.config.js`) |
+| `npm test` | Unit tests (`node --test`, `tests/` folder) |
+| `npm run build` / `build:win` | Windows installer (NSIS) |
+| `npm run build:win:portable` | Windows portable build |
+| `npm run build:linux` | AppImage + `.deb` (also `build:linux:appimage` and `build:linux:deb`) |
+
+The `.github/workflows/ci.yml` workflow runs `npm ci`, `check`, `lint` and `test` on every push/PR. The release workflows run the same checks before building.
+
+## 🚢 Versioning & Release
+
+The version lives in `package.json` and is **not** bumped automatically by the build. To publish:
+
+1. `npm version patch --no-git-tag-version` (or `minor` / `major`) and commit `package.json`/`package-lock.json`;
+2. Trigger the **Release BDS (Windows + Linux)** workflow in the Actions tab (creates the `vX.Y.Z` tag and publishes Windows + Linux in a single Release), or push a `v*` tag to use the single-platform workflows.
+
+The installer must keep the name `BragaDigitalStudioSetup.exe`: the in-app updater looks for that asset name in the Release. Builds are not code-signed (SmartScreen may warn on first run).
+
+## 🧩 Optional Modules
+
+Features installed only if the user wants them (currently **Whisper**, for subtitles and transcription). BDS works normally without them. The engine, models (Hugging Face, faster-whisper) and GPU DLLs (NVIDIA CUDA) are downloaded on demand, SHA-256 verified, into `<dataDir>/modules`. Code in `src/core/modules/`, IPC in `src/ipc/moduleHandlers.js`, UI in `renderer/screens/modules.*` (development-mode only for now). Details in [`src/core/modules/README.md`](src/core/modules/README.md) (Portuguese).
+
+## 🗂️ Folder Structure
+
+```
+main.js, preload.js      Main process and secure bridge (IPC)
+src/core/                Business logic (media, library, devices, modules...)
+src/infrastructure/      External tools, filesystem, database
+src/ipc/                 IPC handlers and input validation
+src/services/            Application services
+src/config/              Versioned configuration (e.g. modules.config.json)
+renderer/                UI (vanilla JS, ES modules)
+config/                  Local configuration (ignored); use *.example.json as a template
+assets/                  App icons (icon.ico / icon.png)
+scripts/, tests/         Maintenance scripts and unit tests
+.github/workflows/       CI and release
+```
 
 ## 🔒 Privacy, Data & Gitignore
 

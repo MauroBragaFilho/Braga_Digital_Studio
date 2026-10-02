@@ -571,7 +571,7 @@
 
 .relink-pill--warning {
   background: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
+  color: var(--warning);
   font-weight: 600;
 }
 
@@ -600,7 +600,7 @@
 .relink-alert-title {
   font-size: 13px;
   font-weight: 700;
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 .relink-alert-desc {

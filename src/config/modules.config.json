@@ -1,0 +1,8 @@
+{
+  "_comment": "Módulos opcionais do BDS (ex.: Whisper). 'manifestUrl' aponta para o manifest.json que lista os módulos publicados (formato em src/core/modules/README.md). Enquanto estiver vazio, o motor só pode ser instalado a partir de um arquivo .zip. Modelos e CUDA sempre vêm das fontes oficiais abaixo.",
+
+  "manifestUrl": "",
+
+  "huggingFaceBaseUrl": "https://huggingface.co",
+  "nvidiaBaseUrl": "https://developer.download.nvidia.com"
+}

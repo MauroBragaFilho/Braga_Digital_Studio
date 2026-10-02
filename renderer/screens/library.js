@@ -1,3 +1,8 @@
+import { escapeHtml, escapeAttr } from '../utils/escape.js';
+import { enhanceModals } from '../utils/modal.js';
+import { t } from '../strings.js';
+
+const PAGE_SIZE = 300;
 let viewMode = 'grid'; // 'grid' | 'list'
 let mediaItems = [];
 let thumbsDir = '';
@@ -19,6 +24,22 @@ let currentSort = 'recorded_at';
 let currentSortOrder = 'DESC';
 let currentInspectorMedia = null;
 
+// --- Estado de paginação / carregamento ---
+let totalCount = null;      // total no backend (null = desconhecido)
+let hasMore = false;
+let isLoading = false;
+let loadError = null;
+let fetchSeq = 0;           // descarta respostas obsoletas
+let everLoaded = false;
+let libraryDirty = false;   // algo mudou enquanto a tela estava oculta
+
+// --- Ciclo de vida ---
+let cleanups = [];          // listeners globais/IPC/observers ativos
+let awayUnsubs = [];        // marcadores leves enquanto a tela está oculta
+let thumbsRegenTimer = null;
+let importDebounceTimer = null;
+let loadMoreObserver = null;
+
 export async function initScreen() {
   console.log('[LIBRARY] Inicializando tela...');
 
@@ -31,21 +52,7 @@ export async function initScreen() {
     }
   }
 
-  // ESC fecha o inspector da biblioteca
-  if (!window._libInspectorEscBound) {
-    window._libInspectorEscBound = true;
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      // Ignora se estiver editando um campo de texto ou com modal aberto
-      const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
-      if (document.querySelector('.lib-modal-overlay.active')) return;
-      const inspector = document.getElementById('libraryInspector');
-      if (inspector && inspector.classList.contains('active')) {
-        closeInspector();
-      }
-    });
-  }
+  bindGlobalListeners();
 
   // View toggles
   document.getElementById('btnViewGrid')?.addEventListener('click', () => setViewMode('grid'));
@@ -99,33 +106,6 @@ export async function initScreen() {
     }
   });
 
-  // Escuta novos arquivos
-  if (window.bds && window.bds.onMediaImported && !window.libraryListenerRegistered) {
-    window.libraryListenerRegistered = true;
-    window.bds.onMediaImported(() => {
-      setTimeout(() => {
-        loadFilterOptions();
-        fetchMedia();
-      }, 50); 
-    });
-  }
-
-  // [FIX] Atualiza a biblioteca PROGRESSIVAMENTE durante a regeneração de thumbnails
-  // (com debounce), não apenas quando o processo termina — para que as thumbnails
-  // apareçam assim que forem geradas em background, sem biblioteca preta por minutos.
-  if (window.bds && window.bds.onThumbsRegenProgress && !window.libraryThumbsRegenRegistered) {
-    window.libraryThumbsRegenRegistered = true;
-    let thumbsRegenTimer = null;
-    window.bds.onThumbsRegenProgress((data) => {
-      if (!data || !data.total) return;
-      clearTimeout(thumbsRegenTimer);
-      // Ao concluir, atualiza rápido; durante, espera ~1s para agregar vários lotes
-      thumbsRegenTimer = setTimeout(() => {
-        fetchMedia();
-      }, data.processed >= data.total ? 400 : 1200);
-    });
-  }
-  
   // Limpar Filtros
   const btnLimpar = document.getElementById('btnLimparFiltros');
   if (btnLimpar) {
@@ -140,12 +120,85 @@ export async function initScreen() {
     });
   }
 
+  enhanceModals(document.getElementById('libraryView') || document, '.lib-modal-overlay');
   setupCustomSourceModal();
   setupAddToProjectModal();
   setupDelegatedMediaClicks();
   await loadFilterOptions();
   fetchMedia();
   bindInspectorEvents();
+}
+
+/** ESC fecha o inspector da biblioteca (roteado pelo despachante central do app.js). */
+export function onKeyDown(e) {
+  if (e.key !== 'Escape') return;
+  const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  if (document.querySelector('.lib-modal-overlay.active')) return;
+  const inspector = document.getElementById('libraryInspector');
+  if (inspector && inspector.classList.contains('active')) closeInspector();
+}
+
+/** Listeners globais (document / IPC / observers): registrados aqui e removidos em onLeave. */
+function bindGlobalListeners() {
+  if (window.bds && window.bds.onMediaImported) {
+    const unsub = window.bds.onMediaImported(() => {
+      clearTimeout(importDebounceTimer);
+      importDebounceTimer = setTimeout(() => {
+        loadFilterOptions();
+        fetchMedia();
+      }, 50);
+    });
+    if (typeof unsub === 'function') cleanups.push(unsub);
+  }
+
+  // Atualiza a biblioteca PROGRESSIVAMENTE durante a regeneração de thumbnails (com debounce)
+  if (window.bds && window.bds.onThumbsRegenProgress) {
+    const unsub = window.bds.onThumbsRegenProgress((data) => {
+      if (!data || !data.total) return;
+      clearTimeout(thumbsRegenTimer);
+      thumbsRegenTimer = setTimeout(() => { fetchMedia(); }, data.processed >= data.total ? 400 : 1200);
+    });
+    if (typeof unsub === 'function') cleanups.push(unsub);
+  }
+
+  cleanups.push(() => {
+    clearTimeout(importDebounceTimer); importDebounceTimer = null;
+    clearTimeout(thumbsRegenTimer); thumbsRegenTimer = null;
+    if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
+    if (libWaveformObserver) { libWaveformObserver.disconnect(); libWaveformObserver = null; }
+  });
+}
+
+export function onLeave() {
+  cleanups.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  cleanups = [];
+  fetchSeq++; // invalida requisições em andamento
+  isLoading = false;
+  // Marcadores leves: apenas registram que há dados novos, para refazer o fetch ao voltar
+  const markDirty = () => { libraryDirty = true; };
+  awayUnsubs.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  awayUnsubs = [];
+  [window.bds?.onMediaImported, window.bds?.onThumbsRegenProgress].forEach((sub) => {
+    if (typeof sub !== 'function') return;
+    const unsub = sub.call(window.bds, markDirty);
+    if (typeof unsub === 'function') awayUnsubs.push(unsub);
+  });
+}
+
+export function onEnter() {
+  awayUnsubs.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  awayUnsubs = [];
+  if (!cleanups.length) bindGlobalListeners();
+  const search = (document.getElementById('globalSearch')?.value || '').trim();
+  if (search !== currentSearch) { currentSearch = search; libraryDirty = true; }
+  if (libraryDirty || !everLoaded || loadError) {
+    libraryDirty = false;
+    fetchMedia();
+  } else {
+    attachLoadMoreObserver();
+    loadVisibleAudioWaveforms(document.getElementById('libContentArea') || document);
+  }
 }
 
 export function resetFilters() {
@@ -285,9 +338,29 @@ export async function applyGlobalSearch(query) {
   await fetchMedia();
 }
 
-export async function fetchMedia() {
+export function fetchMedia() {
+  return loadMedia(false);
+}
 
+async function loadMedia(append) {
   if (!window.bds || !window.bds.searchLibrary) return;
+  if (append && (isLoading || !hasMore)) return;
+
+  const seq = ++fetchSeq;
+  isLoading = true;
+  loadError = null;
+  const container = document.getElementById('libContentArea');
+  if (!append) {
+    hasMore = false;
+    if (container) {
+      container.setAttribute('aria-busy', 'true');
+      if (mediaItems.length === 0) {
+        container.innerHTML = `<div class="lib-loading" role="status"><span class="material-symbols-rounded lib-loading-spin">progress_activity</span> ${t('library.loading')}</div>`;
+      }
+    }
+  } else {
+    updateLoadMoreSentinel();
+  }
 
   const options = {
     query: currentSearch,
@@ -302,26 +375,112 @@ export async function fetchMedia() {
     favorites: currentFilters.favorites,
     sort: currentSort,
     order: currentSortOrder,
-    limit: 300
+    limit: PAGE_SIZE,
+    offset: append ? mediaItems.length : 0
   };
 
-  const searchResult = await window.bds.searchLibrary(options);
-  mediaItems = searchResult.items || [];
-  
-  const globalMediaCount = document.getElementById('globalMediaCount');
-  if (globalMediaCount) {
-    const count = searchResult.totalCount || mediaItems.length;
-    globalMediaCount.textContent = `${count.toLocaleString('pt-BR')} mídias encontradas`;
+  try {
+    const searchResult = (await window.bds.searchLibrary(options)) || {};
+    if (seq !== fetchSeq) return; // resposta obsoleta
+    const items = searchResult.items || [];
+    const total = Number.isFinite(searchResult.totalCount) ? searchResult.totalCount
+      : (Number.isFinite(searchResult.total) ? searchResult.total : null);
+
+    if (append) {
+      // Compatível com backend sem suporte a offset: ignora itens repetidos
+      const known = new Set(mediaItems.map(m => m.id));
+      const fresh = items.filter(m => !known.has(m.id));
+      mediaItems = mediaItems.concat(fresh);
+      hasMore = fresh.length > 0 && items.length >= PAGE_SIZE;
+    } else {
+      mediaItems = items;
+      hasMore = items.length >= PAGE_SIZE;
+    }
+    totalCount = total;
+    if (typeof searchResult.hasMore === 'boolean') hasMore = searchResult.hasMore;
+    else if (total !== null) hasMore = hasMore && mediaItems.length < total;
+    everLoaded = true;
+  } catch (err) {
+    if (seq !== fetchSeq) return;
+    console.error('[LIBRARY] Falha ao buscar mídias:', err);
+    loadError = err && err.message ? err.message : 'Falha desconhecida';
+    hasMore = false;
+  } finally {
+    if (seq === fetchSeq) {
+      isLoading = false;
+      container?.removeAttribute('aria-busy');
+    }
   }
-  
+  if (seq !== fetchSeq) return;
+
+  updateMediaCount();
+  if (loadError && !append) {
+    renderLoadError(container);
+    return;
+  }
   renderMedia();
+}
+
+function updateMediaCount() {
+  const globalMediaCount = document.getElementById('globalMediaCount');
+  if (!globalMediaCount) return;
+  const loaded = mediaItems.length;
+  const total = totalCount !== null ? totalCount : loaded;
+  globalMediaCount.textContent = total > loaded
+    ? t('library.countOf', { loaded: loaded.toLocaleString('pt-BR'), total: total.toLocaleString('pt-BR') })
+    : t('library.countFound', { total: total.toLocaleString('pt-BR') });
+}
+
+function renderLoadError(container) {
+  if (!container) return;
+  container.innerHTML = `
+    <div class="lib-empty-state lib-error-state" role="alert">
+      <p>${t('library.loadError')}</p>
+      <p class="lib-error-detail">${escapeHtml(loadError)}</p>
+      <button type="button" class="bds-btn-secondary" data-action="retry-load">${t('common.retry')}</button>
+    </div>`;
+}
+
+/** Sentinela no fim da lista: ao aparecer na tela carrega a próxima página. */
+function updateLoadMoreSentinel() {
+  const container = document.getElementById('libContentArea');
+  if (!container) return;
+  let el = container.querySelector('#libLoadMore');
+  if (!hasMore && !isLoading && !loadError) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'libLoadMore';
+    el.className = 'lib-load-more';
+    container.appendChild(el);
+  }
+  if (loadError) {
+    el.innerHTML = `<span class="lib-error-detail">${t('library.loadMoreError')}</span> <button type="button" class="bds-btn-secondary" data-action="retry-more">${t('common.retry')}</button>`;
+  } else {
+    el.innerHTML = isLoading
+      ? `<span class="material-symbols-rounded lib-loading-spin">progress_activity</span> ${t('library.loadingMore')}`
+      : '';
+  }
+}
+
+function attachLoadMoreObserver() {
+  if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
+  updateLoadMoreSentinel();
+  const sentinel = document.getElementById('libLoadMore');
+  if (!sentinel || !hasMore || typeof IntersectionObserver === 'undefined') return;
+  loadMoreObserver = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)) loadMedia(true);
+  }, { root: null, rootMargin: '600px' });
+  loadMoreObserver.observe(sentinel);
 }
 
 function renderMedia() {
   const container = document.getElementById('libContentArea');
   if (!container) return;
   
+  // Preserva o foco do teclado em um card durante re-renderizações (ex.: paginação)
+  const focusedId = container.contains(document.activeElement) ? document.activeElement.getAttribute('data-id') : null;
   if (mediaItems.length === 0) {
+    if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
     container.innerHTML = '<div class="lib-empty-state">Nenhuma mídia encontrada.</div>';
     return;
   }
@@ -412,7 +571,7 @@ function renderMedia() {
   let html = '';
   if (viewMode === 'grid') {
     for (const key of sortedGroupKeys) {
-      html += `<div class="lib-date-header">${key}</div>`;
+      html += `<div class="lib-date-header">${escapeHtml(key)}</div>`;
       html += `<div class="lib-grid">${grouped[key].items.map(m => renderGridCard(m)).join('')}</div>`;
     }
     container.innerHTML = html;
@@ -423,12 +582,15 @@ function renderMedia() {
         <th>Mídia</th><th>Origem</th><th>Resolução</th><th>FPS</th><th>Tamanho</th>
       </tr></thead><tbody>`;
     for (const key of sortedGroupKeys) {
-      html += `<tr><td colspan="5" class="lib-date-header">${key}</td></tr>`;
+      html += `<tr><td colspan="5" class="lib-date-header">${escapeHtml(key)}</td></tr>`;
       html += grouped[key].items.map(m => renderListRow(m)).join('');
     }
     html += `</tbody></table>`;
     container.innerHTML = html;
   }
+
+  if (focusedId) container.querySelector(`.media-clickable[data-id="${CSS.escape(focusedId)}"]`)?.focus();
+  attachLoadMoreObserver();
 }
 
 function setupDelegatedMediaClicks() {
@@ -437,6 +599,8 @@ function setupDelegatedMediaClicks() {
   container.dataset.hasDelegatedClick = 'true';
 
   container.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="retry-load"]')) { fetchMedia(); return; }
+    if (e.target.closest('[data-action="retry-more"]')) { loadError = null; hasMore = true; loadMedia(true); return; }
     const item = e.target.closest('.media-clickable');
     if (!item) return;
 
@@ -480,6 +644,39 @@ function setupDelegatedMediaClicks() {
     }
   });
 
+  // Teclado: Enter abre o inspetor, Espaço alterna seleção, setas navegam entre os cards
+  container.addEventListener('keydown', (e) => {
+    const item = e.target.closest && e.target.closest('.media-clickable');
+    if (!item || e.target !== item) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      item.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: e.key === ' ' || e.ctrlKey, metaKey: e.metaKey }));
+      return;
+    }
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+    const all = Array.from(container.querySelectorAll('.media-clickable'));
+    const idx = all.indexOf(item);
+    let next = null;
+    if (e.key === 'ArrowRight' || (e.key === 'ArrowDown' && viewMode === 'list')) next = all[idx + 1];
+    else if (e.key === 'ArrowLeft' || (e.key === 'ArrowUp' && viewMode === 'list')) next = all[idx - 1];
+    else if (e.key === 'Home') next = all[0];
+    else if (e.key === 'End') next = all[all.length - 1];
+    else {
+      // Grade: encontra o card mais próximo na linha acima/abaixo
+      const rect = item.getBoundingClientRect();
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      let best = null; let bestDist = Infinity;
+      for (const cand of all) {
+        const cr = cand.getBoundingClientRect();
+        if (dir > 0 ? cr.top <= rect.top + 4 : cr.top >= rect.top - 4) continue;
+        const dist = Math.abs(cr.top - rect.top) * 1000 + Math.abs(cr.left - rect.left);
+        if (dist < bestDist) { bestDist = dist; best = cand; }
+      }
+      next = best;
+    }
+    if (next) { e.preventDefault(); next.focus(); next.scrollIntoView({ block: 'nearest' }); }
+  });
+
   // Duplo clique abre o Preview diretamente com a coleção
   container.addEventListener('dblclick', (e) => {
     const item = e.target.closest('.media-clickable');
@@ -503,6 +700,8 @@ function updateSelectionVisuals() {
     const id = parseInt(item.getAttribute('data-id'));
     const isSelected = selectedIds.has(id);
     item.classList.toggle('selected', isSelected);
+    if (item.getAttribute('role') === 'button') item.setAttribute('aria-pressed', String(isSelected));
+    else item.setAttribute('aria-selected', String(isSelected));
     const checkbox = item.querySelector('.lib-card-checkbox');
     if (checkbox) checkbox.checked = isSelected;
   });
@@ -598,10 +797,10 @@ function renderGridCard(media) {
   const audioDurationBadge = isAudio ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
 
   return `
-    <div class="lib-card media-clickable ${isSelected ? 'selected' : ''}" data-id="${media.id}">
-      <div class="${thumbClass}" style="${thumbStyle}">
-        <input type="checkbox" class="lib-card-checkbox" ${isSelected ? 'checked' : ''}>
-        <span class="material-symbols-rounded lib-card-badge-fav ${favClass}">${favIcon}</span>
+    <div class="lib-card media-clickable ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(media.id)}" tabindex="0" role="button" aria-pressed="${isSelected}" aria-label="${escapeAttr(media.filename)}">
+      <div class="${thumbClass}" style="${escapeAttr(thumbStyle)}">
+        <input type="checkbox" class="lib-card-checkbox" aria-label="Selecionar" ${isSelected ? 'checked' : ''}>
+        <span class="material-symbols-rounded lib-card-badge-fav ${favClass}" role="button" aria-label="${media.favorite ? 'Remover dos favoritos' : 'Favoritar'}">${favIcon}</span>
         ${audioWaveform}
         ${durationBadge}
         ${audioDurationBadge}
@@ -629,12 +828,12 @@ function renderListRow(media) {
   const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}');` : '';
 
   return `
-    <tr class="media-clickable ${isSelected ? 'selected' : ''}" data-id="${media.id}">
+    <tr class="media-clickable ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(media.id)}" tabindex="0" aria-selected="${isSelected}">
       <td>
         <div class="lib-list-cell-content">
-          <input type="checkbox" class="lib-card-checkbox" ${isSelected ? 'checked' : ''}>
-          <div class="lib-list-thumb" style="${thumbStyle}"></div>
-          <span class="material-symbols-rounded lib-list-fav-btn ${favClass}">${favIcon}</span>
+          <input type="checkbox" class="lib-card-checkbox" aria-label="Selecionar" ${isSelected ? 'checked' : ''}>
+          <div class="lib-list-thumb" style="${escapeAttr(thumbStyle)}"></div>
+          <span class="material-symbols-rounded lib-list-fav-btn ${favClass}" role="button" aria-label="${media.favorite ? 'Remover dos favoritos' : 'Favoritar'}">${favIcon}</span>
           <span class="lib-list-filename" title="${escapeAttr(media.filename)}">${escapeHtml(media.filename)}</span>
         </div>
       </td>
@@ -799,7 +998,7 @@ async function loadMediaTags(mediaId) {
     }
     span.innerHTML = `
       ${escapeHtml(displayName)}
-      <span class="material-symbols-rounded remove-tag" data-id="${tag.id}">close</span>
+      <span class="material-symbols-rounded remove-tag" data-id="${escapeAttr(tag.id)}" role="button" aria-label="Remover tag">close</span>
     `;
     tagsContainer.insertBefore(span, addBtn);
   });
@@ -1152,17 +1351,6 @@ function closeInspector() {
   }
 }
 
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str).replace(/[&<>'"]/g, m => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-  }[m]));
-}
-
-function escapeAttr(str) {
-  return escapeHtml(str);
-}
-
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
   const k = 1024, dm = 2, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
@@ -1190,7 +1378,7 @@ async function loadFilterOptions() {
     if (!items || items.length === 0) return '';
     let html = `
       <div class="filter-group-header">
-        <h3 class="filter-group-title">${title}</h3>
+        <h3 class="filter-group-title">${escapeHtml(title)}</h3>
       </div>
     `;
     items.forEach(item => {
@@ -1198,11 +1386,11 @@ async function loadFilterOptions() {
       html += `
         <label class="lib-filter-row">
           <div class="lib-filter-row-inner">
-            <input type="checkbox" name="${name}" value="${item[valueKey]}" class="lib-filter-chk" ${isChecked ? 'checked' : ''}>
+            <input type="checkbox" name="${name}" value="${escapeAttr(item[valueKey])}" class="lib-filter-chk" ${isChecked ? 'checked' : ''}>
             <span class="lib-filter-custom-chk material-symbols-rounded">${isChecked ? 'check_box' : 'check_box_outline_blank'}</span>
-            <span>${formatter(item[labelKey])}</span>
+            <span>${escapeHtml(formatter(item[labelKey]))}</span>
           </div>
-          <span class="lib-filter-count">${item[countKey]}</span>
+          <span class="lib-filter-count">${escapeHtml(item[countKey])}</span>
         </label>
       `;
     });

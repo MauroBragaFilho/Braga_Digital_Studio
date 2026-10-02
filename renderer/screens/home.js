@@ -1,5 +1,35 @@
+import { escapeHtml, escapeAttr } from '../utils/escape.js';
 let recentJobs = [];
 let thumbsDir = '';
+
+let importUnsub = null;
+let importDebounceTimer = null;
+
+// Listener de novas mídias (com debounce para evitar tempestade de re-renders); removido em onLeave
+function bindImportListener() {
+  if (importUnsub || !window.bds || !window.bds.onMediaImported) return;
+  const unsub = window.bds.onMediaImported((media) => {
+    console.log('[HOME] Novo arquivo importado:', media?.filename || '');
+    clearTimeout(importDebounceTimer);
+    importDebounceTimer = setTimeout(async () => {
+      await loadStats();
+      await loadRecentJobs();
+    }, 800);
+  });
+  importUnsub = typeof unsub === 'function' ? unsub : null;
+}
+
+export function onLeave() {
+  clearTimeout(importDebounceTimer);
+  importDebounceTimer = null;
+  if (importUnsub) { importUnsub(); importUnsub = null; }
+}
+
+export async function onEnter() {
+  bindImportListener();
+  await loadStats();
+  await loadRecentJobs();
+}
 
 export async function initScreen() {
   try {
@@ -42,19 +72,7 @@ export async function initScreen() {
     await loadStats();
     await loadRecentJobs();
 
-    // Listener de novas mídias (apenas uma vez, com debounce para evitar tempestade de re-renders)
-    if (window.bds && window.bds.onMediaImported && !window.homeListenerRegistered) {
-      window.homeListenerRegistered = true;
-      let importDebounceTimer = null;
-      window.bds.onMediaImported((media) => {
-        console.log('[HOME] Novo arquivo importado:', media?.filename || '');
-        if (importDebounceTimer) clearTimeout(importDebounceTimer);
-        importDebounceTimer = setTimeout(async () => {
-          await loadStats();
-          await loadRecentJobs();
-        }, 800);
-      });
-    }
+    bindImportListener();
   } catch (err) {
     console.error('[HOME] ERRO NO INIT:', err);
     const mediaEl = document.getElementById('statTotalMedia');
@@ -194,8 +212,8 @@ function renderRecordingsCarousel() {
     const safeTitle = escapeAttr(item.filename);
     
     return `
-      <div class="recent-carousel-card" data-id="${item.id}">
-        <div class="recent-carousel-thumb" style="${thumbStyle}">
+      <div class="recent-carousel-card" data-id="${escapeAttr(item.id)}">
+        <div class="recent-carousel-thumb" style="${escapeAttr(thumbStyle)}">
           <div class="recent-carousel-duration">${formatDuration(item.duration)}</div>
         </div>
         <div class="recent-carousel-info">
@@ -272,7 +290,7 @@ function renderJobsTable() {
     const truncated = filename.length > 35 ? filename.substring(0, 35) + '...' : filename;
 
     return `
-      <tr class="recent-job-row" data-id="${job.id || ''}">
+      <tr class="recent-job-row" data-id="${escapeAttr(job.id || '')}">
         <td>
           <div class="job-name-cell">
             <span class="material-symbols-rounded">${icon}</span>
@@ -313,18 +331,6 @@ function renderJobsTable() {
       }
     });
   });
-}
-
-// Helpers
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str).replace(/[&<>'"]/g, m => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-  }[m]));
-}
-
-function escapeAttr(str) {
-  return escapeHtml(str);
 }
 
 function formatBytes(bytes) {

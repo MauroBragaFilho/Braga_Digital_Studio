@@ -1,5 +1,9 @@
 import { setAppStatus, state as appState } from '../app.js';
 
+import { escapeHtml } from '../utils/escape.js';
+import { maskEngineNames } from '../utils/engineNames.js';
+import { enhanceModals } from '../utils/modal.js';
+
 // Constantes de Status (Centralizadas para evitar typos)
 const STATUS_WAITING = 'Aguardando';
 const STATUS_CONVERTING = 'Convertendo';
@@ -33,17 +37,6 @@ const CONVERTER_SUPPORTED_EXTENSIONS = [
 // Extensões exibidas no grid de extensões suportadas (empty state)
 const CONVERTER_FORMAT_CHIPS = ['MP4', 'MKV', 'AVI', 'MOV', 'WEBM', 'MP3', 'AAC', 'FLAC', 'WAV', 'OGG'];
 
-// Função para escapar HTML e prevenir XSS/quebra de atributos
-function escapeHtml(str) {
-  if (typeof str !== 'string') return str;
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function logConverterScreen(msg, type = 'info') {
   if (type === 'error') {
     const banner = document.getElementById('converterDebugBanner');
@@ -54,7 +47,7 @@ function logConverterScreen(msg, type = 'info') {
     }
     if (output) {
       const time = new Date().toLocaleTimeString('pt-BR');
-      output.textContent = `❌ [ERRO DETECTADO] ${time} - ${msg}\n` + output.textContent;
+      output.textContent = `❌ [ERRO DETECTADO] ${time} - ${maskEngineNames(String(msg))}\n` + output.textContent;
     }
   }
   console.log(`[CONVERTER-${type.toUpperCase()}]:`, msg);
@@ -304,8 +297,31 @@ function setupConverterDragAndDrop() {
 // EXPORTS
 // ---------------------------------------------------------------------------
 
+// Handlers de erro via addEventListener (não sobrescrevem window.onerror de outras telas)
+let errorHandlers = null;
+function installErrorHandlers() {
+  removeErrorHandlers();
+  const onError = (e) => logConverterScreen(`Erro JS: ${e.message} (Linha: ${e.lineno})`, 'error');
+  const onRejection = (e) => logConverterScreen(`Rejeição de Promessa: ${e.reason?.message || e.reason}`, 'error');
+  window.addEventListener('error', onError);
+  window.addEventListener('unhandledrejection', onRejection);
+  errorHandlers = { onError, onRejection };
+}
+function removeErrorHandlers() {
+  if (!errorHandlers) return;
+  window.removeEventListener('error', errorHandlers.onError);
+  window.removeEventListener('unhandledrejection', errorHandlers.onRejection);
+  errorHandlers = null;
+}
+
+/** Retorna à tela: reinstala os handlers removidos em onLeave */
+export function onEnter() {
+  if (!errorHandlers) installErrorHandlers();
+}
+
 /** Chamado pelo app.js ao trocar de tela — limpa listeners temporários */
 export function onLeave() {
+  removeErrorHandlers();
   closeConverterAddMenu();
   if (addMenuDocClickListener) {
     document.removeEventListener('click', addMenuDocClickListener);
@@ -316,14 +332,8 @@ export function onLeave() {
 export async function initScreen() {
   logConverterScreen('Inicializando tela de Conversão de Mídias...', 'info');
 
-  window.onerror = function(msg, url, lineNo, columnNo, error) {
-    logConverterScreen(`Erro JS: ${msg} (Linha: ${lineNo})`, 'error');
-    return false;
-  };
-
-  window.onunhandledrejection = function(event) {
-    logConverterScreen(`Rejeição de Promessa: ${event.reason?.message || event.reason}`, 'error');
-  };
+  installErrorHandlers();
+  enhanceModals(document.getElementById('converterView') || document, '.converter-modal-overlay');
 
   if (window.bds && window.bds.getThumbDir) {
     try {
@@ -384,12 +394,12 @@ async function applyConverterEncoderAvailability() {
     if (btnH265) {
       btnH265.disabled = !has265;
       btnH265.title = has265
-        ? 'H.265 / HEVC (menor tamanho, requer suporte no FFmpeg)'
-        : 'H.265 não disponível neste build do FFmpeg';
+        ? 'H.265 / HEVC (menor tamanho, requer suporte do motor de conversão)'
+        : 'H.265 não disponível neste motor de conversão';
     }
     if (hint) {
       if (!has265) {
-        hint.textContent = 'H.265 não está disponível neste FFmpeg. Usando H.264.';
+        hint.textContent = 'H.265 não está disponível neste motor de conversão. Usando H.264.';
         hint.classList.remove('hidden');
       } else {
         hint.classList.add('hidden');

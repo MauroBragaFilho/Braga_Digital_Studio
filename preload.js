@@ -7,11 +7,17 @@ const listeners = new Set();
  * Função auxiliar para registrar ouvintes de forma padronizada
  */
 const registerListener = (channel, callback) => {
+  if (typeof callback !== 'function') return () => {};
   const listener = (_, payload) => callback(payload);
+  const entry = [channel, listener];
   ipcRenderer.on(channel, listener);
-  listeners.add([channel, listener]);
-  // Retorna uma função de desinscrição para limpeza individual, se necessário
-  return () => ipcRenderer.removeListener(channel, listener);
+  listeners.add(entry);
+  // Retorna uma função de desinscrição (idempotente) que também remove a entrada do Set,
+  // evitando que ele cresça indefinidamente a cada tela/montagem.
+  return () => {
+    ipcRenderer.removeListener(channel, listener);
+    listeners.delete(entry);
+  };
 };
 
 const api = {
@@ -84,7 +90,7 @@ const api = {
   sonyGetStatus: (cameraId) => ipcRenderer.invoke('sony:get-status', cameraId),
   sonyImportItems: (cameraId, items, destFolder) => ipcRenderer.invoke('sony:import-items', { cameraId, items, destFolder }),
   onSonyImportProgress: (cb) => registerListener('sony:import-progress', cb),
-  onSonyStatusUpdated: (cb) => registerListener('sony:status_updated', cb),
+  onSonyStatusUpdated: (cb) => registerListener('sony-camera:status-update', cb),
 
   // Metadados
   probeMetadataFile: (filePath) => ipcRenderer.invoke('metadata:probe', filePath),
@@ -112,15 +118,11 @@ const api = {
   inspectPlaylist: (url) => ipcRenderer.invoke('media:inspectPlaylist', url),
   expandPlaylist: (url) => ipcRenderer.invoke('media:expandPlaylist', url),
   exportYoutubeCookies: () => ipcRenderer.invoke('youtube:exportCookies'),
-  openExternal: (url) => require('electron').shell.openExternal(url),
+  // `shell` não existe no preload com sandbox: delega ao main (valida https:/mailto:)
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   startUpload: (request) => ipcRenderer.invoke('upload:start', request),
 
-  // Automação Nível 2 (UploadService)
-  uploadAddToQueue: (account, fileData) => ipcRenderer.invoke('upload:addToQueue', account, fileData),
-  uploadStartJob: (jobId) => ipcRenderer.invoke('upload:startJob', jobId),
-  uploadGetQueue: () => ipcRenderer.invoke('upload:getQueue'),
-  uploadClearQueue: () => ipcRenderer.invoke('upload:clearQueue'),
-  onUploadQueueUpdated: (callback) => ipcRenderer.on('upload:queue-updated', (event, q) => callback(q)),
+  // Automação Nível 2 (UploadService): ver "Upload Scanner & Automation APIs" mais abaixo.
 
   // Navegação por Notificação (clique na notificação nativa → troca de tela)
   onNavigateToScreen: (callback) => registerListener('bds:navigate-to-screen', callback),
@@ -164,7 +166,7 @@ const api = {
   // --- Atualizações Unificadas (BDS Update Manager) ---
   checkUpdates: () => ipcRenderer.invoke('updates:checkSystem'),
   installUpdates: () => ipcRenderer.invoke('updates:updateAll'),
-  updateTool: (tool) => ipcRenderer.invoke('updates:updateTool', tool),
+  updateTool: (tool, opts) => ipcRenderer.invoke('updates:updateTool', tool, opts),
   rollbackTool: (tool) => ipcRenderer.invoke('updates:rollbackTool', tool),
   updateAllDependencies: () => ipcRenderer.invoke('updates:updateAll'),
   checkEverything: () => ipcRenderer.invoke('updates:checkAll'),
@@ -223,7 +225,7 @@ const api = {
 
   // YouTube
   onYoutubeCode: (cb) => registerListener('youtube:code', cb),
-  onYoutubeAuthStatus: (cb) => registerListener('youtube:authStatus', cb),
+  onYoutubeAuthStatus: (cb) => registerListener('youtube:auth-status', cb),
   
   // IA (assistente, provedores e tarefas) — a chave de API nunca volta para o renderer
   aiGetConfig: () => ipcRenderer.invoke('ai:getConfig'),
@@ -233,6 +235,21 @@ const api = {
   aiChat: (messages) => ipcRenderer.invoke('ai:chat', { messages }),
   aiListTasks: () => ipcRenderer.invoke('ai:listTasks'),
   aiRunTask: (name, payload) => ipcRenderer.invoke('ai:runTask', name, payload),
+
+  // Módulos opcionais (Whisper: motor, modelos, CUDA e transcrição)
+  modulesGetStatus: () => ipcRenderer.invoke('modules:getStatus'),
+  modulesInstallEngine: (payload) => ipcRenderer.invoke('modules:installEngine', payload),
+  modulesUninstallEngine: () => ipcRenderer.invoke('modules:uninstallEngine'),
+  modulesInstallModel: (id) => ipcRenderer.invoke('modules:installModel', id),
+  modulesRemoveModel: (id) => ipcRenderer.invoke('modules:removeModel', id),
+  modulesSetActiveModel: (id) => ipcRenderer.invoke('modules:setActiveModel', id),
+  modulesInstallCuda: (payload) => ipcRenderer.invoke('modules:installCuda', payload),
+  modulesRemoveCuda: () => ipcRenderer.invoke('modules:removeCuda'),
+  modulesCancel: () => ipcRenderer.invoke('modules:cancel'),
+  modulesTranscribe: (options) => ipcRenderer.invoke('modules:transcribe', options),
+  modulesReveal: (p) => ipcRenderer.invoke('modules:reveal', p),
+  onModulesProgress: (cb) => registerListener('modules:progress', cb),
+  onModulesStatus: (cb) => registerListener('modules:status', cb),
 
   // Media Library - Fase 1.3
   getLibraryStats: () => ipcRenderer.invoke('library:getStats'),

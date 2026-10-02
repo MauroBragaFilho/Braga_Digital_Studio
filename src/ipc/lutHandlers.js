@@ -8,6 +8,14 @@ const logger = require('../services/logService');
 
 const RAW_CONTENT_MAX_BYTES = 2 * 1024 * 1024; // 2MB
 
+/** Esses handlers só devem ler LUTs: exige caminho absoluto de string com extensão .cube. */
+function assertCubePath(filePath) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || path.extname(filePath).toLowerCase() !== '.cube') {
+    throw new Error('Caminho de LUT inválido (esperado um arquivo .cube absoluto).');
+  }
+  return filePath;
+}
+
 /**
  * Registra todos os handlers IPC do domínio de LUTs (.cube).
  * @param {import('../core/luts/LutManager')} lutManager
@@ -15,6 +23,7 @@ const RAW_CONTENT_MAX_BYTES = 2 * 1024 * 1024; // 2MB
 module.exports = function registerLutHandlers(lutManager) {
   ipcMain.handle('luts:parse', async (_, filePath) => {
     try {
+      assertCubePath(filePath);
       const parsedLut = CubeParser.parse(filePath);
       return {
         path: filePath,
@@ -29,6 +38,7 @@ module.exports = function registerLutHandlers(lutManager) {
 
   ipcMain.handle('luts:load', async (_, filePath) => {
     try {
+      assertCubePath(filePath);
       const stats = fs.statSync(filePath);
 
       if (stats.size <= RAW_CONTENT_MAX_BYTES) {
@@ -53,6 +63,7 @@ module.exports = function registerLutHandlers(lutManager) {
 
   ipcMain.handle('luts:getHeader', async (_, filePath) => {
     try {
+      assertCubePath(filePath);
       const header = CubeParser.parseHeader(filePath);
       return {
         path: filePath,

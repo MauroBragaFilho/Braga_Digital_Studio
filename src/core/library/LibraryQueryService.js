@@ -1,4 +1,23 @@
 const dbManager = require('../database/database');
+const EventBus = require('../EventBus');
+
+// Extensões por tipo — fonte única para getStats/searchMedia/getFilterOptions.
+// (Quando existir src/core/media/MediaTypes.js, trocar por import.)
+const VIDEO_EXTS = ['mp4', 'mkv', 'webm', 'mov', 'avi'];
+const AUDIO_EXTS = ['mp3', 'm4a', 'wav', 'flac', 'ogg'];
+const RAW_EXTS = ['arw', 'cr2', 'cr3', 'nef', 'dng', 'raf', 'orf', 'rw2'];
+const PHOTO_EXTS = ['jpg', 'jpeg', 'png', 'heic', ...RAW_EXTS]; // RAW conta também como foto
+
+const extCond = (col, exts) => '(' + exts.map(e => `${col} LIKE '%.${e}'`).join(' OR ') + ')';
+const typeCase = (col, exts) => `SUM(CASE WHEN ${extCond(col, exts)} THEN 1 ELSE 0 END)`;
+const READY_COND = (a = '') => `(${a}status = 'READY' OR ${a}status IS NULL) AND (${a}missing = 0 OR ${a}missing IS NULL)`;
+
+// Cache de getFilterOptions: invalidado por eventos de mídia, com TTL de segurança
+const FILTER_CACHE_TTL_MS = 10000;
+let filterCache = null;
+const invalidateFilterCache = () => { filterCache = null; };
+EventBus.on('MEDIA_IMPORTED', invalidateFilterCache);
+EventBus.on('MEDIA_REMOVED', invalidateFilterCache);
 
 class LibraryQueryService {
     /**
@@ -7,14 +26,15 @@ class LibraryQueryService {
     static getStats() {
         const db = dbManager.get();
         
-        const totals = db.prepare('SELECT COUNT(*) as count, SUM(filesize) as size FROM media WHERE (status = "READY" OR status IS NULL) AND (missing = 0 OR missing IS NULL)').get();
+        const totals = db.prepare(`SELECT COUNT(*) as count, SUM(filesize) as size FROM media WHERE ${READY_COND()}`).get();
         
         const types = db.prepare(`
             SELECT 
-                SUM(CASE WHEN filename LIKE '%.mp4' OR filename LIKE '%.mkv' OR filename LIKE '%.webm' OR filename LIKE '%.mov' THEN 1 ELSE 0 END) as videos,
-                SUM(CASE WHEN filename LIKE '%.mp3' OR filename LIKE '%.m4a' OR filename LIKE '%.wav' THEN 1 ELSE 0 END) as audios,
-                SUM(CASE WHEN filename LIKE '%.jpg' OR filename LIKE '%.png' THEN 1 ELSE 0 END) as photos
-            FROM media WHERE (status = "READY" OR status IS NULL) AND (missing = 0 OR missing IS NULL)
+                ${typeCase('filename', VIDEO_EXTS)} as videos,
+                ${typeCase('filename', AUDIO_EXTS)} as audios,
+                ${typeCase('filename', PHOTO_EXTS)} as photos,
+                ${typeCase('filename', RAW_EXTS)} as raws
+            FROM media WHERE ${READY_COND()}
         `).get();
 
         const lastSync = db.prepare('SELECT MAX(imported_at) as last FROM media').get();
@@ -25,6 +45,7 @@ class LibraryQueryService {
             videosCount: types ? (types.videos || 0) : 0,
             audiosCount: types ? (types.audios || 0) : 0,
             photosCount: types ? (types.photos || 0) : 0,
+            rawCount: types ? (types.raws || 0) : 0,
             lastSyncDate: lastSync ? lastSync.last : null
         };
     }
@@ -33,7 +54,7 @@ class LibraryQueryService {
      * Busca mídias com base em filtros complexos e termo de busca em linguagem natural
      * @param {Object} options 
      */
-    static searchMedia({ query = '', types = [], origins = [], albums = [], resolutions = [], fps = [], dates = [], projects = [], tags = [], favorites = false, sort = 'recorded_at', order = 'DESC', limit = 100 }) {
+    static searchMedia({ query = '', types = [], origins = [], albums = [], resolutions = [], fps = [], dates = [], projects = [], tags = [], favorites = false, sort = 'recorded_at', order = 'DESC', limit = 100, offset = 0 }) {
         const db = dbManager.get();
         const SearchQueryParser = require('./SearchQueryParser');
         const fs = require('fs');
@@ -49,20 +70,19 @@ class LibraryQueryService {
         // JOINs base — reutilizados em SELECT e COUNT
         const joins = `FROM media m
             LEFT JOIN projects p ON m.project_id = p.id
-            LEFT JOIN libraries l ON m.library_id = l.id
-            LEFT JOIN media_tags mt ON mt.media_id = m.id
-            LEFT JOIN tags t ON mt.tag_id = t.id`;
+            LEFT JOIN libraries l ON m.library_id = l.id`;
 
         // Filtros acumulados separados para poder usar no COUNT sem LIMIT/ORDER
-        let filterSql = `WHERE (m.status = "READY" OR m.status IS NULL) AND (m.missing = 0 OR m.missing IS NULL)`;
+        let filterSql = `WHERE ${READY_COND('m.')}`;
         const filterParams = [];
 
         if (finalTypes.size > 0) {
             const typeArr = Array.from(finalTypes);
             const typeConditions = [];
-            if (typeArr.includes('video')) typeConditions.push("(m.filename LIKE '%.mp4' OR m.filename LIKE '%.mkv' OR m.filename LIKE '%.webm' OR m.filename LIKE '%.mov' OR m.filename LIKE '%.avi')");
-            if (typeArr.includes('audio')) typeConditions.push("(m.filename LIKE '%.mp3' OR m.filename LIKE '%.m4a' OR m.filename LIKE '%.wav' OR m.filename LIKE '%.flac' OR m.filename LIKE '%.ogg')");
-            if (typeArr.includes('photo')) typeConditions.push("(m.filename LIKE '%.jpg' OR m.filename LIKE '%.jpeg' OR m.filename LIKE '%.png' OR m.filename LIKE '%.heic' OR m.filename LIKE '%.arw')");
+            if (typeArr.includes('video')) typeConditions.push(extCond('m.filename', VIDEO_EXTS));
+            if (typeArr.includes('audio')) typeConditions.push(extCond('m.filename', AUDIO_EXTS));
+            if (typeArr.includes('photo')) typeConditions.push(extCond('m.filename', PHOTO_EXTS));
+            if (typeArr.includes('raw')) typeConditions.push(extCond('m.filename', RAW_EXTS));
             if (typeConditions.length > 0) filterSql += ' AND (' + typeConditions.join(' OR ') + ')';
         }
 
@@ -77,7 +97,7 @@ class LibraryQueryService {
             const termConditions = searchTerms.map(term => {
                 const q = `%${term}%`;
                 filterParams.push(q, q, q, q, q, q);
-                return `(m.filename LIKE ? OR m.notes LIKE ? OR m.origin LIKE ? OR p.name LIKE ? OR l.name LIKE ? OR t.name LIKE ?)`;
+                return `(m.filename LIKE ? OR m.notes LIKE ? OR m.origin LIKE ? OR p.name LIKE ? OR l.name LIKE ? OR EXISTS (SELECT 1 FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = m.id AND t.name LIKE ?))`;
             });
             filterSql += ' AND (' + termConditions.join(' OR ') + ')';
         }
@@ -117,7 +137,7 @@ class LibraryQueryService {
         }
 
         // COUNT — exatamente os mesmos filtros, sem ORDER/LIMIT
-        const countSql = `SELECT COUNT(DISTINCT m.id) as total ${joins} ${filterSql}`;
+        const countSql = `SELECT COUNT(*) as total ${joins} ${filterSql}`;
         const countRow = db.prepare(countSql).get(...filterParams);
         const totalCount = countRow ? (countRow.total || 0) : 0;
 
@@ -127,10 +147,14 @@ class LibraryQueryService {
         if (sort === 'filesize') orderClause = `ORDER BY m.filesize ${safeOrder}`;
         else if (sort === 'imported_at') orderClause = `ORDER BY m.imported_at ${safeOrder}`;
 
-        const selectSql = `SELECT DISTINCT m.*, p.name as project_name ${joins} ${filterSql} ${orderClause} LIMIT ?`;
-        const items = db.prepare(selectSql).all(...filterParams, limit);
+        const safeLimit = Math.max(1, Math.min(parseInt(limit, 10) || 100, 100000));
+        const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
+        // Desempate por id mantém a paginação estável
+        const selectSql = `SELECT m.*, p.name as project_name ${joins} ${filterSql} ${orderClause}, m.id ${safeOrder} LIMIT ? OFFSET ?`;
+        const items = db.prepare(selectSql).all(...filterParams, safeLimit, safeOffset);
 
-        return { items, totalCount };
+        // totalCount = total que casa com os filtros (independe de limit/offset); total é alias
+        return { items, totalCount, total: totalCount, offset: safeOffset, limit: safeLimit, hasMore: safeOffset + items.length < totalCount };
     }
 
 
@@ -141,34 +165,37 @@ class LibraryQueryService {
      */
     static getRecentMedia(limit = 10) {
         const db = dbManager.get();
-        return db.prepare('SELECT * FROM media WHERE (status = "READY" OR status IS NULL) AND (missing = 0 OR missing IS NULL) ORDER BY COALESCE(recorded_at, imported_at) DESC LIMIT ?').all(limit);
+        return db.prepare(`SELECT * FROM media WHERE ${READY_COND()} ORDER BY COALESCE(recorded_at, imported_at) DESC LIMIT ?`).all(limit);
     }
 
     /**
      * Retorna as opções e contagens dinâmicas para os filtros
      */
     static getFilterOptions() {
+        if (filterCache && Date.now() - filterCache.at < FILTER_CACHE_TTL_MS) return filterCache.value;
         const db = dbManager.get();
         
         const typeCounts = db.prepare(`
             SELECT 
-                SUM(CASE WHEN filename LIKE '%.mp4' OR filename LIKE '%.mkv' OR filename LIKE '%.webm' OR filename LIKE '%.mov' THEN 1 ELSE 0 END) as video,
-                SUM(CASE WHEN filename LIKE '%.mp3' OR filename LIKE '%.m4a' OR filename LIKE '%.wav' OR filename LIKE '%.ogg' OR filename LIKE '%.flac' THEN 1 ELSE 0 END) as audio,
-                SUM(CASE WHEN filename LIKE '%.jpg' OR filename LIKE '%.png' OR filename LIKE '%.jpeg' THEN 1 ELSE 0 END) as photo
-            FROM media WHERE (status = "READY" OR status IS NULL) AND (missing = 0 OR missing IS NULL)
+                ${typeCase('filename', VIDEO_EXTS)} as video,
+                ${typeCase('filename', AUDIO_EXTS)} as audio,
+                ${typeCase('filename', PHOTO_EXTS)} as photo,
+                ${typeCase('filename', RAW_EXTS)} as raw
+            FROM media WHERE ${READY_COND()}
         `).get();
         
-        const resolutions = db.prepare("SELECT DISTINCT height, COUNT(id) as count FROM media WHERE height IS NOT NULL AND height > 0 AND (filename LIKE '%.mp4' OR filename LIKE '%.mkv' OR filename LIKE '%.webm' OR filename LIKE '%.mov') GROUP BY height ORDER BY height DESC").all();
-        const fpsList = db.prepare("SELECT DISTINCT fps, COUNT(id) as count FROM media WHERE fps IS NOT NULL AND fps > 0 AND (filename LIKE '%.mp4' OR filename LIKE '%.mkv' OR filename LIKE '%.webm' OR filename LIKE '%.mov') GROUP BY fps ORDER BY fps DESC").all();
+        const videoCond = extCond('filename', VIDEO_EXTS);
+        const resolutions = db.prepare(`SELECT height, COUNT(id) as count FROM media WHERE height IS NOT NULL AND height > 0 AND ${videoCond} GROUP BY height ORDER BY height DESC`).all();
+        const fpsList = db.prepare(`SELECT fps, COUNT(id) as count FROM media WHERE fps IS NOT NULL AND fps > 0 AND ${videoCond} GROUP BY fps ORDER BY fps DESC`).all();
         const projects = db.prepare('SELECT p.id, p.name, COUNT(m.id) as count FROM projects p LEFT JOIN media m ON m.project_id = p.id GROUP BY p.id ORDER BY p.name ASC').all();
         const tags = db.prepare('SELECT t.id, t.name, t.color, COUNT(mt.media_id) as count FROM tags t LEFT JOIN media_tags mt ON mt.tag_id = t.id GROUP BY t.id ORDER BY t.name ASC').all();
         const favorites = db.prepare('SELECT COUNT(id) as count FROM media WHERE favorite = 1').get();
         const origins = db.prepare('SELECT DISTINCT origin, COUNT(id) as count FROM media WHERE origin IS NOT NULL GROUP BY origin ORDER BY count DESC').all();
-        const albums = db.prepare('SELECT DISTINCT album as name, COUNT(id) as count FROM media WHERE status="READY" AND missing=0 AND album IS NOT NULL GROUP BY album ORDER BY name ASC').all();
+        const albums = db.prepare(`SELECT DISTINCT album as name, COUNT(id) as count FROM media WHERE status = 'READY' AND missing = 0 AND album IS NOT NULL GROUP BY album ORDER BY name ASC`).all();
         const dates = db.prepare('SELECT date(recorded_at) as dt, COUNT(id) as count FROM media WHERE recorded_at IS NOT NULL GROUP BY dt ORDER BY dt DESC LIMIT 10').all();
         
-        return {
-            types: typeCounts || { video: 0, audio: 0, photo: 0 },
+        const value = {
+            types: typeCounts || { video: 0, audio: 0, photo: 0, raw: 0 },
             resolutions,
             fps: fpsList,
             projects,
@@ -178,6 +205,13 @@ class LibraryQueryService {
             albums,
             dates
         };
+        filterCache = { at: Date.now(), value };
+        return value;
+    }
+
+    /** Descarta o cache de getFilterOptions (ex.: após favoritar ou alterar tags). */
+    static invalidateFilterOptionsCache() {
+        invalidateFilterCache();
     }
 }
 

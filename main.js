@@ -1,8 +1,11 @@
 'use strict';
 
-const { app, BrowserWindow, nativeImage, protocol, net, screen } = require('electron');
+const { app, BrowserWindow, nativeImage, protocol, net, screen, session, shell, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { pathToFileURL } = require('node:url');
+const { resolveThumbRequest } = require('./src/ipc/thumbProtocol');
+const { assertExternalUrl } = require('./src/ipc/validate');
 
 // Identifica o app para o Windows — necessário para que notificações nativas
 // (new Notification()) apareçam, especialmente em modo desenvolvimento (npm start),
@@ -12,9 +15,12 @@ app.setAppUserModelId('com.bragadev.digitalstudio');
 // Configurações de inicialização do Electron
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
-// [FASE 1.1] Debug remoto só em desenvolvimento — NUNCA em produção
-if (!app.isPackaged) {
-  app.commandLine.appendSwitch('remote-debugging-port', '8315');
+// [FASE 1.1] Debug remoto: opt-in explícito e SOMENTE em desenvolvimento (nunca empacotado).
+// Uso: BDS_DEBUG_PORT=8315 npm start   (escuta apenas em 127.0.0.1; o YouTubeBot espera a porta 8315)
+const debugPort = process.env.BDS_DEBUG_PORT;
+if (!app.isPackaged && debugPort && /^\d{2,5}$/.test(debugPort) && Number(debugPort) <= 65535) {
+  app.commandLine.appendSwitch('remote-debugging-port', debugPort);
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
 }
 
 const { appPaths } = require('./src/infrastructure/filesystem/AppPaths');
@@ -39,9 +45,39 @@ let mainWindow = null;
 const logger = require('./src/services/logService');
 const { errorReporter } = require('./src/infrastructure/telemetry/ErrorReporter');
 
+// Erros benignos de rede/IO que não justificam alarmar o usuário com um diálogo.
+const BENIGN_ERROR_CODES = new Set(['EPIPE', 'ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ABORT_ERR']);
+// Erros graves: o processo pode estar instável → informa e encerra com segurança.
+const FATAL_ERROR_CODES = new Set(['ERR_OUT_OF_MEMORY', 'ENOMEM', 'ERR_WORKER_OUT_OF_MEMORY']);
+let fatalDialogShown = false;
+let lastErrorDialogAt = 0;
+
+function notifyUncaught(err) {
+  try {
+    if (!app.isReady()) return;
+    const code = err && err.code;
+    if (BENIGN_ERROR_CODES.has(code)) return;
+
+    if (FATAL_ERROR_CODES.has(code)) {
+      if (fatalDialogShown) return; // sem laço: um único diálogo fatal
+      fatalDialogShown = true;
+      dialog.showErrorBox('Braga Digital Studio — erro grave', `O aplicativo encontrou um erro grave e será encerrado.\n\n${err.message}`);
+      app.quit(); // passa pelo before-quit (encerramento ordenado, idempotente)
+      return;
+    }
+
+    // Erro comum: avisa no máximo 1x a cada 60s para não gerar uma enxurrada de diálogos.
+    const now = Date.now();
+    if (now - lastErrorDialogAt < 60000) return;
+    lastErrorDialogAt = now;
+    dialog.showErrorBox('Braga Digital Studio — erro inesperado', `Ocorreu um erro inesperado. Detalhes foram gravados no log.\n\n${err.message}`);
+  } catch (_) { /* nunca lançar de dentro do handler de erros */ }
+}
+
 process.on('uncaughtException', (err) => {
   logger.error('[Main] Exceção não capturada:', { message: err.message, stack: err.stack });
   errorReporter.report(err, { source: 'main-process-uncaughtException' }).catch(() => {});
+  notifyUncaught(err);
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -49,6 +85,35 @@ process.on('unhandledRejection', (reason) => {
   logger.error('[Main] Rejeição não tratada:', { message });
   errorReporter.report(reason instanceof Error ? reason : new Error(message), { source: 'main-process-unhandledRejection' }).catch(() => {});
 });
+
+/** Abre uma URL externa no navegador padrão, somente https:/mailto: (qualquer outra é ignorada). */
+function openExternalSafe(url) {
+  try {
+    shell.openExternal(assertExternalUrl(url)).catch(() => {});
+  } catch (_) { /* URL não permitida */ }
+}
+
+/** Hosts que o webview do YouTube Studio pode visitar (login Google + Studio). */
+function isAllowedGuestUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase();
+    return h === 'youtube.com' || h.endsWith('.youtube.com') || h === 'google.com' || h.endsWith('.google.com');
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Permissões que o app (e o webview do YouTube Studio) realmente usam; todo o resto é negado. */
+const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-sanitized-write']);
+
+function hardenSession(ses) {
+  if (!ses || ses.__bdsHardened) return;
+  ses.__bdsHardened = true;
+  ses.setPermissionRequestHandler((_wc, permission, callback) => callback(ALLOWED_PERMISSIONS.has(permission)));
+  ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+}
 
 /**
  * Tamanho/posição salvos da janela (opção "Lembrar tamanho e posição" nas Configurações).
@@ -89,6 +154,11 @@ function trackWindowBounds(win) {
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    return;
+  }
   const savedBounds = loadSavedWindowBounds();
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -126,9 +196,40 @@ function createWindow() {
       return;
     }
     delete webPreferences.preload;
+    delete webPreferences.preloadURL;
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    webPreferences.allowRunningInsecureContent = false;
+    // Partition fixa: o guest sempre usa a sessão do YouTube Studio, independente do atributo do HTML.
+    params.partition = 'persist:youtube_studio';
+  });
+
+  // Webview (guest): navegação restrita a *.youtube.com / *.google.com; popups nunca criam janelas.
+  mainWindow.webContents.on('did-attach-webview', (_event, guest) => {
+    const guardNavigation = (event, url) => { if (!isAllowedGuestUrl(url)) event.preventDefault(); };
+    guest.on('will-navigate', guardNavigation);
+    guest.on('will-redirect', guardNavigation);
+    guest.setWindowOpenHandler(({ url }) => {
+      if (isAllowedGuestUrl(url)) setImmediate(() => { try { guest.loadURL(url); } catch (_) {} });
+      else openExternalSafe(url);
+      return { action: 'deny' };
+    });
+  });
+
+  // Janela principal: só pode exibir os arquivos do próprio renderer; links externos vão ao navegador.
+  const rendererFileUrl = pathToFileURL(path.join(__dirname, 'renderer') + path.sep).toString();
+  const guardMainNavigation = (event, url) => {
+    if (url.startsWith(rendererFileUrl)) return;
+    event.preventDefault();
+    openExternalSafe(url);
+  };
+  mainWindow.webContents.on('will-navigate', guardMainNavigation);
+  mainWindow.webContents.on('will-redirect', guardMainNavigation);
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalSafe(url);
+    return { action: 'deny' };
   });
 
   mainWindow.setMenu(null);
@@ -183,28 +284,56 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+// Encerramento idempotente (ver before-quit no final do arquivo).
+let quitting = false;
+let shutdownComplete = false;
+
 app.whenReady().then(async () => {
-  // [THUMB] Intercepta bds-thumb://<caminho-absoluto> e serve o arquivo local
-  protocol.handle('bds-thumb', (request) => {
-    const rawPath = decodeURIComponent(
-      request.url.slice('bds-thumb://'.length)
-    );
-    // Normaliza barras para o sistema operacional
-    const filePath = rawPath.replace(/\//g, path.sep);
-    return net.fetch(`file:///${filePath}`);
+  // Permissões negadas por padrão em toda sessão (a padrão e as de partições persist:*).
+  hardenSession(session.defaultSession);
+  hardenSession(session.fromPartition('persist:youtube_studio'));
+  hardenSession(session.fromPartition('persist:youtube'));
+  app.on('session-created', hardenSession);
+
+  // [THUMB] Intercepta bds-thumb://<caminho-absoluto> e serve SOMENTE imagens dos diretórios do app
+  // (miniaturas, capas e previews de fotos). Qualquer outra coisa recebe 403/404.
+  protocol.handle('bds-thumb', async (request) => {
+    const allowedDirs = [
+      appPaths.thumbnailsDir,
+      appPaths.coversDir,
+      path.join(appPaths.dataDir, 'cache', 'previews')
+    ];
+    const resolved = resolveThumbRequest(request.url, allowedDirs);
+    if (!resolved.ok) {
+      return new Response(resolved.reason, { status: resolved.status });
+    }
+    try {
+      await fs.promises.access(resolved.filePath, fs.constants.R_OK);
+      return await net.fetch(pathToFileURL(resolved.filePath).toString());
+    } catch (_) {
+      return new Response('Not found', { status: 404 });
+    }
   });
 
-  await bootstrap.init();
+  try {
+    await bootstrap.init();
+  } catch (err) {
+    logger.error('[Main] Falha na inicialização:', { message: err.message, stack: err.stack });
+    dialog.showErrorBox('Braga Digital Studio', `Não foi possível iniciar o aplicativo.\n\n${err.message}\n\nDetalhes foram gravados no log.`);
+    app.exit(1);
+    return;
+  }
   createWindow();
 
   // Inicia serviços de background (watchers, discovery) após a interface estar montada
-  setTimeout(() => bootstrap.startBackgroundServices(), 500);
+  setTimeout(() => { if (!quitting) bootstrap.startBackgroundServices(); }, 500);
 
   // Verificação em background de ferramentas/atualizações
-  setTimeout(() => bootstrap.checkInitialDependencies(), 2000);
+  setTimeout(() => { if (!quitting) bootstrap.checkInitialDependencies(); }, 2000);
 
+  // Registrado uma única vez (whenReady roda uma vez); createWindow() reaproveita janela existente.
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (!quitting && BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
@@ -212,6 +341,33 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', async () => {
-  await bootstrap.cleanup();
+// O primeiro before-quit é cancelado; os serviços são cancelados (prazo total ~5s) e o banco é
+// gravado de forma síncrona; só então o app sai de verdade (segunda passada com shutdownComplete).
+app.on('before-quit', (event) => {
+  if (shutdownComplete) return; // 2ª passada: deixa o app sair
+  event.preventDefault();
+  if (quitting) return;         // já encerrando: ignora chamadas repetidas
+  quitting = true;
+
+  const finish = () => {
+    if (shutdownComplete) return;
+    shutdownComplete = true;
+    app.quit();
+  };
+
+  // Rede de segurança: mesmo que algo trave, a saída acontece em até 6,5s.
+  const hardTimer = setTimeout(() => {
+    logger.warn('[Main] Encerramento excedeu o prazo; forçando saída.');
+    try {
+      const dbManager = require('./src/core/database/database');
+      if (typeof dbManager.persistSync === 'function') dbManager.persistSync();
+      else if (typeof dbManager.persist === 'function') dbManager.persist();
+    } catch (_) {}
+    finish();
+  }, 6500);
+
+  Promise.resolve()
+    .then(() => bootstrap.shutdown({ timeoutMs: 5000 }))
+    .catch((err) => logger.error('[Main] Erro no encerramento:', { message: err && err.message }))
+    .finally(() => { clearTimeout(hardTimer); finish(); });
 });

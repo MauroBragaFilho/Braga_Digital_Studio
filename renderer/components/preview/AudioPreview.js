@@ -5,7 +5,7 @@
  */
 import { WaveformRenderer } from './WaveformRenderer.js';
 
-const _e = s => String(s||'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'})[c]);
+import { escapeHtml as _e } from '../../utils/escape.js';
 const _t = s => { if(!s||isNaN(s))return'00:00'; return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0'); };
 const _f = fp => 'file:///'+String(fp).replace(/\\\\/g,'/');
 const _u = (m,fp) => { if(m&&m.uuid)return m.uuid; let h=0; const s=String(fp||'').toLowerCase(); for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;} return 'a_'+Math.abs(h).toString(36); };

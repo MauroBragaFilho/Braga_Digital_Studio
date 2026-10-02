@@ -17,6 +17,11 @@
   --line: #2a2a2a;
   --green: #2e7d32;
   --danger: #e53935;
+  --danger-fg: #ff6b63;
+  --danger-bg: rgba(229, 57, 53, 0.12);
+  --success: #4caf50;
+  --warning: #f59e0b;
+  --info: #2196f3;
   --shadow: rgba(0, 0, 0, 0.4);
   --border-color: #2a2a2a;
 }
@@ -35,6 +40,11 @@
   --line: #d8d8d8;
   --green: #2e7d32;
   --danger: #e53935;
+  --danger-fg: #ff6b63;
+  --danger-bg: rgba(229, 57, 53, 0.12);
+  --success: #4caf50;
+  --warning: #f59e0b;
+  --info: #2196f3;
   --shadow: rgba(0, 0, 0, 0.1);
   --border-color: #d8d8d8;
   --input-bg: rgba(0, 0, 0, 0.05);
@@ -762,6 +772,9 @@ select {
   outline: none;
   transition: border-color 0.2s ease;
 }
+/* Inputs & Search */
+input:focus-visible,
+select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 input:focus,
 select:focus {
   border-color: var(--muted);
@@ -1339,6 +1352,7 @@ dialog menu {
   outline: none;
   margin: auto;
 }
+.bds-modal:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .bds-modal::backdrop {
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
@@ -1722,6 +1736,7 @@ select option {
   font-size: 11px;
   width: 100%;
 }
+.bds-table-search-box input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .bds-table-search-box .search-icon {
   font-size: 16px;
@@ -2063,6 +2078,9 @@ select option {
   font-size: 11px;
   outline: none;
 }
+.form-group input:focus-visible,
+.form-group textarea:focus-visible,
+.form-group select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
   border-color: var(--accent);
@@ -2366,6 +2384,7 @@ select option {
 .converter-btn-primary { background: var(--accent); color: #ffffff; }
 .converter-btn-secondary { background: var(--card-2); color: var(--text); border: 1px solid var(--line); }
 .converter-sort-select { background: var(--card-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-weight: 600; font-size: 12px; outline: none; cursor: pointer; white-space: nowrap; }
+.converter-sort-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Tabela */
 .converter-table-container { flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,0.2); }
@@ -2418,8 +2437,10 @@ select option {
 .converter-config-group { display: flex; flex-direction: column; gap: 6px; }
 .converter-label { font-size: 11px; font-weight: 600; color: var(--muted); }
 .converter-select { width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px; }
+.converter-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .converter-input-group { display: flex; gap: 6px; }
 .converter-input { flex: 1; height: 36px; background: rgba(0,0,0,0.3); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 11px; }
+.converter-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .converter-icon-btn { width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .converter-icon-btn:hover { border-color: var(--accent); }
 .converter-start-group { margin-top: 8px; }

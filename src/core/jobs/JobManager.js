@@ -28,6 +28,8 @@ class JobManager extends EventEmitter {
     this.running = new Map();          // Map<jobId, Job> em execução
     this.history = [];                 // Array<Object> histórico finalizado
     this.isPaused = false;
+    this._jobHandlers = new Map();     // Map<jobId, {event: handler}> para remoção ao finalizar
+    this.setMaxListeners(50);
   }
 
   /**
@@ -42,24 +44,26 @@ class JobManager extends EventEmitter {
     logger.info(`[JobManager] Job submetido: [${job.type}] ${job.title} (${job.id})`);
 
     // Conectar eventos internos do job
-    job.on('progress', (data) => {
-      this.emit('job:progress', { jobId: job.id, ...data });
-    });
-
-    job.on('completed', (data) => {
-      this._onJobFinished(job, JobStatus.COMPLETED);
-      this.emit('job:completed', data);
-    });
-
-    job.on('failed', (data) => {
-      this._onJobFinished(job, JobStatus.FAILED);
-      this.emit('job:failed', data);
-    });
-
-    job.on('cancelled', (data) => {
-      this._onJobFinished(job, JobStatus.CANCELLED);
-      this.emit('job:cancelled', data);
-    });
+    // Handlers guardados por job para poderem ser removidos ao finalizar (evita vazamento de listeners)
+    const handlers = {
+      progress: (data) => {
+        this.emit('job:progress', { jobId: job.id, ...data });
+      },
+      completed: (data) => {
+        this._onJobFinished(job, JobStatus.COMPLETED);
+        this.emit('job:completed', data);
+      },
+      failed: (data) => {
+        this._onJobFinished(job, JobStatus.FAILED);
+        this.emit('job:failed', data);
+      },
+      cancelled: (data) => {
+        this._onJobFinished(job, JobStatus.CANCELLED);
+        this.emit('job:cancelled', data);
+      }
+    };
+    for (const [evt, fn] of Object.entries(handlers)) job.on(evt, fn);
+    this._jobHandlers.set(job.id, handlers);
 
     this.emit('job:queued', job.toJSON());
     this.emit('queue:updated', this.getStatus());
@@ -103,7 +107,18 @@ class JobManager extends EventEmitter {
   _onJobFinished(job, status) {
     this.running.delete(job.id);
 
-    const record = job.toJSON();
+    // Remove os handlers deste job (um job só finaliza uma vez; o emit do evento já está em curso)
+    const handlers = this._jobHandlers.get(job.id);
+    if (handlers) {
+      for (const [evt, fn] of Object.entries(handlers)) job.removeListener(evt, fn);
+      this._jobHandlers.delete(job.id);
+    }
+
+    // Evita registro duplicado (cancel() de job na fila chama este método duas vezes)
+    if (this.history.some(h => h.id === job.id)) return;
+
+    // Histórico guarda só um resumo (sem result/payload potencialmente grandes)
+    const { result, payload, ...record } = job.toJSON();
     this.history.unshift(record);
 
     if (this.history.length > this.maxHistory) {

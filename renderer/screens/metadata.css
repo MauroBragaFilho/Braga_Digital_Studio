@@ -720,3 +720,14 @@
 @media (prefers-reduced-motion: reduce) {
   .metadata-screen-container *, .metadata-diff-modal * { transition: none !important; }
 }
+
+/* Diff de alterações (antes inline no JS) */
+.diff-entry { margin-bottom: 10px; border-bottom: 1px solid var(--line, #333); padding-bottom: 5px; }
+.diff-title { font-weight: bold; }
+.diff-title-tag { color: #a855f7; }
+.diff-title-stream { color: #3b82f6; }
+.diff-title-cover { color: #eab308; }
+.diff-title-chap { color: #f97316; }
+.diff-del { color: #ff4c4c; }
+.diff-add { color: #4ade80; }
+.diff-warn { color: var(--warning); }

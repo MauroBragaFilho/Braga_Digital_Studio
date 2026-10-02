@@ -1,8 +1,8 @@
 # Braga Digital Studio (BDS) 🎬
 
 [![Licença](https://img.shields.io/badge/Licen%C3%A7a-Propriet%C3%A1ria-red.svg)](LICENSE)
-[![Electron](https://img.shields.io/badge/Electron-19.0.0-blue)](https://www.electronjs.org/)
-[![NodeJS](https://img.shields.io/badge/Node.js-18.x-green)](https://nodejs.org/)
+[![Electron](https://img.shields.io/badge/Electron-43-blue)](https://www.electronjs.org/)
+[![NodeJS](https://img.shields.io/badge/Node.js-22%2B-green)](https://nodejs.org/)
 
 *[Read in English](README.en.md)*
 
@@ -38,7 +38,7 @@ Braga Digital Studio (anteriormente Braga Media Downloader) é uma central avan�
 
 ## 📦 Instalação e Uso (Desenvolvimento)
 
-Certifique-se de ter o **Node.js** instalado na sua máquina (versão 18 ou superior).
+Certifique-se de ter o **Node.js** instalado na sua máquina (versão 22 ou superior).
 
 1. **Clone o repositório:**
    ```bash
@@ -64,7 +64,50 @@ Para transformar o projeto em um instalador fácil de distribuir para outros com
 npm run build
 ```
 
-Isso empacotará todo o código fonte e os binários, e gerará o arquivo de instalação final dentro da pasta `dist/`. O instalador carregará seu ícone oficial e executará como um aplicativo desktop nativo.
+Isso empacotará o código-fonte (os motores internos de mídia e download são baixados em runtime, não vão no instalador), e gerará o arquivo de instalação final dentro da pasta `dist/`. O instalador carregará seu ícone oficial e executará como um aplicativo desktop nativo.
+
+## 🧪 Qualidade, Scripts e CI
+
+| Script | O que faz |
+|---|---|
+| `npm start` | Abre o app em modo de desenvolvimento |
+| `npm run check` | Valida a sintaxe de todos os `.js` (módulos ES no renderer) |
+| `npm run lint` | ESLint (config flat em `eslint.config.js`) |
+| `npm test` | Testes unitários (`node --test`, pasta `tests/`) |
+| `npm run build` / `build:win` | Instalador Windows (NSIS) |
+| `npm run build:win:portable` | Versão portable do Windows |
+| `npm run build:linux` | AppImage + `.deb` (também `build:linux:appimage` e `build:linux:deb`) |
+
+O workflow `.github/workflows/ci.yml` roda `npm ci`, `check`, `lint` e `test` em todo push/PR. Os workflows de release rodam as mesmas verificações antes de compilar.
+
+## 🚢 Versão e Release
+
+A versão fica em `package.json` e **não** é alterada automaticamente pelo build. Para publicar:
+
+1. `npm version patch --no-git-tag-version` (ou `minor` / `major`) e faça commit do `package.json`/`package-lock.json`;
+2. Dispare o workflow **Release BDS (Windows + Linux)** na aba Actions (cria a tag `vX.Y.Z` e publica Windows + Linux numa única Release), ou envie uma tag `v*` para usar os workflows individuais.
+
+O instalador deve continuar se chamando `BragaDigitalStudioSetup.exe`: o atualizador interno procura esse nome de arquivo na Release. Os builds não são assinados digitalmente (o SmartScreen pode alertar no primeiro uso).
+
+## 🧩 Módulos Opcionais
+
+Recursos instalados só se o usuário quiser (hoje: **Whisper**, para legendas e transcrição). O BDS funciona normalmente sem eles. O motor, os modelos (Hugging Face, faster-whisper) e as DLLs de GPU (NVIDIA CUDA) são baixados sob demanda, com verificação de SHA-256, para `<dataDir>/modules`. Código em `src/core/modules/`, IPC em `src/ipc/moduleHandlers.js`, tela em `renderer/screens/modules.*` (visível por enquanto só em modo de desenvolvimento). Detalhes em [`src/core/modules/README.md`](src/core/modules/README.md).
+
+## 🗂️ Estrutura de Pastas
+
+```
+main.js, preload.js      Processo principal e ponte segura (IPC)
+src/core/                Regras de negócio (mídia, biblioteca, dispositivos, módulos...)
+src/infrastructure/      Ferramentas externas, filesystem, banco de dados
+src/ipc/                 Handlers IPC e validação de entradas
+src/services/            Serviços de aplicação
+src/config/              Configuração versionada (ex.: modules.config.json)
+renderer/                Interface (JS vanilla, módulos ES)
+config/                  Configuração local (ignorada); use os *.example.json como modelo
+assets/                  Ícones do app (icon.ico / icon.png)
+scripts/, tests/         Scripts de manutenção e testes unitários
+.github/workflows/       CI e release
+```
 
 ## 🔒 Privacidade, Dados e Gitignore
 

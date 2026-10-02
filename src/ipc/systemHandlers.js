@@ -1,14 +1,70 @@
-﻿const { ipcMain, app } = require('electron');
+const { ipcMain, app, shell } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
+const { assertAbsolutePath, assertSafePath, assertExternalUrl } = require('./validate');
 
-module.exports = function registerSystemHandlers(paths) {
+// Extensões que podem ser abertas com o aplicativo padrão do sistema (mídia, legendas e documentos simples).
+// Qualquer outra (.exe, .bat, .cmd, .com, .msi, .scr, .ps1, .vbs, .js, .lnk, .hta, .jar...) é recusada.
+const OPENABLE_EXTS = new Set([
+  '.mp4', '.mkv', '.mov', '.avi', '.wmv', '.flv', '.webm', '.mts', '.m2ts', '.m4v', '.mpg', '.mpeg', '.3gp', '.ts', '.vob',
+  '.mp3', '.wav', '.aac', '.flac', '.ogg', '.opus', '.m4a', '.wma', '.alac', '.aiff', '.ac3', '.dts',
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.heic', '.svg',
+  '.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.rw2', '.orf',
+  '.srt', '.vtt', '.ass', '.txt', '.md', '.json', '.csv', '.pdf', '.cube', '.bdspro'
+]);
+
+/**
+ * Valida um caminho a abrir com shell.openPath: string absoluta existente que seja
+ * diretório ou arquivo de extensão segura. Lança em caso contrário.
+ */
+function assertOpenablePath(itemPath) {
+  const resolved = assertAbsolutePath(itemPath, 'Caminho');
+  let st;
+  try { st = fs.statSync(resolved); } catch (_) { throw new Error('Caminho não encontrado.'); }
+  if (st.isDirectory()) return resolved;
+  const ext = path.extname(resolved).toLowerCase();
+  if (!OPENABLE_EXTS.has(ext)) {
+    throw new Error(`Tipo de arquivo não permitido para abertura: '${ext || '(sem extensão)'}'.`);
+  }
+  return resolved;
+}
+
+module.exports = function registerSystemHandlers(paths, settingsManager) {
+  const getSettings = () => {
+    if (settingsManager && typeof settingsManager.load === 'function') return settingsManager.load();
+    const SettingsClass = require('../core/settings/SettingsManager');
+    return new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
+  };
+
   ipcMain.handle('system:exportCookies', async (event, domain, outputPath) => {
     const CookiesService = require('../core/CookiesService');
-    return await CookiesService.exportNetscapeCookies(domain, outputPath);
+    if (typeof domain !== 'string' || !/^\.?[a-z0-9.-]{1,253}$/i.test(domain)) {
+      throw new Error('Domínio inválido.');
+    }
+    // Cookies são sensíveis: só podem ser gravados dentro da pasta de dados do app.
+    const baseDir = (paths && paths.dataDir) || appPaths.dataDir;
+    const safeOut = assertSafePath(baseDir, outputPath);
+    return await CookiesService.exportNetscapeCookies(domain, safeOut);
   });
 
   ipcMain.handle('system:openPath', async (_, itemPath) => {
-    require('electron').shell.openPath(itemPath);
+    // Falhas viram { success:false, error } (o renderer legado não espera rejeição neste canal).
+    try {
+      const safe = assertOpenablePath(itemPath);
+      const errorMessage = await shell.openPath(safe);
+      if (errorMessage) return { success: false, error: errorMessage };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Abre links externos no navegador padrão (preload não pode usar `shell` com sandbox).
+  ipcMain.handle('shell:openExternal', async (_, url) => {
+    const safeUrl = assertExternalUrl(url);
+    await shell.openExternal(safeUrl);
+    return true;
   });
 
   ipcMain.handle('system:isPackaged', () => {
@@ -30,8 +86,7 @@ module.exports = function registerSystemHandlers(paths) {
 
   ipcMain.handle('system:getCacheInfo', () => {
     const CacheService = require('../core/CacheService');
-    const SettingsClass = require('../core/settings/SettingsManager');
-    const settings = new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
+    const settings = getSettings();
     const svc = new CacheService(appPaths, {
       maxSizeMB: settings.cacheMaxSizeMB || 500,
       autoClean: !!settings.cacheAutoClean,
@@ -41,8 +96,7 @@ module.exports = function registerSystemHandlers(paths) {
 
   ipcMain.handle('system:clearCache', (_, categoryKey) => {
     const CacheService = require('../core/CacheService');
-    const SettingsClass = require('../core/settings/SettingsManager');
-    const settings = new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
+    const settings = getSettings();
     const svc = new CacheService(appPaths, {
       maxSizeMB: settings.cacheMaxSizeMB || 500,
       autoClean: !!settings.cacheAutoClean,

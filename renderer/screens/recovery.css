@@ -4,7 +4,7 @@
    ========================================================================== */
 
 .rc-screen {
-  --rc-low: #4caf50;
+  --rc-low: var(--success);
   --rc-medium: #ffb300;
   --rc-high: #ff5a52;
   display: flex;
@@ -136,8 +136,8 @@
 .rc-btn-secondary:hover:not(:disabled) { border-color: var(--muted); }
 .rc-btn-ghost { background: transparent; border-color: var(--line); color: var(--muted); }
 .rc-btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
-.rc-btn-danger { background: rgba(229, 57, 53, 0.12); border-color: rgba(229, 57, 53, 0.3); color: #ff6b63; }
-.rc-btn-danger:hover:not(:disabled) { background: rgba(229, 57, 53, 0.22); }
+.rc-btn-danger { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 30%, transparent); color: var(--danger-fg); }
+.rc-btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 22%, transparent); }
 .rc-btn-danger-solid { background: #d32f2f; color: #fff; }
 .rc-btn-danger-solid:hover:not(:disabled) { filter: brightness(1.1); }
 .rc-btn-sm { padding: 5px 10px; font-size: 11px; }

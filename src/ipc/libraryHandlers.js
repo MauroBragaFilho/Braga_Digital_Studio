@@ -1,12 +1,55 @@
-const { ipcMain, BrowserWindow } = require('electron');
+const { ipcMain, BrowserWindow, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
-const { assertSafePath, assertSafeFileName, assertNonEmpty } = require('./validate');
+const {
+  assertSafeFileName, assertNonEmpty, assertPositiveInt, assertIdArray, assertUserDirectory,
+  assertAbsolutePath, sqlPlaceholders, chunk
+} = require('./validate');
+
+const MAX_IDS = 50000;   // limite por operação em lote
+const SQL_BATCH = 500;   // SQLite limita variáveis por consulta: processa em lotes
+
+/** Devolve `dir/filename` sem sobrescrever: acrescenta " (n)" antes da extensão se já existir. */
+function uniqueDestination(dir, filename) {
+  const ext = path.extname(filename);
+  const stem = path.basename(filename, ext);
+  let candidate = path.join(dir, filename);
+  let n = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${stem} (${n})${ext}`);
+    n++;
+    if (n > 9999) throw new Error('Não foi possível gerar um nome livre no destino.');
+  }
+  return candidate;
+}
+
+/**
+ * Move um arquivo sem sobrescrever o destino: rename; se falhar (ex.: outro drive),
+ * copia (COPYFILE_EXCL) → confere o tamanho → apaga a origem.
+ */
+async function moveFileNoOverwrite(src, dest) {
+  if (fs.existsSync(dest)) throw Object.assign(new Error('Destino já existe'), { code: 'EEXIST' });
+  try {
+    await fs.promises.rename(src, dest);
+    return;
+  } catch (_) {
+    // fallback: copia/verifica/remove
+  }
+  await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+  try {
+    const [a, b] = await Promise.all([fs.promises.stat(src), fs.promises.stat(dest)]);
+    if (a.size !== b.size) throw new Error('Tamanho do arquivo copiado difere do original.');
+  } catch (verifyErr) {
+    try { await fs.promises.unlink(dest); } catch (_) { /* melhor esforço */ }
+    throw verifyErr;
+  }
+  await fs.promises.unlink(src);
+}
 
 module.exports = function registerLibraryHandlers(paths, watcherService) {
   const LibraryQueryService = require('../core/library/LibraryQueryService');
-  
+
   ipcMain.handle('library:getStats', () => {
     return LibraryQueryService.getStats();
   });
@@ -18,7 +61,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
   ipcMain.handle('library:search', (event, options) => {
     return LibraryQueryService.searchMedia(options);
   });
-  
+
   ipcMain.handle('library:getRecent', (event, limit) => {
     return LibraryQueryService.getRecentMedia(limit);
   });
@@ -27,20 +70,16 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return LibraryQueryService.getFilterOptions();
   });
 
-  ipcMain.handle('library:addCustomSource', async (event, { name, folderPath }) => {
+  ipcMain.handle('library:addCustomSource', async (event, { name, folderPath } = {}) => {
     const dbManager = require('../core/database/database');
     const MediaImporter = require('../core/media/MediaImporter');
     const EventBus = require('../core/EventBus');
     const db = dbManager.get();
 
-    // [FASE 1.2] Validação de entrada
+    // [FASE 1.2] Validação de entrada: pasta absoluta, existente e que não seja a raiz de um drive
     assertNonEmpty(name, 'Nome da fonte');
-    assertNonEmpty(folderPath, 'Caminho da pasta');
-    assertSafePath(folderPath, folderPath);  // Verifica que é um caminho absoluto válido
-
-    if (!name || !folderPath) {
-      throw new Error('Nome da fonte e caminho da pasta são obrigatórios.');
-    }
+    if (name.length > 120) throw new Error('Nome da fonte muito longo.');
+    folderPath = assertUserDirectory(folderPath, 'Caminho da pasta');
 
     let lib = db.prepare('SELECT * FROM libraries WHERE path = ? OR name = ?').get(folderPath, name);
     if (!lib) {
@@ -63,49 +102,59 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return libraries.filter(l => !defaultTypes.includes(l.name) && !defaultTypes.includes(l.type));
   });
 
-  ipcMain.handle('library:updateCustomSourcePath', async (event, { id, name, newFolderPath }) => {
+  ipcMain.handle('library:updateCustomSourcePath', async (event, { id, name, newFolderPath } = {}) => {
     const dbManager = require('../core/database/database');
     const MediaImporter = require('../core/media/MediaImporter');
     const EventBus = require('../core/EventBus');
     const db = dbManager.get();
 
-    if (!newFolderPath) throw new Error('Caminho da pasta é obrigatório.');
+    // Usa SOMENTE o id (antes "OR name" podia atualizar várias bibliotecas de mesmo nome).
+    const libId = assertPositiveInt(id, 'ID da fonte');
+    const folder = assertUserDirectory(newFolderPath, 'Caminho da pasta');
 
-    db.prepare('UPDATE libraries SET path = ? WHERE id = ? OR name = ?').run(newFolderPath, id, name);
+    db.prepare('UPDATE libraries SET path = ? WHERE id = ?').run(folder, libId);
 
-    let lib = db.prepare('SELECT * FROM libraries WHERE id = ? OR name = ?').get(id, name);
+    const lib = db.prepare('SELECT * FROM libraries WHERE id = ?').get(libId);
     if (lib) {
       const importer = new MediaImporter({ ffprobePath: ffprobeTool.resolve() });
       await importer.importLibrary(lib);
     }
 
-    EventBus.emit('MEDIA_IMPORTED', { action: 'update_source', name });
+    EventBus.emit('MEDIA_IMPORTED', { action: 'update_source', name: lib ? lib.name : name });
     return { ok: true };
   });
 
-  ipcMain.handle('library:removeCustomSource', (event, { id, name }) => {
+  ipcMain.handle('library:removeCustomSource', (event, { id, name } = {}) => {
     const dbManager = require('../core/database/database');
     const EventBus = require('../core/EventBus');
     const db = dbManager.get();
-    
-    db.prepare('DELETE FROM media WHERE origin = ? OR library_id = ?').run(name, id);
-    db.prepare('DELETE FROM libraries WHERE id = ? OR name = ?').run(id, name);
 
-    EventBus.emit('MEDIA_IMPORTED', { action: 'delete_source', name });
+    const libId = assertPositiveInt(id, 'ID da fonte');
+    // O nome usado para limpar `origin` vem do banco, não do renderer.
+    const lib = db.prepare('SELECT id, name FROM libraries WHERE id = ?').get(libId);
+    const libName = lib ? lib.name : (typeof name === 'string' ? name : '');
+
+    db.prepare('DELETE FROM media WHERE library_id = ? OR origin = ?').run(libId, libName || '\u0000');
+    db.prepare('DELETE FROM libraries WHERE id = ?').run(libId);
+
+    EventBus.emit('MEDIA_IMPORTED', { action: 'delete_source', name: libName });
     return { ok: true };
   });
 
   ipcMain.handle('library:renameMedia', (event, id, newName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    db.prepare('UPDATE media SET filename = ? WHERE id = ?').run(newName, id);
+    const mediaId = assertPositiveInt(id, 'ID da mídia');
+    const clean = typeof newName === 'string' ? newName.trim() : newName;
+    assertSafeFileName(clean);
+    db.prepare('UPDATE media SET filename = ? WHERE id = ?').run(clean, mediaId);
     return true;
   });
 
   ipcMain.handle('library:toggleFavorite', (event, id, isFav) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    db.prepare('UPDATE media SET favorite = ? WHERE id = ?').run(isFav ? 1 : 0, id);
+    db.prepare('UPDATE media SET favorite = ? WHERE id = ?').run(isFav ? 1 : 0, assertPositiveInt(id, 'ID da mídia'));
     return true;
   });
 
@@ -122,14 +171,15 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
   ipcMain.handle('library:addMediaTag', (event, mediaId, tagName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
+    assertNonEmpty(tagName, 'Nome da tag');
     const normalizedName = tagName.toLowerCase();
-    
+
     let tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(normalizedName);
     if (!tag) {
       const info = db.prepare('INSERT INTO tags (name) VALUES (?)').run(normalizedName);
       tag = { id: info.lastInsertRowid };
     }
-    
+
     try {
       db.prepare('INSERT INTO media_tags (media_id, tag_id) VALUES (?, ?)').run(mediaId, tag.id);
     } catch (e) {
@@ -145,42 +195,70 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return true;
   });
 
-  ipcMain.handle('library:deleteMediaBulk', (event, ids) => {
+  // Exclui mídias em lote: arquivos vão para a Lixeira (recuperáveis). Se a Lixeira falhar para
+  // um item, ele NÃO é apagado em definitivo — permanece (arquivo + registro) e entra em `failed`.
+  ipcMain.handle('library:deleteMediaBulk', async (event, ids) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    if (!ids || ids.length === 0) return true;
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT filepath FROM media WHERE id IN (${placeholders})`).all(...ids);
-    rows.forEach(r => {
-       try { if (fs.existsSync(r.filepath)) fs.unlinkSync(r.filepath); } catch(e) {}
-    });
-    db.prepare(`DELETE FROM media WHERE id IN (${placeholders})`).run(...ids);
-    return true;
+    const list = assertIdArray(ids, { max: MAX_IDS });
+    if (list.length === 0) return { ok: true, deleted: 0, failed: [] };
+
+    let deleted = 0;
+    const failed = [];
+
+    for (const batch of chunk(list, SQL_BATCH)) {
+      const rows = db.prepare(`SELECT id, filepath FROM media WHERE id IN (${sqlPlaceholders(batch.length)})`).all(...batch);
+      const removableIds = [];
+
+      for (const r of rows) {
+        // Arquivo inexistente (já removido manualmente): só limpa o registro.
+        if (!r.filepath || !fs.existsSync(r.filepath)) { removableIds.push(r.id); continue; }
+        try {
+          await shell.trashItem(r.filepath);
+          removableIds.push(r.id);
+        } catch (err) {
+          failed.push({ id: r.id, filepath: r.filepath, error: err.message });
+        }
+      }
+
+      if (removableIds.length) {
+        db.prepare(`DELETE FROM media_tags WHERE media_id IN (${sqlPlaceholders(removableIds.length)})`).run(...removableIds);
+        db.prepare(`DELETE FROM media WHERE id IN (${sqlPlaceholders(removableIds.length)})`).run(...removableIds);
+        deleted += removableIds.length;
+      }
+    }
+
+    return { ok: failed.length === 0, deleted, failed };
   });
 
   ipcMain.handle('library:toggleFavoriteBulk', (event, ids, isFav) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    if (!ids || ids.length === 0) return true;
-    const placeholders = ids.map(() => '?').join(',');
-    db.prepare(`UPDATE media SET favorite = ? WHERE id IN (${placeholders})`).run(isFav ? 1 : 0, ...ids);
+    const list = assertIdArray(ids, { max: MAX_IDS });
+    for (const batch of chunk(list, SQL_BATCH)) {
+      db.prepare(`UPDATE media SET favorite = ? WHERE id IN (${sqlPlaceholders(batch.length)})`).run(isFav ? 1 : 0, ...batch);
+    }
     return true;
   });
 
   ipcMain.handle('library:setProjectBulk', (event, ids, projectId) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    if (!ids || ids.length === 0) return true;
-    const placeholders = ids.map(() => '?').join(',');
-    db.prepare(`UPDATE media SET project_id = ? WHERE id IN (${placeholders})`).run(projectId, ...ids);
+    const list = assertIdArray(ids, { max: MAX_IDS });
+    const pid = projectId == null ? null : assertPositiveInt(projectId, 'ID do projeto');
+    for (const batch of chunk(list, SQL_BATCH)) {
+      db.prepare(`UPDATE media SET project_id = ? WHERE id IN (${sqlPlaceholders(batch.length)})`).run(pid, ...batch);
+    }
     return true;
   });
 
   ipcMain.handle('library:addMediaTagBulk', (event, ids, tagName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    if (!ids || ids.length === 0 || !tagName) return true;
-    
+    const list = assertIdArray(ids, { max: MAX_IDS });
+    if (list.length === 0 || !tagName) return true;
+    assertNonEmpty(tagName, 'Nome da tag');
+
     let tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(tagName);
     if (!tag) {
         const res = db.prepare('INSERT INTO tags (name) VALUES (?)').run(tagName);
@@ -188,98 +266,129 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     }
     db.exec('BEGIN TRANSACTION');
     try {
-        for (const id of ids) {
-            db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (?, ?)').run(id, tag.id);
+        for (const id of list) {
+          db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (?, ?)').run(id, tag.id);
         }
         db.exec('COMMIT');
     } catch (e) {
         db.exec('ROLLBACK');
+        throw e;
     }
     return true;
   });
 
-  ipcMain.handle('library:renameMediaBulk', (event, ids, baseName) => {
+  ipcMain.handle('library:renameMediaBulk', async (event, ids, baseName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    if (!ids || ids.length === 0 || !baseName) return true;
+    if (!Array.isArray(ids) || ids.length === 0 || !baseName) return true;
 
-    // [FASE 1.2] Validação de entrada
+    // [FASE 1.2] Validação de entrada (a numeração depende do conjunto todo: 1 consulta, abaixo do limite de variáveis SQLite)
+    const list = assertIdArray(ids, { max: 900 });
     assertNonEmpty(baseName, 'Nome base');
-    for (const id of ids) {
-      if (!Number.isInteger(Number(id)) || Number(id) <= 0) {
-        throw new Error(`ID inválido: ${id}`);
+    baseName = baseName.trim();
+    assertSafeFileName(baseName);
+
+    const rows = db.prepare(`SELECT id, filepath, filename FROM media WHERE id IN (${sqlPlaceholders(list.length)}) ORDER BY COALESCE(recorded_at, imported_at) ASC`).all(...list);
+
+    // O wrapper sql.js finaliza o statement após run(): prepara a cada uso.
+    const updateRow = (filename, filepath, id) => db.prepare(`UPDATE media SET filename = ?, filepath = ? WHERE id = ?`).run(filename, filepath, id);
+    const failed = [];
+    let renamed = 0;
+    let counter = 1;
+    for (const row of rows) {
+      const ext = path.extname(row.filename || '');
+      const newFilename = list.length === 1 ? `${baseName}${ext}` : `${baseName} - ${counter}${ext}`;
+      counter++;
+      try {
+        assertSafeFileName(newFilename);
+        const dir = path.dirname(row.filepath);
+        let newFilepath = path.join(dir, newFilename);
+        let finalName = newFilename;
+        if (fs.existsSync(row.filepath)) {
+          // Não sobrescreve outro arquivo existente com o mesmo nome (a menos que seja o próprio).
+          if (newFilepath.toLowerCase() !== row.filepath.toLowerCase() && fs.existsSync(newFilepath)) {
+            newFilepath = uniqueDestination(dir, newFilename);
+            finalName = path.basename(newFilepath);
+          }
+          if (newFilepath !== row.filepath) await fs.promises.rename(row.filepath, newFilepath);
+        }
+        updateRow(finalName, newFilepath, row.id);
+        renamed++;
+      } catch (e) {
+        failed.push({ id: row.id, error: e.message });
+        console.error('Rename err:', e);
       }
     }
-    
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT id, filepath, filename FROM media WHERE id IN (${placeholders}) ORDER BY COALESCE(recorded_at, imported_at) ASC`).all(...ids);
-    
-    let counter = 1;
-    db.exec('BEGIN TRANSACTION');
-    try {
-       const update = db.prepare(`UPDATE media SET filename = ?, filepath = ? WHERE id = ?`);
-       for (const row of rows) {
-           const ext = path.extname(row.filename);
-           let newFilename = ids.length === 1 ? `${baseName}${ext}` : `${baseName} - ${counter}${ext}`;
-           const dir = path.dirname(row.filepath);
-           const newFilepath = path.join(dir, newFilename);
-           try {
-              if (fs.existsSync(row.filepath)) {
-                 fs.renameSync(row.filepath, newFilepath);
-              }
-              update.run(newFilename, newFilepath, row.id);
-           } catch(e) { console.error('Rename err:', e) }
-           counter++;
-       }
-       db.exec('COMMIT');
-    } catch(e) {
-        db.exec('ROLLBACK');
-    }
-    return true;
+    return { ok: failed.length === 0, renamed, failed };
   });
 
   ipcMain.handle('library:moveMediaBulk', async (event, ids, newDir) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    if (!ids || ids.length === 0 || !newDir) return true;
+    if (!Array.isArray(ids) || ids.length === 0 || !newDir) return true;
 
-    // [FASE 1.2] Validação de caminho de destino
-    assertNonEmpty(newDir, 'Diretório de destino');
-    assertSafePath(paths.dataDir, newDir);
-    for (const id of ids) {
-      if (!Number.isInteger(Number(id)) || Number(id) <= 0) {
-        throw new Error(`ID inválido: ${id}`);
+    // [FASE 1.2] Destino = pasta escolhida pelo usuário (qualquer drive; o renderer usa dialog:selectFolder),
+    // mas absoluta, existente e que não seja a raiz de um drive.
+    const destDir = assertUserDirectory(newDir, 'Diretório de destino');
+    const list = assertIdArray(ids, { max: MAX_IDS });
+
+    // Atenção: o wrapper sql.js finaliza o statement após run(); por isso prepara a cada uso.
+    const updatePath = (filepath, id) => db.prepare(`UPDATE media SET filepath = ? WHERE id = ?`).run(filepath, id);
+    const failed = [];
+    let moved = 0;
+
+    for (const batch of chunk(list, SQL_BATCH)) {
+      const rows = db.prepare(`SELECT id, filepath, filename FROM media WHERE id IN (${sqlPlaceholders(batch.length)})`).all(...batch);
+      for (const row of rows) {
+        try {
+          if (!row.filepath || !fs.existsSync(row.filepath)) throw new Error('Arquivo de origem não encontrado.');
+          const name = assertSafeFileName(path.basename(row.filepath));
+          if (path.resolve(path.dirname(row.filepath)).toLowerCase() === destDir.toLowerCase()) { moved++; continue; }
+          const dest = uniqueDestination(destDir, name);
+          await moveFileNoOverwrite(row.filepath, dest);
+          // Só atualiza o banco depois que o arquivo realmente chegou ao destino.
+          updatePath(dest, row.id);
+          moved++;
+        } catch (e) {
+          failed.push({ id: row.id, error: e.message });
+          console.error('Move err:', e);
+        }
       }
     }
-    
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT id, filepath, filename FROM media WHERE id IN (${placeholders})`).all(...ids);
-    
-    db.exec('BEGIN TRANSACTION');
-    try {
-       const update = db.prepare(`UPDATE media SET filepath = ? WHERE id = ?`);
-       for (const row of rows) {
-           const newFilepath = path.join(newDir, row.filename);
-           try {
-              if (fs.existsSync(row.filepath)) {
-                 fs.copyFileSync(row.filepath, newFilepath);
-                 fs.unlinkSync(row.filepath);
-              }
-              update.run(newFilepath, row.id);
-           } catch(e) { console.error('Move err:', e) }
-       }
-       db.exec('COMMIT');
-    } catch(e) {
-        db.exec('ROLLBACK');
-    }
-    return true;
+    return { ok: failed.length === 0, moved, failed };
   });
 
-  ipcMain.handle('library:clearDatabase', () => {
+  ipcMain.handle('library:clearDatabase', async (event) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    db.exec('DELETE FROM media_tags; DELETE FROM media; VACUUM;');
-    return true;
+
+    // Confirmação nativa no processo principal: o renderer sozinho não pode apagar a biblioteca.
+    const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+    const options = {
+      type: 'warning',
+      title: 'Limpar banco de dados',
+      message: 'Limpar todo o banco de dados da biblioteca?',
+      detail: 'Registros de mídia, tags e favoritos serão apagados. Os arquivos do disco não são removidos.',
+      buttons: ['Cancelar', 'Limpar banco'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    };
+    const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+    if (response !== 1) throw new Error('Operação cancelada pelo usuário.');
+
+    const details = {};
+    for (const table of ['media_tags', 'media']) {
+      try {
+        db.exec(`DELETE FROM ${table}`);
+        details[table] = 'ok';
+      } catch (e) {
+        details[table] = `erro: ${e.message}`;
+      }
+    }
+    try { db.exec('VACUUM'); } catch (e) { details.vacuum = `erro: ${e.message}`; }
+    if (details.media !== 'ok') throw new Error(`Falha ao limpar o banco: ${details.media}`);
+    return { ok: Object.values(details).every((v) => v === 'ok'), details };
   });
 
   ipcMain.handle('library:rescanAll', () => {
@@ -299,6 +408,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
   ipcMain.handle('library:getFolderFiles', async (event, folderPath) => {
     if (!folderPath) return [];
     try {
+      folderPath = assertAbsolutePath(folderPath, 'Pasta');
       // [PERF] Usa fs.promises.readdir (assíncrono) em vez de readdirSync,
       // para não bloquear o event loop do processo principal durante a leitura do diretório.
       const exists = await fs.promises.access(folderPath).then(() => true).catch(() => false);
@@ -329,4 +439,3 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     });
   });
 };
-

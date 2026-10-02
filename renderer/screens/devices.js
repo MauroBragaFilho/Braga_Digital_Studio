@@ -1,3 +1,5 @@
+import { escapeHtml, escapeAttr } from '../utils/escape.js';
+import { enhanceModals } from '../utils/modal.js';
 let selectedDeviceId = null;
 let activeInspectorTab = 'geral';
 let appSettings = {};
@@ -219,12 +221,48 @@ export async function initScreen(forceRescan = false) {
   renderDevicesGrid();
   renderInspector();
   bindGlobalEvents();
+  enhanceModals(document.getElementById('devicesView') || document, '.devices-modal-overlay');
 
-  if (window.bds.onBdsmDeviceAdded && !window._bdsmEventsRegistered) {
-      window.bds.onBdsmDeviceAdded(() => initScreen());
-      window.bds.onBdsmDeviceRemoved(() => initScreen());
-      window.bds.onBdsmDeviceUpdated(() => initScreen());
-      window._bdsmEventsRegistered = true;
+  if (!cleanups.length) bindDeviceListeners();
+}
+
+// --- Ciclo de vida: listeners globais (document / IPC) removidos em onLeave ---
+let cleanups = [];
+
+/** ESC fecha o inspector de dispositivos (roteado pelo despachante central do app.js). */
+export function onKeyDown(e) {
+  if (e.key !== 'Escape') return;
+  const panel = document.getElementById('deviceInspector');
+  if (!panel || panel.classList.contains('hidden')) return;
+  // Ignora se um modal estiver aberto
+  const activeModal = document.querySelector('.devices-modal-overlay.active:not(.hidden)');
+  if (activeModal) return;
+  selectedDeviceId = null;
+  renderDevicesGrid();
+  panel.classList.add('hidden');
+  panel.innerHTML = '';
+}
+
+function bindDeviceListeners() {
+  ['onBdsmDeviceAdded', 'onBdsmDeviceRemoved', 'onBdsmDeviceUpdated'].forEach((evt) => {
+    if (typeof window.bds?.[evt] !== 'function') return;
+    const unsub = window.bds[evt](() => initScreen());
+    if (typeof unsub === 'function') cleanups.push(unsub);
+  });
+
+  document.addEventListener('click', onMtpImportClick);
+  cleanups.push(() => document.removeEventListener('click', onMtpImportClick));
+}
+
+export function onLeave() {
+  cleanups.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  cleanups = [];
+}
+
+export function onEnter() {
+  if (!cleanups.length) {
+    bindDeviceListeners();
+    initScreen(); // dispositivos podem ter mudado enquanto a tela estava oculta
   }
 }
 
@@ -301,22 +339,6 @@ function bindGlobalEvents() {
     });
   }
 
-  // ESC fecha o inspector de dispositivos
-  if (!window._devInspectorEscBound) {
-    window._devInspectorEscBound = true;
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const panel = document.getElementById('deviceInspector');
-      if (!panel || panel.classList.contains('hidden')) return;
-      // Ignora se um modal estiver aberto
-      const activeModal = document.querySelector('.devices-modal-overlay.active:not(.hidden)');
-      if (activeModal) return;
-      selectedDeviceId = null;
-      renderDevicesGrid();
-      panel.classList.add('hidden');
-      panel.innerHTML = '';
-    });
-  }
 }
 
 async function toggleHiddenDevice(title) {
@@ -398,14 +420,14 @@ function renderDevicesGrid() {
   container.innerHTML = devicesData.map(dev => {
     const isSelected = dev.id === selectedDeviceId;
     return `
-      <div class="device-card ${isSelected ? 'selected' : ''}" data-id="${dev.id}">
-        <button class="dev-card-hide-btn" data-action="hide" data-devid="${dev.id}" title="Ocultar Dispositivo" type="button">
+      <div class="device-card ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(dev.id)}">
+        <button class="dev-card-hide-btn" data-action="hide" data-devid="${escapeAttr(dev.id)}" title="Ocultar Dispositivo" type="button">
           <span class="material-symbols-rounded">visibility_off</span>
         </button>
 
         <div class="dev-card-top">
           <div class="dev-card-image-wrap">
-            <img src="${dev.image}" alt="${escapeAttr(dev.title)}" onError="this.style.display='none'" />
+            <img src="${escapeAttr(dev.image)}" alt="${escapeAttr(dev.title)}" onError="this.style.display='none'" />
           </div>
           <div class="dev-card-info">
             <h3 class="dev-card-title">${escapeHtml(dev.title)}</h3>
@@ -421,7 +443,7 @@ function renderDevicesGrid() {
 
         <div class="dev-card-actions">
           ${dev.buttons.map(b => `
-            <button class="dev-card-btn ${b.primary ? 'primary' : ''} ${b.label === '...' ? 'small' : ''}" data-action="${b.action}" data-devid="${dev.id}" type="button">
+            <button class="dev-card-btn ${b.primary ? 'primary' : ''} ${b.label === '...' ? 'small' : ''}" data-action="${escapeAttr(b.action)}" data-devid="${escapeAttr(dev.id)}" type="button">
               ${escapeHtml(b.label)}
             </button>
           `).join('')}
@@ -562,7 +584,7 @@ function renderInspector() {
     </div>
 
     <div class="inspector-image">
-      <img src="${dev.image}" alt="${escapeAttr(dev.title)}" />
+      <img src="${escapeAttr(dev.image)}" alt="${escapeAttr(dev.title)}" />
     </div>
 
     <div class="inspector-tabs">
@@ -859,7 +881,7 @@ function updateMtpImportButton() {
 }
 
 // MTP Import Event
-document.addEventListener('click', async (e) => {
+async function onMtpImportClick(e) {
   const mtpImportBtn = e.target.closest('#btnMtpImport');
   if (mtpImportBtn && !mtpImportBtn.hasAttribute('disabled')) {
     const eventName = await window.bdsModal.prompt('Digite o nome do Evento ou Pasta (ex: Casamento_Joao):');
@@ -975,7 +997,7 @@ document.addEventListener('click', async (e) => {
     mtpImportBtn.innerHTML = `<span class="material-symbols-rounded">download</span> Importar Selecionados`;
     updateMtpImportButton();
   }
-});
+}
 
 // --- BDSM Logic ---
 let bdsmMediaList = [];
@@ -1053,7 +1075,7 @@ async function openBdsmImportModal(devId) {
         btnImport.disabled = true;
         btnImport.innerHTML = 'Importando...';
 
-        window.bds.onBdsmProgress((data) => {
+        const unsubBdsmProgress = window.bds.onBdsmProgress((data) => {
           const statsEl = document.getElementById('bdsmStats');
           if (statsEl) statsEl.textContent = `Importando ${data.completed}/${data.total}: ${data.current}`;
         });
@@ -1073,6 +1095,8 @@ async function openBdsmImportModal(devId) {
           window.bdsModal.alert('Erro ao importar: ' + e.message);
           btnImport.disabled = false;
           btnImport.innerHTML = '<span class="material-symbols-rounded">download</span> Importar Novos';
+        } finally {
+          if (typeof unsubBdsmProgress === 'function') unsubBdsmProgress();
         }
       };
     }
@@ -1114,29 +1138,22 @@ async function openBdsmLutsModal(devId) {
 
     plan.conflict.forEach(c => c.resolution = 'keep_both');
 
-    window.bds.onBdsmLutSyncProgress((data) => {
+    const unsubLutSync = window.bds.onBdsmLutSyncProgress((data) => {
       console.log(`LutSync: ${data.current} (${data.completed}/${data.total})`);
     });
 
-    await window.bds.executeBdsmLutSync({
-      ip: dev.rawDevice.ip,
-      port: dev.rawDevice.port,
-      plan
-    });
+    try {
+      await window.bds.executeBdsmLutSync({
+        ip: dev.rawDevice.ip,
+        port: dev.rawDevice.port,
+        plan
+      });
+    } finally {
+      if (typeof unsubLutSync === 'function') unsubLutSync();
+    }
 
     window.bdsModal.alert('Sincronização de LUTs finalizada com sucesso!');
   } catch(e) {
     window.bdsModal.alert('Erro na sincronização de LUTs: ' + e.message);
   }
-}
-
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str).replace(/[&<>'"]/g, m => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-  }[m]));
-}
-
-function escapeAttr(str) {
-  return escapeHtml(str);
 }

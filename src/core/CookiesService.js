@@ -1,13 +1,45 @@
 const logger = require('../services/logService');
 const { session } = require('electron');
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const path = require('path');
+
+/** Remove tabulações/quebras de linha de um campo (evita injetar linhas no arquivo Netscape). */
+function cleanField(value) {
+  return String(value === undefined || value === null ? '' : value).replace(/[\t\r\n]/g, '');
+}
 
 class CookiesService {
   /**
+   * Pasta privada recomendada para os arquivos de cookies: <userData>/cookies (fora de pastas
+   * compartilhadas/portáteis como a pasta de ferramentas).
+   * @returns {string}
+   */
+  getCookiesDir() {
+    let base;
+    try {
+      const { app } = require('electron');
+      base = app && typeof app.getPath === 'function' ? app.getPath('userData') : null;
+    } catch (_) { base = null; }
+    if (!base) base = path.join(require('os').homedir(), '.braga-digital-studio');
+    return path.join(base, 'cookies');
+  }
+
+  /** Caminho padrão (privado) do arquivo de cookies de um serviço, ex.: getDefaultCookiesPath('youtube'). */
+  getDefaultCookiesPath(name = 'youtube') {
+    const safe = String(name).replace(/[^a-z0-9_-]/gi, '') || 'cookies';
+    return path.join(this.getCookiesDir(), `${safe}_cookies.txt`);
+  }
+
+  /**
    * Exporta os cookies do Electron para o formato Netscape (cookies.txt)
    * compatível com yt-dlp e spot-dlp.
-   * 
+   *
+   * O arquivo contém credenciais de sessão: é gravado de forma atômica (temporário + rename) com
+   * permissão 0o600 (somente o dono; no Windows o bit é praticamente ignorado, então prefira
+   * `getDefaultCookiesPath()`, dentro do userData do usuário) e o conteúdo nunca é logado.
+   * Cookies expirados e de outros domínios não são exportados.
+   *
    * @param {string} filterDomain O domínio base para filtrar (ex: '.youtube.com' ou '.spotify.com')
    * @param {string} outputPath O caminho completo onde o arquivo cookies.txt será salvo
    * @param {string} partition Opcional: A partição (ex: 'persist:youtube')
@@ -15,11 +47,22 @@ class CookiesService {
    */
   async exportNetscapeCookies(filterDomain, outputPath, partition = null) {
     try {
+      if (typeof filterDomain !== 'string' || !/^\.?[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(filterDomain)) {
+        logger.warn('Cookies: domínio inválido para exportação.');
+        return false;
+      }
+      if (typeof outputPath !== 'string' || !path.isAbsolute(outputPath) || !/\.txt$/i.test(outputPath)) {
+        logger.warn('Cookies: caminho de saída inválido (esperado caminho absoluto terminado em .txt).');
+        return false;
+      }
+
       const targetSession = partition ? session.fromPartition(partition) : session.defaultSession;
-      const cookies = await targetSession.cookies.get({ domain: filterDomain });
-      
-      if (!cookies || cookies.length === 0) {
-        logger.info(`Nenhum cookie encontrado para o domínio: ${filterDomain}`);
+      const all = await targetSession.cookies.get({ domain: filterDomain });
+      const nowSec = Math.floor(Date.now() / 1000);
+      const cookies = (all || []).filter((c) => c && c.name && !(c.expirationDate && Math.floor(c.expirationDate) < nowSec));
+
+      if (cookies.length === 0) {
+        logger.info('Nenhum cookie encontrado para o domínio.', { domain: filterDomain });
         return false;
       }
 
@@ -28,18 +71,46 @@ class CookiesService {
 
       cookies.forEach(cookie => {
         // Formato: domain, includeSubdomains, path, secure, expiry, name, value
-        const includeSubdomains = cookie.domain.startsWith('.') ? 'TRUE' : 'FALSE';
+        const domain = cleanField(cookie.domain);
+        const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
         const secure = cookie.secure ? 'TRUE' : 'FALSE';
         const expiry = cookie.expirationDate ? Math.floor(cookie.expirationDate) : 0;
-        
-        content += `${cookie.domain}\t${includeSubdomains}\t${cookie.path}\t${secure}\t${expiry}\t${cookie.name}\t${cookie.value}\n`;
+
+        content += `${domain}\t${includeSubdomains}\t${cleanField(cookie.path) || '/'}\t${secure}\t${expiry}\t${cleanField(cookie.name)}\t${cleanField(cookie.value)}\n`;
       });
 
-      await fs.writeFile(outputPath, content, 'utf8');
-      logger.info(`Cookies exportados com sucesso para ${outputPath}`);
+      await fs.mkdir(path.dirname(outputPath), { recursive: true, mode: 0o700 });
+      const tmpPath = `${outputPath}.${process.pid}.tmp`;
+      try {
+        await fs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+        try { await fs.chmod(tmpPath, 0o600); } catch (_) { /* Windows: sem efeito */ }
+        await fs.rename(tmpPath, outputPath);
+      } catch (writeErr) {
+        try { await fs.rm(tmpPath, { force: true }); } catch (_) { /* noop */ }
+        throw writeErr;
+      }
+
+      logger.info('Cookies exportados com sucesso.', { domain: filterDomain, count: cookies.length });
       return true;
     } catch (error) {
-      logger.error('Erro ao exportar cookies:', error);
+      logger.error('Erro ao exportar cookies:', { error: error.message });
+      return false;
+    }
+  }
+
+  /**
+   * Apaga um arquivo de cookies exportado (ex.: ao sair da conta ou limpar dados).
+   * @param {string} cookiesPath
+   * @returns {Promise<boolean>} true se o arquivo foi removido (ou já não existia)
+   */
+  async deleteCookiesFile(cookiesPath) {
+    try {
+      if (typeof cookiesPath !== 'string' || !path.isAbsolute(cookiesPath) || !/\.txt$/i.test(cookiesPath)) return false;
+      if (fsSync.existsSync(cookiesPath)) await fs.rm(cookiesPath, { force: true });
+      logger.info('Arquivo de cookies removido.');
+      return true;
+    } catch (error) {
+      logger.error('Erro ao remover arquivo de cookies:', { error: error.message });
       return false;
     }
   }
