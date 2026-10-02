@@ -1,0 +1,71 @@
+/* ==========================================================================
+   Visualizadores em formato de pop-up (janela centralizada sobre um fundo
+   escurecido). O botão de tela cheia de cada viewer continua funcionando:
+   em :fullscreen o pop-up volta a ocupar a tela inteira.
+   ========================================================================== */
+.preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: previewFade 0.18s ease-out;
+}
+.preview-backdrop.hidden { display: none; }
+
+.photo-preview-overlay:not(:fullscreen),
+.video-preview-overlay:not(:fullscreen),
+.audio-preview-overlay:not(:fullscreen) {
+  inset: 6vh 6vw;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+  animation: previewPop 0.18s ease-out;
+}
+
+@keyframes previewFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes previewPop {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 900px) {
+  .photo-preview-overlay:not(:fullscreen),
+  .video-preview-overlay:not(:fullscreen),
+  .audio-preview-overlay:not(:fullscreen) { inset: 2vh 2vw; border-radius: 10px; }
+}
+
+/* ===== Galeria mista: vídeo exibido como miniatura com botão de play ===== */
+.photo-video-play {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  z-index: 6;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.photo-video-play .material-symbols-rounded { font-size: 54px; }
+.photo-video-play:hover { background: var(--accent, #e53935); transform: translate(-50%, -50%) scale(1.08); }
+.photo-video-play.hidden { display: none; }
+
+/* Em vídeo, ferramentas de foto (zoom, giro, grade...) ficam ocultas; o filmstrip permanece */
+.photo-preview-overlay.is-video .photo-header-center > :not(#photoBtnFilmstrip) { display: none; }
+
+.photo-filmstrip-item.is-video::after {
+  content: 'play_circle';
+  font-family: 'Material Symbols Rounded';
+  position: absolute; right: 3px; bottom: 3px;
+  font-size: 20px; line-height: 1; color: #fff;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}

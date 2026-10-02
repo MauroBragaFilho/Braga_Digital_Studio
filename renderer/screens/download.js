@@ -247,16 +247,19 @@ export function renderDownloadQueue(queue) {
   const activeItem = items.find(i => i.status === 'downloading');
   const activeCount = activeItem ? 1 : 0;
   const completedCount = items.filter(i => i.status === 'completed').length;
+  const failedCount = items.filter(i => i.status === 'failed').length;
 
   const metricTotal = document.getElementById('metricTotal');
   const metricQueued = document.getElementById('metricQueued');
   const metricActive = document.getElementById('metricActive');
   const metricCompleted = document.getElementById('metricCompleted');
+  const metricFailed = document.getElementById('metricFailed');
 
   if (metricTotal) metricTotal.textContent = total;
   if (metricQueued) metricQueued.textContent = queuedCount;
   if (metricActive) metricActive.textContent = activeCount;
   if (metricCompleted) metricCompleted.textContent = completedCount;
+  if (metricFailed) metricFailed.textContent = failedCount;
 
   // Download Ativo
   if (activeItem && activeSection && activeContent) {

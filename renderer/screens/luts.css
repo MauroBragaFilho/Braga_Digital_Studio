@@ -527,7 +527,7 @@
 .lut-badge {
   background: var(--accent-light);
   color: var(--accent);
-  border: 1px solid rgba(229, 57, 53, 0.3);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   font-size: 10px;
   font-weight: 600;
   padding: 2px 8px;
@@ -856,4 +856,39 @@
 
 @keyframes spin {
   100% { transform: rotate(360deg); }
+}
+
+/* REFINAMENTOS DE INTERFACE */
+.luts-header { position: relative; }
+.lut-card { border-radius: 12px; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease; }
+.lut-card:hover { box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 10%, transparent); }
+.lut-card.selected { box-shadow: 0 0 0 1px var(--accent), 0 6px 18px color-mix(in srgb, var(--accent) 16%, transparent); }
+.lut-card:focus-visible, .luts-tab:focus-visible, .lut-btn-primary:focus-visible, .lut-btn-outline:focus-visible,
+.lut-icon-btn:focus-visible, .lut-view-mode-btn:focus-visible, .lut-select:focus-visible,
+.lut-fullscreen-close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.luts-search-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.lut-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lut-card-meta, .detail-value, .cube-meta-value, .cube-rgb-value, .cube-rgb-index,
+.luts-footer-text, .luts-footer-highlight { font-variant-numeric: tabular-nums; }
+.lut-btn-primary, .lut-btn-outline, .lut-icon-btn, .lut-view-mode-btn, .luts-tab {
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.lut-btn-outline:disabled, .lut-icon-btn:disabled, .lut-select:disabled { opacity: 0.5; cursor: not-allowed; }
+.luts-inspector, .inspector-content { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent; }
+.luts-grid-area { scrollbar-width: thin; }
+.detail-row { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.detail-row:last-child { border-bottom: 0; }
+.cube-rgb-table { border-radius: 10px; overflow: hidden; }
+.cube-rgb-row:nth-child(even) { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.cube-swatch { border-radius: 4px; }
+.lut-cube-raw-inner, .lut-fullscreen-modal { border-radius: 14px; }
+.lut-cube-raw-content { scrollbar-width: thin; font-variant-numeric: tabular-nums; }
+.luts-empty-state { padding: 48px 24px; }
+.luts-empty-state.active { border: 1px dashed var(--line); border-radius: 14px; }
+.luts-footer { border-top: 1px solid var(--line); }
+@media (prefers-reduced-motion: reduce) {
+  .lut-card, .lut-btn-primary, .lut-btn-outline, .lut-icon-btn, .lut-view-mode-btn, .luts-tab { transition: none; }
 }

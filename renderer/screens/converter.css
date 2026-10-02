@@ -261,7 +261,7 @@
 }
 
 .converter-btn-primary {
-  background: #e53935;
+  background: var(--accent);
   color: var(--text);
 }
 
@@ -551,7 +551,7 @@
 .converter-batch-progress-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #e53935, #ff7043);
+  background: linear-gradient(90deg, var(--accent-hover, var(--accent)), var(--accent));
   border-radius: 4px;
   transition: width 0.3s ease;
 }
@@ -638,7 +638,7 @@
   background: var(--card-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  color: #e53935;
+  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -646,7 +646,7 @@
 }
 
 .converter-icon-btn:hover {
-  border-color: #e53935;
+  border-color: var(--accent);
 }
 
 .converter-start-group {
@@ -655,7 +655,7 @@
 
 .converter-btn-start {
   width: 100%;
-  background: #e53935;
+  background: var(--accent);
   color: var(--text);
   border: none;
   border-radius: 6px;
@@ -969,8 +969,8 @@
 
 .converter-content-panel.drag-active {
   border-color: var(--accent, #e53935);
-  box-shadow: inset 0 0 0 2px rgba(229, 57, 53, 0.3);
-  background-color: rgba(229, 57, 53, 0.03);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 3%, transparent);
 }
 
 .converter-drop-hint {
@@ -1129,4 +1129,183 @@
     align-items: flex-start;
     gap: 6px;
   }
+}
+/* ==========================================================================
+   REFINAMENTOS DE INTERFACE
+   ========================================================================== */
+
+/* --- Stepper: passos distribuídos, ativo em destaque, conectores discretos --- */
+.converter-stepper { gap: 8px; padding: 12px 20px; }
+.converter-stepper .step-item {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.converter-stepper .step-item .step-title { letter-spacing: 0.6px; }
+.converter-stepper .step-item:has(.step-badge-active) { background: rgba(33, 150, 243, 0.08); }
+.converter-stepper .step-item:has(.step-badge-done) { background: rgba(76, 175, 80, 0.06); }
+.step-badge { flex-shrink: 0; }
+.stepper-arrow { color: var(--muted); opacity: 0.4; flex-shrink: 0; }
+
+/* --- Painel da fila --- */
+.converter-content-panel { border-radius: 12px; }
+.converter-panel-header { flex-wrap: wrap; }
+.converter-title-group { font-size: 12px; letter-spacing: 0.8px; text-transform: uppercase; }
+.converter-title-group #converterMainCount {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 7px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.converter-action-group { flex-wrap: wrap; justify-content: flex-end; }
+.converter-btn { border-radius: 8px; padding: 8px 14px; }
+.converter-btn:active:not(:disabled) { transform: translateY(1px); }
+.converter-btn-primary { box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 25%, transparent); }
+.converter-btn-secondary:hover:not(:disabled) { border-color: var(--muted); }
+.converter-sort-select { border-radius: 8px; padding: 8px 10px; }
+
+/* --- Tabela: cabeçalho fixo, linhas mais legíveis --- */
+.converter-table-container {
+  min-height: 220px;
+  border-radius: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.converter-table-head th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--line);
+  font-size: 10.5px;
+  letter-spacing: 0.7px;
+  white-space: nowrap;
+}
+.converter-table-row:last-child { border-bottom: none; }
+.converter-table-row:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.converter-table-cell { vertical-align: middle; }
+.converter-cell-index { font-variant-numeric: tabular-nums; }
+.converter-cell-ext,
+.converter-cell-out-format { font-size: 11px; letter-spacing: 0.5px; }
+.converter-cell-out-format { position: relative; }
+.converter-thumb-video, .converter-thumb-audio { width: 64px; height: 38px; border-radius: 6px; }
+.converter-file-name { font-weight: 650; }
+.converter-file-duration { font-variant-numeric: tabular-nums; }
+
+/* Remover: discreto até passar o mouse na linha */
+.btn-remove-converter-item {
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 5px;
+  opacity: 0.45;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.converter-table-row:hover .btn-remove-converter-item,
+.btn-remove-converter-item:focus-visible { opacity: 1; }
+.btn-remove-converter-item:hover { color: #ff6b63; background: rgba(229, 57, 53, 0.14); }
+
+/* Progresso por arquivo: barra mais legível, brilho no item em conversão */
+.converter-progress-container { min-width: 150px; }
+.converter-progress-header { font-size: 10.5px; }
+.converter-progress-pct { font-variant-numeric: tabular-nums; }
+.converter-progress-bar { height: 7px; border-radius: 4px; }
+.converter-progress-fill { border-radius: 4px; position: relative; overflow: hidden; }
+.converter-progress-fill-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: converterShimmer 1.5s linear infinite;
+}
+@keyframes converterShimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.converter-progress-fill-done { background: linear-gradient(90deg, #43a047, #66bb6a); }
+.converter-progress-fill-active { background: linear-gradient(90deg, #1e88e5, #42a5f5); }
+
+/* Estado vazio: área de soltar arquivos */
+.converter-empty-state { padding: 28px; }
+.converter-empty-content {
+  padding: 34px 20px;
+  border: 2px dashed var(--line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.12);
+  transition: border-color 0.15s, background 0.15s;
+}
+.converter-empty-icon { font-size: 44px; opacity: 0.55; color: var(--accent); }
+.converter-empty-content strong { color: var(--text); font-size: 14px; }
+.converter-content-panel.drag-active .converter-empty-content { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+/* Rodapé e progresso do lote */
+.converter-footer { padding-top: 2px; }
+.converter-footer strong { font-variant-numeric: tabular-nums; }
+.converter-batch-progress-track { height: 10px; border-radius: 6px; }
+.converter-batch-progress-fill { border-radius: 6px; }
+.converter-batch-eta { font-variant-numeric: tabular-nums; }
+
+/* --- Painel de parâmetros --- */
+.converter-config-panel { border-radius: 12px; gap: 14px; }
+.converter-config-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  letter-spacing: 0.8px;
+}
+.converter-config-title::before {
+  content: 'tune';
+  font-family: 'Material Symbols Rounded';
+  font-size: 18px;
+  color: var(--accent);
+}
+.converter-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; }
+.converter-select,
+.converter-input { border-radius: 8px; transition: border-color 0.15s, box-shadow 0.15s; }
+.converter-select:hover,
+.converter-input:hover { border-color: var(--muted); }
+.converter-select:focus,
+.converter-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.converter-icon-btn { border-radius: 8px; transition: border-color 0.15s, background 0.15s; }
+.converter-bitrate-display { font-variant-numeric: tabular-nums; }
+
+/* Botão principal ganha destaque e fica visível ao rolar o painel */
+.converter-start-group {
+  position: sticky;
+  bottom: 0;
+  margin: 4px -4px -4px;
+  padding: 12px 4px 4px;
+  background: linear-gradient(180deg, transparent 0, var(--card) 28%);
+}
+.converter-btn-start {
+  border-radius: 10px;
+  padding: 13px 16px;
+  background: linear-gradient(135deg, var(--accent-hover, var(--accent)), var(--accent));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: filter 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.converter-btn-start:hover:not(:disabled) { box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 45%, transparent); }
+.converter-btn-start:active:not(:disabled) { transform: translateY(1px); }
+.converter-btn-start:disabled { opacity: 0.5; cursor: not-allowed; filter: saturate(0.4); box-shadow: none; }
+.converter-btn-cancel { border-radius: 10px; }
+
+/* Em telas largas, o painel de parâmetros acompanha a rolagem */
+@media (min-width: 1101px) {
+  .converter-sidebar { align-self: flex-start; position: sticky; top: 0; max-height: 100%; overflow-y: auto; scrollbar-width: thin; }
+}
+
+/* Barra de ações da fila (Adicionar, Limpar Fila, Ordenação): sempre em uma única linha */
+.converter-panel-header { flex-wrap: nowrap; }
+.converter-title-group { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.converter-action-group { flex-wrap: nowrap; flex-shrink: 0; justify-content: flex-end; }
+.converter-action-group .converter-btn,
+.converter-action-group .converter-sort-select { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .converter-action-group .converter-btn { padding: 7px 10px; }
+  .converter-action-group .converter-sort-select { padding: 7px 8px; max-width: 150px; }
 }

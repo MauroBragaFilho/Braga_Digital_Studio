@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./components/preview/photo-preview.css">
   <link rel="stylesheet" href="./components/preview/video-preview.css">
   <link rel="stylesheet" href="./components/preview/audio-preview.css">
+  <link rel="stylesheet" href="./components/preview/preview-popup.css">
 </head>
 <body>
   <main class="app-shell">
@@ -54,6 +55,10 @@
         <button class="tab-button" data-view="metadata" type="button">
           <span class="material-symbols-rounded">label</span>
           Metadados
+        </button>
+        <button class="tab-button" data-view="ai" type="button">
+          <span class="material-symbols-rounded">smart_toy</span>
+          Assistente IA
         </button>
         <button class="tab-button" data-view="library" type="button">
           <span class="material-symbols-rounded">video_library</span>
@@ -102,10 +107,15 @@
 
         <div class="search-wrapper">
           <div class="search-inner">
-            <span class="material-symbols-rounded">search</span>
-            <input type="text" placeholder="Pesquisar por nome, codec, projeto, origem..." id="globalSearch">
+            <button type="button" id="globalSearchBtn" class="search-icon-btn" title="Pesquisar (Enter)" aria-label="Pesquisar">
+              <span class="material-symbols-rounded">search</span>
+            </button>
+            <input type="text" placeholder="Pesquisar por nome, codec, projeto, origem..." id="globalSearch" autocomplete="off">
+            <button type="button" id="globalSearchClear" class="search-clear-btn hidden" title="Limpar pesquisa (Esc)" aria-label="Limpar pesquisa">
+              <span class="material-symbols-rounded">close</span>
+            </button>
           </div>
-          <span class="shortcut">Ctrl + K</span>
+          <button type="button" id="globalSearchShortcut" class="shortcut" title="Clique ou use Ctrl+K, / ou Ctrl+F">Ctrl + K</button>
         </div>
 
         <div class="header-actions">
@@ -183,58 +193,6 @@
       </div>
     </div>
   </dialog>
-
-  <!-- Floating Video Player -->
-  <div id="floatingPlayerOverlay" class="floating-player-overlay hidden">
-    <div id="floatingPlayerContainer" class="floating-player-container">
-      <!-- Header -->
-      <div id="floatingPlayerHeader" class="floating-player-header">
-        <span id="floatingPlayerTitle" class="floating-player-title">Vídeo</span>
-        <button id="floatingPlayerCloseBtn" class="floating-player-close-btn">
-          <span class="material-symbols-rounded">close</span>
-        </button>
-      </div>
-      <!-- Video Content -->
-      <div id="videoContainer" class="video-container">
-        <video id="floatingVideoElement" class="floating-video" autoplay></video>
-        <img id="floatingImageElement" class="floating-image hidden" />
-        
-        <!-- Custom Controls -->
-        <div id="customVideoControls" class="custom-video-controls">
-          <!-- Progress Bar -->
-          <div class="progress-bar-container" id="progressBarContainer">
-            <span id="videoCurrentTime" class="video-time">00:00</span>
-            <div class="progress-track" id="progressTrack">
-              <div id="progressFill" class="progress-fill"></div>
-            </div>
-            <span id="videoDuration" class="video-time video-duration">00:00</span>
-          </div>
-
-          <!-- Bottom Controls Row -->
-          <div class="controls-row">
-            <div class="controls-left">
-              <button id="btnPlayPause" class="control-btn play-pause-btn">
-                <span class="material-symbols-rounded">pause</span>
-              </button>
-              
-              <div class="volume-container">
-                <button id="btnMute" class="control-btn mute-btn">
-                  <span class="material-symbols-rounded">volume_up</span>
-                </button>
-                <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1" step="0.01" value="1">
-              </div>
-            </div>
-            
-            <div class="controls-right">
-              <button id="btnFullscreen" class="control-btn fullscreen-btn">
-                <span class="material-symbols-rounded">fullscreen</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script src="./app.js" type="module"></script>
 </body>

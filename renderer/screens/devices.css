@@ -155,8 +155,8 @@
 }
 
 .device-card.selected {
-  border-color: #f25c05;
-  box-shadow: 0 0 16px rgba(242, 92, 5, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .dev-card-hide-btn {
@@ -377,8 +377,8 @@
 }
 
 .dev-card-btn.primary {
-  background: #f25c05;
-  border-color: #f25c05;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .dev-card-btn.small {
@@ -492,8 +492,8 @@
 }
 
 .inspector-tab-btn.active {
-  color: #f25c05;
-  border-bottom-color: #f25c05;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .inspector-tab-btn:hover:not(.active) {
@@ -672,7 +672,7 @@
 }
 
 .inspector-config-list input[type="checkbox"] {
-  accent-color: #f25c05;
+  accent-color: var(--accent);
   width: 16px;
   height: 16px;
   min-height: auto;
@@ -784,7 +784,7 @@
 }
 
 .devices-btn-primary-orange {
-  background: #f25c05;
+  background: var(--accent);
   color: var(--text);
   border: none;
   border-radius: 6px;
@@ -1195,4 +1195,49 @@
   .devices-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* REFINAMENTOS DE INTERFACE */
+.devices-container { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent; }
+.device-card {
+  border-radius: 14px;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.device-card:hover { box-shadow: 0 6px 20px color-mix(in srgb, var(--text) 10%, transparent); }
+.device-card.selected { box-shadow: 0 0 0 1px var(--accent), 0 6px 20px color-mix(in srgb, var(--accent) 16%, transparent); }
+.device-card:focus-visible,
+.mtp-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dev-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-card-storage-bar, .inspector-storage-bar { border-radius: 999px; overflow: hidden; }
+.dev-card-storage-fill, .inspector-storage-fill { border-radius: 999px; transition: width 0.4s ease; }
+.dev-card-storage-label, .inspector-storage-value, .inspector-detail-value,
+.mtp-progress-header, .mtp-progress-eta, .mtp-selected-count, .devices-count-label,
+.dev-card-middle-wifi { font-variant-numeric: tabular-nums; }
+.dev-card-btn, .inspector-footer-btn, .devices-btn-primary-orange, .devices-btn-secondary,
+.devices-icon-btn, .devices-add-btn, .devices-manage-hidden-btn, .inspector-tab-btn,
+.devices-modal-close-btn, .inspector-close-btn { transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease; }
+.dev-card-btn:focus-visible, .inspector-footer-btn:focus-visible, .devices-btn-primary-orange:focus-visible,
+.devices-btn-secondary:focus-visible, .devices-icon-btn:focus-visible, .devices-add-btn:focus-visible,
+.devices-manage-hidden-btn:focus-visible, .inspector-tab-btn:focus-visible,
+.devices-modal-close-btn:focus-visible, .inspector-close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.dev-card-btn:disabled, .inspector-footer-btn:disabled, .devices-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.devices-grid-empty { padding: 48px 24px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); }
+.device-inspector-sidebar { border-radius: 0; scrollbar-width: thin; }
+.inspector-content, .devices-modal-body, .mtp-items-grid { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent; }
+.inspector-detail-row { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.inspector-detail-row:last-child { border-bottom: 0; }
+.inspector-storage-card { border-radius: 12px; }
+.inspector-tab-btn.active { box-shadow: inset 0 -2px 0 var(--accent); }
+.devices-modal { border-radius: 16px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45); }
+.devices-modal-header { position: sticky; top: 0; z-index: 1; }
+.mtp-item { border-radius: 10px; transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+.mtp-item.selected { box-shadow: 0 0 0 1px var(--accent); }
+.mtp-item .item-name { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.mtp-progress-bar { border-radius: 999px; overflow: hidden; }
+.mtp-progress-fill { border-radius: 999px; }
+@media (prefers-reduced-motion: reduce) {
+  .device-card, .dev-card-storage-fill, .inspector-storage-fill, .mtp-item { transition: none; }
 }

@@ -1,4 +1,4 @@
-import { setAppStatus } from '../app.js';
+import { setAppStatus, state as appState } from '../app.js';
 
 // Constantes de Status (Centralizadas para evitar typos)
 const STATUS_WAITING = 'Aguardando';
@@ -75,6 +75,38 @@ function getConverterFormat() {
 function getConverterVideoCodec() {
   const active = document.querySelector('.converter-codec-btn.active');
   return active ? active.getAttribute('data-codec') : 'libx264';
+}
+
+/**
+ * Aplica os padrões escolhidos em Configurações > Conversão (formato, codec, resolução e bitrates).
+ * Roda ao abrir a tela; valores ausentes ou inválidos mantêm o padrão do HTML.
+ */
+function applyConverterDefaults() {
+  const s = appState.settings || {};
+
+  const format = s.converterDefaultFormat === 'mp3' ? 'mp3' : 'mp4';
+  const toggle = document.getElementById('converterFormatToggle');
+  if (toggle) {
+    toggle.classList.toggle('mp4-active', format === 'mp4');
+    toggle.classList.toggle('mp3-active', format === 'mp3');
+    toggle.querySelectorAll('.converter-format-btn').forEach(b => {
+      b.setAttribute('aria-pressed', b.getAttribute('data-format') === format ? 'true' : 'false');
+    });
+  }
+
+  const codec = s.converterDefaultCodec === 'libx265' ? 'libx265' : 'libx264';
+  document.querySelectorAll('.converter-codec-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-codec') === codec);
+  });
+
+  const setSelect = (id, value) => {
+    const el = document.getElementById(id);
+    if (el && value && [...el.options].some(o => o.value === String(value))) el.value = String(value);
+  };
+  setSelect('selConverterResolution', s.converterDefaultResolution);
+  setSelect('selConverterAudioBitrate', s.converterDefaultAudioBitrate);
+
+  if (s.converterDefaultVideoBitrate) syncVideoBitrate(s.converterDefaultVideoBitrate);
 }
 
 /** Sincroniza slider ↔ input numérico (clamped 1–100) e atualiza label */
@@ -165,30 +197,34 @@ async function enqueueConverterFiles(filePaths, { extractThumbs = false } = {}) 
     const res = await window.bds.converterAddFiles(filePaths);
     if (!res || !res.items || res.items.length === 0) return 0;
 
-    for (const backendItem of res.items) {
-      const fp = backendItem.file;
-      const name = fp.split(/[\\/]/).pop();
-      let thumbnail = './assets/podcast_thumb.jpg';
+    const newItems = res.items.map(backendItem => ({
+      id: String(backendItem.id),
+      name: backendItem.file.split(/[\\/]/).pop(),
+      path: backendItem.file,
+      thumbnail: './assets/podcast_thumb.jpg',
+      durationSeconds: 0,
+      progress: backendItem.progress || 0,
+      status: backendItem.status || STATUS_WAITING
+    }));
 
-      if (extractThumbs && window.bds.extractMetadataThumb) {
-        try {
-          const tPath = await window.bds.extractMetadataThumb(fp);
-          if (tPath) thumbnail = 'file:///' + tPath.replace(/\\/g, '/');
-        } catch (e) {
-          logConverterScreen(`Erro ao extrair thumbnail de ${name}: ${e.message}`, 'warn');
+    if (extractThumbs && window.bds.extractMetadataThumb) {
+      // Extração de miniaturas com concorrência limitada (antes era uma por vez)
+      let next = 0;
+      const worker = async () => {
+        while (next < newItems.length) {
+          const item = newItems[next++];
+          try {
+            const tPath = await window.bds.extractMetadataThumb(item.path);
+            if (tPath) item.thumbnail = 'file:///' + tPath.replace(/\\/g, '/');
+          } catch (e) {
+            logConverterScreen(`Erro ao extrair thumbnail de ${item.name}: ${e.message}`, 'warn');
+          }
         }
-      }
-
-      converterList.push({
-        id: String(backendItem.id),
-        name,
-        path: fp,
-        thumbnail,
-        durationSeconds: 0,
-        progress: backendItem.progress || 0,
-        status: backendItem.status || STATUS_WAITING
-      });
+      };
+      await Promise.all(Array.from({ length: Math.min(4, newItems.length) }, worker));
     }
+
+    converterList.push(...newItems);
 
     renderConverterTable();
     updateConverterStepperVisuals();
@@ -313,6 +349,7 @@ export async function initScreen() {
 
   converterList = [];
 
+  applyConverterDefaults();
   updateConverterFormatVisibility();
   await applyConverterEncoderAvailability();
   setupConverterDragAndDrop();
@@ -507,6 +544,65 @@ function updateConverterStepperVisuals() {
   }
 }
 
+/** Estado visual de uma linha (porcentagem, texto e classes de cor). */
+function getRowState(item) {
+  const pct = Math.round(item.progress || 0);
+  const statusText = item.status || STATUS_WAITING;
+  const isDone = item.status === STATUS_DONE || pct >= 100;
+  const isConverting = item.status === STATUS_CONVERTING;
+  const isCancelled = item.status === STATUS_CANCELLED;
+  return {
+    pct,
+    statusText,
+    barColorClass: isDone ? 'converter-progress-fill-done' : (isConverting ? 'converter-progress-fill-active' : 'converter-progress-fill-pending'),
+    statusColorClass: isCancelled ? 'converter-status-cancelled' : (isDone ? 'converter-status-done' : (isConverting ? 'converter-status-active' : 'converter-status-pending'))
+  };
+}
+
+/** Atualiza só a linha do item (sem refazer a tabela). Retorna false se a linha não existe. */
+function patchConverterRow(item) {
+  const tbody = document.getElementById('converterMainBody');
+  const row = tbody?.querySelector(`tr[data-id="${CSS.escape(String(item.id))}"]`);
+  if (!row) return false;
+  const { pct, statusText, barColorClass, statusColorClass } = getRowState(item);
+
+  const statusEl = row.querySelector('.converter-progress-header > span:first-child');
+  if (statusEl) {
+    statusEl.className = statusColorClass;
+    if (statusEl.textContent !== statusText) statusEl.textContent = statusText;
+  }
+  const pctEl = row.querySelector('.converter-progress-pct');
+  if (pctEl) pctEl.textContent = `${pct}%`;
+  const fill = row.querySelector('.converter-progress-fill');
+  if (fill) {
+    fill.className = `converter-progress-fill ${barColorClass}`;
+    fill.style.width = `${pct}%`;
+  }
+  return true;
+}
+
+// Eventos de progresso chegam várias vezes por segundo: agrupa tudo em um único
+// atualização por quadro, e só mexe nas linhas que mudaram.
+const pendingRowUpdates = new Map();
+let rowUpdateFrame = null;
+let pendingStatusText = null;
+
+function scheduleConverterUpdate(item, statusText) {
+  if (item) pendingRowUpdates.set(String(item.id), item);
+  if (statusText) pendingStatusText = statusText;
+  if (rowUpdateFrame) return;
+  rowUpdateFrame = requestAnimationFrame(() => {
+    rowUpdateFrame = null;
+    let needFullRender = false;
+    pendingRowUpdates.forEach(it => { if (!patchConverterRow(it)) needFullRender = true; });
+    pendingRowUpdates.clear();
+    if (needFullRender) renderConverterTable();
+    if (pendingStatusText) { setAppStatus(pendingStatusText, 'info'); pendingStatusText = null; }
+    updateConverterStepperVisuals();
+    updateConverterBatchProgress();
+  });
+}
+
 function renderConverterTable() {
   const tbody = document.getElementById('converterMainBody');
   const countEl = document.getElementById('converterMainCount');
@@ -553,15 +649,7 @@ function renderConverterTable() {
     const ext = item.name.split('.').pop().toUpperCase();
     const isAudio = item.isAudio || ['MP3', 'WAV', 'M4A', 'AAC', 'FLAC', 'OGG'].includes(ext);
 
-    const pct = Math.round(item.progress || 0);
-    const statusText = item.status || STATUS_WAITING;
-    const isDone = item.status === STATUS_DONE || pct >= 100;
-    const isConverting = item.status === STATUS_CONVERTING;
-    const isCancelled = item.status === STATUS_CANCELLED;
-    
-    // Correção: Classes CSS dinâmicas para cores diferentes de status
-    const barColorClass = isDone ? 'converter-progress-fill-done' : (isConverting ? 'converter-progress-fill-active' : 'converter-progress-fill-pending');
-    const statusColorClass = isCancelled ? 'converter-status-cancelled' : (isDone ? 'converter-status-done' : (isConverting ? 'converter-status-active' : 'converter-status-pending'));
+    const { pct, statusText, barColorClass, statusColorClass } = getRowState(item);
 
     const safeName = escapeHtml(item.name);
     const safeThumb = escapeHtml(item.thumbnail);
@@ -574,12 +662,12 @@ function renderConverterTable() {
     const thumbHtml = isAudio 
       ? `<div class="converter-thumb-audio">ÁUDIO</div>`
       : `<div class="converter-thumb-video">
-          <img src="${safeThumb}" class="converter-thumb-img" onError="this.style.display='none'" />
+          <img src="${safeThumb}" class="converter-thumb-img" loading="lazy" decoding="async" onError="this.style.display='none'" />
           <span class="material-symbols-rounded converter-thumb-fallback">movie</span>
          </div>`;
 
     return `
-      <tr class="converter-table-row">
+      <tr class="converter-table-row" data-id="${escapeHtml(String(item.id))}">
         <td class="converter-table-cell converter-cell-index">${index + 1}</td>
         
         <td class="converter-table-cell">
@@ -616,8 +704,11 @@ function renderConverterTable() {
     `;
   }).join('');
 
-  document.querySelectorAll('.btn-remove-converter-item').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  if (!tbody.dataset.removeBound) {
+    tbody.dataset.removeBound = '1';
+    tbody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-remove-converter-item');
+      if (!btn) return;
       const idx = parseInt(btn.getAttribute('data-index'), 10);
       if (!isNaN(idx)) {
         converterList.splice(idx, 1);
@@ -628,7 +719,7 @@ function renderConverterTable() {
         updateConverterStepperVisuals();
       }
     });
-  });
+  }
 
   updateConverterBatchProgress();
 }
@@ -1183,10 +1274,7 @@ function setupConverterIPCListeners() {
         exportConverterState.active = true;
         exportConverterState.percent = payload.progress || 0;
         setConverterCancelButtonVisible(true);
-        setAppStatus(`Convertendo ${Math.round(payload.progress || 0)}%…`, 'info');
-        renderConverterTable();
-        updateConverterStepperVisuals();
-        updateConverterBatchProgress();
+        scheduleConverterUpdate(item, `Convertendo ${Math.round(payload.progress || 0)}%…`);
       }
     });
   }
@@ -1201,9 +1289,7 @@ function setupConverterIPCListeners() {
         }
         exportConverterState.active = true;
         setConverterCancelButtonVisible(true);
-        setAppStatus('Convertendo…', 'info');
-        renderConverterTable();
-        updateConverterBatchProgress();
+        scheduleConverterUpdate(found, 'Convertendo…');
       }
     });
   }
@@ -1225,8 +1311,7 @@ function setupConverterIPCListeners() {
           setConverterCancelButtonVisible(false);
           setAppStatus('Cancelado', 'warning');
         }
-        renderConverterTable();
-        updateConverterBatchProgress();
+        scheduleConverterUpdate(found);
       }
     });
   }

@@ -79,29 +79,15 @@ export async function initScreen() {
     });
   }
 
-  // Search com debounce (clonando para remover listeners antigos)
-  const oldSearch = document.getElementById('globalSearch');
-  if (oldSearch) {
-    const newSearch = oldSearch.cloneNode(true);
-    oldSearch.parentNode.replaceChild(newSearch, oldSearch);
-    
-    let searchTimeout;
-    newSearch.addEventListener('input', (e) => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => {
-        currentSearch = e.target.value.trim();
-        fetchMedia();
-      }, 300);
-    });
-  }
+  // A pesquisa global é tratada em app.js (um único listener, que não depende desta tela).
+  // Ao abrir a Biblioteca, aplica o texto que já estiver no campo.
+  currentSearch = (document.getElementById('globalSearch')?.value || '').trim();
 
   // Inspector Buttons
   document.getElementById('closeInspectorBtn')?.addEventListener('click', closeInspector);
   document.getElementById('btnPlayMedia')?.addEventListener('click', () => {
     if (currentInspectorMedia && window.openPreview) {
       window.openPreview(currentInspectorMedia, mediaItems);
-    } else if (currentInspectorMedia && window.bdsPlayer) {
-      window.bdsPlayer.play(currentInspectorMedia.filepath, currentInspectorMedia.filename);
     }
   });
 
