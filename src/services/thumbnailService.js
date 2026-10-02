@@ -1,5 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const logger = require('./logService');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
@@ -67,7 +68,9 @@ class ThumbnailService {
       [
         '--dump-single-json',
         '--skip-download',
-        '--no-warnings'
+        '--no-warnings',
+        '--no-playlist',
+        '--socket-timeout', '10'
       ]
     );
 
@@ -93,8 +96,23 @@ class ThumbnailService {
         );
 
       if (squareThumbnail) {
-        thumbnail =
-          squareThumbnail;
+        thumbnail = squareThumbnail;
+      } else if (thumbnail) {
+        // [THUMB] Nenhuma miniatura nativa 1:1 — recorta a melhor disponível via FFmpeg
+        try {
+          const squarePath = await this.createSquareThumbnailFromUrl(
+            thumbnail,
+            json.webpage_url || url
+          );
+          if (squarePath) {
+            // Converte para bds-thumb:// com barras normais (URL-safe)
+            const urlPath = squarePath.replace(/\\/g, '/');
+            thumbnail = `bds-thumb://${urlPath}`;
+          }
+        } catch (err) {
+          logger.warn('[ThumbnailService] Falha ao gerar miniatura quadrada:', err.message);
+          // mantém a thumbnail original em caso de erro
+        }
       }
     }
 
@@ -373,11 +391,23 @@ class ThumbnailService {
       });
       let stdout = '';
       let stderr = '';
+      let timer = null;
+
+      timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch (_) {}
+        reject(new Error('Tempo limite excedido ao analisar metadados.'));
+      }, 15000);
 
       child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
       child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
-      child.on('error', reject);
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
       child.on('close', (code) => {
+        clearTimeout(timer);
         if (code !== 0) {
           logger.warn('metadata:failed', { code, stderr });
           reject(new Error(stderr.trim() || `yt-dlp finalizou com código ${code}`));
@@ -457,7 +487,7 @@ class ThumbnailService {
           '-i',
           inputFile,
           '-vf',
-          'scale=1000:1000:force_original_aspect_ratio=increase,crop=1000:1000',
+          'scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080',
           '-q:v',
           '2',
           outputFile
@@ -487,37 +517,36 @@ class ThumbnailService {
     });
   }
 
-  async createSquareThumbnailFromUrl(url) {
-    const tempDir = path.join(
-      this.paths.dataDir,
-      'temp'
-    );
+  async createSquareThumbnailFromUrl(thumbnailUrl, videoUrl) {
+    // [CACHE] Usa thumbnailsDir com nome baseado no hash da URL do vídeo,
+    // para evitar re-download e re-processamento em chamadas futuras.
+    const cacheDir = this.paths.thumbnailsDir || path.join(this.paths.dataDir, 'Thumbnails');
+    fs.mkdirSync(cacheDir, { recursive: true });
 
-    fs.mkdirSync(
-      tempDir,
-      { recursive: true }
-    );
+    const urlHash = crypto
+      .createHash('sha1')
+      .update(videoUrl || thumbnailUrl)
+      .digest('hex')
+      .slice(0, 16);
 
-    const originalFile = path.join(
-      tempDir,
-      `thumb_${Date.now()}_${process.pid}.jpg`
-    );
+    const squareFile = path.join(cacheDir, `sq_${urlHash}.jpg`);
 
-    const squareFile = path.join(
-      tempDir,
-      `thumb_square_${Date.now()}_${process.pid}.jpg`
-    );
+    // Retorna do cache se já existe
+    if (fs.existsSync(squareFile)) {
+      logger.info('[ThumbnailService] Miniatura quadrada em cache:', squareFile);
+      return squareFile;
+    }
 
-    await this.downloadThumbnail(
-      url,
-      originalFile
-    );
+    const tempDir = path.join(this.paths.dataDir, 'temp');
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const originalFile = path.join(tempDir, `thumb_dl_${urlHash}.jpg`);
+
+    await this.downloadThumbnail(thumbnailUrl, originalFile);
 
     try {
-      await this.createSquareThumbnail(
-        originalFile,
-        squareFile
-      );
+      await this.createSquareThumbnail(originalFile, squareFile);
+      logger.info('[ThumbnailService] Miniatura quadrada gerada:', squareFile);
       return squareFile;
     } finally {
       // [PERF] Remove o arquivo temporário original para não acumular lixo em disco

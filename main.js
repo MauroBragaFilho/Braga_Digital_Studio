@@ -1,7 +1,8 @@
 'use strict';
 
-const { app, BrowserWindow, nativeImage } = require('electron');
+const { app, BrowserWindow, nativeImage, protocol, net } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 
 // Identifica o app para o Windows — necessário para que notificações nativas
 // (new Notification()) apareçam, especialmente em modo desenvolvimento (npm start),
@@ -116,7 +117,26 @@ function createWindow() {
   bootstrap.setMainWindow(mainWindow);
 }
 
+// [THUMB] Registra o esquema personalizado bds-thumb:// como seguro,
+// para que o renderer em sandbox possa carregar miniaturas locais geradas pelo FFmpeg.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'bds-thumb',
+    privileges: { standard: false, secure: true, supportFetchAPI: true, corsEnabled: true }
+  }
+]);
+
 app.whenReady().then(async () => {
+  // [THUMB] Intercepta bds-thumb://<caminho-absoluto> e serve o arquivo local
+  protocol.handle('bds-thumb', (request) => {
+    const rawPath = decodeURIComponent(
+      request.url.slice('bds-thumb://'.length)
+    );
+    // Normaliza barras para o sistema operacional
+    const filePath = rawPath.replace(/\//g, path.sep);
+    return net.fetch(`file:///${filePath}`);
+  });
+
   await bootstrap.init();
   createWindow();
 

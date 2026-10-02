@@ -313,7 +313,7 @@
 .mg-col-check { display: flex; align-items: center; }
 .mg-col-check input { accent-color: var(--mg-accent); cursor: pointer; margin: 0; }
 .mg-col-num { text-align: left; }
-.mg-col-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-col-name { display: flex; align-items: center; gap: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mg-col-ctl { overflow: hidden; }
 .mg-col-final { text-align: right; }
 .mg-col-status { text-align: right; }
@@ -519,11 +519,43 @@
 
 /* Células da linha virtualizada */
 .mg-row-num { font-family: Consolas, monospace; font-size: 11px; color: var(--mg-muted); text-align: left; }
-.mg-row-check { display: flex; align-items: center; }
-.mg-row-check input { accent-color: var(--mg-accent); cursor: pointer; margin: 0; }
-.mg-row-name { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }
+.mg-row-check { 
+  display: none; 
+}
+.mg-row-check input { 
+  position: absolute; 
+  top: 50%; left: 50%; 
+  transform: translate(-50%, -50%); 
+  appearance: none; 
+  -webkit-appearance: none; 
+  width: 8px !important; 
+  height: 8px !important; 
+  min-width: 8px !important; 
+  max-width: 8px !important; 
+  border: 1px solid var(--mg-line); 
+  border-radius: 50% !important; 
+  cursor: pointer; 
+  margin: 0 !important; 
+  transition: all 0.2s; 
+  outline: none; 
+  box-sizing: border-box !important; 
+}
+.mg-row-check input:checked { 
+  background: var(--mg-accent); 
+  border-color: var(--mg-accent); 
+}
+.mg-row-check input:checked::after { 
+  content: ''; 
+  position: absolute; 
+  top: 2px; left: 4px; 
+  width: 3px; height: 6px; 
+  border: solid white; 
+  border-width: 0 1.5px 1.5px 0; 
+  transform: rotate(45deg); 
+}
+.mg-row-name { display: flex; align-items: center; gap: 12px; min-width: 0; overflow: hidden; }
 .mg-thumb {
-  width: 68px; height: 40px; flex-shrink: 0;
+  width: 88px; height: 50px; flex-shrink: 0;
   border-radius: 5px; overflow: hidden;
   background: #000; border: 1px solid var(--mg-line);
   display: flex; align-items: center; justify-content: center;

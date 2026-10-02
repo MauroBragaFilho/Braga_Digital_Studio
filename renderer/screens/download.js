@@ -1,3 +1,137 @@
+// --- MÚLTIPLOS LINKS LOGIC ---
+function showMultipleLinksModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'multiple-links-overlay';
+  overlay.id = 'multipleLinksOverlay';
+
+  overlay.innerHTML = `
+    <div class="multiple-links-modal">
+      <div class="multiple-links-header">
+        <span class="material-symbols-rounded">list_alt</span>
+        <h3>Adição de Múltiplos Links</h3>
+      </div>
+      <div class="multiple-links-body">
+        <p class="multiple-links-hint">
+          Cole sua lista de links abaixo. Insira <strong>um link por linha</strong>.<br>
+          Linhas em branco ou anotações sem links serão ignoradas automaticamente.
+        </p>
+        <textarea 
+          id="multipleLinksInput" 
+          class="multiple-links-textarea" 
+          placeholder="https://www.youtube.com/watch?v=...&#10;https://www.youtube.com/watch?v=...&#10;https://..."
+          rows="8"
+          spellcheck="false"
+        ></textarea>
+      </div>
+      <div class="multiple-links-footer">
+        <button class="btn-modal-cancel" id="cancelLinks">Cancelar</button>
+        <button class="btn-modal-confirm" id="confirmLinks">Adicionar Links</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const textarea = overlay.querySelector('#multipleLinksInput');
+  textarea.focus();
+
+  overlay.querySelector('#cancelLinks').addEventListener('click', () => overlay.remove());
+
+  overlay.querySelector('#confirmLinks').addEventListener('click', async () => {
+    const rawText = textarea.value || '';
+    
+    // Divide por quebras de linha e limpa espaços
+    const lines = rawText
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    // Filtra apenas linhas que começam com http:// ou https://
+    const validLinks = lines.filter(line => /^https?:\/\//i.test(line));
+
+    if (validLinks.length === 0) {
+      setStatus('Nenhum link válido encontrado. Certifique-se de que os links começam com http:// ou https://');
+      textarea.focus();
+      return;
+    }
+
+    const btnConfirm = overlay.querySelector('#confirmLinks');
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = `Analisando (0/${validLinks.length})...`;
+
+    const api = getDownloadsApi();
+    let addedCount = 0;
+
+    for (let i = 0; i < validLinks.length; i++) {
+      const url = validLinks[i];
+      btnConfirm.textContent = `Analisando (${i + 1}/${validLinks.length})...`;
+      setStatus(`Analisando link ${i + 1} de ${validLinks.length}...`);
+
+      const isSpot = isSpotify(url);
+      let titleToUse = '';
+      let thumbToUse = '';
+      let channelToUse = '';
+      let durationToUse = null;
+      let platformToUse = detectSource(url);
+
+      let analysisError = null;
+
+      // Tenta obter metadados para analisar o link com timeout defensivo de 8 segundos no cliente
+      if (window.bds && window.bds.getMetadata) {
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Tempo limite excedido ao analisar link')), 8000)
+          );
+          const meta = await Promise.race([
+            window.bds.getMetadata(url),
+            timeoutPromise
+          ]);
+
+          if (meta) {
+            titleToUse = meta.title || '';
+            thumbToUse = meta.thumbnail || '';
+            channelToUse = meta.channel || '';
+            durationToUse = meta.duration || null;
+            if (meta.platform) platformToUse = meta.platform;
+          } else {
+            analysisError = 'Não foi possível obter dados do link';
+          }
+        } catch (e) {
+          analysisError = e.message || 'Erro ao analisar o link';
+          console.warn('[DOWNLOAD] Falha ao obter metadados para:', url, e);
+        }
+      }
+
+      try {
+        await api.add({
+          url: url,
+          format: isSpot ? 'MP3' : (els.formatSelect?.value || 'MP4'),
+          quality: els.resolutionSelect?.value || 'best',
+          title: titleToUse || (analysisError ? `Link com erro: ${url}` : (isSpot ? 'Música Spotify' : 'Vídeo')),
+          thumbnail: thumbToUse,
+          channel: channelToUse,
+          platform: platformToUse,
+          duration: durationToUse,
+          status: analysisError ? 'failed' : 'queued',
+          error: analysisError || ''
+        });
+        addedCount++;
+        fetchQueue();
+      } catch (err) {
+        console.error('[DOWNLOAD] Falha ao adicionar link múltiplo:', url, err);
+      }
+    }
+
+    setStatus(`Adicionados ${addedCount} de ${validLinks.length} link(s) à fila.`);
+    fetchQueue();
+    overlay.remove();
+  });
+
+  // Fechar ao clicar fora do modal
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
 import { els, state, setStatus, escapeHtml } from '../app.js';
 
 let metadataTimer = null;
@@ -38,6 +172,7 @@ export function initScreen() {
   const btnClearAll = document.getElementById('btnClearAll');
   const btnQueueAllMp3 = document.getElementById('btnQueueAllMp3');
   const btnQueueAllMp4 = document.getElementById('btnQueueAllMp4');
+  const btnMultipleLinks = document.getElementById('btnMultipleLinks');
 
   if (btnStartQueue) btnStartQueue.addEventListener('click', startQueue);
   if (btnPauseQueue) btnPauseQueue.addEventListener('click', pauseQueue);
@@ -45,6 +180,7 @@ export function initScreen() {
   if (btnClearAll) btnClearAll.addEventListener('click', clearAllQueue);
   if (btnQueueAllMp3) btnQueueAllMp3.addEventListener('click', () => convertAllQueueTo('MP3'));
   if (btnQueueAllMp4) btnQueueAllMp4.addEventListener('click', () => convertAllQueueTo('MP4'));
+  if (btnMultipleLinks) btnMultipleLinks.addEventListener('click', showMultipleLinksModal);
 
   if (state.metadata) {
     renderMetadata(state.metadata);
@@ -53,6 +189,7 @@ export function initScreen() {
   fetchQueue();
   setupEventListeners();
 }
+
 
 function getDownloadsApi() {
   return window.bds && window.bds.downloads ? window.bds.downloads : {
@@ -205,7 +342,10 @@ export function renderDownloadQueue(queue) {
         </button>
       `;
     } else if (item.status === 'completed') {
-      statusBadge = `<span class="status-badge status-badge-completed">✓ Concluído</span>`;
+      const isSkipped = item.error && item.error.includes('já existe');
+      statusBadge = isSkipped
+        ? `<span class="status-badge status-badge-skipped" title="${escapeHtml(item.error)}">↷ Já existe</span>`
+        : `<span class="status-badge status-badge-completed">✓ Concluído</span>`;
       actionsHtml = `
         ${item.outputPath ? `<button type="button" class="card-action-btn card-action-btn-info" data-action="open-path" data-path="${escapeAttr(item.outputPath)}" title="Abrir arquivo">
           <span class="material-symbols-rounded">folder_open</span>
