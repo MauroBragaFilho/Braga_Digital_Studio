@@ -137,6 +137,15 @@ export function applyAccentColor(hex) {
  * @param {string} theme       — 'dark' | 'light'
  * @param {string} accentColor — hex, ex: "#e53935"
  */
+/**
+ * Preferências de interface que não são tema/cor: hoje, "reduzir animações".
+ * Chamada ao iniciar o app e depois de salvar as Configurações.
+ * @param {object} settings
+ */
+export function applyUiPreferences(settings = {}) {
+  document.documentElement.classList.toggle('reduce-motion', settings.reduceMotion === true);
+}
+
 export function applyTheme(theme = 'dark', accentColor = '#e53935') {
   document.documentElement.setAttribute('data-theme', theme);
   applyAccentColor(accentColor);
@@ -210,235 +219,6 @@ function applySidebarCollapsed(collapsed) {
     btn.title = collapsed ? getTabLabel(btn) : (_sidebarTooltipTitles.get(btn) || '');
   });
 }
-
-// --- FLOATING VIDEO PLAYER ---
-window.bdsPlayer = {
-  _overlay: null,
-  _video: null,
-  _title: null,
-  _closeBtn: null,
-  
-  // Custom Controls
-  _controlsContainer: null,
-  _btnPlayPause: null,
-  _currentTimeEl: null,
-  _durationEl: null,
-  _progressTrack: null,
-  _progressFill: null,
-  _btnMute: null,
-  _volumeSlider: null,
-  _btnFullscreen: null,
-  _videoContainer: null,
-  
-  _hideControlsTimeout: null,
-  _isScrubbing: false,
-
-  init() {
-    this._overlay = document.getElementById('floatingPlayerOverlay');
-    this._video = document.getElementById('floatingVideoElement');
-    this._title = document.getElementById('floatingPlayerTitle');
-    this._closeBtn = document.getElementById('floatingPlayerCloseBtn');
-    
-    this._controlsContainer = document.getElementById('customVideoControls');
-    this._btnPlayPause = document.getElementById('btnPlayPause');
-    this._currentTimeEl = document.getElementById('videoCurrentTime');
-    this._durationEl = document.getElementById('videoDuration');
-    this._progressTrack = document.getElementById('progressTrack');
-    this._progressFill = document.getElementById('progressFill');
-    this._btnMute = document.getElementById('btnMute');
-    this._volumeSlider = document.getElementById('volumeSlider');
-    this._btnFullscreen = document.getElementById('btnFullscreen');
-    this._videoContainer = document.getElementById('videoContainer');
-
-    this._closeBtn.addEventListener('click', () => this.close());
-
-    // Click outside to close
-    this._overlay.addEventListener('click', (e) => {
-      if (e.target === this._overlay) {
-        this.close();
-      }
-    });
-
-    // Play/Pause toggle
-    this._btnPlayPause.addEventListener('click', () => this.togglePlay());
-    this._video.addEventListener('click', () => this.togglePlay());
-
-    // Video Events
-    this._video.addEventListener('play', () => {
-      this._btnPlayPause.innerHTML = '<span class="material-symbols-rounded">pause</span>';
-    });
-    this._video.addEventListener('pause', () => {
-      this._btnPlayPause.innerHTML = '<span class="material-symbols-rounded">play_arrow</span>';
-    });
-    this._video.addEventListener('loadedmetadata', () => {
-      this._durationEl.textContent = this.formatTime(this._video.duration);
-    });
-    this._video.addEventListener('timeupdate', () => {
-      if (!this._isScrubbing) {
-        this._currentTimeEl.textContent = this.formatTime(this._video.currentTime);
-        const percent = (this._video.currentTime / this._video.duration) * 100;
-        this._progressFill.style.width = percent + '%';
-      }
-    });
-    this._video.addEventListener('ended', () => {
-      this._btnPlayPause.innerHTML = '<span class="material-symbols-rounded">replay</span>';
-    });
-
-    // Progress Bar Scrubbing
-    const updateProgress = (e) => {
-      const rect = this._progressTrack.getBoundingClientRect();
-      let pos = (e.clientX - rect.left) / rect.width;
-      pos = Math.max(0, Math.min(pos, 1));
-      this._progressFill.style.width = (pos * 100) + '%';
-      this._currentTimeEl.textContent = this.formatTime(pos * this._video.duration);
-      return pos;
-    };
-    
-    this._progressTrack.parentElement.addEventListener('mousedown', (e) => {
-      this._isScrubbing = true;
-      updateProgress(e);
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (this._isScrubbing) updateProgress(e);
-    });
-    document.addEventListener('mouseup', (e) => {
-      if (this._isScrubbing) {
-        this._isScrubbing = false;
-        const pos = updateProgress(e);
-        this._video.currentTime = pos * this._video.duration;
-      }
-    });
-
-    // Volume
-    this._volumeSlider.addEventListener('input', (e) => {
-      this._video.volume = e.target.value;
-      this._video.muted = e.target.value == 0;
-      this.updateVolumeIcon();
-    });
-    this._btnMute.addEventListener('click', () => {
-      this._video.muted = !this._video.muted;
-      if (this._video.muted) {
-        this._volumeSlider.value = 0;
-      } else {
-        this._volumeSlider.value = this._video.volume || 1;
-      }
-      this.updateVolumeIcon();
-    });
-
-    // Fullscreen
-    this._btnFullscreen.addEventListener('click', () => {
-      if (!document.fullscreenElement) {
-        this._videoContainer.requestFullscreen().catch(err => {
-          console.error("Error attempting to enable fullscreen:", err);
-        });
-      } else {
-        document.exitFullscreen();
-      }
-    });
-    
-    document.addEventListener('fullscreenchange', () => {
-      if (document.fullscreenElement) {
-        this._btnFullscreen.innerHTML = '<span class="material-symbols-rounded">fullscreen_exit</span>';
-      } else {
-        this._btnFullscreen.innerHTML = '<span class="material-symbols-rounded">fullscreen</span>';
-      }
-    });
-
-    // Hide controls on idle
-    const resetIdleTimer = () => {
-      this._controlsContainer.classList.remove('idle');
-      this._videoContainer.style.cursor = 'default';
-      clearTimeout(this._hideControlsTimeout);
-      this._hideControlsTimeout = setTimeout(() => {
-        if (!this._video.paused) {
-          this._controlsContainer.classList.add('idle');
-          this._videoContainer.style.cursor = 'none';
-        }
-      }, 2500);
-    };
-
-    this._videoContainer.addEventListener('mousemove', resetIdleTimer);
-    this._videoContainer.addEventListener('mouseleave', () => {
-      if (!this._video.paused) {
-        this._controlsContainer.classList.add('idle');
-      }
-    });
-  },
-
-  formatTime(seconds) {
-    if (isNaN(seconds)) return "00:00";
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  },
-
-  updateVolumeIcon() {
-    if (this._video.muted || this._video.volume === 0) {
-      this._btnMute.innerHTML = '<span class="material-symbols-rounded">volume_off</span>';
-    } else if (this._video.volume < 0.5) {
-      this._btnMute.innerHTML = '<span class="material-symbols-rounded">volume_down</span>';
-    } else {
-      this._btnMute.innerHTML = '<span class="material-symbols-rounded">volume_up</span>';
-    }
-  },
-
-  togglePlay() {
-    if (this._video.paused || this._video.ended) {
-      this._video.play();
-    } else {
-      this._video.pause();
-    }
-  },
-
-  play(filePath, title = 'Vídeo') {
-    if (!this._overlay) this.init();
-    
-    const srcUrl = `file:///${filePath.replace(/\\/g, '/')}`;
-    this._title.textContent = title;
-    
-    const isPhoto = filePath.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i);
-    const imgEl = document.getElementById('floatingImageElement');
-    
-    if (isPhoto) {
-      this._video.classList.add('hidden');
-      this._controlsContainer.classList.add('hidden');
-      if (imgEl) {
-        imgEl.classList.remove('hidden');
-        imgEl.src = srcUrl;
-      }
-    } else {
-      this._video.classList.remove('hidden');
-      this._controlsContainer.classList.remove('hidden');
-      if (imgEl) {
-        imgEl.classList.add('hidden');
-        imgEl.src = '';
-      }
-      this._video.src = srcUrl;
-      this._video.play().catch(e => console.error("Error playing video:", e));
-    }
-    
-    this._overlay.classList.remove('hidden');
-    this._overlay.classList.add('active');
-  },
-
-  close() {
-    if (this._video) {
-      this._video.pause();
-      this._video.src = '';
-    }
-    const imgEl = document.getElementById('floatingImageElement');
-    if (imgEl) {
-      imgEl.src = '';
-    }
-    if (this._overlay) {
-      this._overlay.classList.add('hidden');
-      this._overlay.classList.remove('active');
-    }
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    }
-  }
-};
 
 // --- MODAL GLOBAL BDS ---
 window.bdsModal = {
@@ -814,6 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const globalSearch = document.getElementById('globalSearch');
       if (globalSearch && screenName !== 'library') {
         globalSearch.value = '';
+        document.getElementById('globalSearchClear')?.classList.add('hidden');
       }
 
       loadScreen(screenName);
@@ -827,47 +608,79 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('win-full')?.addEventListener('click', () => window.bds.fullscreenWindow());
   document.getElementById('win-close')?.addEventListener('click', () => window.bds.closeWindow());
 
-  // Barra de Pesquisa Global Interativa em Tempo Real
-  const globalSearchInput = document.getElementById('globalSearch');
-  if (globalSearchInput) {
-    let searchDebounce = null;
-    globalSearchInput.addEventListener('input', (e) => {
-      clearTimeout(searchDebounce);
-      searchDebounce = setTimeout(() => {
-        const query = e.target.value.trim();
-        const activeTab = document.querySelector('.sidebar .tab-button.active');
-        const activeScreen = activeTab ? activeTab.getAttribute('data-view') : 'home';
+  // Barra de Pesquisa Global — um único tratamento, via delegação no documento
+  // (sobrevive a qualquer troca de tela). A pesquisa sempre acontece na Biblioteca.
+  const getSearchInput = () => document.getElementById('globalSearch');
+  const syncSearchClear = () => {
+    const input = getSearchInput();
+    document.getElementById('globalSearchClear')?.classList.toggle('hidden', !input || !input.value);
+  };
 
-        if (activeScreen !== 'library') {
-          const libTabBtn = document.querySelector('.sidebar .tab-button[data-view="library"]');
-          if (libTabBtn) {
-            libTabBtn.click();
-            // Pequeno delay para aguardar carregamento do DOM da biblioteca
-            setTimeout(() => {
-              import('./screens/library.js').then(m => {
-                if (typeof m.applyGlobalSearch === 'function') m.applyGlobalSearch(query);
-              }).catch(() => {});
-            }, 100);
-          }
-        } else {
-          import('./screens/library.js').then(m => {
-            if (typeof m.applyGlobalSearch === 'function') m.applyGlobalSearch(query);
-          }).catch(() => {});
-        }
-      }, 300);
-    });
-  }
+  const runGlobalSearch = () => {
+    const input = getSearchInput();
+    if (!input) return;
+    const query = input.value.trim();
+    const activeTab = document.querySelector('.sidebar .tab-button.active');
+    const activeScreen = activeTab ? activeTab.getAttribute('data-view') : 'home';
 
-  // Atalho global de pesquisa (Ctrl+K)
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
-      e.preventDefault();
-      const input = document.getElementById('globalSearch');
-      if (input) {
-        input.focus();
-        input.select();
-      }
+    if (activeScreen !== 'library') {
+      // A Biblioteca lê o texto do campo ao inicializar, então basta abri-la.
+      if (!query) return;
+      document.querySelector('.sidebar .tab-button[data-view="library"]')?.click();
+    } else {
+      import('./screens/library.js')
+        .then(m => { if (typeof m.applyGlobalSearch === 'function') m.applyGlobalSearch(query); })
+        .catch(() => {});
     }
+  };
+
+  const focusGlobalSearch = () => {
+    const input = getSearchInput();
+    if (!input) return;
+    input.focus();
+    input.select();
+  };
+  window.focusGlobalSearch = focusGlobalSearch;
+
+  const clearGlobalSearch = () => {
+    const input = getSearchInput();
+    if (!input) return;
+    const hadText = !!input.value;
+    input.value = '';
+    syncSearchClear();
+    if (hadText) runGlobalSearch();
+    input.focus();
+  };
+
+  let searchDebounce = null;
+  document.addEventListener('input', (e) => {
+    if (e.target?.id !== 'globalSearch') return;
+    syncSearchClear();
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(runGlobalSearch, 300);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target?.id === 'globalSearch') {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(searchDebounce); runGlobalSearch(); }
+      else if (e.key === 'Escape') { e.preventDefault(); clearGlobalSearch(); e.target.blur(); }
+      return;
+    }
+
+    // Atalhos para abrir a pesquisa: Ctrl+K, Ctrl+F, ou "/" fora de campos de texto
+    const mod = e.ctrlKey || e.metaKey;
+    const key = String(e.key).toLowerCase();
+    const typing = e.target?.matches?.('input, textarea, select, [contenteditable="true"]');
+    if ((mod && (key === 'k' || key === 'f')) || (!mod && !e.altKey && key === '/' && !typing)) {
+      e.preventDefault();
+      focusGlobalSearch();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#globalSearchBtn')) { getSearchInput()?.value ? runGlobalSearch() : focusGlobalSearch(); }
+    else if (e.target.closest('#globalSearchShortcut')) focusGlobalSearch();
+    else if (e.target.closest('#globalSearchClear')) clearGlobalSearch();
   });
 
 
@@ -897,8 +710,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // Inicializa escutas globais do Electron (IPC)
   initGlobalElectronListeners();
   
-  // Carrega a tela inicial por padrão
-  loadScreen('home');
+  // Abre a tela inicial pela própria aba da sidebar (marca o botão, ajusta o título e carrega a tela).
+  // A tela vem das Configurações; se a aba não existir ou estiver oculta (ex.: módulo só de
+  // desenvolvimento), cai para a Home.
+  const wanted = state.settings?.defaultStartScreen || 'home';
+  let startTab = document.querySelector(`.sidebar .tab-button[data-view="${wanted}"]`);
+  if (!startTab || startTab.classList.contains('hidden') || startTab.style.display === 'none') {
+    startTab = document.querySelector('.sidebar .tab-button[data-view="home"]');
+  }
+  if (startTab) startTab.click();
+  else loadScreen('home');
 });
 
 // Em algum lugar do seu backend (ex: src/core/library/lutParser.js)
@@ -975,6 +796,7 @@ async function initGlobalElectronListeners() {
   state.settings = await window.bds.getSettings();
   // Aplica tema e cor de destaque sem flash, antes do primeiro render
   applyTheme(state.settings.theme, state.settings.accentColor);
+  applyUiPreferences(state.settings);
   // Reaplica o estado persistido da sidebar (colapsada/expandida); em janela
   // estreita/tamanho mínimo, colapsa automaticamente para liberar espaço.
   applySidebarCollapsed(window.innerWidth <= SIDEBAR_NARROW_BREAKPOINT || state.settings.sidebarCollapsed === true);

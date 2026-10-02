@@ -1,0 +1,97 @@
+<div class="ai-screen-container">
+
+  <header class="ai-header">
+    <p class="ai-description">Converse com o assistente. Usa a API da OpenAI por padrão; a URL do servidor pode ser trocada por qualquer servidor compatível.</p>
+    <span id="aiActiveBadge" class="ai-active-badge" title="Provedor e modelo em uso">—</span>
+  </header>
+
+  <div id="aiNotice" class="ai-notice hidden" role="status"></div>
+
+  <div class="ai-layout">
+
+    <!-- ===== CHAT ===== -->
+    <section class="ai-chat-panel" aria-label="Conversa com o assistente">
+      <div class="ai-chat-head">
+        <span class="ai-panel-title"><span class="material-symbols-rounded" aria-hidden="true">smart_toy</span> ASSISTENTE</span>
+        <button id="aiBtnNewChat" class="ai-btn ai-btn-ghost" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">add_comment</span> Nova conversa
+        </button>
+      </div>
+
+      <div id="aiMessages" class="ai-messages" aria-live="polite">
+        <div class="ai-empty">
+          <span class="material-symbols-rounded" aria-hidden="true">forum</span>
+          <strong>Como posso ajudar?</strong>
+          <span>Pergunte sobre o BDS, peça ideias de organização da biblioteca ou ajuda com conversões e metadados.</span>
+        </div>
+      </div>
+
+      <form id="aiForm" class="ai-composer" autocomplete="off">
+        <textarea id="aiInput" class="ai-input" rows="2" maxlength="20000" placeholder="Escreva sua mensagem… (Enter envia, Shift+Enter quebra linha)"></textarea>
+        <button id="aiBtnSend" class="ai-btn ai-btn-primary" type="submit">
+          <span class="material-symbols-rounded" aria-hidden="true">send</span> Enviar
+        </button>
+      </form>
+    </section>
+
+    <!-- ===== CONFIGURAÇÃO ===== -->
+    <aside class="ai-config-panel" aria-label="Configuração da IA">
+      <div class="ai-card">
+        <div class="ai-panel-title"><span class="material-symbols-rounded" aria-hidden="true">tune</span> PROVEDOR</div>
+
+        <div class="ai-field">
+          <label class="ai-label" for="aiPreset">Servidor</label>
+          <select id="aiPreset" class="ai-select"></select>
+        </div>
+        <div class="ai-field">
+          <label class="ai-label" for="aiBaseUrl">URL do servidor</label>
+          <input id="aiBaseUrl" class="ai-input-text" type="text" spellcheck="false" placeholder="https://api.openai.com/v1" />
+          <span id="aiUrlHint" class="ai-hint"></span>
+        </div>
+
+        <div class="ai-field">
+          <label class="ai-label" for="aiApiKey">Chave de API</label>
+          <input id="aiApiKey" class="ai-input-text" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+          <span id="aiKeyHint" class="ai-hint"></span>
+          <button id="aiBtnClearKey" class="ai-btn ai-btn-danger ai-btn-sm hidden" type="button">Remover chave guardada</button>
+        </div>
+
+        <div class="ai-field">
+          <label class="ai-label" for="aiModel">Modelo</label>
+          <div class="ai-row">
+            <input id="aiModel" class="ai-input-text" type="text" list="aiModelList" spellcheck="false" autocomplete="off" placeholder="ex.: gpt-4o-mini" />
+            <button id="aiBtnRefreshModels" class="ai-btn ai-btn-secondary ai-btn-icon" type="button" title="Buscar modelos do servidor" aria-label="Buscar modelos do servidor">
+              <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+            </button>
+          </div>
+          <datalist id="aiModelList"></datalist>
+        </div>
+
+        <div class="ai-field">
+          <label class="ai-label" for="aiMaxTokens">Tamanho máximo da resposta (tokens)</label>
+          <input id="aiMaxTokens" class="ai-input-text" type="number" min="64" max="8192" step="64" />
+        </div>
+
+        <div class="ai-field">
+          <label class="ai-label" for="aiInstructions">Instruções extras (opcional)</label>
+          <textarea id="aiInstructions" class="ai-input-text ai-textarea" rows="3" maxlength="2000" placeholder="Ex.: responda de forma curta."></textarea>
+        </div>
+
+        <div class="ai-actions">
+          <button id="aiBtnSave" class="ai-btn ai-btn-primary" type="button">
+            <span class="material-symbols-rounded" aria-hidden="true">save</span> Salvar
+          </button>
+          <button id="aiBtnTest" class="ai-btn ai-btn-secondary" type="button">
+            <span class="material-symbols-rounded" aria-hidden="true">wifi_tethering</span> Testar conexão
+          </button>
+        </div>
+        <span id="aiConfigStatus" class="ai-hint" role="status"></span>
+      </div>
+
+      <div class="ai-card">
+        <div class="ai-panel-title"><span class="material-symbols-rounded" aria-hidden="true">extension</span> RECURSOS</div>
+        <ul id="aiTasks" class="ai-tasks"></ul>
+      </div>
+    </aside>
+  </div>
+</div>

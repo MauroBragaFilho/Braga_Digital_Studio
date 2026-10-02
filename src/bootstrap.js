@@ -424,6 +424,7 @@ class Bootstrap {
     require('./ipc/lutHandlers')(this.lutManager);
     require('./ipc/telemetryHandlers')();
     require('./ipc/jobHandlers')();
+    require('./ipc/aiHandlers')(this.paths);
 
     // Settings
     ipcMain.handle('settings:get', () => this.settingsManager.load());

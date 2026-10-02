@@ -9,6 +9,7 @@ export class PhotoPreview {
     this.container = options.container || null;
     this.onClose = options.onClose || (() => {});
     this.onNavigate = options.onNavigate || (() => {});
+    this.onPlayVideo = options.onPlayVideo || (() => {});
 
     // Estado interno do viewport
     this.currentMedia = null;
@@ -152,6 +153,11 @@ export class PhotoPreview {
           <span class="material-symbols-rounded">chevron_right</span>
         </button>
 
+        <!-- Botão de reprodução (exibido quando o item atual é um vídeo) -->
+        <button class="photo-video-play hidden" id="photoVideoPlay" title="Reproduzir vídeo (Espaço / Enter)">
+          <span class="material-symbols-rounded">play_arrow</span>
+        </button>
+
         <!-- Loading Indicator -->
         <div class="photo-loading-spinner hidden" id="photoLoading">
           <div class="photo-spinner-ring"></div>
@@ -216,6 +222,7 @@ export class PhotoPreview {
       viewport: root.querySelector('#photoViewport'),
       image: root.querySelector('#photoImage'),
       grid: root.querySelector('#photoGrid'),
+      videoPlayBtn: root.querySelector('#photoVideoPlay'),
       prevBtn: root.querySelector('#photoBtnPrev'),
       nextBtn: root.querySelector('#photoBtnNext'),
       zoomIndicator: root.querySelector('#photoZoomIndicator'),
@@ -287,6 +294,7 @@ export class PhotoPreview {
     this.dom.closeBtn.addEventListener('click', () => this.close());
 
     // Navigation
+    this.dom.videoPlayBtn.addEventListener('click', () => this._playCurrentVideo());
     this.dom.prevBtn.addEventListener('click', () => this.prev());
     this.dom.nextBtn.addEventListener('click', () => this.next());
 
@@ -413,6 +421,15 @@ export class PhotoPreview {
     // Não interceptar se o usuário estiver digitando em input
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+    // Ignora o teclado enquanto o visualizador está oculto (ex.: vídeo em reprodução por cima)
+    if (this.dom.root.classList.contains('hidden')) return;
+
+    // Vídeo exibido como miniatura: Espaço/Enter abrem a interface de vídeo
+    if (this._isVideo(this.currentMedia) && (e.key === ' ' || e.key === 'Enter')) {
+      e.preventDefault();
+      this._playCurrentVideo();
+      return;
+    }
 
     switch (e.key) {
       case 'ArrowLeft':
@@ -522,6 +539,11 @@ export class PhotoPreview {
     this.dom.title.title = filePath;
     this.dom.counter.textContent = `${this.currentIndex + 1} / ${this.collection.length}`;
 
+    // Vídeo: mostra só a miniatura com botão de play; a interface de vídeo carrega ao dar play
+    const isVideo = this._isVideo(media);
+    this.dom.root.classList.toggle('is-video', isVideo);
+    this.dom.videoPlayBtn.classList.toggle('hidden', !isVideo);
+
     // Detectar RAW pelo nome
     const isRaw = !!filePath.match(/\.(cr2|cr3|arw|nef|dng|raf|orf|rw2|pef|srw)$/i);
     const ext = (filePath.split('.').pop() || '').toUpperCase();
@@ -532,6 +554,11 @@ export class PhotoPreview {
     // Reset de rotação e carregamento da imagem
     this.rotation = 0;
     this.showLoading(true, 'Carregando...');
+
+    if (isVideo) {
+      await this._loadVideoPoster(media);
+      return;
+    }
 
     try {
       let renderSrc = null;
@@ -569,6 +596,45 @@ export class PhotoPreview {
     }
   }
 
+  _isVideo(item) {
+    if (!item) return false;
+    const p = typeof item === 'string' ? item : (item.filepath || item.path || '');
+    return /\.(mp4|mov|mkv|avi|webm|mxf|mts|m2ts|ts|mpg|mpeg|3gp|m4v|wmv|flv)$/i.test(p);
+  }
+
+  async _getThumbsBase() {
+    if (!this._thumbsBase && window.bds && typeof window.bds.getThumbDir === 'function') {
+      try {
+        const rawDir = await window.bds.getThumbDir();
+        this._thumbsBase = 'file:///' + String(rawDir).replace(/\\/g, '/');
+      } catch (_) { /* sem thumbnails */ }
+    }
+    return this._thumbsBase || '';
+  }
+
+  async _loadVideoPoster(media) {
+    const img = this.dom.image;
+    try {
+      const thumb = media && typeof media === 'object' ? media.thumbnail : '';
+      let src = '';
+      if (thumb && typeof thumb === 'string') {
+        src = /^(file:|http|\/)/.test(thumb) ? thumb : `${await this._getThumbsBase()}/${thumb}`;
+      }
+      if (src) await this._setImageSrc(src);
+      else img.removeAttribute('src');
+    } catch (err) {
+      console.warn('[PhotoPreview] Miniatura do vídeo indisponível:', err);
+      img.removeAttribute('src');
+    } finally {
+      this.showLoading(false);
+      this.updateFilmstripActive();
+    }
+  }
+
+  _playCurrentVideo() {
+    if (this._isVideo(this.currentMedia)) this.onPlayVideo(this.currentMedia, this.collection);
+  }
+
   _setImageSrc(src) {
     return new Promise((resolve, reject) => {
       const img = this.dom.image;
@@ -598,7 +664,8 @@ export class PhotoPreview {
     const scaleX = (wrapW * 0.96) / imgW;
     const scaleY = (wrapH * 0.96) / imgH;
 
-    this.fitScale = Math.min(scaleX, scaleY, 1.0); // Fit nunca estoura 100% na tela vazia se for menor
+    const maxFit = this.dom.root.classList.contains('is-video') ? 4.0 : 1.0; // miniaturas de vídeo podem ampliar
+    this.fitScale = Math.min(scaleX, scaleY, maxFit); // Fit nunca estoura 100% na tela vazia se for menor
   }
 
   resetToFit() {
@@ -671,7 +738,7 @@ export class PhotoPreview {
 
     neighbors.forEach(item => {
       const p = typeof item === 'string' ? item : (item.filepath || item.path);
-      if (!p || this.imageCache.has(p)) return;
+      if (!p || this.imageCache.has(p) || this._isVideo(item)) return;
 
       const isRaw = !!p.match(/\.(cr2|cr3|arw|nef|dng|raf|orf|rw2)$/i);
       if (!isRaw) {
@@ -713,6 +780,8 @@ export class PhotoPreview {
       const thumbEl = document.createElement('div');
       thumbEl.className = `photo-filmstrip-item ${index === this.currentIndex ? 'active' : ''}`;
       thumbEl.dataset.index = index;
+      const isVid = this._isVideo(item);
+      if (isVid) thumbEl.classList.add('is-video');
       thumbEl.title = name;
 
       const img = document.createElement('img');
@@ -727,7 +796,7 @@ export class PhotoPreview {
       }
 
       // Fallback: caminho renderizavel (RAW sem thumbnail / fontes externas)
-      if (!img.src) {
+      if (!img.src && !isVid) {
         if (window.bds && window.bds.photoGetRenderablePath) {
           window.bds.photoGetRenderablePath(p).then(res => {
             if (res && res.renderablePath) {

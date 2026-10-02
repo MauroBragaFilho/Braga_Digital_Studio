@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, nativeImage, protocol, net } = require('electron');
+const { app, BrowserWindow, nativeImage, protocol, net, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -50,10 +50,50 @@ process.on('unhandledRejection', (reason) => {
   errorReporter.report(reason instanceof Error ? reason : new Error(message), { source: 'main-process-unhandledRejection' }).catch(() => {});
 });
 
+/**
+ * Tamanho/posição salvos da janela (opção "Lembrar tamanho e posição" nas Configurações).
+ * Devolve null se a opção estiver desligada ou se a janela ficaria fora de todos os monitores
+ * (ex.: um monitor foi desconectado).
+ */
+function loadSavedWindowBounds() {
+  try {
+    const settings = bootstrap.settingsManager.load();
+    const b = settings.rememberWindowBounds ? settings.windowBounds : null;
+    if (!b) return null;
+    const visible = screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      const w = Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x);
+      const h = Math.min(b.y + b.height, a.y + a.height) - Math.max(b.y, a.y);
+      return w >= 100 && h >= 100;
+    });
+    return visible ? b : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Grava o tamanho/posição da janela (com atraso) enquanto a opção estiver ligada. */
+function trackWindowBounds(win) {
+  let timer = null;
+  const persist = () => {
+    try {
+      if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+      if (!bootstrap.settingsManager.load().rememberWindowBounds) return;
+      const r = win.getNormalBounds();
+      bootstrap.settingsManager.save({ windowBounds: { x: r.x, y: r.y, width: r.width, height: r.height, maximized: win.isMaximized() } });
+    } catch (_) { /* não impede o app de funcionar */ }
+  };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(persist, 600); };
+  ['resize', 'move', 'maximize', 'unmaximize'].forEach((evt) => win.on(evt, schedule));
+  win.on('close', () => { clearTimeout(timer); persist(); });
+}
+
 function createWindow() {
+  const savedBounds = loadSavedWindowBounds();
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 760,
+    ...(savedBounds ? { x: savedBounds.x, y: savedBounds.y, width: savedBounds.width, height: savedBounds.height } : {}),
     minWidth: 980,
     minHeight: 380,
     resizable: true,
@@ -112,6 +152,23 @@ function createWindow() {
   // aplicar antes do show pode ser ignorado em modo de desenvolvimento.
   mainWindow.once('ready-to-show', applyIcon);
   mainWindow.on('focus', applyIcon);
+
+  // Somente em desenvolvimento: Ctrl+R / F5 recarrega a interface (Ctrl+Shift+R ignora o cache),
+  // sem precisar fechar e abrir o app. O menu é nulo, então o atalho é tratado aqui.
+  if (!isPackaged) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const key = String(input.key).toLowerCase();
+      const isReload = (key === 'r' && (input.control || input.meta)) || key === 'f5';
+      if (!isReload) return;
+      event.preventDefault();
+      if (input.shift) mainWindow.webContents.reloadIgnoringCache();
+      else mainWindow.webContents.reload();
+    });
+  }
+
+  if (savedBounds && savedBounds.maximized) mainWindow.maximize();
+  trackWindowBounds(mainWindow);
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   bootstrap.setMainWindow(mainWindow);

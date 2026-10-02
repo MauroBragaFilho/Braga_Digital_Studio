@@ -1899,3 +1899,25 @@
 .ws-relink-row-pick:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* REFINAMENTOS DE INTERFACE */
+.ws-pane { border-radius: 12px; }
+.ws-pane-title, .ws-section-title { font-weight: 700; letter-spacing: 0.2px; }
+.ws-media-card, .ws-lib-thumb { border-radius: 10px; }
+.ws-media-card { transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease; }
+.ws-media-card:hover { box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 60%, transparent); }
+.ws-media-card-name { font-weight: 600; }
+.ws-media-card-duration, .ws-media-card-meta, .ws-tc-current, .ws-tc-duration, .ws-monitor-timecodes, .ws-sync-track-offset, .ws-sync-drift-badge, .ws-unfiled-count, .ws-lib-meta, .ws-media-detail-value, .ws-summary-item { font-variant-numeric: tabular-nums; }
+.ws-btn-outline, .ws-btn-accent, .ws-btn-save, .ws-btn-delete, .ws-btn-export-premiere, .ws-btn-relink, .ws-media-filter, .ws-view-toggle-btn, .ws-center-tab, .ws-insp-tab, .ws-monitor-btn, .ws-icon-btn-plain { transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease; }
+.ws-btn-outline:focus-visible, .ws-btn-accent:focus-visible, .ws-btn-save:focus-visible, .ws-btn-delete:focus-visible, .ws-btn-export-premiere:focus-visible, .ws-btn-relink:focus-visible, .ws-btn-back:focus-visible, .ws-media-filter:focus-visible, .ws-view-toggle-btn:focus-visible, .ws-center-tab:focus-visible, .ws-insp-tab:focus-visible, .ws-monitor-btn:focus-visible, .ws-icon-btn-plain:focus-visible, .ws-media-card:focus-visible, .ws-sync-master-btn:focus-visible, .ws-sync-item-remove-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ws-btn-outline:disabled, .ws-btn-accent:disabled, .ws-btn-save:disabled, .ws-btn-delete:disabled, .ws-btn-export-premiere:disabled, .ws-btn-relink:disabled, .ws-monitor-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ws-search-input:focus-visible, .ws-field-input:focus-visible, .ws-status-select:focus-visible, .ws-sync-detail-name-input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+.ws-field-label, .ws-media-detail-label { font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+.ws-empty-state, .ws-monitor-empty { border-radius: 12px; }
+.ws-modal-box { border-radius: 14px; }
+.ws-modal-overlay { backdrop-filter: blur(3px); }
+.ws-missing-banner, .ws-sync-panel, .ws-export-section, .ws-inspector-section { border-radius: 10px; }
+.ws-lib-content, .ws-media-grid, .ws-bins-tree, .ws-import-modal-list, .ws-relink-list, .ws-sync-groups-list, .ws-selection-details, .ws-pane { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-media-card, .ws-btn-outline, .ws-btn-accent, .ws-btn-save, .ws-btn-delete, .ws-btn-export-premiere, .ws-btn-relink, .ws-media-filter, .ws-view-toggle-btn, .ws-center-tab, .ws-insp-tab, .ws-monitor-btn, .ws-icon-btn-plain { transition: none; }
+}

@@ -43,13 +43,18 @@
 }
 
 .url-input-row:hover {
-  border-color: rgba(242, 92, 5, 0.4);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .url-input-icon {
-  color: #f25c05;
+  color: var(--accent);
   font-size: 22px;
   margin-left: 4px;
+}
+
+.url-input-field::placeholder {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .url-input-field {
@@ -65,7 +70,7 @@
 }
 
 .url-add-btn {
-  background: #f25c05;
+  background: var(--accent);
   color: var(--text);
   border: none;
   border-radius: 8px;
@@ -89,8 +94,8 @@
 
 /* --- URL INPUT ROW (foco aprimorado) --- */
 .url-input-row:focus-within {
-  border-color: #f25c05;
-  box-shadow: 0 0 0 3px rgba(242, 92, 5, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 /* ==========================================================================
@@ -135,8 +140,8 @@
 
 .queue-title-icon {
   font-size: 22px;
-  color: #f25c05;
-  background: rgba(242, 92, 5, 0.12);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-radius: 8px;
   padding: 6px;
 }
@@ -144,7 +149,9 @@
 .queue-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 10px;
 }
 
 .queue-btn {
@@ -165,12 +172,40 @@
   transform: translateY(-1px);
 }
 
+.queue-btn:disabled,
+.url-add-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
+.queue-btn:focus-visible,
+.url-add-btn:focus-visible,
+.card-action-btn:focus-visible,
+.active-download-cancel-btn:focus-visible {
+  outline: 2px solid #f25c05;
+  outline-offset: 2px;
+}
+
 .queue-btn:active {
   transform: translateY(0);
 }
 
 .queue-btn .material-symbols-rounded {
   font-size: 18px;
+}
+
+.queue-btn-info {
+  background: rgba(33, 150, 243, 0.10);
+  color: #64b5f6;
+  border: 1px solid rgba(33, 150, 243, 0.28);
+  padding: 9px 14px;
+  font-size: 12px;
+}
+
+.queue-btn-info:hover {
+  background: rgba(33, 150, 243, 0.2);
 }
 
 .queue-btn-start {
@@ -214,7 +249,7 @@
 /* --- MÉTRICAS --- */
 .queue-metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
 }
 
@@ -255,6 +290,7 @@
 .metric-label-warning { color: #ffb300; }
 .metric-label-active { color: #2196f3; }
 .metric-label-success { color: #4caf50; }
+.metric-label-danger { color: #ff6659; }
 
 .metric-value {
   font-size: 24px;
@@ -262,17 +298,20 @@
   color: var(--text);
   margin-top: 4px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric-value-warning { color: #ffb300; }
 .metric-value-active { color: #2196f3; }
 .metric-value-success { color: #4caf50; }
+.metric-value-danger { color: #ff6659; }
 
 .metric-card:has(.metric-value-warning)::before { background: #ffb300; }
 .metric-card:has(.metric-value-active)::before { background: #2196f3; }
 .metric-card:has(.metric-value-success)::before { background: #4caf50; }
-.metric-card:not(:has(.metric-value-warning)):not(:has(.metric-value-active)):not(:has(.metric-value-success))::before {
-  background: #f25c05;
+.metric-card:has(.metric-value-danger)::before { background: #e53935; }
+.metric-card:not(:has(.metric-value-warning)):not(:has(.metric-value-active)):not(:has(.metric-value-success)):not(:has(.metric-value-danger))::before {
+  background: var(--accent);
 }
 
 /* --- DOWNLOAD ATIVO --- */
@@ -382,7 +421,7 @@
   font-weight: 800;
   color: var(--text);
   font-size: 15px;
-  max-width: 450px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -479,7 +518,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 550px;
+  min-height: 160px;
+  max-height: max(320px, calc(100vh - 460px));
   overflow-y: auto;
   padding-right: 6px;
 }
@@ -498,7 +538,18 @@
 }
 
 .download-queue-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(242, 92, 5, 0.4);
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.queue-empty-state::before {
+  content: "cloud_download";
+  display: block;
+  font-family: "Material Symbols Rounded";
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 10px;
+  color: var(--accent);
+  opacity: 0.75;
 }
 
 .queue-empty-state {
@@ -608,6 +659,7 @@
 
 .download-card-title {
   font-weight: 700;
+  min-width: 0;
   color: var(--text);
   font-size: 13.5px;
   overflow: hidden;
@@ -645,7 +697,7 @@
 }
 
 .download-card-select:hover {
-  border-color: rgba(242, 92, 5, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .download-card-format-badge {
@@ -682,7 +734,7 @@
 
 .download-card-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #f25c05, #e53935);
+  background: linear-gradient(90deg, var(--accent-hover, var(--accent)), var(--accent));
   border-radius: 4px;
   transition: width 0.2s ease;
   position: relative;
@@ -936,7 +988,7 @@
 }
 
 .multiple-links-header .material-symbols-rounded {
-  color: #f25c05;
+  color: var(--accent);
   font-size: 24px;
 }
 
@@ -983,8 +1035,8 @@
 }
 
 .multiple-links-textarea:focus {
-  border-color: #f25c05;
-  box-shadow: 0 0 0 2px rgba(242, 92, 5, 0.2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .multiple-links-list {
@@ -1014,7 +1066,7 @@
 .link-item input[type="checkbox"] {
   width: 18px;
   height: 18px;
-  accent-color: #f25c05;
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -1047,7 +1099,7 @@
 }
 
 .btn-modal-confirm {
-  background: #f25c05;
+  background: var(--accent);
   border: none;
   color: var(--text);
   padding: 8px 16px;

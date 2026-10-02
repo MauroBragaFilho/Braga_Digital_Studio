@@ -117,13 +117,13 @@ function updateSilenceStepperVisuals() {
       s3.style.color = '#4caf50';
       s3.textContent = 'Todos os arquivos foram processados!';
     } else if (exportSilenceState.active) {
-      b3.style.borderColor = '#f25c05';
-      b3.style.background = 'rgba(242, 92, 5, 0.15)';
-      b3.style.color = '#f25c05';
+      b3.style.borderColor = 'var(--accent)';
+      b3.style.background = 'color-mix(in srgb, var(--accent) 15%, transparent)';
+      b3.style.color = 'var(--accent)';
       b3.textContent = '⏳';
       t3.textContent = `PROCESSANDO (${exportSilenceState.current}/${exportSilenceState.total})`;
-      t3.style.color = '#f25c05';
-      s3.style.color = '#f25c05';
+      t3.style.color = 'var(--accent)';
+      s3.style.color = 'var(--accent)';
       s3.textContent = `Progresso: ${Math.round(exportSilenceState.percent)}%`;
     } else {
       b3.style.borderColor = 'var(--muted)';
@@ -196,18 +196,18 @@ function renderSilenceTable() {
         </td>
 
         <td style="padding: 10px 12px; font-weight: 600; color: #ffffff;">${durStr}</td>
-        <td style="padding: 10px 12px; color: #f25c05; font-weight: 600;">Automático</td>
+        <td style="padding: 10px 12px; color: var(--accent); font-weight: 600;">Automático</td>
         <td style="padding: 10px 12px; color: #4caf50; font-weight: 600;">Corte inteligente</td>
 
         <!-- PROGRESSO INDIVIDUAL POR ARQUIVO -->
         <td style="padding: 10px 12px; width: 160px;">
           <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700;">
-              <span style="color: ${item.status === 'Concluído' ? '#4caf50' : ((item.progress || 0) > 0 ? '#f25c05' : 'var(--muted)')};">${item.status || 'Pronto'}</span>
+              <span style="color: ${item.status === 'Concluído' ? '#4caf50' : ((item.progress || 0) > 0 ? 'var(--accent)' : 'var(--muted)')};">${item.status || 'Pronto'}</span>
               <span style="color: #ffffff;">${Math.round(item.progress || 0)}%</span>
             </div>
             <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; overflow: hidden; border: 1px solid var(--line);">
-              <div style="width: ${Math.round(item.progress || 0)}%; height: 100%; background: ${item.status === 'Concluído' ? '#4caf50' : '#f25c05'}; transition: width 0.25s ease;"></div>
+              <div style="width: ${Math.round(item.progress || 0)}%; height: 100%; background: ${item.status === 'Concluído' ? '#4caf50' : 'var(--accent)'}; transition: width 0.25s ease;"></div>
             </div>
           </div>
         </td>

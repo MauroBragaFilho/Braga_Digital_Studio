@@ -17,6 +17,7 @@ export async function initScreen() {
     // Ações Rápidas
     document.querySelectorAll('.qa-card').forEach(card => {
       card.addEventListener('click', () => {
+        if (card.getAttribute('data-action') === 'search') { window.focusGlobalSearch?.(); return; }
         const targetView = card.getAttribute('data-target');
         if (targetView) {
           const tabButton = document.querySelector(`.sidebar .tab-button[data-view="${targetView}"]`);
@@ -214,8 +215,8 @@ function renderRecordingsCarousel() {
     card.addEventListener('click', () => {
       const id = card.getAttribute('data-id');
       const item = videos.find(v => String(v.id) === String(id));
-      if (item && item.filepath && window.bdsPlayer) {
-        window.bdsPlayer.play(item.filepath, item.filename);
+      if (item && item.filepath) {
+        window.openPreview?.(item, videos);
       }
     });
   });
@@ -307,8 +308,8 @@ function renderJobsTable() {
       }
       const id = row.getAttribute('data-id');
       const job = recentJobs.find(j => String(j.id) === String(id));
-      if (job && job.filepath && window.bdsPlayer) {
-        window.bdsPlayer.play(job.filepath, job.filename);
+      if (job && job.filepath) {
+        window.openPreview?.(job, recentJobs);
       }
     });
   });

@@ -74,7 +74,21 @@ class SettingsManager {
       preferredGpuVendor: 'auto',
       // Cache: limite e limpeza automática
       cacheMaxSizeMB: 500,
-      cacheAutoClean: false
+      cacheAutoClean: false,
+      // Interface e janela
+      defaultStartScreen: 'home',      // tela aberta ao iniciar o app
+      reduceMotion: false,             // desliga animações e transições
+      rememberWindowBounds: false,     // lembra tamanho/posição da janela
+      windowBounds: null,              // { x, y, width, height, maximized } — gravado pelo main.js
+      // Padrões do Conversor (aplicados ao abrir a tela)
+      converterDefaultFormat: 'mp4',
+      converterDefaultCodec: 'libx264',
+      converterDefaultResolution: 'original',
+      converterDefaultVideoBitrate: 10,   // Mbps
+      converterDefaultAudioBitrate: '192k',
+      // Já usadas pelo código, agora com padrão explícito
+      hiddenDevices: [],
+      autoUpdateGithub: true
     };
   }
 
@@ -139,10 +153,43 @@ class SettingsManager {
    */
   save(nextSettings) {
     const current = { ...this._cached, ...this.load() };
-    const merged = { ...current, ...nextSettings };
+    const merged = { ...current, ...this._sanitize(nextSettings) };
     fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2), 'utf8');
     this._setCache(merged);
     return merged;
+  }
+
+  /**
+   * Valida só as chaves de preferências com formato restrito (enums e faixas). Valor inválido
+   * é descartado e o atual é mantido. As demais chaves passam sem alteração (comportamento antigo).
+   */
+  _sanitize(patch) {
+    if (!patch || typeof patch !== 'object') return {};
+    const out = { ...patch };
+    const oneOf = (key, allowed) => { if (key in out && !allowed.includes(out[key])) delete out[key]; };
+    const bool = (key) => { if (key in out) out[key] = out[key] === true; };
+
+    oneOf('defaultStartScreen', ['home', 'download', 'converter', 'silence', 'metadata', 'library', 'projects', 'upload', 'devices', 'luts', 'ai']);
+    oneOf('converterDefaultFormat', ['mp4', 'mp3']);
+    oneOf('converterDefaultCodec', ['libx264', 'libx265']);
+    oneOf('converterDefaultResolution', ['original', '2160', '1440', '1080', '720', '480']);
+    oneOf('converterDefaultAudioBitrate', ['128k', '192k', '256k', '320k']);
+    bool('reduceMotion');
+    bool('rememberWindowBounds');
+
+    if ('converterDefaultVideoBitrate' in out) {
+      const n = Math.round(Number(out.converterDefaultVideoBitrate));
+      if (Number.isFinite(n) && n >= 1 && n <= 100) out.converterDefaultVideoBitrate = n;
+      else delete out.converterDefaultVideoBitrate;
+    }
+    if ('windowBounds' in out && out.windowBounds !== null) {
+      const b = out.windowBounds;
+      const ok = b && [b.x, b.y, b.width, b.height].every(Number.isFinite) && b.width >= 400 && b.height >= 300;
+      out.windowBounds = ok
+        ? { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height), maximized: b.maximized === true }
+        : null;
+    }
+    return out;
   }
 
   _setCache(settings) {

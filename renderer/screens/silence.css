@@ -1,0 +1,60 @@
+/* REFINAMENTOS DE INTERFACE */
+/* A tela usa estilos inline; !important é necessário apenas onde se sobrepõe a eles. */
+.silence-screen-container {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent;
+}
+.silence-screen-container [style*="color: #ffffff"],
+.silence-screen-container [style*="color:#ffffff"] { color: var(--text) !important; }
+.silence-screen-container #btnAddSilenceVideos,
+.silence-screen-container #btnStartSilenceQueue { color: #fff !important; background: var(--accent) !important; }
+.silence-screen-container .step-item { min-width: 0; }
+.silence-screen-container .silence-stepper { border-radius: 12px !important; gap: 8px; flex-wrap: wrap; }
+.silence-screen-container button {
+  transition: background 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+}
+.silence-screen-container button:focus-visible,
+.silence-screen-container select:focus-visible,
+.silence-screen-container input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 2px;
+}
+.silence-screen-container button:hover:not(:disabled) { filter: brightness(1.08); }
+.silence-screen-container button:disabled { opacity: 0.5; cursor: not-allowed !important; filter: none; }
+.silence-screen-container input:not([type="range"]):focus,
+.silence-screen-container select:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)) !important; }
+.silence-screen-container input[type="number"],
+.silence-screen-container #lblSensitivity,
+.silence-screen-container #lblMinDuration,
+.silence-screen-container #silenceMainCount,
+.silence-screen-container #silenceTotalDuration,
+.silence-screen-container tbody td { font-variant-numeric: tabular-nums; }
+.silence-screen-container #silenceMainBody tr { transition: background 0.15s ease; }
+.silence-screen-container #silenceMainBody tr:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.silence-screen-container #silenceMainBody td { vertical-align: middle; }
+.silence-screen-container thead th {
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  z-index: 1;
+  letter-spacing: 0.4px;
+}
+.silence-screen-container [style*="overflow-y: auto; border: 1px solid var(--line)"] {
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--text) 3%, var(--card)) !important;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent;
+}
+.silence-screen-container input[type="number"],
+.silence-screen-container input[type="text"],
+.silence-screen-container select { background: color-mix(in srgb, var(--text) 6%, transparent) !important; }
+.silence-screen-container .btn-silence-lib-option:hover { background: color-mix(in srgb, var(--text) 6%, var(--card-2)) !important; }
+#silenceLibraryModal > div { border-radius: 14px !important; }
+@media (max-width: 1000px) {
+  .silence-screen-container > div[style*="min-height: 480px"] { flex-direction: column; }
+  .silence-screen-container > div[style*="min-height: 480px"] > div[style*="width: 290px"] { width: 100% !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .silence-screen-container button, .silence-screen-container #silenceMainBody tr { transition: none; }
+}
