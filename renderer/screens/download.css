@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    DOWNLOAD SCREEN - MODULAR CSS
    ========================================================================== */
 
@@ -780,6 +780,14 @@
   color: #ff6659;
 }
 
+.status-badge-skipped {
+  background: rgba(100, 181, 246, 0.12);
+  color: #64b5f6;
+  cursor: help;
+}
+
+.download-card:has(.status-badge-skipped)::before { background: #64b5f6; }
+
 /* --- BOTÕES DE AÇÃO DO CARD --- */
 .card-action-btn {
   background: transparent;
@@ -889,4 +897,167 @@
   .download-card-actions {
     justify-content: space-between;
   }
+}
+/* --- MODAL DE MÚLTIPLOS LINKS --- */
+.multiple-links-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.multiple-links-modal {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.multiple-links-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.multiple-links-header .material-symbols-rounded {
+  color: #f25c05;
+  font-size: 24px;
+}
+
+.multiple-links-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.multiple-links-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.multiple-links-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.multiple-links-hint strong {
+  color: var(--text);
+}
+
+.multiple-links-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 160px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.multiple-links-textarea:focus {
+  border-color: #f25c05;
+  box-shadow: 0 0 0 2px rgba(242, 92, 5, 0.2);
+}
+
+.multiple-links-list {
+  padding: 10px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.link-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.link-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.link-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #f25c05;
+  cursor: pointer;
+}
+
+.link-item .link-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multiple-links-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-modal-cancel {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-modal-confirm {
+  background: #f25c05;
+  border: none;
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

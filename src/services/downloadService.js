@@ -35,29 +35,35 @@ class DownloadManager extends EventEmitter {
         SELECT * FROM download_queue ORDER BY position ASC, created_at ASC
       `).all();
 
-      this.queue = rows.map(r => ({
-        id: r.id,
-        url: r.url,
-        title: r.title || 'Mídia sem título',
-        thumbnail: r.thumbnail || '',
-        channel: r.channel || '',
-        platform: r.platform || '',
-        duration: r.duration ? Number(r.duration) : null,
-        format: (r.format || 'MP4').toUpperCase(),
-        quality: r.quality || 'best',
-        status: (r.status === 'downloading' || r.status === 'paused') ? 'queued' : r.status,
-        progress: Number(r.progress || 0),
-        downloadedBytes: Number(r.downloaded_bytes || 0),
-        totalBytes: Number(r.total_bytes || 0),
-        speed: r.speed || '',
-        eta: r.eta || '',
-        outputPath: r.output_path || '',
-        error: r.error || '',
-        position: Number(r.position || 0),
-        createdAt: r.created_at,
-        startedAt: r.started_at,
-        completedAt: r.completed_at
-      }));
+      const settings = this.getSettings ? this.getSettings() : {};
+      this.queue = rows.map(r => {
+        const format = (r.format || 'MP4').toUpperCase();
+        return {
+          id: r.id,
+          url: r.url,
+          title: r.title || 'Mídia sem título',
+          thumbnail: r.thumbnail || '',
+          channel: r.channel || '',
+          platform: r.platform || '',
+          duration: r.duration ? Number(r.duration) : null,
+          format,
+          quality: r.quality || 'best',
+          folder: format === 'MP3' ? settings.mp3Folder : settings.mp4Folder,
+          status: (r.status === 'downloading' || r.status === 'paused') ? 'queued' : r.status,
+          progress: Number(r.progress || 0),
+          downloadedBytes: Number(r.downloaded_bytes || 0),
+          totalBytes: Number(r.total_bytes || 0),
+          speed: r.speed || '',
+          eta: r.eta || '',
+          outputPath: r.output_path || '',
+          error: r.error || '',
+          position: Number(r.position || 0),
+          isSpotify: r.platform === 'Spotify',
+          createdAt: r.created_at,
+          startedAt: r.started_at,
+          completedAt: r.completed_at
+        };
+      });
 
       for (const item of this.queue) {
         this.saveItemToDb(item);
@@ -129,6 +135,9 @@ class DownloadManager extends EventEmitter {
     fs.mkdirSync(folder, { recursive: true });
 
     const maxPos = this.queue.reduce((max, i) => Math.max(max, i.position || 0), 0);
+    const initialStatus = request.status || 'queued';
+    const initialError = request.error || '';
+
     const item = {
       id: 'dl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       url: request.url,
@@ -141,14 +150,14 @@ class DownloadManager extends EventEmitter {
       quality: request.quality || request.resolution || 'best',
       folder,
       isSpotify,
-      status: 'queued',
+      status: initialStatus,
       progress: 0,
       downloadedBytes: 0,
       totalBytes: 0,
       speed: '',
       eta: '',
       outputPath: '',
-      error: '',
+      error: initialError,
       position: maxPos + 1,
       createdAt: new Date().toISOString(),
       startedAt: null,
@@ -346,6 +355,24 @@ class DownloadManager extends EventEmitter {
       return;
     }
 
+    // [CHECK] Verifica se o arquivo já existe na pasta de destino antes de baixar
+    const existingFile = this.findExistingFile(nextItem);
+    if (existingFile) {
+      logger.info('[DownloadManager] Arquivo já existe, pulando:', existingFile);
+      nextItem.status = 'completed';
+      nextItem.progress = 100;
+      nextItem.outputPath = existingFile;
+      nextItem.completedAt = new Date().toISOString();
+      nextItem.error = 'Arquivo já existe na pasta de destino.';
+      this.saveItemToDb(nextItem);
+      this.emit('downloads:updated', this.queue);
+
+      if (!this.isPaused) {
+        setTimeout(() => this.processQueue(), 200);
+      }
+      return;
+    }
+
     this.currentItem = nextItem;
     this.currentItem.status = 'downloading';
     this.currentItem.startedAt = new Date().toISOString();
@@ -372,13 +399,50 @@ class DownloadManager extends EventEmitter {
     }
   }
 
+  /**
+   * Verifica se o arquivo que seria baixado já existe na pasta de destino.
+   * Testa os nomes mais prováveis baseados no título do item.
+   * @param {object} item
+   * @returns {string|null} caminho completo se encontrado, null caso contrário
+   */
+  findExistingFile(item) {
+    const settings = this.getSettings();
+    const folder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
+    if (!folder || !fs.existsSync(folder)) return null;
+
+    const ext = item.format === 'MP3' ? '.mp3' : '.mp4';
+
+    // Sanitiza o título da mesma forma que o yt-dlp faz com --windows-filenames
+    const sanitize = (name) =>
+      name
+        .replace(/[<>:"/\\|?*]/g, '_') // caracteres proibidos no Windows
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const baseName = sanitize(item.title || '');
+    if (!baseName) return null;
+
+    const candidates = [
+      path.join(folder, `${baseName}${ext}`),
+      // Variação sem espaços extras
+      path.join(folder, `${baseName.replace(/ /g, '_')}${ext}`)
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+
+    return null;
+  }
+
   async runProcess(item) {
     const settings = this.getSettings();
+    const targetFolder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
     const command = await this.buildCommand(item, settings);
 
     return new Promise((resolve) => {
       const child = spawn(command.exe, command.args, {
-        cwd: item.folder || settings.mp4Folder,
+        cwd: targetFolder || settings.mp4Folder,
         windowsHide: true,
         env: {
           ...process.env,
@@ -513,11 +577,21 @@ class DownloadManager extends EventEmitter {
   }
 
   async buildCommand(item, settings) {
+    const targetFolder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
+    if (targetFolder && !fs.existsSync(targetFolder)) {
+      try {
+        fs.mkdirSync(targetFolder, { recursive: true });
+      } catch (_) {}
+    }
+
     if (item.isSpotify) {
       const exe = spotDlTool.resolve();
+      const outputPattern = targetFolder
+        ? path.join(targetFolder, '{title}.{output-ext}')
+        : '{title}.{output-ext}';
       return {
         exe,
-        args: ['--output', '{title}.{output-ext}', '--format', 'mp3', item.url]
+        args: ['--output', outputPattern, '--format', 'mp3', item.url]
       };
     }
 
@@ -526,7 +600,6 @@ class DownloadManager extends EventEmitter {
       '--newline',
       '--progress',
       '--windows-filenames',
-      '--restrict-filenames',
       '--no-part',
       '--no-mtime',
       '--ffmpeg-location', this.paths.dataDir
@@ -544,7 +617,7 @@ class DownloadManager extends EventEmitter {
       else if (item.quality === '128kbps') audioQuality = '6';
       
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', audioQuality, '--embed-metadata', '--embed-thumbnail');
-      args.push('-P', item.folder || settings.mp3Folder, '-o', '%(title)s.%(ext)s', item.url);
+      args.push('-P', targetFolder || settings.mp3Folder, '-o', '%(title)s.%(ext)s', item.url);
     } else {
       const resolution = item.quality && item.quality !== 'best' ? item.quality.replace('p', '') : 'best';
       const format = resolution && resolution !== 'best'
@@ -552,7 +625,7 @@ class DownloadManager extends EventEmitter {
         : 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best';
 
       args.push('-f', format, '--merge-output-format', 'mp4', '--embed-metadata', '--embed-thumbnail');
-      args.push('-P', item.folder || settings.mp4Folder, '-o', '%(title)s.%(ext)s', item.url);
+      args.push('-P', targetFolder || settings.mp4Folder, '-o', '%(title)s.%(ext)s', item.url);
     }
 
     return { exe, args };

@@ -182,14 +182,24 @@ function loadSession() {
   if (!data || !Array.isArray(data.items)) return false;
   state.items = data.items
     .filter(i => i && i.path)
-    .map(i => ({
-      id: i.id || uid(), name: i.name || '', path: i.path,
-      thumbnail: i.thumbnail || '', durationSeconds: i.durationSeconds || 0,
-      width: i.width || 0, height: i.height || 0,
-      durMode: i.durMode === 'fixed' ? 'fixed' : 'percent',
-      pctUsed: typeof i.pctUsed === 'number' ? Math.min(100, Math.max(1, i.pctUsed)) : 100,
-      fixedSeconds: typeof i.fixedSeconds === 'number' ? Math.max(1, i.fixedSeconds) : 30
-    }));
+    .map(i => {
+      // Ensure name is not empty
+      let name = i.name || '';
+      if (!name && i.path) {
+        name = i.path.split(/[\\/]/).pop();
+      }
+      if (!name) {
+        name = 'Vídeo sem nome';
+      }
+      return ({
+        id: i.id || uid(), name: name, path: i.path,
+        thumbnail: i.thumbnail || '', durationSeconds: i.durationSeconds || 0,
+        width: i.width || 0, height: i.height || 0,
+        durMode: i.durMode === 'fixed' ? 'fixed' : 'percent',
+        pctUsed: typeof i.pctUsed === 'number' ? Math.min(100, Math.max(1, i.pctUsed)) : 100,
+        fixedSeconds: typeof i.fixedSeconds === 'number' ? Math.max(1, i.fixedSeconds) : 30
+      });
+    });
   if (data.intro) state.intro = { name: 'Nenhuma', path: '', duration: 0, width: 0, height: 0, thumbnail: '', ...data.intro };
   if (data.outro) state.outro = { name: 'Nenhuma', path: '', duration: 0, width: 0, height: 0, thumbnail: '', ...data.outro };
   if (data.sort && ['default','name','duration'].includes(data.sort)) state.sort = data.sort;
@@ -233,9 +243,7 @@ function rowHtml(item, idx) {
   const durText = modeFixed ? formatFixedLabel(item.fixedSeconds) : `${item.pctUsed}%`;
   const finalSec = getFinalSeconds(item);
   const finalTxt = st.pill === 'done' ? '✓ ' + formatHMS(finalSec) : formatHMS(finalSec);
-  const thumb = item.thumbnail
-    ? `<img class="mg-thumb-img" src="${escapeHtml(item.thumbnail)}" alt="" />`
-    : `<span class="material-symbols-rounded mg-thumb-ph">movie</span>`;
+  let thumbSrc = item.thumbnail || ""; if (thumbSrc && !thumbSrc.startsWith("http") && !thumbSrc.startsWith("data:") && !thumbSrc.startsWith("file:")) { thumbSrc = state.thumbsDir ? `${state.thumbsDir}/${thumbSrc}` : thumbSrc; } const thumb = thumbSrc ? `<img class="mg-thumb-img" src="${escapeHtml(thumbSrc)}" alt="" />` : `<span class="material-symbols-rounded mg-thumb-ph">movie</span>`;
   const disabled = state.export.active ? ' disabled' : '';
   const editHtml = modeFixed
     ? `<span class="mg-use-edit"><input class="mg-te-input mg-te-time" data-id="${item.id}" type="text" value="${escapeHtml(durText)}" ${disabled} title="Duração fixa (segundos ou MM:SS)"/><span class="mg-te-type" data-id="${item.id}" data-type="toggle" title="Alternar para % do vídeo">%</span></span>`
@@ -479,6 +487,13 @@ function addVideos(entries) {
     const key = entry.path.toLowerCase();
     if (existing.has(key)) return;
     existing.add(key);
+    
+    // Ensure name is not empty
+    let name = entry.name || entry.path.split(/[\\\\/]/).pop();
+    if (!name) {
+      name = 'Vídeo sem nome';
+    }
+    
     state.items.push({
       id: uid(),
       name: entry.name || entry.path.split(/[\\/]/).pop(),
@@ -1436,6 +1451,12 @@ async function reprobeZeroDurationItems() {
 export async function initScreen() {
   logScreen('Inicializando tela de Montagem de Vídeos (ETAPA 3)...', 'info');
 
+  // VINCULA EVENTOS IMEDIATAMENTE para a UI não travar
+  bindControlsEvents();
+  bindDestFolderFallback();
+  bindAddFolderNative();
+  setupIPCListeners();
+
   // Garante que o tema ativo é aplicado na tela de Montagem
   if (appState?.settings) {
     applyTheme(appState.settings.theme, appState.settings.accentColor);
@@ -1478,8 +1499,6 @@ export async function initScreen() {
   setupRowDragDrop();
   bindListEvents();
   bindDurationInputs();
-  setupIPCListeners();
-  bindControlsEvents();
   bindDestFolderFallback();
   bindAddFolderNative();
 
