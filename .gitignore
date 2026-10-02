@@ -1,55 +1,48 @@
-# Dependências do Node.js
+# Dependências
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Empacotamento / Builds
+# Builds / empacotamento
 dist/
 build/
 release/
 out/
 
-# Dados, Banco de dados e Configurações locais
+# Dados do usuário (gerados em runtime)
 data/
 database/
-/config/
-
-# Arquivos executáveis / scripts locais de menu e pacotes zip
-bds_menu.bat
-BDS_Menu.bat
-*.bat
-bds.zip
-BDS.zip
-*.zip
-
-# Logs
 logs/
 src/logs/
 *.log
-
-# Backups e temporários do banco de dados (gerados pelo DBManager)
 *.db.bak
 *.db.tmp
-*.db.bak
 
-# Documentações internas (mantendo os READMEs e a pasta .docs)
-*.md
-!README*.md
+# Configuração local real (versionar apenas os exemplos config/*.example.json)
+/config/*
+!/config/*.example.json
+
+# Pacotes e arquivos locais
+*.zip
+
+# Documentação interna (README*.md, LICENSE e docs novos continuam versionáveis)
+/.docs/
+/_Archives/
 
 # Sessão e cookies temporários
 Partitions/
 Cookies
 Cookies-journal
 
-# Arquivos de ambiente e chaves sensíveis
+# Segredos
 .env
 .env.*
 *.pem
 *.key
 *.cert
 
-# Arquivos de sistema operacional
+# Sistema operacional
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -63,13 +56,7 @@ desktop.ini
 *.sln
 *.swp
 
-# Arquivos temporários de teste
-tests/
+# Temporários / testes manuais
 *.CR2
 .Teste imagem corrompida/
 .tmp-clone-check/
-
-.docs/
-_Archives/
-assets/
-logs/

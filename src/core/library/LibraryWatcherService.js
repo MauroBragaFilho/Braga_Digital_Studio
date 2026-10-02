@@ -1,5 +1,6 @@
 const logger = require('../../services/logService');
 const FolderWatcher = require('./FolderWatcher');
+const fsp = require('fs').promises;
 const dbManager = require('../database/database');
 const EventBus = require('../EventBus');
 
@@ -8,11 +9,16 @@ class LibraryWatcherService {
         this.importQueue = importQueue;
         this.watchers = new Map(); 
         
-        // Escuta os eventos e atualiza o banco
-        EventBus.on('MEDIA_REMOVED', (payload) => this.handleMediaRemoved(payload));
+        // Escuta os eventos e atualiza o banco (handler guardado para ser removido em stopAll)
+        this._onMediaRemoved = (payload) => this.handleMediaRemoved(payload);
+        EventBus.on('MEDIA_REMOVED', this._onMediaRemoved);
     }
 
     startAll() {
+        if (!this._onMediaRemoved) {
+            this._onMediaRemoved = (payload) => this.handleMediaRemoved(payload);
+            EventBus.on('MEDIA_REMOVED', this._onMediaRemoved);
+        }
         const db = dbManager.get();
         const libraries = db.prepare('SELECT * FROM libraries WHERE enabled = 1 AND auto_scan = 1').all();
         
@@ -58,15 +64,28 @@ class LibraryWatcherService {
         const t0 = Date.now();
         
         try {
-            // Coleta todos os arquivos ativos (não ausentes) e já marcados como ausentes
-            const allMedia = db.prepare('SELECT id, filepath, missing FROM media WHERE (missing = 0 OR missing IS NULL)').all();
-            const markedMissing = db.prepare('SELECT id, filepath, missing FROM media WHERE missing = 1').all();
-            const candidates = [...allMedia, ...markedMissing];
+            // Uma única consulta (ativos + ausentes), já com a raiz da biblioteca de cada mídia
+            const candidates = db.prepare(`
+                SELECT m.id, m.filepath, m.missing, l.path AS lib_path
+                FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+            `).all();
 
             if (candidates.length === 0) {
                 logger.info('[LibraryWatcherService] Reconciliação concluída — nenhum arquivo para verificar.');
                 return;
             }
+
+            // Bibliotecas offline (raiz inacessível, ex.: HD externo/rede desconectado) são puladas:
+            // nunca marcar tudo como ausente só porque o disco não está montado.
+            const offlineRoots = new Set();
+            const roots = [...new Set(candidates.map(c => c.lib_path).filter(Boolean))];
+            await Promise.all(roots.map(async (root) => {
+                const ok = await fsp.access(root).then(() => true).catch(() => false);
+                if (!ok) {
+                    offlineRoots.add(root);
+                    logger.warn(`[LibraryWatcherService] Raiz da biblioteca inacessível, pulando reconciliação: ${root}`);
+                }
+            }));
 
             const CONCURRENCY = 32;
             const toMark = [];
@@ -77,8 +96,9 @@ class LibraryWatcherService {
                 while (cursor < candidates.length) {
                     const row = candidates[cursor++];
                     if (!row.filepath) continue;
+                    if (row.lib_path && offlineRoots.has(row.lib_path)) continue;
                     try {
-                        const exists = await require('fs').promises.access(row.filepath).then(() => true).catch(() => false);
+                        const exists = await fsp.access(row.filepath).then(() => true).catch(() => false);
                         // Se não existe no disco e não estava ausente -> marcar ausente
                         if (!exists && row.missing !== 1) {
                             toMark.push(row.id);
@@ -105,6 +125,8 @@ class LibraryWatcherService {
                 db.prepare(`UPDATE media SET missing = 0 WHERE id IN (${placeholders})`).run(...toRestore);
             }
             
+            await this.requeueStuckImports(offlineRoots);
+
             const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
             if (toMark.length > 0 || toRestore.length > 0) {
                 logger.info(`[LibraryWatcherService] Reconciliação (${elapsed}s): ${toMark.length} ausentes marcados, ${toRestore.length} restaurados.`);
@@ -116,6 +138,29 @@ class LibraryWatcherService {
         }
     }
 
+
+    /**
+     * Linhas presas em IMPORTING/ERROR (ex.: app fechado no meio da importação) são reenfileiradas
+     * se o arquivo existe; o ImportWorker reaproveita a própria linha.
+     */
+    async requeueStuckImports(offlineRoots = new Set()) {
+        const db = dbManager.get();
+        const rows = db.prepare(`
+            SELECT m.id, m.library_id, m.filepath, l.path AS lib_path
+            FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+            WHERE m.status IN ('IMPORTING', 'ERROR') AND (m.missing = 0 OR m.missing IS NULL)
+        `).all();
+        let queued = 0;
+        for (const row of rows) {
+            if (!row.filepath || (row.lib_path && offlineRoots.has(row.lib_path))) continue;
+            const exists = await fsp.access(row.filepath).then(() => true).catch(() => false);
+            if (!exists) continue;
+            this.importQueue.add({ libraryId: row.library_id, path: row.filepath, event: 'CREATE' });
+            queued++;
+        }
+        if (queued > 0) logger.info(`[LibraryWatcherService] ${queued} importações pendentes/com erro reenfileiradas.`);
+        return queued;
+    }
 
     startWatcher(libraryId, folderPath) {
         if (this.watchers.has(libraryId)) {
@@ -140,6 +185,10 @@ class LibraryWatcherService {
             watcher.stop();
         }
         this.watchers.clear();
+        if (this._onMediaRemoved) {
+            EventBus.removeListener('MEDIA_REMOVED', this._onMediaRemoved);
+            this._onMediaRemoved = null;
+        }
     }
     
     handleMediaRemoved(payload) {

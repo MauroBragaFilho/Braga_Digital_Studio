@@ -36,7 +36,7 @@ class FfprobeTool {
     ];
     const result = await toolRunner.run(exe, args, { windowsHide: true });
     if (result.code !== 0) {
-      throw new Error(`ffprobe finalizou com código ${result.code} para '${filePath}'`);
+      throw new Error(`Falha ao analisar o arquivo (código ${result.code}): '${filePath}'`);
     }
     return JSON.parse(result.stdout);
   }

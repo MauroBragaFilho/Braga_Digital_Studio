@@ -2,7 +2,44 @@ const path = require('path');
 const fs = require('fs');
 const { ipcMain, dialog, BrowserWindow } = require('electron');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
-const { assertSafePath, assertNonEmpty, assertPositiveInt } = require('./validate');
+const {
+  assertNonEmpty, assertPositiveInt, assertAbsolutePath, assertUserFile
+} = require('./validate');
+
+const UUID_RE = /^[A-Za-z0-9_-]{1,100}$/;
+
+/** uuid de mídia vira nome de arquivo de cache (waveforms/<uuid>.json): nunca aceitar separadores. */
+function assertUuid(uuid) {
+  if (typeof uuid !== 'string' || !UUID_RE.test(uuid)) throw new Error('Identificador de mídia inválido.');
+  return uuid;
+}
+
+function assertStreamIndex(v) {
+  const n = v == null ? 0 : Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 64) throw new Error('Índice de stream inválido.');
+  return n;
+}
+
+/** Caminho de saída: absoluto, com a extensão esperada e pasta pai existente. */
+function assertOutputFile(p, exts, label) {
+  const resolved = assertAbsolutePath(p, label);
+  if (!exts.includes(path.extname(resolved).toLowerCase())) {
+    throw new Error(`${label} deve terminar em ${exts.join(' ou ')}.`);
+  }
+  let st;
+  try { st = fs.statSync(path.dirname(resolved)); } catch (_) { throw new Error(`Pasta de destino não encontrada para ${label}.`); }
+  if (!st.isDirectory()) throw new Error(`Pasta de destino inválida para ${label}.`);
+  return resolved;
+}
+
+/** Pasta de busca (relink): absoluta e existente; a raiz de um drive é permitida (varredura de mídia). */
+function assertSearchFolder(p) {
+  const resolved = assertAbsolutePath(p, 'Pasta');
+  let st;
+  try { st = fs.statSync(resolved); } catch (_) { throw new Error('Pasta não encontrada.'); }
+  if (!st.isDirectory()) throw new Error('O caminho informado não é uma pasta.');
+  return resolved;
+}
 
 module.exports = function registerProjectHandlers(projectService, premiereExporter, bdsproPackageService, paths = {}, waveformService = null, audioSyncService = null, sequenceBuilder = null) {
   const thumbnailsDir = paths.dataDir ? path.join(paths.dataDir, 'Thumbnails') : '';
@@ -14,6 +51,12 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
     ffprobePath = paths.dataDir ? path.join(paths.dataDir, 'ffprobe') : '';
   }
 
+  const assertBdsproFile = (p) => {
+    const file = assertUserFile(p, 'Pacote .bdspro');
+    if (path.extname(file).toLowerCase() !== '.bdspro') throw new Error('O arquivo deve ter a extensão .bdspro.');
+    return file;
+  };
+
   ipcMain.handle('projects:list', () => projectService.getAllProjects());
   ipcMain.handle('projects:get', (_, id) => projectService.getProjectById(id));
   ipcMain.handle('projects:create', (_, data) => {
@@ -21,7 +64,12 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
     if (data && data.name) assertNonEmpty(data.name, 'Nome do projeto');
     return projectService.createProject(data);
   });
-  ipcMain.handle('projects:update', (_, id, data) => projectService.updateProject(id, data));
+  ipcMain.handle('projects:update', (_, id, data) => {
+    const projectId = assertPositiveInt(id, 'ID do projeto');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Dados do projeto inválidos.');
+    if (data.name !== undefined) assertNonEmpty(data.name, 'Nome do projeto');
+    return projectService.updateProject(projectId, data);
+  });
   ipcMain.handle('projects:delete', (_, id) => projectService.deleteProject(id));
 
   ipcMain.handle('projects:getBins', (_, projectId) => projectService.getProjectBins(projectId));
@@ -85,8 +133,10 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
     let skipped = 0;
     let failed = 0;
 
-    for (const filePath of filePaths) {
+    for (const rawPath of filePaths) {
+      let filePath = String(rawPath);
       try {
+        filePath = assertAbsolutePath(rawPath, 'Arquivo');
         if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) { skipped++; continue; }
 
         if (event?.sender) {
@@ -140,51 +190,69 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
 
   // --- FASE H: Relink de mídia ausente ---
   ipcMain.handle('projects:getMissingMedia', (_, projectId) => projectService.getMissingProjectMedia(projectId));
-  ipcMain.handle('projects:relinkMedia', (_, mediaId, newFilepath) => projectService.relinkMedia(mediaId, newFilepath));
+  ipcMain.handle('projects:relinkMedia', (_, mediaId, newFilepath) => {
+    return projectService.relinkMedia(assertPositiveInt(mediaId, 'ID da mídia'), assertUserFile(newFilepath, 'Novo arquivo'));
+  });
 
   // --- Pacote .bdspro (Exportação, Importação, Inspeção e Relink) ---
   ipcMain.handle('projects:exportBdspro', (_, projectId, outputPath) => {
     if (!bdsproPackageService) throw new Error('BdsproPackageService não inicializado');
-    return bdsproPackageService.exportBdspro(projectId, outputPath, thumbnailsDir);
+    const id = assertPositiveInt(projectId, 'ID do projeto');
+    const out = assertOutputFile(outputPath, ['.bdspro'], 'Arquivo de saída');
+    return bdsproPackageService.exportBdspro(id, out, thumbnailsDir);
   });
 
   ipcMain.handle('projects:inspectBdspro', (_, bdsproPath) => {
     if (!bdsproPackageService) throw new Error('BdsproPackageService não inicializado');
-    return bdsproPackageService.inspectBdspro(bdsproPath);
+    return bdsproPackageService.inspectBdspro(assertBdsproFile(bdsproPath));
   });
 
   ipcMain.handle('projects:scanRelinkFolder', (_, folderPath) => {
     if (!bdsproPackageService) throw new Error('BdsproPackageService não inicializado');
-    return bdsproPackageService.scanFolderForMedia(folderPath);
+    return bdsproPackageService.scanFolderForMedia(assertSearchFolder(folderPath));
   });
 
   ipcMain.handle('projects:matchMissingMedia', (_, missingList, scannedFiles) => {
     if (!bdsproPackageService) throw new Error('BdsproPackageService não inicializado');
+    if (!Array.isArray(missingList) || !Array.isArray(scannedFiles)) throw new Error('Listas inválidas.');
     return bdsproPackageService.findMatchesForMissing(missingList, scannedFiles);
   });
 
   ipcMain.handle('projects:importBdspro', (_, bdsproPath, relinkMap) => {
     if (!bdsproPackageService) throw new Error('BdsproPackageService não inicializado');
-    return bdsproPackageService.importBdspro(bdsproPath, relinkMap, thumbnailsDir, coversDir);
+    const pkg = assertBdsproFile(bdsproPath);
+    if (relinkMap != null && typeof relinkMap !== 'object') throw new Error('Mapa de relink inválido.');
+    return bdsproPackageService.importBdspro(pkg, relinkMap, thumbnailsDir, coversDir);
   });
 
-  ipcMain.handle('projects:exportPremiere', (_, projectId, outputPath) => premiereExporter.exportToPremiereXml(projectId, outputPath));
-  ipcMain.handle('projects:exportSequencePremiere', (_, projectId, outputPath) => premiereExporter.exportSequenceXml(projectId, outputPath));
+  ipcMain.handle('projects:exportPremiere', (_, projectId, outputPath) => {
+    return premiereExporter.exportToPremiereXml(assertPositiveInt(projectId, 'ID do projeto'), assertOutputFile(outputPath, ['.xml'], 'Arquivo de saída'));
+  });
+  ipcMain.handle('projects:exportSequencePremiere', (_, projectId, outputPath) => {
+    return premiereExporter.exportSequenceXml(assertPositiveInt(projectId, 'ID do projeto'), assertOutputFile(outputPath, ['.xml'], 'Arquivo de saída'));
+  });
   ipcMain.handle('projects:getSequenceModel', (_, projectId) => {
     if (!sequenceBuilder) throw new Error('SequenceBuilder não inicializado');
     return sequenceBuilder.buildSequenceModel(projectId);
   });
 
   // --- Waveforms (Fase 5) ---
-  ipcMain.handle('projects:getWaveform', (_, { uuid, filePath, duration, peaksPerSecond, streamIndex, force }) => {
+  ipcMain.handle('projects:getWaveform', (_, params) => {
     if (!waveformService) throw new Error('WaveformService não inicializado');
-    return waveformService.getOrGenerate({ uuid, filePath, duration, peaksPerSecond, streamIndex: streamIndex || 0, force });
+    const { uuid, filePath, duration, peaksPerSecond, streamIndex, force } = params || {};
+    assertUuid(uuid);
+    const safeFile = assertUserFile(filePath, 'Arquivo de mídia');
+    const pps = peaksPerSecond == null ? peaksPerSecond : Number(peaksPerSecond);
+    if (pps != null && (!Number.isFinite(pps) || pps < 1 || pps > 1000)) throw new Error('peaksPerSecond inválido.');
+    const dur = duration == null ? duration : Number(duration);
+    if (dur != null && (!Number.isFinite(dur) || dur < 0)) throw new Error('Duração inválida.');
+    return waveformService.getOrGenerate({ uuid, filePath: safeFile, duration: dur, peaksPerSecond: pps, streamIndex: assertStreamIndex(streamIndex), force });
   });
 
   ipcMain.handle('projects:probeAudioStreams', async (_, filePath) => {
     const ffprobe = new (require('../core/ffmpeg/FFProbe'))({ ffprobePath });
     try {
-      const data = await ffprobe.analyze(filePath);
+      const data = await ffprobe.analyze(assertUserFile(filePath, 'Arquivo de mídia'));
       return data.audio_streams || [];
     } catch (e) {
       return [];
@@ -193,26 +261,29 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
 
   ipcMain.handle('projects:hasWaveformCache', (_, uuid, streamIndex = 0) => {
     if (!waveformService) return false;
-    return waveformService.hasCache(uuid, streamIndex);
+    return waveformService.hasCache(assertUuid(uuid), assertStreamIndex(streamIndex));
   });
 
   ipcMain.handle('projects:deleteWaveformCache', (_, uuid, streamIndex = 0) => {
     if (!waveformService) return false;
-    waveformService.deleteCache(uuid, streamIndex);
+    waveformService.deleteCache(assertUuid(uuid), assertStreamIndex(streamIndex));
     return true;
   });
 
   // --- Extração de track isolada para mudo independente no Monitor de Origem ---
-  ipcMain.handle('projects:getTrackAudioPath', async (_, { uuid, filePath, streamIndex }) => {
+  ipcMain.handle('projects:getTrackAudioPath', async (_, params) => {
     if (!waveformService) throw new Error('WaveformService não inicializado');
-    const outPath = await waveformService.getOrExtractTrack(uuid, filePath, streamIndex || 0);
+    const { uuid, filePath, streamIndex } = params || {};
+    assertUuid(uuid);
+    const safeFile = assertUserFile(filePath, 'Arquivo de mídia');
+    const outPath = await waveformService.getOrExtractTrack(uuid, safeFile, assertStreamIndex(streamIndex));
     return `file:///${outPath.replace(/\\/g, '/')}`;
   });
 
   // --- Sincronização Automática por Áudio (Fase 6) ---
   ipcMain.handle('projects:runAudioSync', async (event, { projectId, groupName, masterMediaId, mediaList, maxOffsetSeconds }) => {
     console.log('[IPC] projects:runAudioSync chamado', { projectId, groupName, masterMediaId, mediaCount: mediaList?.length });
-    if (!audioSyncService) throw new Error('AudioSyncService não inicializado — verifique se o FFmpeg foi resolvido corretamente no bootstrap.');
+    if (!audioSyncService) throw new Error('Sincronização de áudio indisponível — verifique se o motor de mídia foi carregado corretamente.');
     if (!Array.isArray(mediaList) || mediaList.length < 2) {
       throw new Error('São necessárias ao menos 2 mídias para sincronizar.');
     }

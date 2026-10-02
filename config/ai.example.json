@@ -1,0 +1,7 @@
+{
+  "baseUrl": "http://localhost:1234/v1",
+  "apiKeyEnc": "",
+  "model": "gpt-4o-mini",
+  "maxTokens": 1024,
+  "customInstructions": ""
+}

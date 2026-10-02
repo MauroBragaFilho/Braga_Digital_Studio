@@ -148,7 +148,7 @@ class DependencyManager {
         try {
           const entry = await this._manifestClient.getComponentEntry(comp.canonicalTool);
           if (entry) {
-            const checkResult = toolUpdater.checkAgainstManifest(comp.canonicalTool, entry);
+            const checkResult = await toolUpdater.checkAgainstManifest(comp.canonicalTool, entry);
             results.push({
               id: comp.id,
               title: comp.title,
@@ -240,9 +240,12 @@ class DependencyManager {
   /**
    * Atualiza atomicamente todos os componentes do sistema com progresso unificado de 0 a 100%.
    * @param {Function} [onProgress] (percent, message)
-   * @returns {Promise<{ success: boolean, updatedCount: number, errors: Array<string> }>}
+   * @param {{ allowUnverified?: boolean }} [opts] allowUnverified: instala também fontes sem checksum
+   * @returns {Promise<{ success: boolean, updatedCount: number, errors: Array<string>, needsConfirmation: Array<object> }>}
+   *   needsConfirmation: componentes NÃO instalados porque a fonte não publica checksum; exigem
+   *   confirmação explícita (reexecute com allowUnverified: true).
    */
-  async updateAllComponents(onProgress) {
+  async updateAllComponents(onProgress, opts = {}) {
     const statuses = await this.getComponentsStatus();
     // Um componente entra na fila de atualização se: (a) não é estritamente manual (ou seja,
     // tem uma fonte real de atualização — GitHub ou Update Server) e (b) precisa atualizar.
@@ -250,13 +253,14 @@ class DependencyManager {
 
     if (toUpdate.length === 0) {
       if (onProgress) onProgress(100, 'Todos os componentes já estão atualizados.');
-      return { success: true, updatedCount: 0, errors: [] };
+      return { success: true, updatedCount: 0, errors: [], needsConfirmation: [] };
     }
 
     const total = toUpdate.length;
     let current = 0;
     let updatedCount = 0;
     const errors = [];
+    const needsConfirmation = [];
 
     for (const comp of toUpdate) {
       current++;
@@ -275,7 +279,11 @@ class DependencyManager {
           }
         };
 
-        const result = await this.updateComponent(comp.canonicalTool, stepProgress);
+        const result = await this.updateComponent(comp.canonicalTool, stepProgress, opts);
+        if (result && result.needsConfirmation) {
+          needsConfirmation.push({ id: comp.id, tool: result.tool, version: result.version, reason: result.reason, message: result.message });
+          continue;
+        }
         // So conta como atualizacao efetiva se o short-circuit nao tiver pulado o componente
         // (ex: release remota sem versao compravel, como "latest" do BtbN).
         if (!(result && result.skipped)) {
@@ -294,9 +302,10 @@ class DependencyManager {
     return {
       success: errors.length === 0,
       updatedCount,
-      skippedCount: Math.max(0, total - updatedCount - errors.length),
+      skippedCount: Math.max(0, total - updatedCount - errors.length - needsConfirmation.length),
       total,
       errors,
+      needsConfirmation,
     };
   }
 
@@ -307,8 +316,9 @@ class DependencyManager {
    * marcados como manualInstallOnly).
    * @param {string} componentKey
    * @param {Function} [onProgress]
+   * @param {{ allowUnverified?: boolean }} [opts]
    */
-  async updateComponent(componentKey, onProgress) {
+  async updateComponent(componentKey, onProgress, opts = {}) {
     const canonical = resolveCanonicalToolKey(componentKey);
 
     if (this._manifestClient) {
@@ -318,7 +328,7 @@ class DependencyManager {
       }
     }
 
-    return toolUpdater.update(canonical, onProgress);
+    return toolUpdater.update(canonical, onProgress, opts);
   }
 
   /**

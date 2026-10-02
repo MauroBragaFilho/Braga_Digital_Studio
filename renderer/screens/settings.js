@@ -1,4 +1,4 @@
-import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences } from '../app.js';
+import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences, getVisibleSidebarTabs, getDefaultTabOrder, tabShortcutLabel } from '../app.js';
 
 let customSources = [];
 
@@ -15,6 +15,7 @@ export function initScreen() {
   setupSettingsSearch();
   setupSaveBar();
   setupSettingsExtras();
+  setupSidebarOrder();
   loadAiSummary();
   hideDevOnlySettings();
   applyPendingUpdateCheck();
@@ -161,6 +162,7 @@ function renderSettings() {
   if (startScreen) startScreen.value = s.defaultStartScreen || 'home';
   setChk('reduceMotionInput', s.reduceMotion === true);
   setChk('rememberWindowBoundsInput', s.rememberWindowBounds === true);
+  renderSidebarOrderList();
 
   // Padrões do Conversor
   const setSel = (id, value, fallback) => {
@@ -248,33 +250,22 @@ function bindEvents() {
     }
   });
 
-  // Relatório de Erros: abrir pasta de crash reports e atualizar a lista
-  document.getElementById('openReportsFolderButton')?.addEventListener('click', () => {
-    if (typeof window.bds?.openCrashReportsFolder === 'function') {
-      try {
-        window.bds.openCrashReportsFolder();
-      } catch (err) {
-        console.error('[SETTINGS] Erro ao abrir pasta de relatórios:', err);
-      }
-    }
-  });
-  document.getElementById('refreshCrashReportsButton')?.addEventListener('click', loadCrashReports);
+  // Relatórios de erros: enviar e limpar (sem expor o conteúdo dos relatórios)
+  document.getElementById('sendCrashReportsButton')?.addEventListener('click', sendCrashReports);
   document.getElementById('clearCrashReportsButton')?.addEventListener('click', async () => {
     if (typeof window.bds?.clearCrashReports !== 'function') return;
     const confirmed = await window.bdsModal.confirm(
-      'Tem certeza que deseja excluir todos os relatórios de erro?\nEsta ação não pode ser desfeita.'
+      'Tem certeza que deseja limpar todos os relatórios guardados? Esta ação não pode ser desfeita.'
     );
     if (!confirmed) return;
     try {
       const result = await window.bds.clearCrashReports();
-      if (result && result.deleted > 0) {
-        await loadCrashReports();
-        window.bdsModal.alert(`${result.deleted} relatório(s) removido(s) com sucesso.`);
-      } else {
-        window.bdsModal.alert('Nenhum relatório encontrado para excluir.');
-      }
+      await loadCrashReports();
+      window.bdsModal.alert(result && result.deleted > 0
+        ? `${result.deleted} relatório(s) removido(s) com sucesso.`
+        : 'Não havia relatórios para limpar.');
     } catch (err) {
-      console.error('[SETTINGS] Erro ao limpar crash reports:', err);
+      console.error('[SETTINGS] Erro ao limpar relatórios:', err);
       window.bdsModal.alert('Ocorreu um erro ao tentar limpar os relatórios.');
     }
   });
@@ -460,6 +451,7 @@ async function saveSettings() {
       cacheMaxSizeMB: Number(document.getElementById('cacheMaxSizeInput')?.value) || 500,
       converterFolder: document.getElementById('converterFolderInput')?.value || '',
       defaultStartScreen: document.getElementById('defaultStartScreenInput')?.value || 'home',
+      sidebarOrder: collectSidebarOrder(),
       reduceMotion: document.getElementById('reduceMotionInput')?.checked === true,
       rememberWindowBounds: document.getElementById('rememberWindowBoundsInput')?.checked === true,
       converterDefaultFormat: document.getElementById('converterDefaultFormatInput')?.value,
@@ -493,6 +485,141 @@ let savedBarTimer = null;
 function syncNotifyModules() {
   const on = document.getElementById('notificationsEnabledInput')?.checked !== false;
   document.getElementById('notifyModulesGroup')?.classList.toggle('st-disabled', !on);
+}
+
+/* ==========================================================================
+   MENU LATERAL: ordem das telas (e atalhos Ctrl+1..9, que seguem essa ordem)
+   A lista na tela é a fonte da ordem pendente; só vira configuração ao salvar.
+   ========================================================================== */
+
+/** Desenha a lista a partir do menu real (abas visíveis, na ordem atual). */
+function renderSidebarOrderList() {
+  const list = document.getElementById('sidebarOrderList');
+  if (!list) return;
+  list.innerHTML = getVisibleSidebarTabs().map((tab) => {
+    const fixed = tab.view === 'home';
+    const label = escapeHtml(tab.label);
+    const moves = fixed ? '' : `
+      <button type="button" class="st-order-move" data-dir="-1" aria-label="Mover ${label} para cima"><span class="material-symbols-rounded" aria-hidden="true">keyboard_arrow_up</span></button>
+      <button type="button" class="st-order-move" data-dir="1" aria-label="Mover ${label} para baixo"><span class="material-symbols-rounded" aria-hidden="true">keyboard_arrow_down</span></button>`;
+    return `<li class="st-order-item${fixed ? ' is-fixed' : ''}" data-view="${escapeHtml(tab.view)}"${fixed ? ' title="A Home fica sempre em primeiro"' : ' draggable="true"'}>
+      <span class="material-symbols-rounded st-order-grip" aria-hidden="true">${fixed ? 'lock' : 'drag_indicator'}</span>
+      <span class="material-symbols-rounded st-order-icon" aria-hidden="true">${escapeHtml(tab.icon)}</span>
+      <span class="st-order-label">${label}</span>
+      <kbd class="st-kbd st-order-shortcut"></kbd>
+      <span class="st-order-moves">${moves}</span>
+    </li>`;
+  }).join('');
+  refreshSidebarOrderBadges();
+}
+
+/** Atualiza os atalhos mostrados e o estado das setas conforme a posição atual de cada item. */
+function refreshSidebarOrderBadges() {
+  const items = [...(document.getElementById('sidebarOrderList')?.children || [])];
+  items.forEach((li, i) => {
+    const kbd = li.querySelector('.st-order-shortcut');
+    const label = tabShortcutLabel(i + 1);
+    if (kbd) { kbd.textContent = label; kbd.classList.toggle('hidden', !label); }
+    const up = li.querySelector('[data-dir="-1"]');
+    const down = li.querySelector('[data-dir="1"]');
+    if (up) up.disabled = i <= 1;               // logo abaixo da Home é o limite superior
+    if (down) down.disabled = i === items.length - 1;
+  });
+}
+
+/** Ordem pendente (sem a Home, que é sempre a primeira). */
+function collectSidebarOrder() {
+  const list = document.getElementById('sidebarOrderList');
+  if (!list) return undefined; // tela ainda sem a lista: não altera a preferência salva
+  return [...list.children].map(li => li.dataset.view).filter(v => v && v !== 'home');
+}
+
+function setupSidebarOrder() {
+  const list = document.getElementById('sidebarOrderList');
+  if (!list) return;
+
+  // Setas (acessível por teclado)
+  list.addEventListener('click', (e) => {
+    const btn = e.target.closest('.st-order-move');
+    if (!btn || btn.disabled) return;
+    const li = btn.closest('.st-order-item');
+    const dir = Number(btn.dataset.dir);
+    if (dir < 0) {
+      const prev = li.previousElementSibling;
+      if (prev && !prev.classList.contains('is-fixed')) list.insertBefore(li, prev);
+    } else if (li.nextElementSibling) {
+      list.insertBefore(li.nextElementSibling, li);
+    }
+    refreshSidebarOrderBadges();
+    markSettingsDirty();
+    (li.querySelector(`[data-dir="${dir}"]:not(:disabled)`) || li.querySelector('.st-order-move:not(:disabled)'))?.focus();
+  });
+
+  // Arrastar e soltar (a Home não é arrastável nem recebe item acima dela)
+  let dragging = null;
+  let orderBeforeDrag = '';
+  const currentOrder = () => (collectSidebarOrder() || []).join(',');
+  list.addEventListener('dragstart', (e) => {
+    const li = e.target.closest('.st-order-item');
+    if (!li || li.classList.contains('is-fixed')) { e.preventDefault(); return; }
+    dragging = li;
+    orderBeforeDrag = currentOrder();
+    li.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', li.dataset.view);
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const over = e.target.closest('.st-order-item');
+    if (!over || over === dragging) return;
+    const rect = over.getBoundingClientRect();
+    const after = over.classList.contains('is-fixed') || e.clientY > rect.top + rect.height / 2;
+    const ref = after ? over.nextElementSibling : over;
+    if (ref !== dragging) list.insertBefore(dragging, ref);
+  });
+  list.addEventListener('dragend', () => {
+    if (!dragging) return;
+    dragging.classList.remove('is-dragging');
+    dragging = null;
+    refreshSidebarOrderBadges();
+    if (currentOrder() !== orderBeforeDrag) markSettingsDirty();
+  });
+
+  // Restaurar a ordem original do menu
+  document.getElementById('sidebarOrderResetButton')?.addEventListener('click', () => {
+    const defaults = getDefaultTabOrder();
+    const items = [...list.children].sort((a, b) => defaults.indexOf(a.dataset.view) - defaults.indexOf(b.dataset.view));
+    items.forEach(li => list.appendChild(li));
+    refreshSidebarOrderBadges();
+    markSettingsDirty();
+  });
+}
+
+/**
+ * Componentes cuja fonte não publica checksum (SHA-256) NÃO são instalados sozinhos nas atualizações:
+ * o resultado traz `needsConfirmation`. Pergunta ao usuário e, se confirmar, instala só esses.
+ * @param {{ needsConfirmation?: Array<{ id?: string, tool?: string, version?: string }> }} [deps]
+ * @returns {Promise<number>} quantidade instalada após a confirmação
+ */
+async function confirmUnverifiedUpdates(deps) {
+  const pending = deps?.needsConfirmation || [];
+  if (!pending.length || !window.bds?.updateTool) return 0;
+  const names = pending.map(p => `• ${p.tool || p.id}${p.version ? ` ${p.version}` : ''}`).join('\n');
+  const ok = await window.bdsModal.confirm(
+    `A fonte destes componentes não publica checksum (SHA-256), então a integridade do download não pode ser verificada:\n\n${names}\n\nInstalar mesmo assim?`
+  );
+  if (!ok) return 0;
+  let installed = 0;
+  for (const p of pending) {
+    try {
+      await window.bds.updateTool(p.tool || p.id, { allowUnverified: true });
+      installed++;
+    } catch (err) {
+      console.error('[SETTINGS] Falha ao instalar componente sem checksum:', p.tool || p.id, err);
+    }
+  }
+  return installed;
 }
 
 /** Marca a cor de destaque atual entre as cores sugeridas. */
@@ -561,6 +688,7 @@ export function onLeave() {
     applyTheme(s.theme, s.accentColor);
     applyUiPreferences(s);
   }
+  renderSidebarOrderList(); // descarta uma ordem não salva e reflete o menu real ao voltar
   settingsDirty = false;
   clearTimeout(savedBarTimer);
 }
@@ -737,8 +865,8 @@ async function loadCacheInfo() {
     listEl.innerHTML = info.categories.map(cat => `
       <div class="settings-cache-item">
         <div class="settings-cache-item-info">
-          <strong>${cat.label}</strong>
-          <span>${cat.sizeFormatted}</span>
+          <strong>${escapeHtml(cat.label)}</strong>
+          <span>${escapeHtml(cat.sizeFormatted)}</span>
         </div>
         <button class="settings-btn-outline settings-cache-clear-btn" type="button"
                 data-clear-cache="${cat.key}" data-label="${cat.label}">
@@ -887,6 +1015,7 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
 
   try {
     const result = await window.bds.updateEverything();
+    await confirmUnverifiedUpdates(result?.dependencies);
     const appUpdate = result?.appUpdate;
 
     if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
@@ -1105,6 +1234,7 @@ async function startUnifiedUpdate() {
     // Fluxo unificado disponível.
     const appUpdate = result?.appUpdate;
     const deps = result?.dependencies;
+    await confirmUnverifiedUpdates(deps);
 
     if (fill) fill.style.width = '100%';
     if (percentEl) percentEl.textContent = '100%';
@@ -1165,150 +1295,61 @@ async function startUnifiedUpdate() {
 /* ==========================================================================
    RELATÓRIOS DE ERROS / CRASH REPORTS
    ========================================================================== */
-let currentCrashReportPath = null;
 let errorReportingUIReady = false;
 
 function setupErrorReportingUI() {
   if (errorReportingUIReady) return;
   errorReportingUIReady = true;
-  setupCrashReportListActions();
-  setupCrashDetailsModal();
   setupReportProblemModal();
 }
 
+/** Atualiza só o resumo ("N relatórios"); o conteúdo dos relatórios não é exibido ao usuário. */
 async function loadCrashReports() {
-  const container = document.getElementById('crashReportsList');
-  if (!container) return;
+  const summary = document.getElementById('crashReportsSummary');
+  if (!summary) return;
   if (!window.bds?.getCrashReports) return;
   try {
     const reports = await window.bds.getCrashReports();
-    renderCrashReports(Array.isArray(reports) ? reports : []);
+    const count = Array.isArray(reports) ? reports.length : 0;
+    summary.textContent = count === 0
+      ? 'Nenhum relatório guardado.'
+      : (count === 1 ? '1 relatório guardado.' : `${count} relatórios guardados.`);
+    const sendBtn = document.getElementById('sendCrashReportsButton');
+    const clearBtn = document.getElementById('clearCrashReportsButton');
+    if (sendBtn) sendBtn.disabled = count === 0;
+    if (clearBtn) clearBtn.disabled = count === 0;
   } catch (err) {
-    console.error('[SETTINGS] Erro ao carregar crash reports:', err);
-    container.innerHTML = '<div class="settings-crash-empty"><span class="material-symbols-rounded">error</span> Não foi possível carregar os relatórios.</div>';
+    console.error('[SETTINGS] Erro ao carregar relatórios:', err);
+    summary.textContent = 'Não foi possível verificar os relatórios.';
   }
 }
 
-function formatReportDate(iso) {
+/** Envia todos os relatórios guardados: direto (servidor configurado) ou pelo e-mail do usuário. */
+async function sendCrashReports() {
+  if (!window.bds?.sendCrashReports) return;
+  const button = document.getElementById('sendCrashReportsButton');
+  if (button) button.disabled = true;
   try {
-    return new Date(iso).toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch (_) {
-    return iso || '';
-  }
-}
-
-function renderCrashReports(reports) {
-  const container = document.getElementById('crashReportsList');
-  if (!container) return;
-
-  if (!reports.length) {
-    container.innerHTML = `
-      <div class="settings-crash-empty">
-        <span class="material-symbols-rounded">verified_user</span>
-        Nenhum relatório de erro registrado até o momento.
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = reports.map((r) => `
-    <div class="settings-crash-item">
-      <div class="settings-crash-item-head">
-        <span class="settings-crash-date">${escapeHtml(formatReportDate(r.timestamp))}</span>
-        <span class="settings-crash-source" title="${escapeHtml(r.source || 'unknown')}">${escapeHtml(r.source || 'unknown')}</span>
-      </div>
-      <p class="settings-crash-msg" title="${escapeHtml(r.errorMessage)}">${escapeHtml(r.errorMessage)}</p>
-      <div class="settings-crash-actions">
-        <button class="settings-btn-outline settings-btn-sm" type="button" data-action="email" data-path="${escapeHtml(r.path || '')}">
-          <span class="material-symbols-rounded">mail</span> Enviar por e-mail
-        </button>
-        <button class="settings-btn-outline settings-btn-sm" type="button" data-action="details" data-path="${escapeHtml(r.path || '')}">
-          <span class="material-symbols-rounded">visibility</span> Detalhes
-        </button>
-      </div>
-    </div>`).join('');
-}
-
-function setupCrashReportListActions() {
-  const container = document.getElementById('crashReportsList');
-  if (!container) return;
-  container.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    const reportPath = btn.dataset.path;
-    if (btn.dataset.action === 'email') {
-      await sendCrashReportByEmail(reportPath);
-    } else if (btn.dataset.action === 'details') {
-      await openCrashReportDetails(reportPath);
-    }
-  });
-}
-
-async function sendCrashReportByEmail(reportPath) {
-  if (!reportPath || !window.bds?.getCrashReportMailto) return;
-  try {
-    setStatus('Gerando e-mail do relatório de erro...');
-    const mailtoUrl = await window.bds.getCrashReportMailto(reportPath);
-    if (!mailtoUrl) {
-      window.bdsModal.alert('Não foi possível gerar o e-mail para este relatório.');
-      return;
-    }
-    if (typeof window.bds.openExternal === 'function') {
-      await window.bds.openExternal(mailtoUrl);
+    setStatus('Enviando relatórios...');
+    const result = await window.bds.sendCrashReports();
+    if (!result || result.method === 'none') {
+      window.bdsModal.alert('Não há relatórios para enviar.');
+    } else if (result.method === 'http') {
+      window.bdsModal.alert(result.sent === result.count
+        ? `${result.sent} relatório(s) enviado(s). Obrigado!`
+        : `${result.sent} de ${result.count} relatório(s) enviado(s). Os demais continuam guardados para uma nova tentativa.`);
+    } else if (result.mailto && typeof window.bds.openExternal === 'function') {
+      await window.bds.openExternal(result.mailto);
+      window.bdsModal.alert('Abrimos o seu e-mail com o resumo dos relatórios. Basta enviar a mensagem.');
     } else {
       window.bdsModal.alert('Não foi possível abrir o cliente de e-mail neste dispositivo.');
     }
   } catch (err) {
-    console.error('[SETTINGS] Falha ao enviar relatório por e-mail:', err);
-    window.bdsModal.alert('Falha ao abrir o cliente de e-mail: ' + err.message);
+    console.error('[SETTINGS] Falha ao enviar relatórios:', err);
+    window.bdsModal.alert('Falha ao enviar os relatórios: ' + err.message);
+  } finally {
+    await loadCrashReports();
   }
-}
-
-async function openCrashReportDetails(reportPath) {
-  if (!reportPath || !window.bds?.getCrashReportDetails) return;
-  try {
-    const details = await window.bds.getCrashReportDetails(reportPath);
-    if (!details) {
-      window.bdsModal.alert('Não foi possível carregar os detalhes deste relatório.');
-      return;
-    }
-    currentCrashReportPath = reportPath;
-    fillCrashDetails(details);
-    openSettingsModal('modalSettingsCrashDetails');
-  } catch (err) {
-    console.error('[SETTINGS] Erro ao carregar detalhes do relatório:', err);
-    window.bdsModal.alert('Erro ao carregar detalhes: ' + err.message);
-  }
-}
-
-function fillCrashDetails(d) {
-  const pre = document.getElementById('modalSettingsCrashDetailsBody');
-  if (!pre) return;
-  const sys = d.system || {};
-  const lines = [
-    `Data/Hora: ${d.timestamp || '—'}`,
-    `ID: ${d.id || '—'}`,
-    `Origem: ${d.context?.source || '—'}`,
-    `Fatal: ${d.context?.isFatal ? 'Sim' : 'Não'}${d.context?.action ? ` | Ação: ${d.context.action}` : ''}`,
-    '',
-    `App: ${d.app?.name || 'BDS'} v${d.app?.version || '—'}`,
-    `Sistema: ${sys.platform || ''} ${sys.arch || ''} (${sys.osType || ''}) — CPU: ${sys.cpuModel || '?'} — Mem: ${sys.totalMemoryMB || 0} MB`,
-    '',
-    `Erro: ${d.error?.name || 'Error'} — ${d.error?.message || ''}`,
-    '',
-    'Stack Trace:',
-    d.error?.stack || '(sem stack trace)'
-  ];
-  if (d.localFilePath) lines.push('', `Arquivo local: ${d.localFilePath}`);
-  if (Array.isArray(d.recentLogs) && d.recentLogs.length) {
-    lines.push('', 'Últimas linhas do log:', d.recentLogs.slice(-15).join('\n'));
-  }
-  pre.textContent = lines.join('\n');
 }
 
 function openSettingsModal(id) {
@@ -1325,19 +1366,6 @@ function closeSettingsModal(id) {
     modal.classList.add('hidden');
     modal.classList.remove('active');
   }
-}
-
-function setupCrashDetailsModal() {
-  const modal = document.getElementById('modalSettingsCrashDetails');
-  if (!modal) return;
-  document.getElementById('btnCloseSettingsCrashDetails')?.addEventListener('click', () => closeSettingsModal('modalSettingsCrashDetails'));
-  document.getElementById('modalSettingsCrashDetailsClose')?.addEventListener('click', () => closeSettingsModal('modalSettingsCrashDetails'));
-  document.getElementById('modalSettingsCrashDetailsEmail')?.addEventListener('click', () => {
-    if (currentCrashReportPath) sendCrashReportByEmail(currentCrashReportPath);
-  });
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeSettingsModal('modalSettingsCrashDetails');
-  });
 }
 
 function setupReportProblemModal() {

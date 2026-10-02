@@ -2,9 +2,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 const EventEmitter = require('node:events');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
+const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const logger = require('./logService');
 
 /**
@@ -382,7 +382,7 @@ class RawRecoveryService extends EventEmitter {
     return new Promise((resolve, reject) => {
       if (this._cancelled) return reject(new Error('Operação cancelada.'));
 
-      const child = spawn(exePath, args, { windowsHide: true });
+      const child = processRunner.spawn(exePath, args);
       this._currentProcess = child;
 
       let stdout = '';
@@ -429,12 +429,12 @@ class RawRecoveryService extends EventEmitter {
 
   cancel() {
     this._cancelled = true;
-    if (this._currentProcess) {
-      try { this._currentProcess.kill('SIGKILL'); } catch (_) {}
-      this._currentProcess = null;
-    }
+    // Encerra a árvore de processos; resolve quando o processo terminou
+    const killed = processRunner.cancel(this._currentProcess);
+    this._currentProcess = null;
     this.emit('cancelled');
     logRecovery('Operação de recuperação RAW cancelada pelo usuário.');
+    return killed;
   }
 
   _emitStage(stage, percent, message) {

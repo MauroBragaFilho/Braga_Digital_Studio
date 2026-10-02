@@ -1,11 +1,11 @@
 const EventEmitter = require('node:events');
 const path = require('node:path');
 const fs = require('node:fs');
-const { spawn } = require('node:child_process');
 const logger = require('./logService');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
+const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
 
 class MetadataService extends EventEmitter {
   constructor({ paths }) {
@@ -17,27 +17,29 @@ class MetadataService extends EventEmitter {
 
   async probeFile(filePath) {
     const ffprobe = ffprobeTool.resolve();
-    return new Promise((resolve, reject) => {
-      const child = spawn(ffprobe, [
+    let result;
+    try {
+      result = await toolRunner.run(ffprobe, [
         '-v', 'quiet',
         '-print_format', 'json',
         '-show_format',
         '-show_streams',
         '-show_chapters',
         filePath
-      ], { windowsHide: true });
-      
-      let stdout = '';
-      child.stdout.on('data', chunk => stdout += chunk.toString('utf8'));
-      child.on('close', code => {
-        if (code !== 0) return reject(new Error('Erro no ffprobe'));
-        try {
-          resolve(JSON.parse(stdout));
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+      ], { timeout: 30000 });
+    } catch (err) {
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao ler os metadados do arquivo.');
+      throw err;
+    }
+    if (result.code !== 0) throw new Error('Erro ao ler os metadados do arquivo');
+    return JSON.parse(result.stdout);
+  }
+
+  /** Executa o ffmpeg com timeout (árvore encerrada no estouro); nunca rejeita (extração é "best effort"). */
+  async _runFfmpegQuiet(ffmpeg, args) {
+    try {
+      await toolRunner.run(ffmpeg, args, { timeout: 60000 });
+    } catch (_) { /* erro/timeout: o chamador confere se o arquivo de saída existe */ }
   }
 
   async extractThumbnail(filePath) {
@@ -60,53 +62,41 @@ class MetadataService extends EventEmitter {
         const info = await this.probeFile(filePath);
         const coverStream = info?.streams?.find(s => s.disposition && s.disposition.attached_pic === 1);
         if (coverStream) {
-          await new Promise((resolve) => {
-            const child = spawn(ffmpeg, [
-              '-v', 'quiet',
-              '-y',
-              '-i', filePath,
-              '-map', `0:${coverStream.index}`,
-              '-frames:v', '1',
-              outPath
-            ], { windowsHide: true });
-            child.on('close', resolve);
-            child.on('error', resolve);
-          });
+          await this._runFfmpegQuiet(ffmpeg, [
+            '-v', 'quiet',
+            '-y',
+            '-i', filePath,
+            '-map', `0:${coverStream.index}`,
+            '-frames:v', '1',
+            outPath
+          ]);
           if (fs.existsSync(outPath)) return outPath;
         }
       } catch (e) {}
 
       // 2. Extrai o frame real do vídeo a 1s
-      await new Promise((resolve) => {
-        const child = spawn(ffmpeg, [
-          '-v', 'quiet',
-          '-y',
-          '-ss', '00:00:01',
-          '-i', filePath,
-          '-frames:v', '1',
-          '-q:v', '2',
-          outPath
-        ], { windowsHide: true });
-        child.on('close', resolve);
-        child.on('error', resolve);
-      });
+      await this._runFfmpegQuiet(ffmpeg, [
+        '-v', 'quiet',
+        '-y',
+        '-ss', '00:00:01',
+        '-i', filePath,
+        '-frames:v', '1',
+        '-q:v', '2',
+        outPath
+      ]);
 
       if (fs.existsSync(outPath)) return outPath;
 
       // 3. Backup: extrai o frame a 0s caso o vídeo seja muito curto
-      await new Promise((resolve) => {
-        const child = spawn(ffmpeg, [
-          '-v', 'quiet',
-          '-y',
-          '-ss', '00:00:00',
-          '-i', filePath,
-          '-frames:v', '1',
-          '-q:v', '2',
-          outPath
-        ], { windowsHide: true });
-        child.on('close', resolve);
-        child.on('error', resolve);
-      });
+      await this._runFfmpegQuiet(ffmpeg, [
+        '-v', 'quiet',
+        '-y',
+        '-ss', '00:00:00',
+        '-i', filePath,
+        '-frames:v', '1',
+        '-q:v', '2',
+        outPath
+      ]);
 
       return fs.existsSync(outPath) ? outPath : null;
     } catch (err) {
@@ -151,7 +141,10 @@ class MetadataService extends EventEmitter {
 
     // Se o modo for overwrite, usaremos arquivo temporário na mesma pasta
     const finalDest = outMode === 'overwrite' ? filePath : outputPath;
-    const workingDest = outMode === 'overwrite' ? `${filePath}.tmp.mp4` : outputPath;
+    // O temporário mantém a extensão original (o ffmpeg escolhe o contêiner pela extensão)
+    const workingDest = outMode === 'overwrite'
+      ? path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}.bds-tmp${path.extname(filePath) || '.mp4'}`)
+      : outputPath;
     
     // Gera arquivo de texto FFMETADATA
     const metaTxtPath = path.join(this.paths.dataDir, `meta_${Date.now()}.txt`);
@@ -202,7 +195,7 @@ class MetadataService extends EventEmitter {
     args.push('-progress', 'pipe:1', workingDest);
 
     return new Promise((resolve, reject) => {
-      const child = spawn(ffmpeg, args, { windowsHide: true });
+      const child = processRunner.spawn(ffmpeg, args);
       this.currentProcess = child;
 
       child.stderr.on('data', chunk => this.emit('log', chunk.toString()));
@@ -212,26 +205,33 @@ class MetadataService extends EventEmitter {
           this.emit('progress', { status: 'Copiando dados...' });
       });
 
+      child.on('error', err => {
+        this.currentProcess = null;
+        try { if (fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath); } catch (_) {}
+        reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`));
+      });
+
       child.on('close', code => {
+        this.currentProcess = null;
         // Limpar temporários
-        if (fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath);
+        try { if (fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath); } catch (_) {}
 
         if (this.cancelRequested) {
-          if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest);
+          try { if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest); } catch (_) {}
           return resolve({ status: 'canceled' });
         }
 
         if (code !== 0) {
-          if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest);
-          return reject(new Error(`FFmpeg erro código ${code}`));
+          try { if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest); } catch (_) {}
+          return reject(new Error(`Erro do motor de mídia (código ${code})`));
         }
 
-        // Se for modo overwrite, substitui o original pelo tmp
+        // Se for modo overwrite, substitui o original pelo tmp SEM nunca apagar o original antes
         if (outMode === 'overwrite') {
           try {
-            fs.unlinkSync(filePath); // deleta original
-            fs.renameSync(workingDest, filePath); // renomeia novo
+            this._replaceFileAtomically(workingDest, filePath);
           } catch (e) {
+            try { if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest); } catch (_) {}
             return reject(new Error('Falha ao substituir arquivo original: ' + e.message));
           }
         }
@@ -241,10 +241,33 @@ class MetadataService extends EventEmitter {
     });
   }
 
+  /**
+   * Substitui `dest` por `tmp` sem janela em que o original deixe de existir.
+   * 1) rename direto (no Windows o Node usa MoveFileEx com REPLACE_EXISTING, então substitui);
+   * 2) fallback: original -> .bak, tmp -> dest e só então apaga o .bak; em falha, restaura o original.
+   */
+  _replaceFileAtomically(tmp, dest) {
+    try {
+      fs.renameSync(tmp, dest);
+      return;
+    } catch (firstErr) {
+      if (!fs.existsSync(dest)) throw firstErr;
+    }
+    const bak = `${dest}.bak_${Date.now()}`;
+    fs.renameSync(dest, bak);
+    try {
+      fs.renameSync(tmp, dest);
+    } catch (err) {
+      try { fs.renameSync(bak, dest); } catch (_) { /* restauração best effort */ }
+      throw err;
+    }
+    try { fs.unlinkSync(bak); } catch (_) { /* sobra do .bak não afeta o resultado */ }
+  }
+
   async cancel() {
     this.cancelRequested = true;
     if (this.currentProcess) {
-      processRunner.cancel(this.currentProcess);
+      await processRunner.cancel(this.currentProcess);
     }
   }
 }

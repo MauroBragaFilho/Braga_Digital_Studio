@@ -2,6 +2,14 @@ const logger = require('../../services/logService');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const ffmpegLimiter = require('../media/FfmpegLimiter');
+
+const FFMPEG_TIMEOUT_MS = 10 * 60 * 1000; // teto de segurança por processo
+
+/** Atualiza atime/mtime de um item de cache lido (LRU real do CacheService). */
+function touch(p) {
+    try { const now = new Date(); fs.utimesSync(p, now, now); } catch (_) {}
+}
 
 /**
  * WaveformService
@@ -27,6 +35,8 @@ class WaveformService {
     constructor({ ffmpegPath, cacheDir }) {
         this.ffmpegPath = ffmpegPath;
         this.cacheDir = cacheDir;
+        this._inflight = new Map(); // chave uuid:stream -> Promise (dedup de gerações simultâneas)
+        this._inflightTracks = new Map();
 
         if (!fs.existsSync(this.cacheDir)) {
             fs.mkdirSync(this.cacheDir, { recursive: true });
@@ -46,7 +56,9 @@ class WaveformService {
         const cachePath = this.getCachePath(uuid, streamIndex);
         if (!fs.existsSync(cachePath)) return null;
         try {
-            return JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+            const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+            touch(cachePath);
+            return parsed;
         } catch (e) {
             logger.warn(`[WaveformService] Cache corrompido para ${uuid} (stream ${streamIndex}), será regenerado. ${e.message}`);
             return null;
@@ -79,9 +91,20 @@ class WaveformService {
      */
     async getOrExtractTrack(uuid, filePath, streamIndex = 0, force = false) {
         const outPath = this.getTrackAudioPath(uuid, streamIndex);
-        if (!force && fs.existsSync(outPath)) return outPath;
+        if (!force && fs.existsSync(outPath)) { touch(outPath); return outPath; }
 
-        await new Promise((resolve, reject) => {
+        const key = `${uuid}:${streamIndex}`;
+        if (this._inflightTracks.has(key)) return this._inflightTracks.get(key);
+        const promise = this._extractTrack(filePath, streamIndex, outPath)
+            .then(() => outPath)
+            .finally(() => this._inflightTracks.delete(key));
+        this._inflightTracks.set(key, promise);
+        return promise;
+    }
+
+    async _extractTrack(filePath, streamIndex, outPath) {
+        const tmpPath = `${outPath}.tmp.m4a`;
+        await ffmpegLimiter.run(() => new Promise((resolve, reject) => {
             const args = [
                 '-v', 'error', '-y',
                 '-i', filePath,
@@ -89,19 +112,25 @@ class WaveformService {
                 '-vn',
                 '-c:a', 'aac',
                 '-b:a', '160k',
-                outPath
+                tmpPath
             ];
             const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
             let stderr = '';
+            const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, FFMPEG_TIMEOUT_MS);
             proc.stderr.on('data', (d) => { stderr += d.toString(); });
-            proc.on('error', reject);
+            proc.on('error', (e) => { clearTimeout(timer); reject(e); });
             proc.on('close', (code) => {
+                clearTimeout(timer);
                 if (code === 0) resolve();
-                else reject(new Error(`ffmpeg falhou ao extrair track ${streamIndex}: ${stderr.slice(-300)}`));
+                else reject(new Error(`Falha ao extrair a faixa de áudio ${streamIndex}: ${stderr.slice(-300)}`));
             });
-        });
-
-        return outPath;
+        }));
+        try {
+            fs.renameSync(tmpPath, outPath);
+        } catch (e) {
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            throw e;
+        }
     }
 
     /**
@@ -123,7 +152,16 @@ class WaveformService {
             if (cached && cached.peaks_per_second === peaksPerSecond) return cached;
         }
 
-        const peaks = await this._extractPeaks(filePath, peaksPerSecond, streamIndex);
+        const key = `${uuid}:${streamIndex}`;
+        if (this._inflight.has(key)) return this._inflight.get(key);
+        const promise = this._generate({ uuid, filePath, duration, peaksPerSecond, streamIndex })
+            .finally(() => this._inflight.delete(key));
+        this._inflight.set(key, promise);
+        return promise;
+    }
+
+    async _generate({ uuid, filePath, duration, peaksPerSecond, streamIndex }) {
+        const peaks = await ffmpegLimiter.run(() => this._extractPeaks(filePath, peaksPerSecond, streamIndex));
         const result = {
             version: 1,
             uuid,
@@ -133,7 +171,11 @@ class WaveformService {
             peaks
         };
 
-        fs.writeFileSync(this.getCachePath(uuid, streamIndex), JSON.stringify(result));
+        // Escrita atômica: .tmp + rename, para nunca deixar JSON truncado no cache
+        const finalPath = this.getCachePath(uuid, streamIndex);
+        const tmpPath = `${finalPath}.tmp`;
+        fs.writeFileSync(tmpPath, JSON.stringify(result));
+        fs.renameSync(tmpPath, finalPath);
         return result;
     }
 
@@ -159,6 +201,7 @@ class WaveformService {
             ];
 
             const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
+            const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, FFMPEG_TIMEOUT_MS);
 
             let leftover = Buffer.alloc(0);
             const peaks = [];
@@ -199,12 +242,14 @@ class WaveformService {
             proc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
 
             proc.on('error', (err) => {
-                reject(new Error(`Falha ao executar FFmpeg: ${err.message}`));
+                clearTimeout(killTimer);
+                reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`));
             });
 
             proc.on('close', (code) => {
+                clearTimeout(killTimer);
                 if (code !== 0 && peaks.length === 0) {
-                    reject(new Error(`FFmpeg finalizou com código ${code}: ${stderrOutput.slice(0, 500)}`));
+                    reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(0, 500)}`));
                     return;
                 }
                 // Inclui o último bloco parcial, se houver amostras remanescentes

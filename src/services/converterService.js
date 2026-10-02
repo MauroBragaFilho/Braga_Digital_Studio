@@ -1,7 +1,6 @@
 const EventEmitter = require('node:events');
 const path = require('node:path');
 const fs = require('node:fs');
-const { spawn } = require('node:child_process');
 
 const logger = require('./logService');
 const hardwareDetection = require('../core/HardwareDetectionService');
@@ -209,7 +208,7 @@ class ConverterService extends EventEmitter {
     }
 
     await this.killProcessTree(
-      this.currentProcess.pid
+      this.currentProcess
     );
     logger.warn(
       'converter:cancel'
@@ -401,12 +400,9 @@ class ConverterService extends EventEmitter {
     await new Promise(
       (resolve, reject) => {
         const child =
-          spawn(
+          processRunner.spawn(
             ffmpeg,
-            args,
-            {
-              windowsHide: true
-            }
+            args
           );
 
         this.currentProcess =
@@ -623,7 +619,7 @@ class ConverterService extends EventEmitter {
     return new Promise(
       (resolve, reject) => {
         const child =
-          spawn(
+          processRunner.spawn(
             ffprobe,
             [
               '-v',
@@ -633,14 +629,19 @@ class ConverterService extends EventEmitter {
               '-of',
               'default=noprint_wrappers=1:nokey=1',
               file
-            ],
-            {
-              windowsHide: true
-            }
+            ]
           );
 
         let output = '';
         let errorOutput = '';
+        let timedOut = false;
+
+        // ffprobe travado não pode bloquear a fila: encerra a árvore após 30s
+        const probeTimer = setTimeout(() => {
+          timedOut = true;
+          processRunner.cancel(child);
+        }, 30000);
+        if (probeTimer.unref) probeTimer.unref();
 
         child.stdout.on(
           'data',
@@ -665,12 +666,21 @@ class ConverterService extends EventEmitter {
 
         child.on(
           'error',
-          reject
+          (err) => {
+            clearTimeout(probeTimer);
+            reject(err);
+          }
         );
 
         child.on(
           'close',
           (code) => {
+            clearTimeout(probeTimer);
+            if (timedOut) {
+              return reject(
+                new Error('Tempo limite excedido ao obter a duração.')
+              );
+            }
             if (code !== 0) {
               return reject(
                 new Error(
@@ -808,9 +818,10 @@ class ConverterService extends EventEmitter {
     );
   }
 
-  async killProcessTree(pid) {
-    if (!pid) return;
-    processRunner.cancel(pid);
+  /** @param {import('child_process').ChildProcess|number} childOrPid */
+  async killProcessTree(childOrPid) {
+    if (!childOrPid) return;
+    await processRunner.cancel(childOrPid);
   }
 }
 

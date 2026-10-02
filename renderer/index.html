@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- CSP: scripts só do próprio app; estilos inline permitidos (usados pelas telas) + Google Fonts (Material Symbols);
+       imagens/mídia locais (file:, bds-thumb:) e https (miniaturas remotas). Testado carregando módulos ES, import() e fetch() via file://. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: file: bds-thumb: https:; media-src 'self' blob: file: data: bds-thumb:; connect-src 'self' file: bds-thumb:; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>Braga Digital Studio</title>
   <link rel="icon" href="../assets/icon.png" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
@@ -56,6 +59,10 @@
           <span class="material-symbols-rounded">label</span>
           Metadados
         </button>
+        <button class="tab-button hidden" data-view="modules" type="button" style="display: none;">
+          <span class="material-symbols-rounded">subtitles</span>
+          Transcrição
+        </button>
         <button class="tab-button hidden" data-view="ai" type="button" style="display: none;">
           <span class="material-symbols-rounded">smart_toy</span>
           Assistente IA
@@ -91,7 +98,7 @@
         <div id="storageIndicators" class="storage-indicators"></div>
         <section class="tool-state">
           <span class="state-dot" id="stateDot"></span>
-          <span id="stateText">Pronto</span>
+          <span id="stateText" role="status" aria-live="polite">Pronto</span>
         </section>
         <p class="sidebar-credit">Desenvolvido por <strong>Braga Dev</strong></p>
       </div>
@@ -177,7 +184,7 @@
   </div>
 
   <!-- MODAL GLOBAL BDS -->
-  <dialog id="bdsGlobalModal" class="bds-modal">
+  <dialog id="bdsGlobalModal" class="bds-modal" aria-labelledby="bdsModalTitle" aria-describedby="bdsModalMessage">
     <div class="bds-modal-content">
       <div class="bds-modal-header">
         <span class="material-symbols-rounded bds-modal-icon" id="bdsModalIcon">info</span>

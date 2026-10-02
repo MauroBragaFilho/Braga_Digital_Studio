@@ -12,8 +12,9 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "prebuild": "npm version patch --no-git-tag-version",
     "check": "node scripts/check-syntax.js",
+    "lint": "eslint .",
+    "test": "node --test \"tests/**/*.test.js\"",
     "build": "electron-builder --win nsis",
     "build:win": "electron-builder --win nsis",
     "build:win:portable": "electron-builder --win portable",
@@ -25,15 +26,17 @@
     "adm-zip": "^0.6.0",
     "bonjour-service": "^1.4.4",
     "chokidar": "^5.0.0",
-    "express": "^5.2.1",
     "puppeteer-core": "^25.3.0",
     "sql.js": "^1.12.0",
     "uuid": "^14.0.1",
     "winston": "^3.19.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "electron": "^43.2.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0"
   },
   "build": {
     "npmRebuild": false,
@@ -63,22 +66,16 @@
       "preload.js",
       "renderer/**/*",
       "src/**/*",
-      "config/**/*",
-      "database/**/*",
       "assets/**/*",
       "logs/.gitkeep",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "data",
-        "to": "data",
-        "filter": [
-          "**/*",
-          "!**/*.exe",
-          "!**/*.zip"
-        ]
-      }
+      "package.json",
+      "!**/*.map",
+      "!**/*.md",
+      "!**/*.psd",
+      "!**/_Archives/**",
+      "!**/.freebuff/**",
+      "!**/.Teste*/**",
+      "!**/tests/**"
     ],
     "asarUnpack": [
       "node_modules/sql.js/dist/sql-wasm.wasm"
@@ -91,6 +88,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true
-    }
+    },
+    "compression": "maximum"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

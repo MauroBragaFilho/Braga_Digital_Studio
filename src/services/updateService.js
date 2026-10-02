@@ -15,6 +15,9 @@ class UpdateService extends EventEmitter {
     this.paths = paths;
     this.getSettings = getSettings;
     this._updating = false;
+    // Último instalador baixado (e verificado) por downloadAppUpdate(). installAppUpdate()
+    // só executa ESTE arquivo — nunca um caminho enviado pelo renderer.
+    this._downloadedInstallerPath = null;
     if (paths && (paths.tools || paths.dataDir)) {
       const toolsDir = paths.tools || paths.dataDir;
       dependencyManager.init(toolsDir);
@@ -175,7 +178,8 @@ class UpdateService extends EventEmitter {
               emitProgress(pct, `Baixando nova versão do BDS... (${Math.round(received / 1048576)} MB)`, 'app-download');
             }
           },
-          appInfo.installerDigest || null
+          appInfo.installerDigest || null,
+          appInfo.installerUrl
         );
         appUpdate.downloaded = true;
         appUpdate.installerPath = dl.path;
@@ -233,19 +237,25 @@ class UpdateService extends EventEmitter {
       (this.paths && (this.paths.tempDir || this.paths.dataDir)) || app.getPath('temp'),
       `BDS_Setup_${Date.now()}.exe`
     );
-    await appUpdateChecker.downloadLatestInstaller(installerPath, onProgress);
-    return { installerPath };
+    // downloadLatestInstaller confere o SHA-256 publicado na release (e apaga o arquivo se divergir).
+    const dl = await appUpdateChecker.downloadLatestInstaller(installerPath, onProgress);
+    this._downloadedInstallerPath = (dl && dl.path) || installerPath;
+    return { installerPath: this._downloadedInstallerPath };
   }
 
   /**
-   * Instala silenciosamente um instalador já baixado.
-   * @param {string} installerPath
+   * Instala silenciosamente o instalador baixado por downloadAppUpdate().
+   * O argumento é ignorado de propósito: o caminho vem do estado guardado no main,
+   * impedindo que o renderer faça o app executar um .exe arbitrário.
    */
-  async installAppUpdate(installerPath) {
+  async installAppUpdate(_ignoredRendererPath) {
+    const installerPath = this._downloadedInstallerPath;
     if (!installerPath || !fs.existsSync(installerPath)) {
-      return { success: false, exitCode: null, error: 'Instalador não encontrado.' };
+      return { success: false, exitCode: null, error: 'Nenhum instalador baixado e verificado. Baixe a atualização primeiro.' };
     }
-    return await appUpdateChecker.installSilently(installerPath);
+    const result = await appUpdateChecker.installSilently(installerPath);
+    this._downloadedInstallerPath = null;
+    return result;
   }
 
   /**
@@ -257,6 +267,11 @@ class UpdateService extends EventEmitter {
     try {
       app.relaunch();
     } catch (_) { /* some platforms may not support */ }
+    // app.exit() não dispara before-quit: grava o banco explicitamente antes de sair.
+    try {
+      const dbManager = require('../core/database/database');
+      if (typeof dbManager.persistSync === 'function') dbManager.persistSync();
+    } catch (_) { /* melhor esforço */ }
     app.exit(0);
   }
 
@@ -283,8 +298,8 @@ class UpdateService extends EventEmitter {
     };
   }
 
-  async updateTool(tool, onProgress) {
-    return dependencyManager.updateComponent(tool, onProgress);
+  async updateTool(tool, onProgress, opts = {}) {
+    return dependencyManager.updateComponent(tool, onProgress, opts);
   }
 
   /**

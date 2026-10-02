@@ -2,9 +2,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 const EventEmitter = require('node:events');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
+const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const logger = require('./logService');
 
 /**
@@ -298,7 +298,7 @@ class VideoRecoveryService extends EventEmitter {
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
       fs.renameSync(tempOutput, outputPath);
     } else {
-      throw new Error('FFmpeg não gerou o arquivo de saída.');
+      throw new Error('O motor de mídia não gerou o arquivo de saída.');
     }
   }
 
@@ -335,7 +335,7 @@ class VideoRecoveryService extends EventEmitter {
     }
 
     if (!foundOutput) {
-      throw new Error('Untrunc não conseguiu reconstruir a estrutura do arquivo.');
+      throw new Error('O motor de recuperação não conseguiu reconstruir a estrutura do arquivo.');
     }
 
     // Move para o outputPath definitivo
@@ -373,12 +373,18 @@ class VideoRecoveryService extends EventEmitter {
     ];
 
     return new Promise((resolve, reject) => {
-      const child = spawn(ffprobeExe, args, { windowsHide: true });
+      const child = processRunner.spawn(ffprobeExe, args);
       let output = '';
+      let timedOut = false;
+      // ffprobe travado não pode deixar a recuperação pendurada: encerra a árvore após 60s
+      const timer = setTimeout(() => { timedOut = true; processRunner.cancel(child); }, 60000);
+      if (timer.unref) timer.unref();
 
       child.stdout.on('data', (d) => { output += d.toString('utf8'); });
-      child.on('error', reject);
+      child.on('error', (err) => { clearTimeout(timer); reject(err); });
       child.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut) return reject(new Error('Tempo limite excedido na análise estrutural do arquivo.'));
         if (code === 0 && output.trim()) {
           try {
             const data = JSON.parse(output);
@@ -404,7 +410,7 @@ class VideoRecoveryService extends EventEmitter {
         return reject(new Error('Operação cancelada.'));
       }
 
-      const child = spawn(exePath, args, { windowsHide: true });
+      const child = processRunner.spawn(exePath, args);
       this._currentProcess = child;
 
       let stderr = '';
@@ -434,14 +440,12 @@ class VideoRecoveryService extends EventEmitter {
 
   cancel() {
     this._cancelled = true;
-    if (this._currentProcess) {
-      try {
-        this._currentProcess.kill('SIGKILL');
-      } catch (_) {}
-      this._currentProcess = null;
-    }
+    // Encerra a árvore de processos (ffmpeg/untrunc podem ter filhos); resolve quando terminou
+    const killed = processRunner.cancel(this._currentProcess);
+    this._currentProcess = null;
     this.emit('cancelled');
     logRecovery('Operação de recuperação cancelada pelo usuário.');
+    return killed;
   }
 
   _emitStage(stage, percent, message) {

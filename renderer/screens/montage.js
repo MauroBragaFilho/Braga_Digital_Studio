@@ -1,5 +1,7 @@
 import { setAppStatus, applyTheme, state as appState } from '../app.js';
 
+import { escapeHtml } from '../utils/escape.js';
+
 /* =============================================================
    MONTAGEM DE VÍDEOS — ETAPA 3 (redesign DaVinci Resolve)
    Motor FFmpeg preservado em src/services/montageService.js.
@@ -34,12 +36,6 @@ let dropDepth = 0;
 
 /* ------------------------------ Utilidades ------------------------------- */
 function $(id) { return document.getElementById(id); }
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, m => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[m]));
-}
 
 function uid() {
   return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
@@ -958,7 +954,7 @@ async function startExport() {
   const btnCancel = $('btnCancelExport');
   if (btnExport) btnExport.disabled = true;
   if (btnCancel) btnCancel.classList.remove('hidden');
-  setBottomStatus('Enviando lote para o motor FFmpeg...', 'active');
+  setBottomStatus('Enviando lote para o motor de exportação...', 'active');
   setAppStatus('Montagem em andamento...', 'info');
 
   try {
@@ -981,7 +977,7 @@ async function cancelExport() {
   state.export.cancelled = true;
   const btnCancel = $('btnCancelExport');
   if (btnCancel) btnCancel.disabled = true;
-  setBottomStatus('Cancelando... aguarde o FFmpeg encerrar.', 'active');
+  setBottomStatus('Cancelando... aguarde o motor encerrar.', 'active');
   try {
     if (window.bds && window.bds.cancelMontageJob && state.export.jobId) {
       await window.bds.cancelMontageJob(state.export.jobId);
@@ -1512,6 +1508,11 @@ export async function initScreen() {
 /* =====================================================================
    AO SAIR DA TELA — salva a sessão e remove listeners
    ===================================================================== */
+/** Ao voltar para a tela (view em cache): reativa os listeners removidos em onLeave. */
+export async function onEnter() {
+  if (!listenerCleanups.length) await initScreen();
+}
+
 export function onLeave() {
   saveSession();
   listenerCleanups.forEach(fn => { try { fn(); } catch (e) { /* ignora */ } });

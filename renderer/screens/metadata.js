@@ -1,3 +1,4 @@
+import { escapeHtml, escapeAttr } from '../utils/escape.js';
 let active = false;
 let currentFilePath = null;
 let currentInfo = null;
@@ -15,13 +16,50 @@ let thumbnailAction = 'none'; // 'none', 'remove', 'add', 'replace'
 let newThumbnailPath = null;
 let ipcBound = false;
 
+let cleanups = [];
+let reloadTimer = null;
+
 export function initScreen() {
   active = true;
   bindEvents();
+  bindDelegation();
 }
 
 export function onLeave() {
   active = false;
+  clearTimeout(reloadTimer);
+  reloadTimer = null;
+  cleanups.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  cleanups = [];
+}
+
+// Delegação de eventos para listas dinâmicas (sem handlers inline / globais)
+function bindDelegation() {
+  const on = (id, type, handler) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener(type, handler);
+    cleanups.push(() => el.removeEventListener(type, handler));
+  };
+  const streamHandler = (e) => {
+    const t = e.target.closest('[data-stream-idx]');
+    if (!t || !currentStreams[+t.dataset.streamIdx]) return;
+    currentStreams[+t.dataset.streamIdx][t.dataset.key] = t.value;
+  };
+  on('streamsList', 'input', streamHandler);
+  on('streamsList', 'change', streamHandler);
+  on('chaptersList', 'change', (e) => {
+    const t = e.target.closest('[data-chapter-idx]');
+    if (!t || !currentChapters[+t.dataset.chapterIdx]) return;
+    const key = t.dataset.key;
+    currentChapters[+t.dataset.chapterIdx][key] = (key === 'start' || key === 'end') ? (parseFloat(t.value) || 0) : t.value;
+  });
+  on('chaptersList', 'click', (e) => {
+    const b = e.target.closest('[data-chapter-remove]');
+    if (!b) return;
+    currentChapters.splice(+b.dataset.chapterRemove, 1);
+    renderChapters();
+  });
 }
 
 export const destroy = onLeave;
@@ -168,7 +206,7 @@ async function loadFile() {
   resetAll();
   
   const statusEl = document.getElementById('metaStatusText');
-  if (statusEl) statusEl.textContent = 'Lendo metadados (FFprobe)...';
+  if (statusEl) statusEl.textContent = 'Lendo metadados...';
   
   const logArea = document.getElementById('metaLogArea');
   if (logArea) logArea.classList.remove('hidden');
@@ -287,7 +325,7 @@ function parseInfo(filePath) {
     
     const addStat = (label, value) => {
       if (value === undefined || value === null || value === '') return;
-      grid.innerHTML += `<div class="info-item"><label>${label}</label><span>${value}</span></div>`;
+      grid.innerHTML += `<div class="info-item"><label>${escapeHtml(label)}</label><span>${escapeHtml(value)}</span></div>`;
     };
     
     addStat('Formato (Container)', f.format_long_name || f.format_name);
@@ -401,28 +439,28 @@ function renderStreams() {
     
     let titleHtml = `
       <div class="s-info">
-        <strong>${icon} ${s.type.toUpperCase()} #${s.typeIndex}</strong> (Index: ${s.index})<br>
-        <span class="muted small">Codec: ${s.codec}</span>
+        <strong>${icon} ${escapeHtml(String(s.type || '').toUpperCase())} #${escapeHtml(s.typeIndex)}</strong> (Index: ${escapeHtml(s.index)})<br>
+        <span class="muted small">Codec: ${escapeHtml(s.codec)}</span>
       </div>
     `;
 
     // A simple list of common langs
     const langs = ['und', 'eng', 'por', 'spa', 'fra', 'deu', 'jpn'];
-    let langOptions = langs.map(l => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('');
+    let langOptions = langs.map(l => `<option value="${escapeAttr(l)}" ${s.lang === l ? 'selected' : ''}>${escapeHtml(l.toUpperCase())}</option>`).join('');
     // If original lang is not in the list, add it
     if (!langs.includes(s.langOrig)) {
-      langOptions += `<option value="${s.langOrig}" ${s.lang === s.langOrig ? 'selected' : ''}>${s.langOrig.toUpperCase()}</option>`;
+      langOptions += `<option value="${escapeAttr(s.langOrig)}" ${s.lang === s.langOrig ? 'selected' : ''}>${escapeHtml(String(s.langOrig).toUpperCase())}</option>`;
     }
 
     const editHtml = `
       <div class="s-edit">
         <div style="display:flex; flex-direction:column; gap:2px;">
           <label style="font-size:10px;" class="muted">Título da Trilha</label>
-          <input type="text" value="${s.title}" oninput="window.updateStream(${idx}, 'title', this.value)" style="padding:4px; width: 120px; font-size:12px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
+          <input type="text" value="${escapeAttr(s.title)}" data-stream-idx="${idx}" data-key="title" style="padding:4px; width: 120px; font-size:12px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
         </div>
         <div style="display:flex; flex-direction:column; gap:2px;">
           <label style="font-size:10px;" class="muted">Idioma (ISO)</label>
-          <select onchange="window.updateStream(${idx}, 'lang', this.value)" style="padding:4px; font-size:12px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
+          <select data-stream-idx="${idx}" data-key="lang" style="padding:4px; font-size:12px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
             ${langOptions}
           </select>
         </div>
@@ -433,11 +471,6 @@ function renderStreams() {
     container.appendChild(div);
   });
 }
-
-// Attach to window so inline handlers work
-window.updateStream = (idx, key, val) => {
-  currentStreams[idx][key] = val;
-};
 
 function renderChapters() {
   const tbody = document.getElementById('chaptersList');
@@ -451,26 +484,14 @@ function renderChapters() {
   currentChapters.forEach((ch, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="number" step="0.1" value="${ch.start}" onchange="window.updateChapter(${idx}, 'start', this.value)"></td>
-      <td><input type="number" step="0.1" value="${ch.end}" onchange="window.updateChapter(${idx}, 'end', this.value)"></td>
-      <td><input type="text" value="${ch.title}" onchange="window.updateChapter(${idx}, 'title', this.value)"></td>
-      <td><button type="button" class="btn-clear" onclick="window.removeChapter(${idx})" style="padding: 4px 8px; font-size:11px;">Excluir</button></td>
+      <td><input type="number" step="0.1" value="${escapeAttr(ch.start)}" data-chapter-idx="${idx}" data-key="start"></td>
+      <td><input type="number" step="0.1" value="${escapeAttr(ch.end)}" data-chapter-idx="${idx}" data-key="end"></td>
+      <td><input type="text" value="${escapeAttr(ch.title)}" data-chapter-idx="${idx}" data-key="title"></td>
+      <td><button type="button" class="btn-clear" data-chapter-remove="${idx}" style="padding: 4px 8px; font-size:11px;">Excluir</button></td>
     `;
     tbody.appendChild(tr);
   });
 }
-
-window.updateChapter = (idx, key, val) => {
-  if (key === 'start' || key === 'end') {
-    currentChapters[idx][key] = parseFloat(val) || 0;
-  } else {
-    currentChapters[idx][key] = val;
-  }
-};
-window.removeChapter = (idx) => {
-  currentChapters.splice(idx, 1);
-  renderChapters();
-};
 
 function showValidationDiff() {
   const diffList = document.getElementById('diffList');
@@ -482,10 +503,10 @@ function showValidationDiff() {
   for (const key of Object.keys(originalTags)) {
     if (originalTags[key] !== currentTags[key]) {
       changesFound = true;
-      diffList.innerHTML += `<div style="margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
-        <span style="color:#a855f7; font-weight:bold;">TAG [${key.toUpperCase()}]</span><br>
-        <span style="color:#ff4c4c;">- ${originalTags[key] || 'vazio'}</span><br>
-        <span style="color:#4ade80;">+ ${currentTags[key] || 'vazio'}</span>
+      diffList.innerHTML += `<div class="diff-entry">
+        <span class="diff-title diff-title-tag">TAG [${escapeHtml(key.toUpperCase())}]</span><br>
+        <span class="diff-del">- ${escapeHtml(originalTags[key] || 'vazio')}</span><br>
+        <span class="diff-add">+ ${escapeHtml(currentTags[key] || 'vazio')}</span>
       </div>`;
     }
   }
@@ -496,18 +517,18 @@ function showValidationDiff() {
     const curr = currentStreams[i];
     if (orig.title !== curr.title) {
       changesFound = true;
-      diffList.innerHTML += `<div style="margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
-        <span style="color:#3b82f6; font-weight:bold;">STREAM [${curr.type} #${curr.typeIndex}] - TITLE</span><br>
-        <span style="color:#ff4c4c;">- ${orig.titleOrig || 'vazio'}</span><br>
-        <span style="color:#4ade80;">+ ${curr.title || 'vazio'}</span>
+      diffList.innerHTML += `<div class="diff-entry">
+        <span class="diff-title diff-title-stream">STREAM [${escapeHtml(curr.type)} #${escapeHtml(curr.typeIndex)}] - TITLE</span><br>
+        <span class="diff-del">- ${escapeHtml(orig.titleOrig || 'vazio')}</span><br>
+        <span class="diff-add">+ ${escapeHtml(curr.title || 'vazio')}</span>
       </div>`;
     }
     if (orig.langOrig !== curr.lang) {
       changesFound = true;
-      diffList.innerHTML += `<div style="margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
-        <span style="color:#3b82f6; font-weight:bold;">STREAM [${curr.type} #${curr.typeIndex}] - LANGUAGE</span><br>
-        <span style="color:#ff4c4c;">- ${orig.langOrig}</span><br>
-        <span style="color:#4ade80;">+ ${curr.lang}</span>
+      diffList.innerHTML += `<div class="diff-entry">
+        <span class="diff-title diff-title-stream">STREAM [${escapeHtml(curr.type)} #${escapeHtml(curr.typeIndex)}] - LANGUAGE</span><br>
+        <span class="diff-del">- ${escapeHtml(orig.langOrig)}</span><br>
+        <span class="diff-add">+ ${escapeHtml(curr.lang)}</span>
       </div>`;
     }
   }
@@ -516,12 +537,12 @@ function showValidationDiff() {
   if (thumbnailAction !== 'none') {
     changesFound = true;
     let desc = '';
-    if (thumbnailAction === 'remove') desc = '<span style="color:#ff4c4c;">Remover arte de capa</span>';
-    if (thumbnailAction === 'add') desc = '<span style="color:#4ade80;">Adicionar arte de capa</span>';
-    if (thumbnailAction === 'replace') desc = '<span style="color:#f59e0b;">Substituir arte de capa</span>';
+    if (thumbnailAction === 'remove') desc = '<span class="diff-del">Remover arte de capa</span>';
+    if (thumbnailAction === 'add') desc = '<span class="diff-add">Adicionar arte de capa</span>';
+    if (thumbnailAction === 'replace') desc = '<span class="diff-warn">Substituir arte de capa</span>';
     
-    diffList.innerHTML += `<div style="margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
-      <span style="color:#eab308; font-weight:bold;">MINIATURA</span><br>
+    diffList.innerHTML += `<div class="diff-entry">
+      <span class="diff-title diff-title-cover">MINIATURA</span><br>
       ${desc}
     </div>`;
   }
@@ -541,8 +562,8 @@ function showValidationDiff() {
   
   if (chapChanged) {
     changesFound = true;
-    diffList.innerHTML += `<div style="margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
-      <span style="color:#f97316; font-weight:bold;">CAPÍTULOS</span><br>
+    diffList.innerHTML += `<div class="diff-entry">
+      <span class="diff-title diff-title-chap">CAPÍTULOS</span><br>
       Foram detectadas modificações estruturais nos capítulos.
     </div>`;
   }
@@ -598,7 +619,8 @@ async function executeSave() {
     if (result.status === 'success') {
       document.getElementById('metaStatusText').textContent = 'Concluído com sucesso! (Direct Stream Copy)';
       // reload
-      setTimeout(() => { loadFile(); }, 1000);
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => { if (active) loadFile(); }, 1000);
     } else {
       document.getElementById('metaStatusText').textContent = 'Cancelado.';
     }

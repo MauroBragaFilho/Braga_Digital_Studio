@@ -46,6 +46,7 @@ class ToolRunner {
 
     let childProcess = null;
     let killed = false;
+    let timedOut = false;
     let timeoutHandle = null;
 
     const promise = new Promise((resolve, reject) => {
@@ -69,8 +70,11 @@ class ToolRunner {
       if (timeout > 0) {
         timeoutHandle = setTimeout(() => {
           killed = true;
-          processRunner.cancel(childProcess);
-          reject(new Error(`Timeout (${timeout}ms) ao executar '${executablePath}'`));
+          timedOut = true;
+          // Aguarda o término real da árvore de processos antes de rejeitar
+          processRunner.cancel(childProcess).then(() => {
+            reject(new Error(`Timeout (${timeout}ms) ao executar '${executablePath}'`));
+          });
         }, timeout);
         if (timeoutHandle.unref) timeoutHandle.unref();
       }
@@ -123,6 +127,7 @@ class ToolRunner {
 
       childProcess.on('close', (code) => {
         if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (timedOut) return; // o timeout rejeita depois que a árvore terminar
 
         const durationMs = Date.now() - startedAt;
         resolve({
@@ -140,8 +145,9 @@ class ToolRunner {
       if (childProcess) {
         killed = true;
         if (timeoutHandle) clearTimeout(timeoutHandle);
-        processRunner.cancel(childProcess);
+        return processRunner.cancel(childProcess);
       }
+      return Promise.resolve();
     };
 
     Object.defineProperty(promise, 'process', {
@@ -157,13 +163,14 @@ class ToolRunner {
    * retornada por run().
    *
    * @param {object} handleOrPromise - ChildProcess ou promise de run()
+   * @returns {Promise<void>} resolve quando o processo terminou
    */
   cancel(handleOrPromise) {
     if (handleOrPromise && typeof handleOrPromise.cancel === 'function') {
-      handleOrPromise.cancel();
-    } else if (handleOrPromise) {
-      processRunner.cancel(handleOrPromise);
+      return handleOrPromise.cancel();
     }
+    if (handleOrPromise) return processRunner.cancel(handleOrPromise);
+    return Promise.resolve();
   }
 }
 

@@ -1,3 +1,4 @@
+import { escapeHtml } from '../../utils/escape.js';
 /**
  * PhotoPreview — Visualizador fotográfico profissional para o BDS.
  * Suporta: RAW (CR2, CR3, ARW, NEF, DNG, RAF, ORF, RW2), JPG, PNG, TIFF, WEBP.
@@ -862,11 +863,11 @@ export class PhotoPreview {
         if (valid.length === 0) return '';
         return `
           <div class="photo-meta-section">
-            <span class="photo-meta-sec-title">${title}</span>
+            <span class="photo-meta-sec-title">${escapeHtml(title)}</span>
             ${valid.map(e => `
               <div class="photo-meta-row">
-                <span class="photo-meta-label">${e.label}</span>
-                <span class="photo-meta-value">${e.val}</span>
+                <span class="photo-meta-label">${escapeHtml(e.label)}</span>
+                <span class="photo-meta-value">${escapeHtml(e.val)}</span>
               </div>
             `).join('')}
           </div>
@@ -914,7 +915,7 @@ export class PhotoPreview {
 
       body.innerHTML = html || '<div style="color: #8e8e93;">Nenhum metadado EXIF detalhado encontrado.</div>';
     } catch (err) {
-      body.innerHTML = `<div style="color: #ef4444;">Erro ao extrair metadados: ${err.message}</div>`;
+      body.innerHTML = `<div style="color: #ef4444;">Erro ao extrair metadados: ${escapeHtml(err.message)}</div>`;
     }
   }
 

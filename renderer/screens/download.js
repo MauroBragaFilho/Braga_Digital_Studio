@@ -133,6 +133,7 @@ function showMultipleLinksModal() {
   });
 }
 import { els, state, setStatus, escapeHtml } from '../app.js';
+import { maskEngineNames } from '../utils/engineNames.js';
 
 let metadataTimer = null;
 
@@ -216,21 +217,44 @@ async function fetchQueue() {
   }
 }
 
+// Assinaturas IPC ativas (a função retornada pelo preload cancela a assinatura)
+let ipcUnsubs = [];
+
 function setupEventListeners() {
   const api = getDownloadsApi();
+  clearIpcSubscriptions();
 
   if (api.onUpdated) {
-    api.onUpdated((queue) => {
+    const unsub = api.onUpdated((queue) => {
       state.downloadQueue = queue;
       renderDownloadQueue(queue);
     });
+    if (typeof unsub === 'function') ipcUnsubs.push(unsub);
   }
 
   if (api.onProgress) {
-    api.onProgress((data) => {
+    const unsub = api.onProgress((data) => {
       updateProgressVisuals(data);
     });
+    if (typeof unsub === 'function') ipcUnsubs.push(unsub);
   }
+}
+
+function clearIpcSubscriptions() {
+  ipcUnsubs.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
+  ipcUnsubs = [];
+}
+
+export function onLeave() {
+  clearTimeout(metadataTimer);
+  metadataTimer = null;
+  clearIpcSubscriptions();
+}
+
+export function onEnter() {
+  // Reassina os eventos e atualiza a fila (pode ter mudado enquanto a tela estava oculta)
+  fetchQueue();
+  setupEventListeners();
 }
 
 export function renderDownloadQueue(queue) {
@@ -270,7 +294,7 @@ export function renderDownloadQueue(queue) {
       ? `<img src="${escapeHtml(activeItem.thumbnail)}" class="active-download-thumb" />` 
       : `<div class="active-download-thumb-placeholder"><span class="material-symbols-rounded">movie</span></div>`;
 
-    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : (activeItem.platform || 'YouTube');
+    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : escapeHtml(activeItem.platform || 'YouTube');
 
     activeContent.innerHTML = `
       ${thumbHtml}
@@ -288,7 +312,7 @@ export function renderDownloadQueue(queue) {
         <div class="active-download-stats">
           <span id="dl-percent-${activeItem.id}">${Math.round(activeItem.progress || 0)}%</span>
           <span id="dl-bytes-${activeItem.id}">${formatBytes(activeItem.downloadedBytes)} / ${formatBytes(activeItem.totalBytes)}</span>
-          <span id="dl-speed-${activeItem.id}">${activeItem.speed || '--'} • ETA ${activeItem.eta || '--'}</span>
+          <span id="dl-speed-${activeItem.id}">${escapeHtml(activeItem.speed || '--')} • ETA ${escapeHtml(activeItem.eta || '--')}</span>
         </div>
       </div>
       <button type="button" class="active-download-cancel-btn" data-action="cancel" data-id="${activeItem.id}">
@@ -347,7 +371,7 @@ export function renderDownloadQueue(queue) {
     } else if (item.status === 'completed') {
       const isSkipped = item.error && item.error.includes('já existe');
       statusBadge = isSkipped
-        ? `<span class="status-badge status-badge-skipped" title="${escapeHtml(item.error)}">↷ Já existe</span>`
+        ? `<span class="status-badge status-badge-skipped" title="${escapeHtml(maskEngineNames(item.error))}">↷ Já existe</span>`
         : `<span class="status-badge status-badge-completed">✓ Concluído</span>`;
       actionsHtml = `
         ${item.outputPath ? `<button type="button" class="card-action-btn card-action-btn-info" data-action="open-path" data-path="${escapeAttr(item.outputPath)}" title="Abrir arquivo">
@@ -359,7 +383,7 @@ export function renderDownloadQueue(queue) {
       `;
     } else if (item.status === 'failed' || item.status === 'cancelled') {
       const isFailed = item.status === 'failed';
-      statusBadge = `<span class="status-badge ${isFailed ? 'status-badge-failed' : 'status-badge-cancelled'}" title="${escapeHtml(item.error || '')}">${isFailed ? '✕ Falhou' : 'Cancelado'}</span>`;
+      statusBadge = `<span class="status-badge ${isFailed ? 'status-badge-failed' : 'status-badge-cancelled'}" title="${escapeHtml(maskEngineNames(item.error || ''))}">${isFailed ? '✕ Falhou' : 'Cancelado'}</span>`;
       actionsHtml = `
         <button type="button" class="card-action-btn card-action-btn-warning" data-action="retry" data-id="${item.id}" title="Tentar novamente">
           <span class="material-symbols-rounded">replay</span>
@@ -412,9 +436,9 @@ export function renderDownloadQueue(queue) {
       `;
     }
 
-    const channelText = item.channel ? escapeHtml(item.channel) : (item.platform || 'YouTube');
+    const channelText = item.channel ? escapeHtml(item.channel) : escapeHtml(item.platform || 'YouTube');
     const durationText = item.duration ? formatDuration(item.duration) : '';
-    const metaSubtitle = `${channelText} • ${item.platform || 'YouTube'}${durationText ? ' • ' + durationText : ''}`;
+    const metaSubtitle = `${channelText} • ${escapeHtml(item.platform || 'YouTube')}${durationText ? ' • ' + durationText : ''}`;
 
     html += `
       <div class="${cardClass}" data-item-id="${item.id}">
@@ -436,7 +460,7 @@ export function renderDownloadQueue(queue) {
             </div>
             <div class="download-card-progress-info">
               <span>${Math.round(item.progress || 0)}%</span>
-              <span class="speed-info">${item.speed || '--'} ${item.eta ? '• ETA ' + item.eta : ''}</span>
+              <span class="speed-info">${escapeHtml(item.speed || '--')} ${item.eta ? '• ETA ' + escapeHtml(item.eta) : ''}</span>
             </div>
           </div>
           <div class="download-card-actions">

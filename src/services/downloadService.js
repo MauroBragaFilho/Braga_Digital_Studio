@@ -1,7 +1,6 @@
 const EventEmitter = require('node:events');
 const path = require('node:path');
 const fs = require('node:fs');
-const { spawn } = require('node:child_process');
 const logger = require('./logService');
 const { detectarSpotify, validarSpotifyDownload } = require('./spotifyValidator');
 const browserService = require('./browserService');
@@ -10,6 +9,13 @@ const dbManager = require('../core/database/database');
 const { ytDlpTool } = require('../infrastructure/external-tools/adapters/YtDlpTool');
 const { spotDlTool } = require('../infrastructure/external-tools/adapters/SpotDlTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
+const { isHttpUrl, assertHttpUrl } = require('./urlValidator');
+const { friendlyYtDlpError, sanitizeUserMessage } = require('./ytdlpErrors');
+
+// Persistência/emissão de progresso no máximo a cada 500ms (mudanças de status gravam na hora)
+const PROGRESS_THROTTLE_MS = 500;
+// Sem nenhuma saída do yt-dlp por este tempo => considera travado, mata a árvore e marca falha
+const DEFAULT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
 class DownloadManager extends EventEmitter {
   constructor({ paths, getSettings, historyService }) {
@@ -23,6 +29,12 @@ class DownloadManager extends EventEmitter {
     this.isPaused = false;
     this.currentProcess = null;
     this.currentItem = null;
+
+    this._processing = false;      // trava de reentrância de processQueue
+    this._rerunRequested = false;  // alguém pediu processQueue enquanto havia uma execução ativa
+    this._lastSaveAt = 0;
+    this._lastEmitAt = 0;
+    this._lastActivityAt = 0;      // última saída do processo atual (watchdog)
 
     // Carrega a fila salva no SQLite no startup
     this.initDatabaseQueue();
@@ -38,6 +50,17 @@ class DownloadManager extends EventEmitter {
       const settings = this.getSettings ? this.getSettings() : {};
       this.queue = rows.map(r => {
         const format = (r.format || 'MP4').toUpperCase();
+        // Itens que estavam em andamento/na fila voltam para a fila e o progresso é zerado:
+        // o yt-dlp retoma o ".part" (--continue) e o percentual real reaparece nas primeiras linhas.
+        const wasActive = ['downloading', 'paused', 'queued'].includes(r.status);
+        const urlOk = isHttpUrl(r.url);
+        let status = (r.status === 'downloading' || r.status === 'paused') ? 'queued' : r.status;
+        let error = r.error || '';
+        if (!urlOk && status === 'queued') {
+          // O banco pode ter sido editado/corrompido: nunca executa URL que não seja http(s) válida
+          status = 'failed';
+          error = 'URL inválida (item bloqueado por segurança).';
+        }
         return {
           id: r.id,
           url: r.url,
@@ -49,14 +72,14 @@ class DownloadManager extends EventEmitter {
           format,
           quality: r.quality || 'best',
           folder: format === 'MP3' ? settings.mp3Folder : settings.mp4Folder,
-          status: (r.status === 'downloading' || r.status === 'paused') ? 'queued' : r.status,
-          progress: Number(r.progress || 0),
-          downloadedBytes: Number(r.downloaded_bytes || 0),
-          totalBytes: Number(r.total_bytes || 0),
-          speed: r.speed || '',
-          eta: r.eta || '',
+          status,
+          progress: wasActive ? 0 : Number(r.progress || 0),
+          downloadedBytes: wasActive ? 0 : Number(r.downloaded_bytes || 0),
+          totalBytes: wasActive ? 0 : Number(r.total_bytes || 0),
+          speed: wasActive ? '' : (r.speed || ''),
+          eta: wasActive ? '' : (r.eta || ''),
           outputPath: r.output_path || '',
-          error: r.error || '',
+          error,
           position: Number(r.position || 0),
           isSpotify: r.platform === 'Spotify',
           createdAt: r.created_at,
@@ -127,9 +150,9 @@ class DownloadManager extends EventEmitter {
   }
 
   add(request) {
-    this.validateRequest(request);
+    const url = this.validateRequest(request);
     const settings = this.getSettings();
-    const isSpotify = detectarSpotify(request.url).isSpotify;
+    const isSpotify = detectarSpotify(url).isSpotify;
     const format = (request.format || request.type || 'MP4').toUpperCase();
     const folder = format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
     fs.mkdirSync(folder, { recursive: true });
@@ -140,7 +163,7 @@ class DownloadManager extends EventEmitter {
 
     const item = {
       id: 'dl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      url: request.url,
+      url,
       title: request.title || 'Mídia sem título',
       thumbnail: request.thumbnail || '',
       channel: request.channel || '',
@@ -180,6 +203,13 @@ class DownloadManager extends EventEmitter {
 
     this.isPaused = false;
     this.isProcessing = true;
+    // Itens pausados voltam para a fila (o yt-dlp continua do ".part")
+    for (const item of this.queue) {
+      if (item.status === 'paused') {
+        item.status = 'queued';
+        this.saveItemToDb(item);
+      }
+    }
     this.processQueue();
     return { ok: true };
   }
@@ -192,7 +222,7 @@ class DownloadManager extends EventEmitter {
       this.currentItem.status = 'paused';
       this.saveItemToDb(this.currentItem);
       if (this.currentProcess) {
-        this.killProcessTree(this.currentProcess.pid);
+        this.killProcessTree(this.currentProcess);
         this.currentProcess = null;
       }
     }
@@ -209,7 +239,7 @@ class DownloadManager extends EventEmitter {
       item.status = 'cancelled';
       item.error = 'Cancelado pelo usuário';
       this.saveItemToDb(item);
-      await this.killProcessTree(this.currentProcess.pid);
+      await this.killProcessTree(this.currentProcess);
       this.currentProcess = null;
     } else {
       item.status = 'cancelled';
@@ -247,7 +277,9 @@ class DownloadManager extends EventEmitter {
 
     const item = this.queue[index];
     if (item === this.currentItem && this.currentProcess) {
-      this.killProcessTree(this.currentProcess.pid);
+      // 'cancelled' antes de matar: o fechamento do processo não pode finalizar o item removido
+      item.status = 'cancelled';
+      this.killProcessTree(this.currentProcess);
       this.currentProcess = null;
     }
 
@@ -293,7 +325,8 @@ class DownloadManager extends EventEmitter {
 
   clearAll() {
     if (this.currentProcess) {
-      this.killProcessTree(this.currentProcess.pid);
+      if (this.currentItem) this.currentItem.status = 'cancelled';
+      this.killProcessTree(this.currentProcess);
       this.currentProcess = null;
     }
     for (const item of this.queue) {
@@ -344,64 +377,149 @@ class DownloadManager extends EventEmitter {
   async processQueue() {
     if (this.isPaused) return;
 
-    // REGRA 1: Permitir 1 download por vez. Encontra o próximo item queued.
-    const nextItem = this.queue.find(i => i.status === 'queued');
-
-    if (!nextItem) {
-      this.isProcessing = false;
-      this.currentItem = null;
-      this.emit('downloads:queue-completed');
-      this.emit('downloads:updated', this.queue);
+    // Sem reentrância: só um laço de processamento por vez. Se alguém pedir enquanto há um
+    // ativo (ex.: start() logo após pause()), reexecuta quando o laço atual terminar.
+    if (this._processing) {
+      this._rerunRequested = true;
       return;
     }
+    this._processing = true;
 
-    // [CHECK] Verifica se o arquivo já existe na pasta de destino antes de baixar
-    const existingFile = this.findExistingFile(nextItem);
-    if (existingFile) {
-      logger.info('[DownloadManager] Arquivo já existe, pulando:', existingFile);
-      nextItem.status = 'completed';
-      nextItem.progress = 100;
-      nextItem.outputPath = existingFile;
-      nextItem.completedAt = new Date().toISOString();
-      nextItem.error = 'Arquivo já existe na pasta de destino.';
+    try {
+      await this._drainQueue();
+    } catch (err) {
+      logger.error('[DownloadManager] Erro inesperado no processamento da fila:', err);
+    } finally {
+      this._processing = false;
+      this.currentItem = null;
+      if (this._rerunRequested) {
+        this._rerunRequested = false;
+        if (!this.isPaused && this.isProcessing) setImmediate(() => this.processQueue());
+      }
+    }
+  }
+
+  async _drainQueue() {
+    // REGRA 1: 1 download por vez. REGRAS 2 e 3: ao terminar/falhar, segue para o próximo item.
+    while (!this.isPaused) {
+      const nextItem = this.queue.find(i => i.status === 'queued');
+
+      if (!nextItem) {
+        this.isProcessing = false;
+        this.currentItem = null;
+        this.emit('downloads:queue-completed');
+        this.emit('downloads:updated', this.queue);
+        return;
+      }
+
+      // [CHECK] Arquivo já baixado anteriormente (mesmo vídeo, formato e qualidade)?
+      const existingFile = this.findExistingFile(nextItem);
+      if (existingFile) {
+        logger.info('[DownloadManager] Arquivo já existe, pulando:', { file: path.basename(existingFile) });
+        nextItem.status = 'completed';
+        nextItem.progress = 100;
+        nextItem.outputPath = existingFile;
+        nextItem.completedAt = new Date().toISOString();
+        nextItem.error = 'Arquivo já existe na pasta de destino.';
+        this.saveItemToDb(nextItem);
+        this.emit('downloads:updated', this.queue);
+        await this._sleep(200);
+        continue;
+      }
+
+      this.currentItem = nextItem;
+      nextItem.status = 'downloading';
+      nextItem.startedAt = new Date().toISOString();
+      nextItem.error = '';
       this.saveItemToDb(nextItem);
       this.emit('downloads:updated', this.queue);
 
-      if (!this.isPaused) {
-        setTimeout(() => this.processQueue(), 200);
+      logger.info('[DownloadManager] Iniciando download do item:', { id: nextItem.id, title: nextItem.title });
+
+      try {
+        await this.runProcess(nextItem);
+      } catch (err) {
+        logger.error('[DownloadManager] Erro na execução do item:', err);
+        if (nextItem.status !== 'cancelled' && nextItem.status !== 'paused') {
+          this._failItem(nextItem, sanitizeUserMessage(err.message));
+          this.emit('downloads:updated', this.queue);
+        }
       }
-      return;
+
+      this.currentItem = null;
+      await this._sleep(500);
+    }
+  }
+
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Marca o item como falho (nunca sobrescreve cancelled/paused), persiste e emite o evento. */
+  _failItem(item, message) {
+    if (item.status === 'cancelled' || item.status === 'paused') return false;
+    item.status = 'failed';
+    item.error = message;
+    this.saveItemToDb(item);
+    this.emit('downloads:failed', { item, error: message });
+    return true;
+  }
+
+  /** Marca o item como concluído (nunca sobrescreve cancelled/paused). */
+  _completeItem(item) {
+    if (item.status === 'cancelled' || item.status === 'paused') return false;
+    item.status = 'completed';
+    item.progress = 100;
+    item.completedAt = new Date().toISOString();
+    this.saveItemToDb(item);
+
+    if (this.historyService) {
+      this.historyService.addDownload({
+        titulo: item.title,
+        url: item.url,
+        tipo: item.format,
+        resolucao: item.quality,
+        pasta: item.folder,
+        status: 'sucesso'
+      });
     }
 
-    this.currentItem = nextItem;
-    this.currentItem.status = 'downloading';
-    this.currentItem.startedAt = new Date().toISOString();
-    this.saveItemToDb(this.currentItem);
-    this.emit('downloads:updated', this.queue);
+    this.emit('downloads:completed', item);
+    return true;
+  }
 
-    logger.info('[DownloadManager] Iniciando download do item:', { id: nextItem.id, title: nextItem.title });
-
+  /**
+   * Chave estável do vídeo para comparar itens: ID do YouTube quando a URL permite extraí-lo,
+   * senão a URL sem query/fragmento. null se a URL for inválida.
+   */
+  _videoKey(url) {
     try {
-      await this.runProcess(this.currentItem);
-    } catch (err) {
-      logger.error('[DownloadManager] Erro na execução do item:', err);
-      this.currentItem.status = 'failed';
-      this.currentItem.error = err.message;
-      this.saveItemToDb(this.currentItem);
-      this.emit('downloads:failed', { item: this.currentItem, error: err.message });
-    }
-
-    this.currentItem = null;
-
-    // REGRA 2 & 3: Quando um download termina ou falha, avança automaticamente para o próximo item
-    if (!this.isPaused) {
-      setTimeout(() => this.processQueue(), 500);
+      const u = new URL(url);
+      const host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+      if (host === 'youtu.be') return `yt:${u.pathname.split('/')[1] || ''}`;
+      if (/(^|\.)youtube\.com$/.test(host)) {
+        const v = u.searchParams.get('v');
+        if (v) return `yt:${v}`;
+        const m = /^\/(?:shorts|live|embed|v)\/([\w-]{6,})/.exec(u.pathname);
+        if (m) return `yt:${m[1]}`;
+      }
+      return `url:${host}${u.pathname}`;
+    } catch (_) {
+      return null;
     }
   }
 
   /**
-   * Verifica se o arquivo que seria baixado já existe na pasta de destino.
-   * Testa os nomes mais prováveis baseados no título do item.
+   * Verifica se ESTE vídeo (mesmo ID/URL), no mesmo formato e qualidade, já foi baixado para a
+   * pasta de destino e o arquivo ainda existe.
+   *
+   * Antes bastava existir um arquivo com o mesmo título, o que tratava como "baixado" arquivos
+   * parciais, de outro vídeo com o mesmo título ou de outra qualidade. Agora só vale quando há um
+   * registro concluído na fila (mesmo id/URL + formato + qualidade) cujo arquivo é o candidato e
+   * existe com tamanho > 0. Sem registro, o item vai ao yt-dlp, que por conta própria não
+   * sobrescreve um arquivo de mesmo nome (limitação conhecida: o nome do arquivo ainda é só o
+   * título, então duas qualidades do mesmo vídeo no mesmo formato compartilham o arquivo).
+   *
    * @param {object} item
    * @returns {string|null} caminho completo se encontrado, null caso contrário
    */
@@ -410,26 +528,23 @@ class DownloadManager extends EventEmitter {
     const folder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
     if (!folder || !fs.existsSync(folder)) return null;
 
+    const key = this._videoKey(item.url);
+    if (!key) return null;
+
     const ext = item.format === 'MP3' ? '.mp3' : '.mp4';
+    const norm = (p) => path.resolve(p).toLowerCase();
 
-    // Sanitiza o título da mesma forma que o yt-dlp faz com --windows-filenames
-    const sanitize = (name) =>
-      name
-        .replace(/[<>:"/\\|?*]/g, '_') // caracteres proibidos no Windows
-        .replace(/\s+/g, ' ')
-        .trim();
+    for (const other of this.queue) {
+      if (other === item || other.status !== 'completed' || !other.outputPath) continue;
+      if (this._videoKey(other.url) !== key) continue;
+      if (other.format !== item.format || (other.quality || 'best') !== (item.quality || 'best')) continue;
 
-    const baseName = sanitize(item.title || '');
-    if (!baseName) return null;
-
-    const candidates = [
-      path.join(folder, `${baseName}${ext}`),
-      // Variação sem espaços extras
-      path.join(folder, `${baseName.replace(/ /g, '_')}${ext}`)
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) return candidate;
+      const candidate = path.resolve(other.outputPath);
+      if (path.extname(candidate).toLowerCase() !== ext) continue;
+      if (norm(path.dirname(candidate)) !== norm(folder)) continue;
+      try {
+        if (fs.statSync(candidate).size > 0) return candidate;
+      } catch (_) { /* arquivo não existe mais */ }
     }
 
     return null;
@@ -440,10 +555,13 @@ class DownloadManager extends EventEmitter {
     const targetFolder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
     const command = await this.buildCommand(item, settings);
 
+    const inactivityMs = Number(settings.downloadInactivityTimeoutMs) > 0
+      ? Number(settings.downloadInactivityTimeoutMs)
+      : DEFAULT_INACTIVITY_TIMEOUT_MS;
+
     return new Promise((resolve) => {
-      const child = spawn(command.exe, command.args, {
+      const child = processRunner.spawn(command.exe, command.args, {
         cwd: targetFolder || settings.mp4Folder,
-        windowsHide: true,
         env: {
           ...process.env,
           PATH: `${this.paths.dataDir};${process.env.PATH || ''}`,
@@ -453,63 +571,76 @@ class DownloadManager extends EventEmitter {
       });
 
       this.currentProcess = child;
+      this._lastActivityAt = Date.now();
       let stderr = '';
+      let settled = false;
+      let stalled = false;
+      let watchdog = null;
+
+      // ÚNICO ponto de finalização do item: error, close e watchdog passam por aqui, uma vez só,
+      // e nenhum deles sobrescreve um item já cancelado/pausado.
+      const settle = (apply) => {
+        if (settled) return;
+        settled = true;
+        if (watchdog) clearInterval(watchdog);
+        if (this.currentProcess === child) this.currentProcess = null;
+
+        if (item.status !== 'cancelled' && item.status !== 'paused') {
+          apply();
+          this.emit('downloads:updated', this.queue);
+        }
+        resolve();
+      };
+
+      // Watchdog de inatividade: sem nenhuma saída por `inactivityMs` => mata a árvore e falha
+      watchdog = setInterval(() => {
+        if (settled || stalled) return;
+        if (!this._isStalled(this._lastActivityAt, Date.now(), inactivityMs)) return;
+        stalled = true;
+        logger.warn('[DownloadManager] Download sem atividade; encerrando processo.', { id: item.id });
+        const minutes = Math.max(1, Math.round(inactivityMs / 60000));
+        processRunner.cancel(child).then(() => {
+          settle(() => this._failItem(item, `O download ficou sem progresso por ${minutes} min e foi cancelado. Tente novamente.`));
+        });
+      }, Math.min(30000, Math.max(1000, Math.floor(inactivityMs / 4))));
+      if (watchdog.unref) watchdog.unref();
 
       child.stdout.on('data', (chunk) => this.handleOutput(chunk.toString('utf8'), item));
       child.stderr.on('data', (chunk) => {
         const text = chunk.toString('utf8');
-        stderr += text;
+        stderr = (stderr + text).slice(-8000); // só o final interessa (linhas ERROR)
         this.handleOutput(text, item);
       });
 
       child.on('error', (error) => {
-        item.status = 'failed';
-        item.error = error.message;
-        this.saveItemToDb(item);
-        this.emit('downloads:failed', { item, error: error.message });
-        this.emit('downloads:updated', this.queue);
-        resolve();
+        settle(() => this._failItem(item, friendlyYtDlpError(`ERROR: ${error.message}`, null)));
       });
 
       child.on('close', (code) => {
-        this.currentProcess = null;
-        if (item.status === 'cancelled' || item.status === 'paused') {
-          resolve();
-          return;
-        }
-
-        if (code === 0) {
-          item.status = 'completed';
-          item.progress = 100;
-          item.completedAt = new Date().toISOString();
-          this.saveItemToDb(item);
-
-          if (this.historyService) {
-            this.historyService.addDownload({
-              titulo: item.title,
-              url: item.url,
-              tipo: item.format,
-              resolucao: item.quality,
-              pasta: item.folder,
-              status: 'sucesso'
-            });
+        if (stalled) return; // o watchdog finaliza depois de matar a árvore
+        settle(() => {
+          if (code === 0) {
+            this._completeItem(item);
+          } else {
+            this._failItem(item, friendlyYtDlpError(stderr, code));
           }
-
-          this.emit('downloads:completed', item);
-        } else {
-          item.status = 'failed';
-          item.error = stderr.trim() || `Processo finalizou com código ${code}`;
-          this.saveItemToDb(item);
-          this.emit('downloads:failed', { item, error: item.error });
-        }
-
-        this.emit('downloads:updated', this.queue);
-        resolve();
+        });
       });
     });
   }
 
+  /** true se passou `limitMs` sem atividade. */
+  _isStalled(lastActivityAt, now, limitMs) {
+    return limitMs > 0 && lastActivityAt > 0 && (now - lastActivityAt) >= limitMs;
+  }
+
   handleOutput(text, item) {
+    this._lastActivityAt = Date.now();
+    if (item.status === 'cancelled' || item.status === 'paused') return;
+
+    let forceSave = false;
+    let changed = false;
+
     for (const rawLine of text.split(/\r?\n/)) {
       const line = rawLine.trim();
       if (!line) continue;
@@ -518,12 +649,14 @@ class DownloadManager extends EventEmitter {
       if (destination) {
         item.outputPath = destination[1];
         item.title = path.basename(destination[1], path.extname(destination[1]));
+        forceSave = true;
       }
 
       const merger = line.match(/\[Merger\]\s+Merging formats into\s+"?([^"]+)"?/i);
       if (merger) {
         item.outputPath = merger[1].replace(/"/g, '');
         item.title = path.basename(item.outputPath, path.extname(item.outputPath));
+        forceSave = true;
       }
 
       const parsed = this.parseProgress(line);
@@ -532,8 +665,20 @@ class DownloadManager extends EventEmitter {
       if (parsed.eta) item.eta = parsed.eta;
       if (parsed.downloadedBytes) item.downloadedBytes = parsed.downloadedBytes;
       if (parsed.totalBytes) item.totalBytes = parsed.totalBytes;
+      changed = true;
+    }
 
+    if (!changed) return;
+
+    // Throttle (~500ms) de gravação no SQLite e de emissão para a UI; mudanças de destino
+    // (outputPath/título) são gravadas na hora. Estados finais sempre são gravados à parte.
+    const now = Date.now();
+    if (forceSave || now - this._lastSaveAt >= PROGRESS_THROTTLE_MS) {
+      this._lastSaveAt = now;
       this.saveItemToDb(item);
+    }
+    if (forceSave || now - this._lastEmitAt >= PROGRESS_THROTTLE_MS) {
+      this._lastEmitAt = now;
       this.emit('downloads:progress', {
         id: item.id,
         progress: item.progress,
@@ -591,7 +736,7 @@ class DownloadManager extends EventEmitter {
         : '{title}.{output-ext}';
       return {
         exe,
-        args: ['--output', outputPattern, '--format', 'mp3', item.url]
+        args: ['--output', outputPattern, '--format', 'mp3', assertHttpUrl(item.url)]
       };
     }
 
@@ -600,7 +745,7 @@ class DownloadManager extends EventEmitter {
       '--newline',
       '--progress',
       '--windows-filenames',
-      '--no-part',
+      '--continue', // retoma o ".part" de execuções anteriores (padrão do yt-dlp, explícito aqui)
       '--no-mtime',
       '--ffmpeg-location', this.paths.dataDir
     ];
@@ -617,7 +762,8 @@ class DownloadManager extends EventEmitter {
       else if (item.quality === '128kbps') audioQuality = '6';
       
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', audioQuality, '--embed-metadata', '--embed-thumbnail');
-      args.push('-P', targetFolder || settings.mp3Folder, '-o', '%(title)s.%(ext)s', item.url);
+      // '--' encerra as opções: a URL nunca é interpretada como flag do yt-dlp
+      args.push('-P', targetFolder || settings.mp3Folder, '-o', '%(title)s.%(ext)s', '--', assertHttpUrl(item.url));
     } else {
       const resolution = item.quality && item.quality !== 'best' ? item.quality.replace('p', '') : 'best';
       const format = resolution && resolution !== 'best'
@@ -625,26 +771,22 @@ class DownloadManager extends EventEmitter {
         : 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best';
 
       args.push('-f', format, '--merge-output-format', 'mp4', '--embed-metadata', '--embed-thumbnail');
-      args.push('-P', targetFolder || settings.mp4Folder, '-o', '%(title)s.%(ext)s', item.url);
+      args.push('-P', targetFolder || settings.mp4Folder, '-o', '%(title)s.%(ext)s', '--', assertHttpUrl(item.url));
     }
 
     return { exe, args };
   }
 
-  killProcessTree(pid) {
-    if (!pid) return Promise.resolve();
-    processRunner.cancel(pid);
-    return Promise.resolve();
+  /** Encerra o processo e toda a sua árvore; resolve quando terminou. */
+  killProcessTree(childOrPid) {
+    if (!childOrPid) return Promise.resolve();
+    return processRunner.cancel(childOrPid);
   }
 
+  /** Valida o pedido (validador único http/https) e devolve a URL normalizada. */
   validateRequest(request) {
     if (!request || !request.url) throw new Error('Informe uma URL.');
-    try {
-      const parsed = new URL(request.url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Protocolo inválido');
-    } catch {
-      throw new Error('Informe uma URL válida.');
-    }
+    return assertHttpUrl(request.url);
   }
 }
 

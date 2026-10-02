@@ -2,11 +2,7 @@ const logger = require('../../services/logService');
 const fs = require('fs/promises');
 const path = require('path');
 
-const SUPPORTED_EXTENSIONS = new Set([
-    '.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4a', '.mp3', '.flac', '.wav', '.ogg', 
-    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.heic',
-    '.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.rw2', '.orf'
-]);
+const { SUPPORTED_EXTENSIONS, RAW_EXTENSIONS, isJpeg } = require('./MediaTypes');
 
 class MediaScanner {
     /**
@@ -44,7 +40,7 @@ class MediaScanner {
             for (const resPath of results) {
                 const dir = path.dirname(resPath);
                 const ext = path.extname(resPath).toLowerCase();
-                const base = path.parse(resPath).name;
+                const base = path.parse(resPath).name.toLowerCase();
                 
                 if (!dirGroups[dir]) dirGroups[dir] = {};
                 if (!dirGroups[dir][base]) dirGroups[dir][base] = [];
@@ -52,16 +48,14 @@ class MediaScanner {
                 dirGroups[dir][base].push({ path: resPath, ext });
             }
             
-            const rawExts = new Set(['.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.rw2', '.orf']);
-            const jpgExts = new Set(['.jpg', '.jpeg']);
             
             for (const dir in dirGroups) {
                 for (const base in dirGroups[dir]) {
                     const files = dirGroups[dir][base];
-                    let hasRaw = files.some(f => rawExts.has(f.ext));
+                    let hasRaw = files.some(f => RAW_EXTENSIONS.has(f.ext));
                     
                     for (const f of files) {
-                        if (hasRaw && jpgExts.has(f.ext)) {
+                        if (hasRaw && isJpeg(f.path)) {
                             // Pula o JPG se existir o RAW
                             continue;
                         }
