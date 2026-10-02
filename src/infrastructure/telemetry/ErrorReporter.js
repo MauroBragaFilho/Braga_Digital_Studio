@@ -476,6 +476,66 @@ class ErrorReporter {
   }
 
   /**
+   * Envia todos os relatórios guardados neste dispositivo (ação explícita do usuário).
+   * - Com endpoint https configurado: envia cada relatório e remove os que foram aceitos.
+   * - Sem endpoint: devolve um único link mailto com o resumo, para o usuário enviar por e-mail
+   *   (os relatórios continuam guardados até ele limpar).
+   * @returns {Promise<{ method: 'none'|'http'|'email', count: number, sent: number, mailto?: string }>}
+   */
+  async sendAllReports() {
+    const reports = this.listLocalReports();
+    if (!reports.length) return { method: 'none', count: 0, sent: 0 };
+
+    const settings = this.getSettings ? this.getSettings() : {};
+    const targetUrl = settings.errorReportingEndpoint || this.endpointUrl;
+    if (targetUrl && this._isHttpsEndpoint(targetUrl)) {
+      let sent = 0;
+      for (const report of reports) {
+        try {
+          const data = JSON.parse(fs.readFileSync(report.path, 'utf8'));
+          const status = await this._dispatchHttp(targetUrl, data);
+          if (status >= 200 && status < 300) {
+            sent++;
+            try { fs.unlinkSync(report.path); } catch (_) {}
+          }
+        } catch (_) { /* mantém o relatório para uma nova tentativa */ }
+      }
+      logger.info('ErrorReporter:sendAllReports:http', { count: reports.length, sent });
+      return { method: 'http', count: reports.length, sent };
+    }
+
+    return { method: 'email', count: reports.length, sent: 0, mailto: this._buildSummaryMailto(reports) };
+  }
+
+  /**
+   * Link mailto com o resumo de vários relatórios (limitado para caber no link do e-mail).
+   * Os relatórios já são salvos com os dados pessoais removidos (redact).
+   * @private
+   */
+  _buildSummaryMailto(reports) {
+    let latest = null;
+    try { latest = JSON.parse(fs.readFileSync(reports[0].path, 'utf8')); } catch (_) {}
+    const short = (text, max) => String(text || '').replace(/\s+/g, ' ').slice(0, max);
+    const lines = reports.slice(0, 10).map((r) => `- ${r.timestamp} | ${short(r.source, 30)} | ${short(r.errorMessage, 90)}`);
+    const body = [
+      'Olá Mauro,',
+      '',
+      `Seguem ${reports.length} relatório(s) de erro do Braga Digital Studio:`,
+      latest ? `Versão do BDS: ${latest.app?.version || '—'} | Sistema: ${latest.system?.platform || ''} ${latest.system?.arch || ''}` : '',
+      '',
+      ...lines,
+      reports.length > 10 ? `(+ ${reports.length - 10} relatório(s) mais antigo(s))` : '',
+      '',
+      'Último erro (resumo):',
+      short(latest?.error?.stack || latest?.error?.message || '(sem detalhes)', 700),
+      '',
+      'Relatório gerado automaticamente pelo BDS.'
+    ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
+    const subject = encodeURIComponent(`[BDS Error Report] ${reports.length} relatório(s)`);
+    return `mailto:${this.developerEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
+  }
+
+  /**
    * Gera um relatório manual a partir da descrição do usuário e retorna o link mailto.
    * É uma ação explícita do usuário (Relatar um Problema), portanto NÃO é bloqueada pela
    * configuração `errorReportingEnabled`, não dispara envio HTTP automático e a cópia é

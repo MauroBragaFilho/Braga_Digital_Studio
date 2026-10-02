@@ -80,7 +80,7 @@ async function act(fn, ...args) {
 
 async function refresh() {
   try { status = await call(window.bds?.modulesGetStatus); render(); }
-  catch (err) { notice(`Não foi possível carregar os módulos: ${err.message}`, 'error'); }
+  catch (err) { notice(`Não foi possível carregar a transcrição: ${err.message}`, 'error'); }
 }
 
 // ------------------------------------------------------------------ progresso
@@ -148,7 +148,7 @@ function renderEngine() {
   const children = [];
 
   if (!status.platformSupported) {
-    children.push(h('p', { class: 'mod-warning' }, [icon('info'), 'Este módulo está disponível apenas no Windows nesta versão.']));
+    children.push(h('p', { class: 'mod-warning' }, [icon('info'), 'A transcrição está disponível apenas no Windows nesta versão.']));
     return section('Motor', 'settings_suggest', children);
   }
 
@@ -156,7 +156,7 @@ function renderEngine() {
     children.push(h('div', { class: 'mod-row' }, [
       h('div', { class: 'mod-row-text' }, [
         h('strong', { text: `Instalado${w.engine.version ? ` · versão ${w.engine.version}` : ''}` }),
-        h('span', { class: 'mod-muted', text: w.engine.source === 'zip' ? 'Instalado a partir de um arquivo .zip.' : 'Instalado pelo servidor de módulos.' })
+        h('span', { class: 'mod-muted', text: w.engine.source === 'zip' ? 'Instalado a partir de um arquivo .zip.' : 'Instalado pelo servidor de atualizações.' })
       ]),
       h('div', { class: 'mod-actions' }, [
         h('button', { class: 'mod-btn mod-btn-ghost', type: 'button', disabled: b, onclick: () => installEngine(false) }, [icon('upgrade'), status.manifestConfigured ? 'Reinstalar / atualizar' : 'Reinstalar de um .zip']),
@@ -210,7 +210,7 @@ function renderModels() {
         h('p', { class: 'mod-muted mod-model-desc', text: m.description }),
         h('div', { class: 'mod-model-meta' }, [
           h('span', { title: 'Tamanho do download' }, [icon('database'), fmtBytes(m.sizeBytes)]),
-          h('span', { title: 'Velocidade relativa (referência do projeto Whisper)' }, [icon('speed'), `Velocidade ${m.speed}`, stars(m.speedLevel)]),
+          h('span', { title: 'Velocidade relativa (referência do modelo)' }, [icon('speed'), `Velocidade ${m.speed}`, stars(m.speedLevel)]),
           h('span', { title: 'Qualidade relativa da transcrição' }, [icon('verified'), 'Qualidade', stars(m.quality)]),
           h('span', { title: 'Memória de vídeo de referência (GPU)' }, [icon('memory'), `~${m.vramGb} GB de VRAM`])
         ])
@@ -367,7 +367,7 @@ async function installEngine(fromZip) {
 }
 
 async function removeEngine() {
-  const ok = await window.bdsModal.confirm('Remover o motor do Whisper?\n\nOs modelos e o CUDA já baixados continuam no disco; remova-os separadamente se quiser liberar espaço.');
+  const ok = await window.bdsModal.confirm('Remover o motor de transcrição?\n\nOs modelos e o CUDA já baixados continuam no disco; remova-os separadamente se quiser liberar espaço.');
   if (ok) act(window.bds.modulesUninstallEngine);
 }
 

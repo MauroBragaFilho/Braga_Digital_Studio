@@ -137,7 +137,7 @@ class ModuleManager extends EventEmitter {
       disk: { freeBytes },
       whisper: {
         id: 'whisper',
-        name: 'Legendas e Transcrição (Whisper)',
+        name: 'Transcrição',
         description: 'Gera legendas (.srt) e transcrições com tempo (.md) de vídeos e áudios, em português e outros idiomas. O reconhecimento roda no seu computador: o áudio não é enviado para a internet.',
         engine: {
           installed: engineOk,
@@ -248,7 +248,7 @@ class ModuleManager extends EventEmitter {
    */
   async installEngine({ zipPath = null } = {}) {
     this._requireWindows();
-    return this._run('engine', 'Instalando o motor do Whisper', async (op) => {
+    return this._run('engine', 'Instalando o motor de transcrição', async (op) => {
       const signal = op.controller.signal;
       fs.mkdirSync(this.tempDir, { recursive: true });
       const work = path.join(this.tempDir, `engine_${Date.now()}`);
@@ -266,7 +266,7 @@ class ModuleManager extends EventEmitter {
           const manifest = await this._getJson(this.config.manifestUrl);
           const entry = manifest && manifest.modules && manifest.modules.whisper;
           const plat = entry && entry.platform && entry.platform[this._platform];
-          if (!entry || !plat || !plat.url || !plat.sha256) throw new ModuleError('O manifesto não traz o motor do Whisper para este sistema.', 'BAD_MANIFEST');
+          if (!entry || !plat || !plat.url || !plat.sha256) throw new ModuleError('O manifesto não traz o motor de transcrição para este sistema.', 'BAD_MANIFEST');
           if (entry.apiVersion && entry.apiVersion > MODULE_API_VERSION) {
             throw new ModuleError('Este motor exige uma versão mais nova do BDS. Atualize o BDS e tente de novo.', 'INCOMPATIBLE');
           }
@@ -309,7 +309,7 @@ class ModuleManager extends EventEmitter {
   }
 
   async uninstallEngine() {
-    return this._run('engine', 'Removendo o motor do Whisper', async () => {
+    return this._run('engine', 'Removendo o motor de transcrição', async () => {
       rmrf(this.paths.engine);
       this._patchWhisper((w) => { delete w.engine; });
       return this.getStatus();
@@ -468,7 +468,7 @@ class ModuleManager extends EventEmitter {
    */
   async transcribe(options) {
     this._requireWindows();
-    if (!this._engineInstalled() && !this.config.engineCommand) throw new ModuleError('Instale o motor do Whisper primeiro.', 'NO_ENGINE');
+    if (!this._engineInstalled() && !this.config.engineCommand) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
     const modelId = this._activeModelId();
     if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
 

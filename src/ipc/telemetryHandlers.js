@@ -23,25 +23,13 @@ module.exports = function registerTelemetryHandlers() {
     return errorReporter.clearAllReports();
   });
 
-  ipcMain.handle('telemetry:openReportsFolder', () => {
-    errorReporter.openCrashReportsFolder();
-    return true;
-  });
+  // Envia todos os relatórios guardados (endpoint https ou e-mail com o resumo)
+  ipcMain.handle('telemetry:sendReports', () => errorReporter.sendAllReports());
 
   ipcMain.handle('telemetry:getMailtoLink', async (_, error, context) => {
     const report = await errorReporter.report(error, context);
     if (!report) return null;
     return errorReporter.generateMailtoLink(report);
-  });
-
-  // Link mailto a partir de um crash report já salvo em disco (ação explícita do usuário)
-  ipcMain.handle('telemetry:getCrashReportMailto', (_, filePath) => {
-    return errorReporter.generateMailtoFromSavedReport(filePath);
-  });
-
-  // Conteúdo completo de um crash report salvo (para visualização na UI)
-  ipcMain.handle('telemetry:getCrashReportDetails', (_, filePath) => {
-    return errorReporter.getReportDetails(filePath);
   });
 
   // Relato manual do usuário (não é bloqueado por errorReportingEnabled: ação explícita)

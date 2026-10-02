@@ -115,7 +115,7 @@ class WhisperEngineRunner {
       throw new RunnerError('Nenhum modelo instalado. Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
     }
     const exe = this.command || path.join(this.engineDir, this.exeName);
-    if (!this.command && !fs.existsSync(exe)) throw new RunnerError('O motor do Whisper não está instalado.', 'NO_ENGINE');
+    if (!this.command && !fs.existsSync(exe)) throw new RunnerError('O motor de transcrição não está instalado.', 'NO_ENGINE');
     if (opts.outDir) fs.mkdirSync(opts.outDir, { recursive: true });
     if (signal && signal.aborted) throw new RunnerError('Cancelado.', 'CANCELLED');
 
