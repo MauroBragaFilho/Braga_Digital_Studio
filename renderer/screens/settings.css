@@ -1307,3 +1307,6 @@
 
 /* O conteúdo agora é composto por cartões; sem painel de fundo próprio */
 .settings-content { background: transparent; border: none; border-radius: 0; padding: 0 0 70px; }
+
+/* Recursos só de desenvolvimento, escondidos no app empacotado */
+.st-devhidden { display: none !important; }

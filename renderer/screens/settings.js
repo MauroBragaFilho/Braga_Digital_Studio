@@ -16,6 +16,7 @@ export function initScreen() {
   setupSaveBar();
   setupSettingsExtras();
   loadAiSummary();
+  hideDevOnlySettings();
   applyPendingUpdateCheck();
   loadCrashReports();
   loadCacheInfo();
@@ -591,6 +592,22 @@ function setupSettingsExtras() {
   });
 }
 
+/**
+ * O Assistente de IA só existe em builds de desenvolvimento (app não empacotado).
+ * No app final, esconde a categoria dele nas Configurações e a opção de tela inicial.
+ */
+async function hideDevOnlySettings() {
+  let packaged = true; // fail-safe: na dúvida, esconde
+  try {
+    if (typeof window.bds?.isPackaged === 'function') packaged = Boolean(await window.bds.isPackaged());
+  } catch (_) { /* mantém o padrão */ }
+  if (!packaged) return;
+  document.querySelector('.settings-tab[data-tab="settingsAiView"]')?.classList.add('st-devhidden');
+  document.getElementById('settingsAiView')?.classList.add('st-devhidden');
+  document.querySelector('#defaultStartScreenInput option[value="ai"]')?.classList.add('st-devhidden');
+  document.querySelector('#defaultStartScreenInput option[value="ai"]')?.setAttribute('hidden', '');
+}
+
 /** Resumo (somente leitura) da configuração da IA. */
 async function loadAiSummary() {
   const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -621,7 +638,7 @@ function clearSettingsSearch() {
 function applySettingsSearch(raw) {
   const query = normalizeText(raw).trim();
   const container = document.querySelector('.settings-container');
-  const views = [...document.querySelectorAll('.settings-content > .settings-view')];
+  const views = [...document.querySelectorAll('.settings-content > .settings-view:not(.st-devhidden)')];
   const noResults = document.getElementById('settingsNoResults');
   const activeTabId = document.querySelector('.settings-tab.active')?.dataset.tab;
 
