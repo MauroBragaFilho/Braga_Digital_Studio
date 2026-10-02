@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recuperação e Montagem Automática ainda estão em otimização; ficam disponíveis apenas
   // quando o BDS roda a partir do código-fonte (não empacotado). Assume-se "empacotado" por
   // padrão (fail-safe) até a checagem real do processo principal responder.
-  const DEV_ONLY_SCREENS = ['recovery', 'montage'];
+  const DEV_ONLY_SCREENS = ['recovery', 'montage', 'ai'];
   let isPackagedApp = true;
 
   function applyDevOnlyVisibility() {
