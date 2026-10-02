@@ -9,7 +9,7 @@
 
   <!-- BANNER DE ERRO NA TELA (APARECE APENAS EM CASO DE ERRO) -->
   <div id="silenceDebugBanner" style="display: none; background: rgba(229, 57, 53, 0.15); border: 1px solid #e53935; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 11px; color: #ff8a80; max-height: 120px; overflow-y: auto;">
-    <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: #e53935; margin-bottom: 4px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--accent); margin-bottom: 4px;">
       <span style="display: flex; align-items: center; gap: 6px;">
         <span class="material-symbols-rounded" style="font-size: 16px;">error</span>
         [ERRO DETECTADO NO SISTEMA]
@@ -68,7 +68,7 @@
 
         <!-- Barra de Botões em Uma Linha com Texto Curto (Igual à Montagem) -->
         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
-          <button id="btnAddSilenceVideos" style="background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
+          <button id="btnAddSilenceVideos" style="background: var(--accent); color: #ffffff; border: none; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">
             <span class="material-symbols-rounded" style="font-size: 16px;">add</span>
             Adicionar
           </button>
@@ -133,10 +133,10 @@
         <div>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <label style="font-size: 11px; font-weight: 600; color: var(--muted);">Sensibilidade (Threshold)</label>
-            <span id="lblSensitivity" style="font-size: 12px; font-weight: 700; color: #f25c05;">-30 dB</span>
+            <span id="lblSensitivity" style="font-size: 12px; font-weight: 700; color: var(--accent);">-30 dB</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="sliderSensitivity" min="-60" max="-10" step="1" value="-30" style="flex: 1; --slider-fill-color: #f25c05; cursor: pointer;" />
+            <input type="range" id="sliderSensitivity" min="-60" max="-10" step="1" value="-30" style="flex: 1; --slider-fill-color: var(--accent); cursor: pointer;" />
             <input type="number" id="numSensitivity" min="-60" max="-10" value="-30" style="width: 52px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; color: #ffffff; font-weight: 700; text-align: center; font-size: 11px; height: 32px; outline: none;" />
           </div>
         </div>
@@ -148,7 +148,7 @@
             <span id="lblMinDuration" style="font-size: 12px; font-weight: 700; color: #ffffff;">0.5 s (500ms)</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="sliderMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="flex: 1; --slider-fill-color: #f25c05; cursor: pointer;" />
+            <input type="range" id="sliderMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="flex: 1; --slider-fill-color: var(--accent); cursor: pointer;" />
             <input type="number" id="numMinDuration" min="0.1" max="5.0" step="0.1" value="0.5" style="width: 52px; background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 6px; color: #ffffff; font-weight: 700; text-align: center; font-size: 11px; height: 32px; outline: none;" />
           </div>
         </div>
@@ -168,7 +168,7 @@
           <label style="font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Pasta de Destino</label>
           <div style="display: flex; gap: 6px;">
             <input type="text" id="outSilenceFolder" placeholder="Pasta de destino..." style="flex: 1; height: 36px; background: rgba(0,0,0,0.3); color: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 11px;" />
-            <button id="btnSelectSilenceDestFolder" title="Selecionar Pasta" style="width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #f25c05; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+            <button id="btnSelectSilenceDestFolder" title="Selecionar Pasta" style="width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer;">
               <span class="material-symbols-rounded" style="font-size: 18px;">folder_open</span>
             </button>
           </div>
@@ -176,7 +176,7 @@
 
         <!-- BOTÃO PRINCIPAL DE PROCESSAMENTO -->
         <div style="margin-top: 8px;">
-          <button id="btnStartSilenceQueue" style="width: 100%; background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 12px 16px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(229, 57, 53, 0.3);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
+          <button id="btnStartSilenceQueue" style="width: 100%; background: var(--accent); color: #ffffff; border: none; border-radius: 6px; padding: 12px 16px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent);" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">
             <span class="material-symbols-rounded" style="font-size: 20px;">graphic_eq</span>
             Remover Silêncio
           </button>
@@ -200,13 +200,13 @@
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <button class="btn-silence-lib-option" data-origin="BDSM_DEVICE" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="material-symbols-rounded" style="color: #f25c05;">smartphone</span>
+            <span class="material-symbols-rounded" style="color: var(--accent);">smartphone</span>
             <span>Dispositivos Móveis</span>
           </div>
           <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
         </button>
 
-        <button class="btn-silence-lib-option" data-origin="OBS" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+        <button class="btn-silence-lib-option" data-origin="OBS" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--line)'">
           <div style="display: flex; align-items: center; gap: 10px;">
             <span class="material-symbols-rounded" style="color: #4caf50;">videocam</span>
             <span>OBS Studio</span>
@@ -214,7 +214,7 @@
           <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
         </button>
 
-        <button class="btn-silence-lib-option" data-origin="SHADOWPLAY" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+        <button class="btn-silence-lib-option" data-origin="SHADOWPLAY" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--line)'">
           <div style="display: flex; align-items: center; gap: 10px;">
             <span class="material-symbols-rounded" style="color: #2196f3;">sports_esports</span>
             <span>NVIDIA ShadowPlay</span>
@@ -222,9 +222,9 @@
           <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>
         </button>
 
-        <button class="btn-silence-lib-option" data-origin="ALL" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#f25c05'" onmouseout="this.style.borderColor='var(--line)'">
+        <button class="btn-silence-lib-option" data-origin="ALL" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: #ffffff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--line)'">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="material-symbols-rounded" style="color: #ff9800;">video_library</span>
+            <span class="material-symbols-rounded" style="color: var(--accent-hover, var(--accent));">video_library</span>
             <span>Todas as Mídias da Biblioteca</span>
           </div>
           <span class="material-symbols-rounded" style="font-size: 18px; color: var(--muted);">chevron_right</span>

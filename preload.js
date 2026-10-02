@@ -225,6 +225,15 @@ const api = {
   onYoutubeCode: (cb) => registerListener('youtube:code', cb),
   onYoutubeAuthStatus: (cb) => registerListener('youtube:authStatus', cb),
   
+  // IA (assistente, provedores e tarefas) — a chave de API nunca volta para o renderer
+  aiGetConfig: () => ipcRenderer.invoke('ai:getConfig'),
+  aiSaveConfig: (patch) => ipcRenderer.invoke('ai:saveConfig', patch),
+  aiTestConnection: () => ipcRenderer.invoke('ai:testConnection'),
+  aiListModels: () => ipcRenderer.invoke('ai:listModels'),
+  aiChat: (messages) => ipcRenderer.invoke('ai:chat', { messages }),
+  aiListTasks: () => ipcRenderer.invoke('ai:listTasks'),
+  aiRunTask: (name, payload) => ipcRenderer.invoke('ai:runTask', name, payload),
+
   // Media Library - Fase 1.3
   getLibraryStats: () => ipcRenderer.invoke('library:getStats'),
   searchLibrary: (options) => ipcRenderer.invoke('library:search', options),

@@ -1,4 +1,4 @@
-import { state, setStatus, escapeHtml, applyTheme, applyAccentColor } from '../app.js';
+import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences } from '../app.js';
 
 let customSources = [];
 
@@ -12,6 +12,11 @@ export function initScreen() {
   fetchAppVersion();
   loadSettingsCustomSources();
   setupContainerClickHandler();
+  setupSettingsSearch();
+  setupSaveBar();
+  setupSettingsExtras();
+  loadAiSummary();
+  hideDevOnlySettings();
   applyPendingUpdateCheck();
   loadCrashReports();
   loadCacheInfo();
@@ -56,6 +61,7 @@ function setupTabs() {
 
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
+      clearSettingsSearch();
       const targetId = tab.dataset.tab;
       tabs.forEach(t => t.classList.remove('active'));
       views.forEach(v => v.classList.add('hidden'));
@@ -149,7 +155,28 @@ function renderSettings() {
   const hwVendor = document.getElementById('preferredGpuVendorInput');
   if (hwVendor) hwVendor.value = s.preferredGpuVendor || 'auto';
 
+  // Interface e janela
+  setVal('converterFolderInput', s.converterFolder);
+  const startScreen = document.getElementById('defaultStartScreenInput');
+  if (startScreen) startScreen.value = s.defaultStartScreen || 'home';
+  setChk('reduceMotionInput', s.reduceMotion === true);
+  setChk('rememberWindowBoundsInput', s.rememberWindowBounds === true);
+
+  // Padrões do Conversor
+  const setSel = (id, value, fallback) => {
+    const el = document.getElementById(id);
+    if (el) el.value = [...el.options].some(o => o.value === String(value)) ? String(value) : fallback;
+  };
+  setSel('converterDefaultFormatInput', s.converterDefaultFormat, 'mp4');
+  setSel('converterDefaultCodecInput', s.converterDefaultCodec, 'libx264');
+  setSel('converterDefaultResolutionInput', s.converterDefaultResolution, 'original');
+  setSel('converterDefaultAudioBitrateInput', s.converterDefaultAudioBitrate, '192k');
+  const vBitrate = document.getElementById('converterDefaultVideoBitrateInput');
+  if (vBitrate) vBitrate.value = s.converterDefaultVideoBitrate || 10;
+
   toggleFolderInputs();
+  syncNotifyModules();
+  syncAccentSwatches();
 }
 
 function toggleFolderInputs() {
@@ -206,13 +233,14 @@ function bindEvents() {
   document.getElementById('obsFolderButton')?.addEventListener('click', () => chooseFolder('obsFolderInput'));
   document.getElementById('shadowplayFolderButton')?.addEventListener('click', () => chooseFolder('shadowplayFolderInput'));
   document.getElementById('deviceFolderButton')?.addEventListener('click', () => chooseFolder('deviceFolderInput'));
+  document.getElementById('converterFolderButton')?.addEventListener('click', () => chooseFolder('converterFolderInput'));
 
   // Pasta de uploads do YouTube — seleciona a pasta, escaneia os vídeos e persiste no save
   document.getElementById('uploadsFolderButton')?.addEventListener('click', async () => {
     const input = document.getElementById('uploadsFolderInput');
     const folder = await window.bds.selectFolder(input?.value || '');
     if (!folder) return;
-    if (input) input.value = folder;
+    if (input) { input.value = folder; input.dispatchEvent(new Event('input', { bubbles: true })); }
     try {
       await window.bds.uploadScanDirectory(folder);
     } catch (err) {
@@ -262,7 +290,7 @@ function bindEvents() {
       if (files && files.length > 0) {
         const filePath = files[0];
         const input = document.getElementById('lutPreviewImageInput');
-        if (input) input.value = filePath;
+        if (input) { input.value = filePath; input.dispatchEvent(new Event('input', { bubbles: true })); }
         const thumb = document.getElementById('settingsLutPreviewThumb');
         if (thumb) thumb.src = `file://${filePath}`;
       }
@@ -273,7 +301,7 @@ function bindEvents() {
 
   document.getElementById('lutPreviewImageResetBtn')?.addEventListener('click', () => {
     const input = document.getElementById('lutPreviewImageInput');
-    if (input) input.value = '';
+    if (input) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
     const thumb = document.getElementById('settingsLutPreviewThumb');
     if (thumb) thumb.src = './assets/lut_preview.jpg';
   });
@@ -389,7 +417,7 @@ async function chooseFolder(inputId) {
   if (!input) return;
   try {
     const folder = await window.bds.selectFolder(input.value);
-    if (folder) input.value = folder;
+    if (folder) { input.value = folder; input.dispatchEvent(new Event('input', { bubbles: true })); }
   } catch (error) {
     console.error('[SETTINGS] Erro ao selecionar pasta:', error);
   }
@@ -430,16 +458,234 @@ async function saveSettings() {
       preferredGpuVendor: document.getElementById('preferredGpuVendorInput')?.value || 'auto',
       cacheAutoClean: document.getElementById('cacheAutoCleanInput')?.checked === true,
       cacheMaxSizeMB: Number(document.getElementById('cacheMaxSizeInput')?.value) || 500,
+      converterFolder: document.getElementById('converterFolderInput')?.value || '',
+      defaultStartScreen: document.getElementById('defaultStartScreenInput')?.value || 'home',
+      reduceMotion: document.getElementById('reduceMotionInput')?.checked === true,
+      rememberWindowBounds: document.getElementById('rememberWindowBoundsInput')?.checked === true,
+      converterDefaultFormat: document.getElementById('converterDefaultFormatInput')?.value,
+      converterDefaultCodec: document.getElementById('converterDefaultCodecInput')?.value,
+      converterDefaultResolution: document.getElementById('converterDefaultResolutionInput')?.value,
+      converterDefaultVideoBitrate: Number(document.getElementById('converterDefaultVideoBitrateInput')?.value) || 10,
+      converterDefaultAudioBitrate: document.getElementById('converterDefaultAudioBitrateInput')?.value,
     });
     state.settings = updatedSettings;
-    // Confirma o tema após salvar (garante consistência)
+    // Confirma o tema e as preferências após salvar (garante consistência)
     applyTheme(updatedSettings.theme, updatedSettings.accentColor);
+    applyUiPreferences(updatedSettings);
     setStatus('Configurações salvas com sucesso.');
-    window.bdsModal.alert('Configurações salvas!');
+    markSettingsSaved();
   } catch (error) {
     setStatus('Erro ao salvar as configurações.');
     window.bdsModal.alert('Erro ao salvar configurações: ' + error.message);
   }
+}
+
+/* ==========================================================================
+   NOVO LAYOUT: busca, alterações não salvas, prévias e extras
+   ========================================================================== */
+
+const normalizeText = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+let settingsDirty = false;
+let savedBarTimer = null;
+
+/** Apaga os módulos de notificação quando o interruptor geral está desligado. */
+function syncNotifyModules() {
+  const on = document.getElementById('notificationsEnabledInput')?.checked !== false;
+  document.getElementById('notifyModulesGroup')?.classList.toggle('st-disabled', !on);
+}
+
+/** Marca a cor de destaque atual entre as cores sugeridas. */
+function syncAccentSwatches() {
+  const current = (document.getElementById('accentColorInput')?.value || '').toLowerCase();
+  document.querySelectorAll('.st-swatch').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.color.toLowerCase() === current);
+  });
+}
+
+function updateSaveBar() {
+  const bar = document.getElementById('settingsSaveBar');
+  if (!bar) return;
+  clearTimeout(savedBarTimer);
+  bar.classList.toggle('hidden', !settingsDirty);
+  bar.classList.remove('is-saved');
+  const text = document.getElementById('settingsSaveBarText');
+  if (text) text.textContent = 'Você tem alterações não salvas.';
+}
+
+function markSettingsDirty() {
+  settingsDirty = true;
+  updateSaveBar();
+}
+
+/** Depois de salvar: some a barra de alterações e mostra uma confirmação rápida. */
+function markSettingsSaved() {
+  settingsDirty = false;
+  const bar = document.getElementById('settingsSaveBar');
+  const text = document.getElementById('settingsSaveBarText');
+  if (!bar) return;
+  clearTimeout(savedBarTimer);
+  bar.classList.remove('hidden');
+  bar.classList.add('is-saved');
+  if (text) text.textContent = 'Configurações salvas.';
+  savedBarTimer = setTimeout(() => { bar.classList.add('hidden'); bar.classList.remove('is-saved'); }, 2200);
+}
+
+/** Descarta as alterações: recarrega os campos e desfaz as prévias (tema, cor, animações). */
+function discardSettingsChanges() {
+  renderSettings();
+  const s = state.settings || {};
+  applyTheme(s.theme, s.accentColor);
+  applyUiPreferences(s);
+  settingsDirty = false;
+  updateSaveBar();
+}
+
+function setupSaveBar() {
+  settingsDirty = false;
+  const content = document.querySelector('.settings-content');
+  const track = (e) => {
+    if (e.target?.id === 'settingsSearch') return;
+    markSettingsDirty();
+  };
+  content?.addEventListener('input', track);
+  content?.addEventListener('change', track);
+  document.getElementById('settingsSaveBarSave')?.addEventListener('click', saveSettings);
+  document.getElementById('settingsSaveBarDiscard')?.addEventListener('click', discardSettingsChanges);
+}
+
+/** Ao sair da tela com alterações não salvas, desfaz as prévias para não deixar o app "meio mudado". */
+export function onLeave() {
+  if (settingsDirty) {
+    const s = state.settings || {};
+    applyTheme(s.theme, s.accentColor);
+    applyUiPreferences(s);
+  }
+  settingsDirty = false;
+  clearTimeout(savedBarTimer);
+}
+
+function setupSettingsExtras() {
+  // Cores sugeridas
+  document.getElementById('accentSwatches')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.st-swatch');
+    if (!btn) return;
+    const input = document.getElementById('accentColorInput');
+    if (input) input.value = btn.dataset.color;
+    applyAccentColor(btn.dataset.color);
+    syncAccentSwatches();
+    markSettingsDirty();
+  });
+  document.getElementById('accentColorInput')?.addEventListener('input', syncAccentSwatches);
+
+  // Prévia imediata de "reduzir animações"
+  document.getElementById('reduceMotionInput')?.addEventListener('change', (e) => {
+    applyUiPreferences({ reduceMotion: e.target.checked });
+  });
+
+  // Interruptor geral de notificações
+  document.getElementById('notificationsEnabledInput')?.addEventListener('change', syncNotifyModules);
+
+  // Atalho para a tela do Assistente
+  document.getElementById('settingsOpenAiButton')?.addEventListener('click', () => {
+    document.querySelector('.sidebar .tab-button[data-view="ai"]')?.click();
+  });
+}
+
+/**
+ * O Assistente de IA só existe em builds de desenvolvimento (app não empacotado).
+ * No app final, esconde a categoria dele nas Configurações e a opção de tela inicial.
+ */
+async function hideDevOnlySettings() {
+  let packaged = true; // fail-safe: na dúvida, esconde
+  try {
+    if (typeof window.bds?.isPackaged === 'function') packaged = Boolean(await window.bds.isPackaged());
+  } catch (_) { /* mantém o padrão */ }
+  if (!packaged) return;
+  document.querySelector('.settings-tab[data-tab="settingsAiView"]')?.classList.add('st-devhidden');
+  document.getElementById('settingsAiView')?.classList.add('st-devhidden');
+  document.querySelector('#defaultStartScreenInput option[value="ai"]')?.classList.add('st-devhidden');
+  document.querySelector('#defaultStartScreenInput option[value="ai"]')?.setAttribute('hidden', '');
+}
+
+/** Resumo (somente leitura) da configuração da IA. */
+async function loadAiSummary() {
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  try {
+    const res = await window.bds?.aiGetConfig?.();
+    if (!res?.ok) throw new Error(res?.error || 'indisponível');
+    const c = res.data;
+    let host = c.baseUrl;
+    try { host = new URL(c.baseUrl).host; } catch (_) { /* mantém a URL crua */ }
+    set('settingsAiServer', host);
+    set('settingsAiModel', c.model || 'não definido');
+    set('settingsAiKey', c.hasKey ? 'Guardada (criptografada)' : (c.isOfficialOpenAI ? 'Não configurada' : 'Não necessária'));
+  } catch (_) {
+    set('settingsAiServer', 'indisponível');
+    set('settingsAiModel', '—');
+    set('settingsAiKey', '—');
+  }
+}
+
+/* --- Busca --- */
+function clearSettingsSearch() {
+  const input = document.getElementById('settingsSearch');
+  if (!input || !input.value) return;
+  input.value = '';
+  applySettingsSearch('');
+}
+
+function applySettingsSearch(raw) {
+  const query = normalizeText(raw).trim();
+  const container = document.querySelector('.settings-container');
+  const views = [...document.querySelectorAll('.settings-content > .settings-view:not(.st-devhidden)')];
+  const noResults = document.getElementById('settingsNoResults');
+  const activeTabId = document.querySelector('.settings-tab.active')?.dataset.tab;
+
+  document.querySelectorAll('.st-card, .st-row').forEach(el => el.classList.remove('st-filtered'));
+
+  if (!query) {
+    container?.classList.remove('st-searching');
+    views.forEach(v => v.classList.toggle('hidden', v.id !== activeTabId));
+    noResults?.classList.add('hidden');
+    return;
+  }
+
+  container?.classList.add('st-searching');
+  views.forEach(view => {
+    let hits = 0;
+    view.querySelectorAll('.st-card').forEach(card => {
+      if (card.classList.contains('hidden')) { card.classList.add('st-filtered'); return; }
+      const titleMatch = normalizeText(card.querySelector('.st-card-title')?.textContent).includes(query);
+      const rows = [...card.querySelectorAll('.st-row')];
+      let visible;
+      if (rows.length) {
+        let rowHits = 0;
+        rows.forEach(row => {
+          const match = titleMatch || normalizeText(row.textContent).includes(query);
+          row.classList.toggle('st-filtered', !match);
+          if (match) rowHits++;
+        });
+        visible = rowHits > 0;
+      } else {
+        visible = titleMatch || normalizeText(card.textContent).includes(query);
+      }
+      card.classList.toggle('st-filtered', !visible);
+      if (visible) hits++;
+    });
+    view.classList.toggle('hidden', hits === 0);
+  });
+
+  noResults?.classList.toggle('hidden', views.some(v => !v.classList.contains('hidden')));
+}
+
+function setupSettingsSearch() {
+  const input = document.getElementById('settingsSearch');
+  if (!input) return;
+  input.addEventListener('input', () => applySettingsSearch(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && input.value) { e.stopPropagation(); clearSettingsSearch(); }
+  });
 }
 
 /* ==========================================================================

@@ -1032,7 +1032,7 @@ dd {
 .qa-card:hover:not([disabled]) {
   border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(229,57,53,0.15);
+  box-shadow: 0 6px 12px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .qa-icon {
   font-size: 64px !important;
@@ -1424,18 +1424,13 @@ dialog menu {
   font-weight: 600;
   cursor: pointer;
   transition: 0.2s;
-  box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .bds-btn-primary:hover {
   filter: brightness(1.1);
   transform: translateY(-1px);
 }
 
-/* Floating Player Hover Fix */
-#floatingPlayerCloseBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
-}
 /* Storage Indicators */
 .storage-indicator { font-family: 'Inter', sans-serif; }
 .storage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 11px; }
@@ -1605,7 +1600,7 @@ select option {
 .bds-tree-item.active-folder {
   background: #331515;
   color: var(--text);
-  border-left: 2px solid #d32f2f;
+  border-left: 2px solid var(--accent);
 }
 
 .bds-tree-item .arrow {
@@ -2027,7 +2022,7 @@ select option {
 
 .inspector-tabs .tab-btn.active {
   color: var(--text);
-  border-bottom-color: #d32f2f;
+  border-bottom-color: var(--accent);
 }
 
 .inspector-form {
@@ -2131,7 +2126,7 @@ select option {
 }
 
 .mini-thumb-box.active {
-  border-color: #d32f2f;
+  border-color: var(--accent);
 }
 
 .bds-btn-red-submit {
@@ -2368,7 +2363,7 @@ select option {
 .converter-btn { border: none; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; transition: all 0.2s; }
 .converter-btn:hover { filter: brightness(1.1); }
 .converter-btn:disabled, .converter-btn:disabled:hover { opacity: 0.5; cursor: not-allowed; filter: saturate(0.3); }
-.converter-btn-primary { background: #e53935; color: #ffffff; }
+.converter-btn-primary { background: var(--accent); color: #ffffff; }
 .converter-btn-secondary { background: var(--card-2); color: var(--text); border: 1px solid var(--line); }
 .converter-sort-select { background: var(--card-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-weight: 600; font-size: 12px; outline: none; cursor: pointer; white-space: nowrap; }
 
@@ -2425,10 +2420,10 @@ select option {
 .converter-select { width: 100%; height: 36px; background: rgba(0,0,0,0.3); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 12px; }
 .converter-input-group { display: flex; gap: 6px; }
 .converter-input { flex: 1; height: 36px; background: rgba(0,0,0,0.3); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; outline: none; font-size: 11px; }
-.converter-icon-btn { width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: #e53935; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.converter-icon-btn:hover { border-color: #e53935; }
+.converter-icon-btn { width: 36px; height: 36px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.converter-icon-btn:hover { border-color: var(--accent); }
 .converter-start-group { margin-top: 8px; }
-.converter-btn-start { width: 100%; background: #e53935; color: #ffffff; border: none; border-radius: 6px; padding: 12px 16px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(76, 175, 80, 0.3); }
+.converter-btn-start { width: 100%; background: var(--accent); color: #ffffff; border: none; border-radius: 6px; padding: 12px 16px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(76, 175, 80, 0.3); }
 .converter-btn-start:hover { filter: brightness(1.1); }
 
 /* Modal */

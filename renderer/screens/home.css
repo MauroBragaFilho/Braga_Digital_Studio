@@ -204,7 +204,7 @@
 .qa-card:hover:not([disabled]) {
   border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(229, 57, 53, 0.15);
+  box-shadow: 0 6px 12px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .qa-card[disabled] {
   opacity: 0.4;
@@ -556,3 +556,130 @@
 .recent-carousel-card {
   scroll-snap-align: start;
 }
+/* ==========================================================================
+   REFINAMENTOS VISUAIS
+   ========================================================================== */
+
+/* --- Estatísticas: destaque lateral e hierarquia --- */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--card) 0%, color-mix(in srgb, var(--card) 88%, var(--accent)) 100%);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent);
+  opacity: 0.8;
+}
+.stat-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); transform: translateY(-2px); }
+.stat-label { text-transform: uppercase; letter-spacing: 0.6px; font-size: 11px; font-weight: 700; }
+.stat-value { font-size: 36px; font-variant-numeric: tabular-nums; }
+.stat-breakdown { flex-wrap: wrap; white-space: normal; }
+
+/* --- Títulos de seção --- */
+.section-title { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+.section-title-icon {
+  font-size: 18px;
+  padding: 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* --- Gravações recentes: sem corte no hover, miniatura com destaque --- */
+.recordings-row {
+  padding: 4px 2px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.recordings-row .empty-message {
+  flex: 1;
+  text-align: center;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.recent-carousel-card:hover { transform: translateY(-3px); }
+.recent-carousel-thumb {
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.recent-carousel-thumb::after {
+  content: 'play_arrow';
+  font-family: 'Material Symbols Rounded';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.recent-carousel-card:hover .recent-carousel-thumb {
+  border-color: var(--accent);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+.recent-carousel-card:hover .recent-carousel-thumb::after { opacity: 1; }
+.recent-carousel-duration { z-index: 1; font-variant-numeric: tabular-nums; }
+
+/* --- Ações rápidas: ícone em selo --- */
+.qa-card {
+  padding: 20px 16px;
+  box-shadow: none;
+}
+.qa-card:hover:not([disabled]) {
+  background: color-mix(in srgb, var(--card-2) 90%, var(--accent));
+}
+.qa-card:active:not([disabled]) { transform: translateY(0); }
+.qa-icon {
+  font-size: 28px !important;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  margin-bottom: 6px;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.qa-card:hover:not([disabled]) .qa-icon {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  transform: scale(1.06);
+}
+
+/* --- Abas e tabela --- */
+.job-tab { position: relative; }
+.job-tab.active { font-weight: 700; }
+.job-tab:focus-visible,
+.qa-card:focus-visible,
+.recent-carousel-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.jobs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+  white-space: nowrap;
+}
+.jobs-table td { font-variant-numeric: tabular-nums; }
+.recent-job-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.job-name-cell .filename { max-width: min(320px, 28vw); font-weight: 600; }
+.job-actions-cell .material-symbols-rounded {
+  padding: 4px;
+  margin-left: 2px;
+  border-radius: 6px;
+}
+.job-actions-cell .material-symbols-rounded:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.jobs-empty-state { padding: 40px 24px; font-size: 13px; }
+.jobs-table-container { border-radius: 12px; min-height: 160px; }

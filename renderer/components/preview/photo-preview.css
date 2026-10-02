@@ -116,7 +116,7 @@
 
 .photo-tool-btn.active {
   color: var(--accent, #e53935);
-  background: rgba(229, 57, 53, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .photo-tool-btn .material-symbols-rounded {
@@ -505,7 +505,7 @@
 
 .photo-filmstrip-item.active {
   border-color: var(--accent, #e53935);
-  box-shadow: 0 0 10px rgba(229, 57, 53, 0.4);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* Progressive Loading Spinner */

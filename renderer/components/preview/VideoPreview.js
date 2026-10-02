@@ -24,7 +24,8 @@ export class VideoPreview {
   }
   mount(el){ this.parent=el; this._init(); this._bind(); }
   unmount(){ this._unbind(); this.dom.root?.remove(); }
-  open(media,coll=[]) {
+  open(media,coll=[],opts={}) {
+    this._autoplay=!!opts.autoplay;
     this.media=media; this.collection=coll.length?coll:[media];
     this.ci=this.collection.findIndex(m=>(m.filepath||m.path)===(media.filepath||media.path));
     if(this.ci<0)this.ci=0;
@@ -171,6 +172,7 @@ export class VideoPreview {
   _onMeta() {
     this.duration=this.dom.video.duration||0;
     this.dom.dur.textContent=_t(this.duration);
+    if(this._autoplay){ this._autoplay=false; this.dom.video.play().catch(()=>{}); }
   }
 
   _onTimeUpdate() {
