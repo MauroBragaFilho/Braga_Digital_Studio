@@ -86,6 +86,7 @@ function setupTabs() {
    PAINEL DE TRANSCRIÇÃO (motor, modelos e GPU)
    ========================================================================== */
 let modulesPanel = null;
+let analysisPanel = null;
 
 async function mountTranscriptionPanel() {
   const host = document.getElementById('settingsTranscriptionPanel');
@@ -97,10 +98,21 @@ async function mountTranscriptionPanel() {
     console.error('[SETTINGS] Falha ao carregar o painel de transcrição:', err);
     host.textContent = 'Não foi possível carregar o painel de transcrição.';
   }
+  // Servidor de IA da análise de transcrições (opcional): um erro aqui não derruba o painel acima
+  const aiHost = document.getElementById('settingsAnalysisPanel');
+  if (!aiHost) return;
+  try {
+    analysisPanel = analysisPanel || await import('../components/analysis-panel.js');
+    await analysisPanel.mountAnalysisPanel(aiHost);
+  } catch (err) {
+    console.error('[SETTINGS] Falha ao carregar o painel de análise com IA:', err);
+    aiHost.textContent = 'Não foi possível carregar a configuração da análise com IA.';
+  }
 }
 
 function unmountTranscriptionPanel() {
   try { modulesPanel?.unmountModulesPanel(); } catch (_) { /* noop */ }
+  try { analysisPanel?.unmountAnalysisPanel(); } catch (_) { /* noop */ }
 }
 
 /* ==========================================================================

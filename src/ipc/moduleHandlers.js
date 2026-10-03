@@ -1,28 +1,28 @@
 'use strict';
 
-const { app, ipcMain, BrowserWindow, shell } = require('electron');
+const { ipcMain, BrowserWindow, shell } = require('electron');
 const path = require('node:path');
 const { ModuleManager } = require('../core/modules/ModuleManager');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const moduleConfig = require('../config/modules.config.json');
-const { detectDevEngine } = require('../core/modules/devEngine');
 const { wrap } = require('./wrap');
 
 /**
  * Handlers IPC dos módulos opcionais (Whisper). Todos devolvem { ok, data } ou { ok:false, error, code }.
  * O progresso das operações longas chega ao renderer pelo evento "modules:progress".
+ *
+ * @param {object} paths
+ * @param {{getFfmpegPath?:()=>string|null}} [deps]  getFfmpegPath: o ffmpeg que o BDS já usa (lê vídeos e áudios).
  */
-module.exports = function registerModuleHandlers(paths) {
+module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null } = {}) {
   const dataDir = (paths && paths.dataDir) || appPaths.dataDir;
   const tempDir = (paths && paths.tempDir) || appPaths.tempDir;
 
-  // Só em desenvolvimento: usa o Python local do projeto "Whisper + LM Studio" em vez do motor empacotado.
-  const devEngine = detectDevEngine({
-    isPackaged: app.isPackaged,
-    appRoot: path.join(__dirname, '..', '..'),
-    ffmpegPath: process.env.WL_FFMPEG || null // senão o motor usa o ffmpeg do PATH
+  const manager = new ModuleManager({
+    rootDir: dataDir,
+    tempDir,
+    config: { ...moduleConfig, ffmpegPath: getFfmpegPath || (() => process.env.WL_FFMPEG || null) }
   });
-  const manager = new ModuleManager({ rootDir: dataDir, tempDir, config: { ...moduleConfig, devEngine } });
 
   const broadcast = (channel, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {

@@ -489,7 +489,7 @@ class Bootstrap {
     require('./ipc/jobHandlers')();
     require('./ipc/aiHandlers')(this.paths);
     // O ModuleManager é guardado para ser cancelado no encerramento do app.
-    this.moduleManager = require('./ipc/moduleHandlers')(this.paths);
+    this.moduleManager = require('./ipc/moduleHandlers')(this.paths, { getFfmpegPath: () => ffmpegTool.resolve({ mustExist: false }) });
 
     // Settings
     // Segredos (token do Telegram) são mascarados antes de chegar ao renderer.

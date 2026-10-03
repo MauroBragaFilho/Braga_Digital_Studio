@@ -65,7 +65,12 @@
               <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
               <span class="tr-toggle-text"><strong>MD</strong><small>Transcrição</small></span>
             </button>
+            <button id="btnFmtAi" class="tr-toggle tr-toggle-wide" type="button" data-format="analyze" aria-pressed="false" aria-describedby="trAiStatus">
+              <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
+              <span class="tr-toggle-text"><strong>Análise com IA</strong><small>Resumo e pontos importantes</small></span>
+            </button>
           </div>
+          <div id="trAiStatus" class="tr-ai-status hidden" role="status"></div>
         </div>
 
         <div id="trSrtBlock" class="tr-block">
@@ -116,7 +121,7 @@
 
       <!-- EM ANDAMENTO -->
       <div id="trRun" class="tr-run hidden" aria-live="polite">
-        <span class="tr-label">Transcrevendo</span>
+        <span id="trRunLabel" class="tr-label">Transcrevendo</span>
         <div id="trRunTitle" class="tr-run-title">1 de 3</div>
         <div id="trRunBar" class="tr-bar tr-bar-lg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="trRunFill" class="tr-bar-fill"></div></div>
         <div id="trRunMsg" class="tr-muted">Preparando…</div>

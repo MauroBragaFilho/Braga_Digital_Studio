@@ -7,15 +7,25 @@
  * `ctx` expõe o que a tarefa precisa sem conhecer o provedor:
  *   ctx.chat({ messages, system })  → { text, usage }   (usa o provedor configurado)
  *
- * As tarefas abaixo estão declaradas mas ainda NÃO implementadas: servem como contrato
- * para as próximas etapas. Para implementar uma, troque `run` (ou use register()).
+ * As tarefas com `implemented: false` são só contrato para as próximas etapas. Para implementar
+ * uma, troque `run` (ou use register()). `analyzeTranscript` já está pronta (transcriptAnalysis.js).
  */
+
+const { runAnalyzeTranscript } = require('./transcriptAnalysis');
 
 const notImplemented = (name) => async () => {
   throw new Error(`A tarefa "${name}" ainda não foi implementada.`);
 };
 
 const TASKS = new Map([
+  ['analyzeTranscript', {
+    label: 'Análise de transcrição',
+    description: 'Resume uma transcrição e destaca assuntos, pontos importantes e trechos relevantes.',
+    implemented: true,
+    // payload: { text?: string, filePath?: string (.md/.srt/.vtt/.txt), title?: string, maxChunkChars?: number }
+    // ctx extra: signal (cancelar) e onProgress({ stage, index, total, percent })
+    run: runAnalyzeTranscript
+  }],
   ['transcribe', {
     label: 'Transcrição e legendas',
     description: 'Transforma áudio/vídeo em texto e gera legendas (SRT/VTT).',

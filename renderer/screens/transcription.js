@@ -7,6 +7,10 @@
  *   running → lista com o progresso de cada arquivo + andamento geral + Cancelar
  *   done    → resumo (arquivos gerados) com Abrir pasta / Nova transcrição
  *
+ * "Análise com IA" (opcional, desligada por padrão): depois de transcrever, cada transcrição é enviada ao
+ * servidor de IA configurado em Configurações → Transcrição e gera um <nome>.analise.md. A fase de
+ * análise fica dentro do modo "running" (phase = 'analyze') e uma falha nela nunca apaga a transcrição.
+ *
  * A instalação do módulo (motor, modelos, GPU) fica em Configurações → Transcrição; aqui só se usa
  * o que já está instalado. A lógica pesada roda no processo principal (src/core/modules); esta tela
  * pede ações via window.bds.modules* e mostra o andamento. Textos entram sempre por textContent.
@@ -31,7 +35,12 @@ let bound = false;
 let dragDepth = 0;
 const rowEls = new Map();  // id -> elementos da linha, para atualizar sem recriar a lista
 
-const opts = { srt: true, md: true, maxWords: 0, lines: 2, forceCpu: false, outMode: 'side', outDir: '' };
+let aiConfig = null;       // resposta de aiGetConfig (sem a chave de API)
+let phase = 'transcribe';  // 'transcribe' | 'analyze' (dentro do modo running)
+let analysisCancelled = false;
+let analysis = null;       // { item, path, done, total } enquanto uma análise roda
+
+const opts = { srt: true, md: true, analyze: false, maxWords: 0, lines: 2, forceCpu: false, outMode: 'side', outDir: '' };
 const running = () => mode === 'running';
 
 // ------------------------------------------------------------------ utilitários
@@ -84,6 +93,7 @@ function loadPrefs() {
     const s = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
     if (typeof s.srt === 'boolean') opts.srt = s.srt;
     if (typeof s.md === 'boolean') opts.md = s.md;
+    if (typeof s.analyze === 'boolean') opts.analyze = s.analyze;
     if (Number.isInteger(s.maxWords) && s.maxWords >= 0 && s.maxWords <= 40) opts.maxWords = s.maxWords;
     if (s.lines === 1 || s.lines === 2) opts.lines = s.lines;
     if (typeof s.forceCpu === 'boolean') opts.forceCpu = s.forceCpu;
@@ -151,9 +161,42 @@ async function refreshStatus() {
     status = null;
     showNotice(`Não foi possível verificar o módulo de transcrição: ${err.message}`, 'danger');
   }
+  await refreshAi();
   renderEngine();
   renderDeviceControl();
   updatePanel();
+}
+
+/** Servidor de IA (usado só pela análise): um erro aqui nunca atrapalha a transcrição. */
+async function refreshAi() {
+  try { aiConfig = await call(window.bds?.aiGetConfig); } catch (_) { aiConfig = null; }
+  renderAiStatus();
+}
+
+const aiReady = () => Boolean(aiConfig && aiConfig.model && (aiConfig.isOfficialOpenAI ? aiConfig.hasKey : true));
+
+/** Linha abaixo da opção "Análise com IA": onde o texto vai parar (ou o que falta configurar). */
+function renderAiStatus() {
+  const box = $('trAiStatus');
+  if (!box) return;
+  box.classList.toggle('hidden', !opts.analyze);
+  box.textContent = '';
+  box.classList.remove('warn');
+  if (!opts.analyze) return;
+  if (!aiReady()) {
+    box.classList.add('warn');
+    box.append(icon('warning'), h('span', {}, [
+      aiConfig && aiConfig.model ? 'Falta a chave de API. ' : 'Falta configurar o servidor de IA. ',
+      h('button', { type: 'button', onclick: goToTranscriptionSettings }, 'Configurar')
+    ]));
+  } else if (aiConfig.isLocal) {
+    box.append(icon('lock'), h('span', { text: `Servidor local (${aiConfig.model}): o texto não sai do computador.` }));
+  } else {
+    let host = aiConfig.baseUrl;
+    try { host = new URL(aiConfig.baseUrl).host; } catch (_) { /* usa a URL como está */ }
+    box.classList.add('warn');
+    box.append(icon('cloud_upload'), h('span', { text: `O texto de cada transcrição será enviado para ${host}.` }));
+  }
 }
 
 /** Por que ainda não dá para iniciar (texto curto abaixo do botão), ou '' se está tudo certo. */
@@ -163,8 +206,22 @@ function blockedReason() {
   if (!status.whisper.engine.installed) return 'Instale o módulo em Configurações → Transcrição.';
   if (!status.whisper.activeModelId) return 'Baixe um modelo em Configurações → Transcrição.';
   if (!opts.srt && !opts.md) return 'Marque ao menos um formato.';
+  if (opts.analyze && !aiReady()) return 'Configure a IA em Configurações → Transcrição, ou desligue a análise.';
   if (opts.outMode === 'dir' && !opts.outDir) return 'Escolha a pasta de destino.';
   return '';
+}
+
+/** Modelos que, na CPU, ficam bem abaixo do tempo real (medido: o Turbo roda a menos de 0,5× numa CPU de notebook). */
+const SLOW_ON_CPU = new Set(['medium', 'large-v3-turbo', 'large-v3']);
+
+/** Dica (não impede de iniciar) sob o botão: modelo pesado sem a aceleração NVIDIA. */
+function softHint() {
+  const w = status && status.whisper;
+  if (!w || !w.ready) return '';
+  const onCpu = !w.cuda.installed || opts.forceCpu;
+  const model = w.models.find((m) => m.active);
+  if (!onCpu || !model || !SLOW_ON_CPU.has(model.id)) return '';
+  return `Sem a aceleração NVIDIA, o modelo ${model.label} é muito lento. Prefira o Small ou instale a aceleração em Configurações.`;
 }
 
 function renderEngine() {
@@ -238,7 +295,7 @@ function updatePanel() {
   const reason = blockedReason();
   start.textContent = n ? `Transcrever ${plural(n, 'arquivo', 'arquivos')}` : 'Transcrever';
   start.disabled = Boolean(reason) || n === 0 || mode !== 'ready';
-  $('trCtaHint').textContent = reason;
+  $('trCtaHint').textContent = reason || softHint();
   $('trEngine').disabled = running();
   $('trEngine').title = running() ? 'O modelo só pode ser trocado fora de uma transcrição' : 'Escolher o modelo de transcrição';
 }
@@ -250,7 +307,8 @@ function newItem(filePath) {
   return {
     id: String(nextId++), path: filePath, name: baseName(filePath), ext,
     isVideo: VIDEO_EXTS.has(ext), durationSeconds: 0,
-    status: 'pending', progress: 0, outputs: [], error: null
+    status: 'pending', progress: 0, outputs: [], error: null,
+    ai: null // análise por IA: { state: 'running'|'done'|'error'|'cancelled', progress, message }
   };
 }
 
@@ -388,28 +446,38 @@ function paintRow(item) {
   el.dur.textContent = item.durationSeconds > 0 ? fmtDuration(item.durationSeconds) : '';
   el.remove.disabled = running();
 
-  const pct = Math.round(item.progress);
-  const showBar = item.status === 'running' || (running() && item.status !== 'pending' && item.status !== 'error');
+  const analyzing = Boolean(item.ai && item.ai.state === 'running');
+  const pct = Math.round(analyzing ? item.ai.progress : item.progress);
+  const showBar = analyzing || item.status === 'running' || (running() && item.status !== 'pending' && item.status !== 'error');
   el.bar.classList.toggle('hidden', !showBar);
-  el.bar.className = `tr-bar${showBar ? '' : ' hidden'}${item.status === 'error' ? ' error' : item.status === 'done' ? ' done' : ''}`;
+  el.bar.className = `tr-bar${showBar ? '' : ' hidden'}${item.status === 'error' ? ' error' : item.status === 'done' && !analyzing ? ' done' : ''}`;
   el.fill.style.width = `${pct}%`;
 
   el.sub.textContent = '';
   const waiting = running() && item.status === 'pending';
-  const label = {
-    pending: waiting ? 'Aguardando' : 'Pronto para processar',
-    running: `Transcrevendo… ${pct}%`,
-    done: 'Concluído',
-    error: item.error || 'Falhou',
-    cancelled: 'Cancelado'
-  }[item.status];
-  el.sub.append(h('span', { class: `tr-state ${item.status}`, text: label }));
+  const label = analyzing
+    ? `Analisando com IA${item.ai.message ? ` · ${item.ai.message}` : '…'}`
+    : {
+      pending: waiting ? 'Aguardando' : 'Pronto para processar',
+      running: `Transcrevendo… ${pct}%`,
+      done: 'Concluído',
+      error: item.error || 'Falhou',
+      cancelled: 'Cancelado'
+    }[item.status];
+  el.sub.append(h('span', { class: `tr-state ${analyzing ? 'running' : item.status}`, text: label }));
   if (item.status === 'done') {
     for (const o of item.outputs) {
       el.sub.append(h('button', {
         class: 'tr-out-link', type: 'button', title: `Mostrar ${baseName(o.path)} na pasta`,
         onclick: () => window.bds?.modulesReveal?.(o.path)
-      }, o.kind.toUpperCase()));
+      }, o.kind === 'analise' ? 'ANÁLISE' : o.kind.toUpperCase()));
+    }
+    // A transcrição está pronta; só a análise (opcional) não saiu.
+    if (item.ai && (item.ai.state === 'error' || item.ai.state === 'cancelled')) {
+      el.sub.append(h('span', {
+        class: 'tr-state-note', title: item.ai.message || '',
+        text: item.ai.state === 'cancelled' ? 'análise cancelada' : 'análise não feita'
+      }));
     }
   }
 }
@@ -427,6 +495,10 @@ function setRun(percent, message) {
   $('trRunFill').style.width = `${batchPercent}%`;
   $('trRunBar').setAttribute('aria-valuenow', String(Math.round(batchPercent)));
   if (message !== undefined) { lastMessage = message; $('trRunMsg').textContent = message; }
+  if (phase === 'analyze' && analysis) {
+    $('trRunTitle').textContent = `${Math.min(analysis.total, analysis.done + 1)} de ${analysis.total}`;
+    return;
+  }
   const done = items.filter((i) => i.status === 'done' || i.status === 'error').length;
   const current = Math.min(items.length, done + 1);
   $('trRunTitle').textContent = `${current} de ${items.length}`;
@@ -473,8 +545,12 @@ async function startTranscription() {
   const reason = blockedReason();
   if (reason) { showNotice(reason, 'warning'); return; }
 
-  items.forEach((i) => { i.status = 'pending'; i.progress = 0; i.outputs = []; i.error = null; });
+  items.forEach((i) => { i.status = 'pending'; i.progress = 0; i.outputs = []; i.error = null; i.ai = null; });
   cancelling = false;
+  analysisCancelled = false;
+  analysis = null;
+  phase = 'transcribe';
+  $('trRunLabel').textContent = 'Transcrevendo';
   sawFileEvents = false;
   showNotice('');
   setMode('running');
@@ -497,6 +573,9 @@ async function startTranscription() {
   if (result) reconcile(result);
   else for (const i of items) if (i.status === 'running' || i.status === 'pending') i.status = failure?.code === 'CANCELLED' ? 'cancelled' : 'error';
 
+  items.forEach(paintRow); // mostra já os links dos arquivos gerados, antes da análise (que pode demorar)
+  if (result && opts.analyze) await runAnalysis();
+
   if (failure && failure.code === 'CANCELLED') {
     showNotice('Transcrição cancelada. O que já estava pronto foi mantido.', 'info');
     finish(null, true);
@@ -506,8 +585,68 @@ async function startTranscription() {
     finish(null);
   } else {
     finish(result);
+    const failedAi = items.filter((i) => i.ai && i.ai.state === 'error');
+    if (analysisCancelled) showNotice('Análise cancelada. As transcrições foram mantidas.', 'info');
+    else if (failedAi.length) showNotice(`A análise com IA falhou em ${plural(failedAi.length, 'arquivo', 'arquivos')}: ${failedAi[0].ai.message}`, 'warning');
   }
   await refreshStatus();
+}
+
+/**
+ * Análise com IA, um arquivo por vez, depois de transcrever. Usa o .md (ou o .srt, se só ele foi gerado).
+ * Falhar aqui não desfaz a transcrição; depois de 2 falhas seguidas, para (o servidor deve estar fora do ar).
+ */
+async function runAnalysis() {
+  const targets = items.filter((i) => i.status === 'done' && i.outputs.length);
+  if (!targets.length) return;
+  phase = 'analyze';
+  analysis = { item: null, path: '', done: 0, total: targets.length };
+  $('trRunLabel').textContent = 'Analisando com IA';
+  setRun(0, 'Enviando para o servidor de IA…');
+
+  let failuresInRow = 0;
+  for (const item of targets) {
+    const src = item.outputs.find((o) => o.kind === 'md') || item.outputs.find((o) => o.kind === 'srt');
+    if (analysisCancelled) { item.ai = { state: 'cancelled', progress: 0, message: '' }; paintRow(item); continue; }
+    if (failuresInRow >= 2) {
+      item.ai = { state: 'error', progress: 0, message: 'Não tentada: as análises anteriores falharam.' };
+      paintRow(item);
+      continue;
+    }
+    item.ai = { state: 'running', progress: 0, message: 'aguardando o modelo' };
+    analysis.item = item;
+    analysis.path = src.path;
+    paintRow(item);
+    try {
+      const out = await call(window.bds.aiAnalyzeTranscript, src.path);
+      item.outputs.push({ kind: 'analise', path: out.path });
+      item.ai = { state: 'done', progress: 100, message: '' };
+      failuresInRow = 0;
+    } catch (err) {
+      const stopped = err.code === 'CANCELLED';
+      item.ai = { state: stopped ? 'cancelled' : 'error', progress: 0, message: err.message };
+      failuresInRow = stopped ? 0 : failuresInRow + 1;
+      if (stopped) analysisCancelled = true;
+    }
+    analysis.done++;
+    analysis.item = null;
+    paintRow(item);
+    setRun((analysis.done / analysis.total) * 100, '');
+  }
+  analysis = null;
+  phase = 'transcribe';
+}
+
+/** Andamento da análise em curso: parte i de n, união das partes… */
+function onAiProgress(p) {
+  if (!running() || phase !== 'analyze' || !analysis || !analysis.item || p.path !== analysis.path) return;
+  const item = analysis.item;
+  if (typeof p.percent === 'number') item.ai.progress = p.percent;
+  item.ai.message = p.stage === 'part' ? `parte ${p.index} de ${p.total}`
+    : p.stage === 'merge' ? 'juntando as partes'
+      : 'aguardando o modelo';
+  paintRow(item);
+  setRun(((analysis.done + item.ai.progress / 100) / analysis.total) * 100, item.ai.message);
 }
 
 /** Aplica o resultado final: saídas por arquivo e erros (o motor identifica o arquivo pelo nome). */
@@ -534,13 +673,20 @@ function finish(result, cancelled = false) {
   }
   const srt = generated.filter((o) => o.kind === 'srt').length;
   const md = generated.filter((o) => o.kind === 'md').length;
-  $('trDoneIcon').className = `material-symbols-rounded tr-done-icon${failed || cancelled ? ' warn' : ''}`;
-  $('trDoneIcon').textContent = failed || cancelled ? 'warning' : 'check_circle';
-  $('trDoneTitle').textContent = cancelled ? 'Transcrição cancelada' : failed ? 'Concluído com falhas' : 'Transcrição concluída';
+  const analises = generated.filter((o) => o.kind === 'analise').length;
+  const analyzed = items.filter((i) => i.ai);
+  const aiProblem = analyzed.some((i) => i.ai.state !== 'done');
+  const warn = failed || cancelled || aiProblem;
+  $('trDoneIcon').className = `material-symbols-rounded tr-done-icon${warn ? ' warn' : ''}`;
+  $('trDoneIcon').textContent = warn ? 'warning' : 'check_circle';
+  $('trDoneTitle').textContent = cancelled ? 'Transcrição cancelada'
+    : failed ? 'Concluído com falhas'
+      : aiProblem ? 'Concluído com avisos' : 'Transcrição concluída';
   const parts = [`${plural(ok.length, 'arquivo transcrito', 'arquivos transcritos')}`];
   if (failed) parts.push(plural(failed, 'com falha', 'com falha'));
-  const kinds = [srt ? `SRT ${srt}` : null, md ? `MD ${md}` : null].filter(Boolean).join(' · ');
-  $('trDoneSub').textContent = `${parts.join(', ')}\n${plural(generated.length, 'arquivo gerado', 'arquivos gerados')} (${kinds})${result && result.device ? `\n${result.device}` : ''}`;
+  const kinds = [srt ? `SRT ${srt}` : null, md ? `MD ${md}` : null, analises ? `Análise ${analises}` : null].filter(Boolean).join(' · ');
+  const aiLine = analyzed.length ? `\nAnálise com IA: ${analises} de ${analyzed.length}` : '';
+  $('trDoneSub').textContent = `${parts.join(', ')}\n${plural(generated.length, 'arquivo gerado', 'arquivos gerados')} (${kinds})${aiLine}${result && result.device ? `\n${result.device}` : ''}`;
   $('trDoneSub').style.whiteSpace = 'pre-line';
   setMode('done');
   renderList();
@@ -548,6 +694,13 @@ function finish(result, cancelled = false) {
 
 async function cancelTranscription() {
   if (!running() || cancelling) return;
+  if (phase === 'analyze') {
+    const stop = await window.bdsModal.confirm('Cancelar a análise com IA?\n\nAs transcrições já geradas são mantidas.');
+    if (!stop || phase !== 'analyze') return;
+    analysisCancelled = true;
+    try { await call(window.bds.aiCancelAnalysis); } catch (_) { /* o fim chega pelo resultado da análise */ }
+    return;
+  }
   const ok = await window.bdsModal.confirm('Deseja realmente cancelar a transcrição em andamento?');
   if (!ok) return;
   cancelling = true;
@@ -564,10 +717,11 @@ function openResultFolder() {
 // ------------------------------------------------------------------ ajustes
 
 function syncOptionsUi() {
-  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md']]) {
+  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md'], ['btnFmtAi', 'analyze']]) {
     $(id).classList.toggle('active', opts[key]);
     $(id).setAttribute('aria-pressed', String(opts[key]));
   }
+  renderAiStatus();
   $('trSrtBlock').classList.toggle('hidden', !opts.srt);
   $('rangeTrWords').value = String(opts.maxWords);
   $('trWordsValue').textContent = opts.maxWords === 0 ? 'Automático' : plural(opts.maxWords, 'palavra', 'palavras');
@@ -626,7 +780,7 @@ function bindOnce() {
     if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) hideMenu();
   }, true);
 
-  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md']]) {
+  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md'], ['btnFmtAi', 'analyze']]) {
     $(id).addEventListener('click', () => { opts[key] = !opts[key]; savePrefs(); syncOptionsUi(); });
   }
   $('rangeTrWords').addEventListener('input', (e) => { opts.maxWords = Number(e.target.value) || 0; savePrefs(); syncOptionsUi(); });
@@ -682,7 +836,8 @@ function subscribe() {
   unsubs.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
   unsubs = [
     window.bds?.onModulesProgress?.(onProgress),
-    window.bds?.onModulesStatus?.(refreshStatus)
+    window.bds?.onModulesStatus?.(refreshStatus),
+    window.bds?.onAiAnalysisProgress?.(onAiProgress)
   ].filter(Boolean);
 }
 
