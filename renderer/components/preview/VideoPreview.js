@@ -51,11 +51,10 @@ export class VideoPreview {
     video?.addEventListener('ended', ()=>this._onEnd());
     video?.addEventListener('loadedmetadata', ()=>this._onMeta());
     video?.addEventListener('timeupdate', ()=>this._onTimeUpdate());
-    document.addEventListener('mousemove', this._mmh);
-    document.addEventListener('mouseup', this._muh);
     document.addEventListener('keydown', this._kb);
     document.addEventListener('fullscreenchange', this._fsh);
-    this.dom.root?.addEventListener('mousemove', ()=>this._resetIdle());
+    this._rootMove=()=>this._resetIdle();
+    this.dom.root?.addEventListener('mousemove', this._rootMove);
   }
 
   _unbind() {
@@ -63,7 +62,8 @@ export class VideoPreview {
     document.removeEventListener('mouseup', this._muh);
     document.removeEventListener('keydown', this._kb);
     document.removeEventListener('fullscreenchange', this._fsh);
-    clearTimeout(this._idleT);
+    if(this._rootMove) this.dom.root?.removeEventListener('mousemove', this._rootMove);
+    clearTimeout(this._idleT); this._idleT=null;
   }
 
   // ── Load / Probe ──
@@ -84,10 +84,12 @@ export class VideoPreview {
   _stopAll() {
     const v=this.dom.video;
     if(v){ v.pause(); v.removeAttribute('src'); try{v.load();}catch(_){} }
-    this.tAudioEls.forEach(a=>{ try{a.pause();}catch(_){} });
+    this._loadGen=(this._loadGen||0)+1; // invalida callbacks assíncronos de trilhas da mídia anterior
+    this.tAudioEls.forEach(a=>{ try{ a.pause(); a.removeAttribute('src'); a.load(); }catch(_){} });
+    this.tRenderers.forEach(r=>{ try{ r.destroy(); }catch(_){} });
     this.tAudioEls=[]; this.tRenderers=[]; this.tMuted=[]; this.aStreams=[];
     if(this._raf){ cancelAnimationFrame(this._raf); this._raf=null; }
-    clearTimeout(this._idleT);
+    clearTimeout(this._idleT); this._idleT=null;
   }
 
   async _probeAudio(fp) {
@@ -115,6 +117,7 @@ export class VideoPreview {
 // ── Audio panel ──
   _buildAudioPanel(media) {
     const panel=this.dom.audioPanel; if(!panel)return;
+    const gen=this._loadGen;
     panel.innerHTML='';
     const fp=media.filepath||media.path||''; const uid=_u(media,fp);
     const count=Math.max(1,this.aStreams.length);
@@ -134,7 +137,8 @@ export class VideoPreview {
       row.querySelector('.vp-track-mute-btn')?.addEventListener('click',()=>this._toggleTrackMute(i));
       if(i>0 && window.bds?.getTrackAudioPath){
         window.bds.getTrackAudioPath({uuid:uid,filePath:fp,streamIndex:i}).then(url=>{
-          const a=new Audio(url); this.tAudioEls[i]=a; a.volume=parseFloat(this.dom.vol?.value||1);
+          if(gen!==this._loadGen) return; // a mídia mudou/fechou enquanto o caminho era resolvido
+          const a=new Audio(); a.preload='metadata'; a.src=url; this.tAudioEls[i]=a; a.volume=parseFloat(this.dom.vol?.value||1);
         }).catch(()=>{});
       }
     }
@@ -193,6 +197,9 @@ export class VideoPreview {
 // ── Scrub / Seek ──
   _startScrub(e) {
     e.preventDefault(); this.isScrub=true;
+    // mousemove/mouseup globais só existem durante o arraste
+    document.addEventListener('mousemove', this._mmh);
+    document.addEventListener('mouseup', this._muh);
     this.dom.timeline?.classList.add('scrubbing');
     this._scrubMove(e);
   }
@@ -211,6 +218,8 @@ export class VideoPreview {
   _handleMouseUp() {
     if(!this.isScrub)return;
     this.isScrub=false; this.dom.timeline?.classList.remove('scrubbing');
+    document.removeEventListener('mousemove', this._mmh);
+    document.removeEventListener('mouseup', this._muh);
     const t=this._lastScrubPct*this.duration;
     this.dom.video.currentTime=t;
     this.tAudioEls.forEach(a=>{ if(a)a.currentTime=t; });
@@ -284,16 +293,29 @@ export class VideoPreview {
   }
 // ── Idle ──
   _resetIdle() {
-    clearTimeout(this._idleT);
-    this.dom.header?.classList.remove('idle-hidden');
-    this.dom.controls?.classList.remove('idle-hidden');
-    this._idleT=setTimeout(()=>this._hideIdle(),3000);
+    this._lastAct=performance.now();
+    if(this._idleHidden){
+      this._idleHidden=false;
+      this.dom.header?.classList.remove('idle-hidden');
+      this.dom.controls?.classList.remove('idle-hidden');
+    }
+    if(!this._idleT) this._scheduleIdle(3000); // um único timer; mousemove só atualiza o timestamp
+  }
+
+  _scheduleIdle(ms) {
+    this._idleT=setTimeout(()=>{
+      this._idleT=null;
+      const left=3000-(performance.now()-this._lastAct);
+      if(left>5){ this._scheduleIdle(left); return; }
+      this._hideIdle();
+    },ms);
   }
 
   _hideIdle() {
     if(!this.dom.video||this.dom.video.paused)return;
     this.dom.header?.classList.add('idle-hidden');
     this.dom.controls?.classList.add('idle-hidden');
+    this._idleHidden=true;
   }
 
   // ── Keyboard ──

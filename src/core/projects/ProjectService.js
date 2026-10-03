@@ -148,20 +148,25 @@ class ProjectService {
         if (!projectId || !Array.isArray(mediaIds) || mediaIds.length === 0) return 0;
 
         let count = 0;
+        const db = this.db;
         this.db.exec('BEGIN TRANSACTION');
         try {
+            // Pré-carrega, com 1 consulta, os vínculos já existentes do projeto (media_id -> project_media.id)
+            const existingByMedia = new Map();
+            for (const r of db.prepare(`SELECT id, media_id FROM project_media WHERE project_id = ?`).all(projectId)) {
+                if (!existingByMedia.has(r.media_id)) existingByMedia.set(r.media_id, r.id);
+            }
+            // O wrapper do banco guarda os statements compilados em cache por SQL, então preparar dentro do
+            // loop é barato (sem recompilar); o wrapper também não permite reusar o mesmo objeto após run().
             for (const mediaId of mediaIds) {
-                // Nota: cada statement é preparada dentro do loop porque o wrapper
-                // do sql.js libera (`free()`) a statement automaticamente a cada
-                // chamada de .run()/.get()/.all() — reusar a mesma statement em
-                // múltiplas iterações causa erro "Statement closed".
-                const existing = this.db.prepare(`SELECT id FROM project_media WHERE project_id = ? AND media_id = ?`).get(projectId, mediaId);
-                if (!existing) {
-                    this.db.prepare(`INSERT INTO project_media (project_id, bin_id, media_id) VALUES (?, ?, ?)`).run(projectId, binId || null, mediaId);
-                    this.db.prepare(`UPDATE media SET project_id = ? WHERE id = ?`).run(projectId, mediaId);
+                const existingId = existingByMedia.get(mediaId);
+                if (existingId === undefined) {
+                    const info = db.prepare(`INSERT INTO project_media (project_id, bin_id, media_id) VALUES (?, ?, ?)`).run(projectId, binId || null, mediaId);
+                    db.prepare(`UPDATE media SET project_id = ? WHERE id = ?`).run(projectId, mediaId);
+                    existingByMedia.set(mediaId, info.lastInsertRowid); // ids repetidos na mesma lista contam uma vez
                     count++;
                 } else if (binId) {
-                    this.db.prepare(`UPDATE project_media SET bin_id = ? WHERE id = ?`).run(binId, existing.id);
+                    db.prepare(`UPDATE project_media SET bin_id = ? WHERE id = ?`).run(binId, existingId);
                 }
             }
             this.db.exec('COMMIT');
@@ -278,6 +283,24 @@ class ProjectService {
             ORDER BY tc.start_time ASC
         `);
         return stmt.all(trackId);
+    }
+
+    /** Clips de várias trilhas numa única consulta: Map trackId -> clips (ordenados por start_time). */
+    getClipsByTrackIds(trackIds) {
+        const map = new Map();
+        const ids = (trackIds || []).filter(id => id != null);
+        for (const id of ids) map.set(id, []);
+        if (ids.length === 0) return map;
+        const rows = this.db.prepare(`
+            SELECT tc.*, pm.custom_name, m.filepath, m.filename, m.duration as media_duration, m.fps, m.width, m.height
+            FROM timeline_clips tc
+            LEFT JOIN project_media pm ON tc.project_media_id = pm.id
+            LEFT JOIN media m ON tc.media_id = m.id
+            WHERE tc.track_id IN (${ids.map(() => '?').join(',')})
+            ORDER BY tc.track_id ASC, tc.start_time ASC
+        `).all(...ids);
+        for (const row of rows) map.get(row.track_id).push(row);
+        return map;
     }
 
     addClip(trackId, data) {
@@ -460,14 +483,17 @@ class ProjectService {
         const tracks = this.getTracks(sequence.id);
         const markers = this.getMarkers(projectId, sequence.id);
 
+        // Um único SELECT para os clips de todas as trilhas
+        const clipsByTrack = this.getClipsByTrackIds(tracks.map(t => t.id));
+
         const videoTracks = tracks.filter(t => t.track_type === 'video').map(t => ({
             ...t,
-            clips: this.getClips(t.id)
+            clips: clipsByTrack.get(t.id) || []
         }));
 
         const audioTracks = tracks.filter(t => t.track_type === 'audio').map(t => ({
             ...t,
-            clips: this.getClips(t.id)
+            clips: clipsByTrack.get(t.id) || []
         }));
 
         return {

@@ -4,7 +4,6 @@
 .video-preview-overlay {
   position: fixed; inset: 0; z-index: 99999;
   background: rgba(10,10,10,0.96);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   display: flex; flex-direction: column;
   color: #ededed; font-family: inherit; user-select: none;
 }

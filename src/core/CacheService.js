@@ -322,6 +322,50 @@ class CacheService {
     return { filesRemoved, bytesFreed };
   }
 
+  /**
+   * Versão assíncrona de cleanStaleTempFiles (não bloqueia o event loop; usada em background
+   * após a janela abrir). Mesma regra: só a pasta de temporários, arquivos mais velhos que maxAgeMs.
+   * @param {number} [maxAgeMs=3600000]
+   * @returns {Promise<{ filesRemoved: number, bytesFreed: number }>}
+   */
+  async cleanStaleTempFilesAsync(maxAgeMs = 3600000) {
+    const cutoff = Date.now() - maxAgeMs;
+    let filesRemoved = 0, bytesFreed = 0;
+
+    const walk = async (dir) => {
+      let entries;
+      try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (_) { return; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full);
+          try { if ((await fsp.readdir(full)).length === 0) await fsp.rmdir(full); } catch (_) {}
+        } else {
+          try {
+            const s = await fsp.stat(full);
+            if (s.mtimeMs < cutoff) {
+              await fsp.unlink(full);
+              filesRemoved++;
+              bytesFreed += s.size;
+            }
+          } catch (_) {}
+        }
+      }
+    };
+
+    const tempCat = this.categories.find(c => c.key === 'temp');
+    if (tempCat) {
+      for (const dir of [tempCat.dir, ...(tempCat.extraDirs || [])]) {
+        await walk(dir);
+      }
+    }
+
+    if (filesRemoved > 0) {
+      logger.info(`[CacheService] Limpeza de stale: ${filesRemoved} arquivos removidos, ${this._formatBytes(bytesFreed)} liberados.`);
+    }
+    return { filesRemoved, bytesFreed };
+  }
+
   _formatBytes(bytes) {
     if (bytes === 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];

@@ -157,7 +157,7 @@ function bindGlobalListeners() {
     const unsub = window.bds.onThumbsRegenProgress((data) => {
       if (!data || !data.total) return;
       clearTimeout(thumbsRegenTimer);
-      thumbsRegenTimer = setTimeout(() => { fetchMedia(); }, data.processed >= data.total ? 400 : 1200);
+      thumbsRegenTimer = setTimeout(() => { refreshThumbnails(); }, data.processed >= data.total ? 800 : 3000);
     });
     if (typeof unsub === 'function') cleanups.push(unsub);
   }
@@ -342,27 +342,8 @@ export function fetchMedia() {
   return loadMedia(false);
 }
 
-async function loadMedia(append) {
-  if (!window.bds || !window.bds.searchLibrary) return;
-  if (append && (isLoading || !hasMore)) return;
-
-  const seq = ++fetchSeq;
-  isLoading = true;
-  loadError = null;
-  const container = document.getElementById('libContentArea');
-  if (!append) {
-    hasMore = false;
-    if (container) {
-      container.setAttribute('aria-busy', 'true');
-      if (mediaItems.length === 0) {
-        container.innerHTML = `<div class="lib-loading" role="status"><span class="material-symbols-rounded lib-loading-spin">progress_activity</span> ${t('library.loading')}</div>`;
-      }
-    }
-  } else {
-    updateLoadMoreSentinel();
-  }
-
-  const options = {
+function buildSearchOptions(limit, offset) {
+  return {
     query: currentSearch,
     types: currentFilters.types,
     origins: currentFilters.origins,
@@ -375,9 +356,79 @@ async function loadMedia(append) {
     favorites: currentFilters.favorites,
     sort: currentSort,
     order: currentSortOrder,
-    limit: PAGE_SIZE,
-    offset: append ? mediaItems.length : 0
+    limit,
+    offset
   };
+}
+
+/**
+ * Regeneração de thumbnails: busca o mesmo intervalo já carregado e troca apenas as
+ * imagens que mudaram (sem reconstruir a grade). Se a lista divergiu, recarrega tudo.
+ */
+async function refreshThumbnails() {
+  if (!window.bds || !window.bds.searchLibrary || isLoading || !mediaItems.length) return;
+  const seq = fetchSeq;
+  try {
+    const res = (await window.bds.searchLibrary(buildSearchOptions(mediaItems.length, 0))) || {};
+    if (seq !== fetchSeq || isLoading) return;
+    const items = res.items || [];
+    const sameList = items.length === mediaItems.length && items.every((m, i) => m.id === mediaItems[i].id);
+    if (!sameList) { fetchMedia(); return; }
+    const container = document.getElementById('libContentArea');
+    items.forEach((fresh, i) => {
+      const old = mediaItems[i];
+      if (old.thumbnail === fresh.thumbnail) return;
+      old.thumbnail = fresh.thumbnail;
+      const el = container?.querySelector(`.media-clickable[data-id="${CSS.escape(String(old.id))}"]`);
+      if (!el) return;
+      const url = fresh.thumbnail ? `${thumbsDir}/${fresh.thumbnail}` : '';
+      const holder = el.querySelector('.lib-card-thumb');
+      if (holder) {
+        let img = holder.querySelector('.lib-card-img');
+        if (!url) { img?.remove(); return; }
+        if (!img) {
+          img = document.createElement('img');
+          img.className = 'lib-card-img';
+          img.alt = ''; img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false;
+          holder.prepend(img);
+          holder.classList.remove('audio-placeholder');
+          holder.querySelector('.lib-card-waveform')?.remove();
+        }
+        img.src = url;
+      } else {
+        const lt = el.querySelector('.lib-list-thumb');
+        if (lt) lt.style.backgroundImage = url ? `url('${url}')` : '';
+      }
+    });
+  } catch (err) {
+    console.warn('[LIBRARY] Falha ao atualizar thumbnails:', err);
+  }
+}
+
+async function loadMedia(append) {
+  if (!window.bds || !window.bds.searchLibrary) return;
+  if (append && (isLoading || !hasMore)) return;
+
+  const seq = ++fetchSeq;
+  let appendFresh = null;
+  isLoading = true;
+  loadError = null;
+  const container = document.getElementById('libContentArea');
+  if (!append) {
+    hasMore = false;
+    if (container) {
+      container.setAttribute('aria-busy', 'true');
+      if (mediaItems.length === 0) {
+        renderState = null;
+        container.innerHTML = `<div class="lib-loading" role="status"><span class="material-symbols-rounded lib-loading-spin">progress_activity</span> ${t('library.loading')}</div>`;
+      }
+    }
+  } else {
+    updateLoadMoreSentinel();
+  }
+
+  const options = buildSearchOptions(PAGE_SIZE, append ? mediaItems.length : 0);
+
 
   try {
     const searchResult = (await window.bds.searchLibrary(options)) || {};
@@ -391,6 +442,7 @@ async function loadMedia(append) {
       const known = new Set(mediaItems.map(m => m.id));
       const fresh = items.filter(m => !known.has(m.id));
       mediaItems = mediaItems.concat(fresh);
+      appendFresh = fresh;
       hasMore = fresh.length > 0 && items.length >= PAGE_SIZE;
     } else {
       mediaItems = items;
@@ -415,9 +467,11 @@ async function loadMedia(append) {
 
   updateMediaCount();
   if (loadError && !append) {
+    renderState = null;
     renderLoadError(container);
     return;
   }
+  if (append && !loadError && appendFresh && appendMediaIncremental(appendFresh)) return;
   renderMedia();
 }
 
@@ -473,6 +527,101 @@ function attachLoadMoreObserver() {
   loadMoreObserver.observe(sentinel);
 }
 
+// --- Agrupamento (usado na renderização completa e na incremental) ---
+function makeGroupCtx() {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const limits = [1, 5, 10, 25, 50];
+  let current = 50;
+  for (let i = 0; i < 15; i++) { current *= 2; limits.push(current); }
+  return { todayStr: today.toDateString(), yesterdayStr: yesterday.toDateString(), limits };
+}
+
+function getGroupInfo(media, ctx) {
+  if (currentSort === 'filesize') {
+    const GB = 1024 * 1024 * 1024;
+    const sizeGB = (media.filesize || 0) / GB;
+    const limits = ctx.limits;
+    for (let i = 0; i < limits.length; i++) {
+      if (sizeGB <= limits[i]) return { key: 'Até ' + limits[i] + ' GB', ord: i, unknown: false };
+    }
+    return { key: 'Mais de ' + limits[limits.length - 1] + ' GB', ord: limits.length, unknown: false };
+  }
+  const rawDate = media[currentSort] || media.imported_at || '';
+  const cleanDate = rawDate.replace(' ', 'T') + (rawDate.endsWith('Z') ? '' : 'Z');
+  const dateObj = new Date(cleanDate);
+  if (isNaN(dateObj)) return { key: 'Data Desconhecida', ord: 0, unknown: true };
+  let key = dateObj.toLocaleDateString('pt-BR');
+  const ds = dateObj.toDateString();
+  if (ds === ctx.todayStr) key = 'Hoje';
+  else if (ds === ctx.yesterdayStr) key = 'Ontem';
+  return { key, ord: dateObj.getTime(), unknown: false };
+}
+
+// Estado do que está desenhado, para permitir acrescentar páginas sem refazer a grade
+let renderState = null;
+
+/**
+ * Acrescenta apenas os itens novos ao DOM existente. Retorna false se não for seguro
+ * (ordem de grupos inesperada, modo diferente...) e o chamador deve renderizar tudo.
+ */
+function appendMediaIncremental(fresh) {
+  const container = document.getElementById('libContentArea');
+  const st = renderState;
+  if (!container || !st || st.mode !== viewMode || st.sort !== currentSort || st.order !== currentSortOrder) return false;
+  if (st.count !== mediaItems.length - fresh.length || !fresh.length) return false;
+
+  const ctx = makeGroupCtx();
+  const blocks = []; // { key, ord, unknown, items }
+  let last = { key: st.lastKey, ord: st.lastOrd, unknown: st.lastUnknown };
+  const seen = new Set(st.keys);
+  let cur = null;
+  for (const media of fresh) {
+    const g = getGroupInfo(media, ctx);
+    if (g.key === last.key) {
+      if (!cur) { cur = { ...g, items: [], existing: true }; blocks.push(cur); }
+      cur.items.push(media);
+      continue;
+    }
+    if (seen.has(g.key)) return false;
+    if (last.unknown && !g.unknown) return false;
+    if (!g.unknown && !last.unknown) {
+      const okOrder = currentSortOrder === 'ASC' ? g.ord > last.ord : g.ord < last.ord;
+      if (!okOrder) return false;
+    }
+    seen.add(g.key);
+    cur = { ...g, items: [media], existing: false };
+    blocks.push(cur);
+    last = g;
+  }
+
+  const sentinel = container.querySelector('#libLoadMore');
+  const card = viewMode === 'grid' ? renderGridCard : renderListRow;
+  const lastBody = viewMode === 'grid'
+    ? Array.from(container.querySelectorAll('.lib-grid')).pop()
+    : container.querySelector('.lib-list-table tbody');
+  if (!lastBody) return false;
+  for (const b of blocks) {
+    const rows = b.items.map(card).join('');
+    if (b.existing) {
+      lastBody.insertAdjacentHTML('beforeend', rows);
+    } else if (viewMode === 'grid') {
+      const html = `<div class="lib-date-header">${escapeHtml(b.key)}</div><div class="lib-grid">${rows}</div>`;
+      if (sentinel) sentinel.insertAdjacentHTML('beforebegin', html); else container.insertAdjacentHTML('beforeend', html);
+      // o último grid passa a ser o recém-criado
+    } else {
+      lastBody.insertAdjacentHTML('beforeend', `<tr><td colspan="5" class="lib-date-header">${escapeHtml(b.key)}</td></tr>${rows}`);
+    }
+  }
+  st.count = mediaItems.length;
+  st.lastKey = last.key; st.lastOrd = last.ord; st.lastUnknown = last.unknown;
+  st.keys = seen;
+  if (viewMode === 'grid') loadVisibleAudioWaveforms(container, true);
+  attachLoadMoreObserver();
+  return true;
+}
+
 function renderMedia() {
   const container = document.getElementById('libContentArea');
   if (!container) return;
@@ -482,91 +631,22 @@ function renderMedia() {
   if (mediaItems.length === 0) {
     if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
     container.innerHTML = '<div class="lib-empty-state">Nenhuma mídia encontrada.</div>';
+    renderState = null;
     return;
   }
 
+  const ctx = makeGroupCtx();
   const grouped = {};
-  
-  if (currentSort === 'filesize') {
-    const getGroupLimits = () => {
-       const limits = [1, 5, 10, 25, 50];
-       let current = 50;
-       for (let i = 0; i < 15; i++) {
-          current *= 2;
-          limits.push(current);
-       }
-       return limits;
-    };
-    const limits = getGroupLimits();
-    const GB = 1024 * 1024 * 1024;
-    
-    mediaItems.forEach(media => {
-       const sizeBytes = media.filesize || 0;
-       const sizeGB = sizeBytes / GB;
-       let groupName = "Mais de " + limits[limits.length-1] + " GB";
-       let groupSortIndex = limits.length;
-       
-       for (let i = 0; i < limits.length; i++) {
-          if (sizeGB <= limits[i]) {
-             groupName = "Até " + limits[i] + " GB";
-             groupSortIndex = i;
-             break;
-          }
-       }
-       
-       if (!grouped[groupName]) grouped[groupName] = { sortIndex: groupSortIndex, items: [] };
-       grouped[groupName].items.push(media);
-    });
-  } else {
-    mediaItems.forEach(media => {
-      const rawDate = media[currentSort] || media.imported_at || '';
-      const cleanDate = rawDate.replace(' ', 'T') + (rawDate.endsWith('Z') ? '' : 'Z');
-      const dateObj = new Date(cleanDate);
-      
-      let dateKey;
-      if (isNaN(dateObj)) {
-        dateKey = 'Data Desconhecida';
-        if (!grouped[dateKey]) grouped[dateKey] = { dateObj: new Date(0), items: [] };
-      } else {
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        dateKey = dateObj.toLocaleDateString('pt-BR');
-        if (dateObj.toDateString() === today.toDateString()) {
-          dateKey = 'Hoje';
-        } else if (dateObj.toDateString() === yesterday.toDateString()) {
-          dateKey = 'Ontem';
-        }
-        
-        if (!grouped[dateKey]) grouped[dateKey] = { dateObj, items: [] };
-      }
-      
-      grouped[dateKey].items.push(media);
-    });
+  for (const media of mediaItems) {
+    const g = getGroupInfo(media, ctx);
+    if (!grouped[g.key]) grouped[g.key] = { ord: g.ord, unknown: g.unknown, items: [] };
+    grouped[g.key].items.push(media);
   }
-
-  let sortedGroupKeys = [];
-  if (currentSort === 'filesize') {
-    sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
-      if (currentSortOrder === 'ASC') {
-        return grouped[a].sortIndex - grouped[b].sortIndex;
-      } else {
-        return grouped[b].sortIndex - grouped[a].sortIndex;
-      }
-    });
-  } else {
-    sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
-      if (a === 'Data Desconhecida') return 1;
-      if (b === 'Data Desconhecida') return -1;
-      
-      if (currentSortOrder === 'ASC') {
-        return grouped[a].dateObj - grouped[b].dateObj;
-      } else {
-        return grouped[b].dateObj - grouped[a].dateObj;
-      }
-    });
-  }
+  const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
+    if (grouped[a].unknown) return 1;
+    if (grouped[b].unknown) return -1;
+    return currentSortOrder === 'ASC' ? grouped[a].ord - grouped[b].ord : grouped[b].ord - grouped[a].ord;
+  });
 
   let html = '';
   if (viewMode === 'grid') {
@@ -589,6 +669,12 @@ function renderMedia() {
     container.innerHTML = html;
   }
 
+  const lastKey = sortedGroupKeys[sortedGroupKeys.length - 1];
+  const lastG = grouped[lastKey];
+  renderState = {
+    mode: viewMode, sort: currentSort, order: currentSortOrder, count: mediaItems.length,
+    lastKey, lastOrd: lastG ? lastG.ord : 0, lastUnknown: !!(lastG && lastG.unknown), keys: new Set(sortedGroupKeys)
+  };
   if (focusedId) container.querySelector(`.media-clickable[data-id="${CSS.escape(focusedId)}"]`)?.focus();
   attachLoadMoreObserver();
 }
@@ -597,6 +683,11 @@ function setupDelegatedMediaClicks() {
   const container = document.getElementById('libContentArea');
   if (!container || container.dataset.hasDelegatedClick) return;
   container.dataset.hasDelegatedClick = 'true';
+
+  // Miniatura ausente/corrompida: esconde o <img> (equivale ao background-image que falhava em silêncio)
+  container.addEventListener('error', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('lib-card-img')) e.target.style.display = 'none';
+  }, true);
 
   container.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="retry-load"]')) { fetchMedia(); return; }
@@ -610,25 +701,13 @@ function setupDelegatedMediaClicks() {
     
     const favBadge = e.target.closest('.lib-card-badge-fav');
     if (favBadge) {
-      const isFav = favBadge.classList.contains('active');
-      if (window.bds && window.bds.toggleFavorite) {
-        window.bds.toggleFavorite(id, !isFav).then(() => {
-          fetchMedia();
-          loadFilterOptions();
-        });
-      }
+      toggleFavoriteLocal(id, !favBadge.classList.contains('active'));
       return;
     }
 
     const favBadgeList = e.target.closest('.lib-list-fav-btn');
     if (favBadgeList) {
-      const isFav = favBadgeList.classList.contains('active');
-      if (window.bds && window.bds.toggleFavorite) {
-        window.bds.toggleFavorite(id, !isFav).then(() => {
-          fetchMedia();
-          loadFilterOptions();
-        });
-      }
+      toggleFavoriteLocal(id, !favBadgeList.classList.contains('active'));
       return;
     }
 
@@ -637,7 +716,7 @@ function setupDelegatedMediaClicks() {
     if (isCheckbox || e.ctrlKey || e.metaKey) {
       if (selectedIds.has(id)) selectedIds.delete(id);
       else selectedIds.add(id);
-      updateSelectionVisuals();
+      updateSelectionVisuals(id);
     } else {
       const media = mediaItems.find(m => m.id === id);
       if (media) openInspector(media);
@@ -662,17 +741,34 @@ function setupDelegatedMediaClicks() {
     else if (e.key === 'Home') next = all[0];
     else if (e.key === 'End') next = all[all.length - 1];
     else {
-      // Grade: encontra o card mais próximo na linha acima/abaixo
-      const rect = item.getBoundingClientRect();
-      const dir = e.key === 'ArrowDown' ? 1 : -1;
-      let best = null; let bestDist = Infinity;
-      for (const cand of all) {
-        const cr = cand.getBoundingClientRect();
-        if (dir > 0 ? cr.top <= rect.top + 4 : cr.top >= rect.top - 4) continue;
-        const dist = Math.abs(cr.top - rect.top) * 1000 + Math.abs(cr.left - rect.left);
-        if (dist < bestDist) { bestDist = dist; best = cand; }
+      // Grade: colunas vindas do CSS; pula idx +/- cols dentro do grupo (sem getBoundingClientRect)
+      const grid = item.parentElement;
+      const cols = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length);
+      const siblings = grid.children;
+      const i = Array.prototype.indexOf.call(siblings, item);
+      const col = i % cols;
+      const sibGrid = (el, step) => {
+        let n = el[step];
+        while (n && !n.classList.contains('lib-grid')) n = n[step];
+        return n;
+      };
+      if (e.key === 'ArrowDown') {
+        next = siblings[i + cols];
+        if (!next) {
+          const g2 = sibGrid(grid, 'nextElementSibling');
+          if (g2 && g2.children.length) next = g2.children[Math.min(col, g2.children.length - 1)];
+          else if (i + 1 < siblings.length) next = siblings[siblings.length - 1]; // última linha parcial
+        }
+      } else {
+        next = siblings[i - cols];
+        if (!next) {
+          const g2 = sibGrid(grid, 'previousElementSibling');
+          if (g2 && g2.children.length) {
+            const n = g2.children.length;
+            next = g2.children[Math.min(Math.floor((n - 1) / cols) * cols + col, n - 1)];
+          }
+        }
       }
-      next = best;
     }
     if (next) { e.preventDefault(); next.focus(); next.scrollIntoView({ block: 'nearest' }); }
   });
@@ -691,11 +787,49 @@ function setupDelegatedMediaClicks() {
   });
 }
 
-function updateSelectionVisuals() {
+/** Alterna favorito no card/linha/inspetor sem refazer a lista. */
+function applyFavoriteDom(id, isFav) {
+  const m = mediaItems.find(x => x.id === id);
+  if (m) m.favorite = isFav ? 1 : 0;
+  if (currentInspectorMedia && currentInspectorMedia.id === id) currentInspectorMedia.favorite = isFav ? 1 : 0;
+  const container = document.getElementById('libContentArea');
+  const el = container?.querySelector(`.media-clickable[data-id="${CSS.escape(String(id))}"]`);
+  el?.querySelectorAll('.lib-card-badge-fav, .lib-list-fav-btn').forEach((b) => {
+    b.classList.toggle('active', isFav);
+    b.textContent = isFav ? 'star' : 'star_border';
+    b.setAttribute('aria-label', isFav ? 'Remover dos favoritos' : 'Favoritar');
+  });
+  const favStar = document.getElementById('inspectorFavStar');
+  if (favStar && currentInspectorMedia && currentInspectorMedia.id === id) {
+    favStar.classList.toggle('active', isFav);
+    favStar.textContent = isFav ? 'star' : 'star_border';
+  }
+}
+
+let favFiltersTimer = null;
+async function toggleFavoriteLocal(id, isFav) {
+  if (!window.bds || !window.bds.toggleFavorite) return;
+  applyFavoriteDom(id, isFav);
+  try {
+    await window.bds.toggleFavorite(id, isFav);
+  } catch (err) {
+    console.error('[LIBRARY] Falha ao alterar favorito:', err);
+    applyFavoriteDom(id, !isFav);
+    return;
+  }
+  if (currentFilters.favorites) fetchMedia(); // o item pode sair da lista filtrada
+  // contadores dos filtros (ex.: total de favoritos) em segundo plano, sem bloquear o clique
+  clearTimeout(favFiltersTimer);
+  favFiltersTimer = setTimeout(() => loadFilterOptions(), 1200);
+}
+
+function updateSelectionVisuals(onlyId) {
   const container = document.getElementById('libContentArea');
   if (!container) return;
   
-  const items = container.querySelectorAll('.media-clickable');
+  const items = onlyId !== undefined
+    ? container.querySelectorAll(`.media-clickable[data-id="${CSS.escape(String(onlyId))}"]`)
+    : container.querySelectorAll('.media-clickable');
   items.forEach(item => {
     const id = parseInt(item.getAttribute('data-id'));
     const isSelected = selectedIds.has(id);
@@ -724,10 +858,14 @@ function updateSelectionVisuals() {
 // --- Waveforms de áudio na Biblioteca (reaproveita o cache do WaveformService) ---
 let libWaveformObserver = null;
 
-function loadVisibleAudioWaveforms(container) {
-  const canvases = container.querySelectorAll('.lib-card-waveform');
+function loadVisibleAudioWaveforms(container, onlyNew = false) {
+  const canvases = container.querySelectorAll(onlyNew ? '.lib-card-waveform:not([data-loaded])' : '.lib-card-waveform');
   if (!canvases.length || !window.bds?.getMediaWaveform) return;
 
+  if (onlyNew && libWaveformObserver) {
+    canvases.forEach(c => libWaveformObserver.observe(c));
+    return;
+  }
   if (libWaveformObserver) libWaveformObserver.disconnect();
 
   libWaveformObserver = new IntersectionObserver((entries) => {
@@ -789,7 +927,7 @@ function renderGridCard(media) {
   const favIcon = media.favorite ? 'star' : 'star_border';
 
   const thumbClass = isAudio && !thumbUrl ? 'lib-card-thumb audio-placeholder' : 'lib-card-thumb';
-  const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}');` : '';
+  const thumbImg = thumbUrl ? `<img class="lib-card-img" src="${escapeAttr(thumbUrl)}" alt="" loading="lazy" decoding="async" draggable="false">` : '';
   const audioWaveform = isAudio && !thumbUrl
     ? `<canvas class="lib-card-waveform" data-uuid="${escapeAttr(media.uuid || '')}" data-path="${escapeAttr(media.filepath || '')}" width="200" height="60"></canvas>`
     : '';
@@ -798,7 +936,8 @@ function renderGridCard(media) {
 
   return `
     <div class="lib-card media-clickable ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(media.id)}" tabindex="0" role="button" aria-pressed="${isSelected}" aria-label="${escapeAttr(media.filename)}">
-      <div class="${thumbClass}" style="${escapeAttr(thumbStyle)}">
+      <div class="${thumbClass}">
+        ${thumbImg}
         <input type="checkbox" class="lib-card-checkbox" aria-label="Selecionar" ${isSelected ? 'checked' : ''}>
         <span class="material-symbols-rounded lib-card-badge-fav ${favClass}" role="button" aria-label="${media.favorite ? 'Remover dos favoritos' : 'Favoritar'}">${favIcon}</span>
         ${audioWaveform}
@@ -1071,7 +1210,8 @@ function bindInspectorEvents() {
       if (window.bds && window.bds.toggleFavorite) {
         await window.bds.toggleFavorite(currentInspectorMedia.id, isFav);
       }
-      fetchMedia();
+      applyFavoriteDom(currentInspectorMedia.id, isFav);
+      if (currentFilters.favorites) fetchMedia();
     });
   }
 

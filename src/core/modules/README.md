@@ -2,8 +2,7 @@
 
 Recursos que o usuário instala **só se quiser** (hoje: Whisper, para legendas e transcrição).
 O BDS funciona normalmente sem nenhum deles. Código em `src/core/modules/`, IPC em
-`src/ipc/moduleHandlers.js`, tela em `renderer/screens/modules.*` (por enquanto só visível em
-modo de desenvolvimento — ver `DEV_ONLY_SCREENS` em `renderer/app.js`).
+`src/ipc/moduleHandlers.js`, painel de instalação em `renderer/components/modules-panel.js` (Configurações → Transcrição) e tela de uso em `renderer/screens/transcription.*`.
 
 ## O que é baixado, e de onde
 

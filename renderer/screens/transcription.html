@@ -1,0 +1,147 @@
+<div class="tr-screen" id="trRoot" data-mode="empty">
+
+  <!-- CABEÇALHO: título + estado do motor (um único atalho para as Configurações) -->
+  <header class="tr-head">
+    <div class="tr-head-text">
+      <h2 class="tr-title">Transcrição</h2>
+      <p class="tr-sub">Legendas e transcrições feitas no seu computador. O áudio não é enviado para a internet.</p>
+    </div>
+    <button id="trEngine" class="tr-engine" type="button" title="Escolher o modelo de transcrição" aria-haspopup="menu">
+      <span id="trEngineDot" class="tr-dot"></span>
+      <span id="trEngineText">Verificando…</span>
+      <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
+    </button>
+  </header>
+
+  <!-- AVISO (só aparece quando há algo a dizer) -->
+  <div id="trNotice" class="tr-notice hidden" role="status" aria-live="polite">
+    <span id="trNoticeIcon" class="material-symbols-rounded" aria-hidden="true">info</span>
+    <span id="trNoticeText" class="tr-notice-text"></span>
+    <button id="trNoticeClose" class="tr-icon-btn" type="button" aria-label="Fechar aviso"><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
+  </div>
+
+  <div class="tr-body">
+
+    <!-- SEM ARQUIVOS: uma única área, centralizada -->
+    <section id="trEmpty" class="tr-empty" aria-label="Adicionar arquivos">
+      <div class="tr-empty-box">
+        <span class="material-symbols-rounded tr-empty-icon" aria-hidden="true">subtitles</span>
+        <h3>Arraste vídeos ou áudios para cá</h3>
+        <p>Cada arquivo gera a sua própria legenda e transcrição.</p>
+        <button id="btnTrPick" class="tr-btn tr-btn-primary" type="button">Selecionar arquivos</button>
+        <button id="btnTrFolder" class="tr-link" type="button">ou adicionar uma pasta inteira</button>
+        <span class="tr-formats">MP4 · MKV · MOV · AVI · WEBM · MP3 · WAV · M4A · FLAC · OGG</span>
+      </div>
+    </section>
+
+    <!-- COM ARQUIVOS: lista à esquerda, ajustes à direita -->
+    <section id="trListCard" class="tr-list-card" aria-label="Arquivos">
+      <div class="tr-list-head">
+        <div class="tr-list-title">
+          <strong id="trCount">0 arquivos</strong>
+          <span id="trTotal" class="tr-muted"></span>
+        </div>
+        <div class="tr-list-actions">
+          <button id="btnTrAdd" class="tr-link" type="button" aria-haspopup="menu"><span class="material-symbols-rounded" aria-hidden="true">add</span> Adicionar</button>
+          <button id="btnTrClear" class="tr-link tr-link-muted" type="button">Limpar</button>
+        </div>
+      </div>
+      <ul id="trList" class="tr-list"></ul>
+    </section>
+
+    <aside id="trPanel" class="tr-panel" aria-label="Ajustes da transcrição">
+
+      <!-- AJUSTES (antes de iniciar) -->
+      <div id="trSetup" class="tr-section-group">
+
+        <div class="tr-block">
+          <span class="tr-label">Formatos</span>
+          <div class="tr-toggles" role="group" aria-label="Formatos de saída">
+            <button id="btnFmtSrt" class="tr-toggle active" type="button" data-format="srt" aria-pressed="true">
+              <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
+              <span class="tr-toggle-text"><strong>SRT</strong><small>Legenda</small></span>
+            </button>
+            <button id="btnFmtMd" class="tr-toggle active" type="button" data-format="md" aria-pressed="true">
+              <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
+              <span class="tr-toggle-text"><strong>MD</strong><small>Transcrição</small></span>
+            </button>
+          </div>
+        </div>
+
+        <div id="trSrtBlock" class="tr-block">
+          <span class="tr-label">Legenda</span>
+          <div class="tr-field">
+            <div class="tr-field-head">
+              <label for="rangeTrWords">Palavras por legenda</label>
+              <output id="trWordsValue" for="rangeTrWords">Automático</output>
+            </div>
+            <input type="range" id="rangeTrWords" class="tr-range" min="0" max="40" step="1" value="0" />
+          </div>
+          <div class="tr-field">
+            <div class="tr-field-head"><label id="lblTrLines">Linhas</label></div>
+            <div id="trLinesSeg" class="tr-seg" role="group" aria-labelledby="lblTrLines">
+              <button type="button" data-lines="1" aria-pressed="false">1 linha</button>
+              <button type="button" data-lines="2" aria-pressed="true" class="active">2 linhas</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tr-block">
+          <span class="tr-label">Salvar em</span>
+          <button id="btnTrDest" class="tr-select" type="button" aria-haspopup="menu">
+            <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+            <span id="trDestText" class="tr-select-text">Ao lado de cada arquivo</span>
+            <span class="material-symbols-rounded tr-select-arrow" aria-hidden="true">expand_more</span>
+          </button>
+        </div>
+
+        <details id="trAdvanced" class="tr-advanced">
+          <summary>Avançado</summary>
+          <div class="tr-advanced-body">
+            <div id="trDeviceField" class="tr-field">
+              <div class="tr-field-head"><label id="lblTrDevice">Processamento</label></div>
+              <div id="trDeviceSeg" class="tr-seg" role="group" aria-labelledby="lblTrDevice">
+                <button type="button" data-cpu="0" aria-pressed="true" class="active">GPU</button>
+                <button type="button" data-cpu="1" aria-pressed="false">Só CPU</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="tr-cta">
+          <button id="btnTrStart" class="tr-btn tr-btn-primary tr-btn-wide" type="button">Transcrever</button>
+          <small id="trCtaHint" class="tr-muted"></small>
+        </div>
+      </div>
+
+      <!-- EM ANDAMENTO -->
+      <div id="trRun" class="tr-run hidden" aria-live="polite">
+        <span class="tr-label">Transcrevendo</span>
+        <div id="trRunTitle" class="tr-run-title">1 de 3</div>
+        <div id="trRunBar" class="tr-bar tr-bar-lg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="trRunFill" class="tr-bar-fill"></div></div>
+        <div id="trRunMsg" class="tr-muted">Preparando…</div>
+        <button id="btnTrCancel" class="tr-btn tr-btn-ghost tr-btn-wide" type="button">Cancelar</button>
+      </div>
+
+      <!-- CONCLUÍDO -->
+      <div id="trDone" class="tr-done hidden">
+        <span id="trDoneIcon" class="material-symbols-rounded tr-done-icon" aria-hidden="true">check_circle</span>
+        <div id="trDoneTitle" class="tr-done-title">Transcrição concluída</div>
+        <div id="trDoneSub" class="tr-muted"></div>
+        <div class="tr-done-actions">
+          <button id="btnTrOpen" class="tr-btn tr-btn-primary tr-btn-wide" type="button">Abrir pasta</button>
+          <button id="btnTrNew" class="tr-btn tr-btn-ghost tr-btn-wide" type="button">Nova transcrição</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- menu flutuante reutilizado (Adicionar / Salvar em) -->
+  <div id="trMenu" class="tr-menu hidden" role="menu"></div>
+
+  <!-- aviso ao arrastar arquivos sobre a tela -->
+  <div id="trDrop" class="tr-drop hidden" aria-hidden="true">
+    <span class="material-symbols-rounded">upload_file</span>
+    <span>Solte para adicionar à fila</span>
+  </div>
+</div>

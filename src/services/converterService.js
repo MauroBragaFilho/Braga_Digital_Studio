@@ -7,6 +7,13 @@ const hardwareDetection = require('../core/HardwareDetectionService');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
+const probeCache = require('../core/ffmpeg/ProbeCache');
+
+// Progresso por arquivo no máximo a cada 300 ms; stderr do ffmpeg guarda só o final (~8 KB)
+const PROGRESS_EMIT_MS = 300;
+const STDERR_TAIL_BYTES = 8192;
+// ffprobes simultâneos ao montar a fila
+const PROBE_CONCURRENCY = 3;
 
 class ConverterService extends EventEmitter {
   constructor({ paths, getSettings, historyService }) {
@@ -24,7 +31,10 @@ class ConverterService extends EventEmitter {
     this.running = false;
     this.cancelRequested = false;
 
-    this.encoder = null;
+    this.encoder = null;       // encoder H.264 detectado (compatibilidade com o log/histórico)
+    this.encoderH264 = null;
+    this.encoderH265 = null;
+    this._lastProgressEmit = 0; // throttling do evento 'progress' por arquivo
     // Aplicado no processQueue a partir das Configurações (useHardwareAcceleration)
     this.hwEnabled = true;
 
@@ -70,8 +80,13 @@ class ConverterService extends EventEmitter {
 
   addFiles(files = []) {
     const added = [];
-    for (const file of files) {
-      if (!fs.existsSync(file)) {
+    for (const entry of files) {
+      // Aceita string ou { path, duration } (duração já conhecida do chamador evita novo ffprobe)
+      const file = typeof entry === 'string' ? entry : entry?.path;
+      const knownDuration = entry && typeof entry === 'object' && Number(entry.duration) > 0
+        ? Number(entry.duration)
+        : 0;
+      if (!file || !fs.existsSync(file)) {
         continue;
       }
       const ext = path.extname(file).toLowerCase();
@@ -102,6 +117,7 @@ class ConverterService extends EventEmitter {
 
         encoder: null
       };
+      if (knownDuration > 0) item.knownDuration = knownDuration;
 
       this.queue.push(item);
 
@@ -119,6 +135,9 @@ class ConverterService extends EventEmitter {
       'queue',
       this.queue
     );
+
+    // Aquece o ProbeCache em paralelo (limite) para que o início da conversão não espere o ffprobe
+    this._prefetchDurations(added.filter((it) => !(it.knownDuration > 0)).map((it) => it.file));
 
     return {
       ok: true,
@@ -226,12 +245,18 @@ class ConverterService extends EventEmitter {
       hardwareDetection.configure(this.getSettings());
     }
     this.hwEnabled = hardwareDetection.settings.useHardwareAcceleration !== false;
-    this.encoder = await hardwareDetection.detectEncoder(ffmpegPath, 'H.264');
+    this.encoderH264 = await hardwareDetection.detectEncoder(ffmpegPath, 'H.264');
+    this.encoder = this.encoderH264;
+    // H.265 só é detectado se o usuário escolheu libx265 (evita o teste do encoder à toa)
+    this.encoderH265 = this.currentConfig?.videoCodec === 'libx265'
+      ? await hardwareDetection.detectEncoder(ffmpegPath, 'H.265')
+      : null;
     
     logger.info(
       'converter:encoder',
       {
-        encoder: this.encoder
+        encoder: this.encoder,
+        encoderH265: this.encoderH265
       }
     );
 
@@ -273,17 +298,27 @@ class ConverterService extends EventEmitter {
       null;
     item._remainingSeconds =
       null;
+    this._lastProgressEmit = 0;
 
     const outFormat = this.currentConfig?.format?.toLowerCase() || 'mp4';
-    const folderName = outFormat === 'mp3' ? 'MP3' : 'MP4';
     const outExt = outFormat === 'mp3' ? '.mp3' : '.mp4';
-    
+
     // Default to source directory if no outFolder provided
     const sourceDir = path.dirname(item.file);
     const outputDir = this.currentConfig?.outFolder || sourceDir;
-    
+
     item.output = path.join(outputDir, `${path.parse(item.file).name}${outExt}`);
+    // Saída igual à origem (ex.: x.mp4 -> x.mp4 na mesma pasta): o ffmpeg recusaria e qualquer limpeza
+    // de parcial apagaria o ORIGINAL. Usa um nome distinto.
+    if (path.resolve(item.output).toLowerCase() === path.resolve(item.file).toLowerCase()) {
+      item.output = path.join(outputDir, `${path.parse(item.file).name}_convertido${outExt}`);
+    }
     item.outputType = outFormat;
+
+    const config = this.currentConfig || {};
+    let plan = this._planEncoder(item, config);
+    // O histórico registra o encoder realmente usado (atualizado se houver fallback por software)
+    item.encoder = plan.encoder;
 
     this.emit(
       'fileStarted',
@@ -295,8 +330,6 @@ class ConverterService extends EventEmitter {
       this.queue
     );
 
-
-
     fs.mkdirSync(
       outputDir,
       {
@@ -304,24 +337,182 @@ class ConverterService extends EventEmitter {
       }
     );
 
-    const duration =
-      await this.getVideoDuration(
-        item.file
-      );
+    // Duração já informada pelo chamador tem prioridade; senão ffprobe (com ProbeCache,
+    // normalmente já aquecido pelo _prefetchDurations ao montar a fila).
+    const duration = item.knownDuration > 0
+      ? item.knownDuration
+      : await this.getVideoDuration(item.file);
 
     // Armazena a duração no item (usada no cálculo de tempo restante individual e do lote)
     item.duration = duration;
 
     const ffmpeg = ffmpegTool.resolve();
 
+    logger.info(
+      'converter:file:start',
+      {
+        file: item.file,
+        output: item.output,
+        encoder: plan.encoder
+      }
+    );
+
+    let result = await this._runEncode(
+      item,
+      ffmpeg,
+      this._buildArgs(item, config, plan.encoder),
+      duration
+    );
+
+    // Encode por hardware falhou (driver/NVENC indisponível, formato não suportado...): repete UMA vez por software.
+    if (
+      result.code !== 0 &&
+      !this.cancelRequested &&
+      plan.hardware &&
+      this._shouldRetryInSoftware(result, item)
+    ) {
+      logger.warn(
+        'converter:hwFallback',
+        {
+          file: item.file,
+          failedEncoder: plan.encoder,
+          fallback: plan.software,
+          code: result.code,
+          stderr: result.stderr.slice(-500)
+        }
+      );
+      try {
+        if (fs.existsSync(item.output)) fs.unlinkSync(item.output);
+      } catch (_) { /* o ffmpeg sobrescreve (-y) */ }
+
+      plan = { encoder: plan.software, software: plan.software, hardware: false };
+      item.encoder = plan.encoder;
+      item.progress = 0;
+      item.startedAt = Date.now();
+      item._smoothedSpeed = null;
+      item._remainingSeconds = null;
+      this._lastProgressEmit = 0;
+
+      result = await this._runEncode(
+        item,
+        ffmpeg,
+        this._buildArgs(item, config, plan.encoder),
+        duration
+      );
+    }
+
+    if (this.cancelRequested) {
+      item.status =
+        'Cancelado';
+
+      // Remove o arquivo parcial gerado (ffmpeg morto no meio deixa .mp4 inválido)
+      try {
+        if (item.output && fs.existsSync(item.output)) {
+          fs.unlinkSync(item.output);
+        }
+      } catch (cleanupErr) {
+        logger.warn('converter:cancel:cleanup', { error: cleanupErr.message });
+      }
+
+      this.saveConversion(
+        item
+      );
+
+      this.emit(
+        'fileFinished',
+        {
+          id: item.id,
+          status:
+            'Cancelado'
+        }
+      );
+      return;
+    }
+
+    if (result.code === 0) {
+      item.progress =
+        100;
+      item.status =
+        'Concluído';
+
+      this.saveConversion(
+        item
+      );
+
+      this.emit(
+        'fileFinished',
+        {
+          id: item.id,
+          status:
+            'Concluído'
+        }
+      );
+
+      this.emit(
+        'queue',
+        this.queue
+      );
+      return;
+    }
+
+    item.status =
+      'Erro';
+
+    this.saveConversion(
+      item
+    );
+
+    this.emit(
+      'queue',
+      this.queue
+    );
+
+    throw new Error(
+      result.stderr ||
+      `FFmpeg retornou ${result.code}`
+    );
+  }
+
+  /**
+   * Decide o encoder de vídeo do item: o detectado por hardware (NVENC/QSV/AMF) quando a aceleração
+   * está ativa e o codec escolhido é libx264/libx265; caso contrário o de software.
+   */
+  _planEncoder(item, config) {
+    if (item.outputType === 'mp3') {
+      return { encoder: 'libmp3lame', software: 'libmp3lame', hardware: false };
+    }
+    const wantsHevc = config.videoCodec === 'libx265';
+    const software = wantsHevc ? 'libx265' : 'libx264';
+    const detected = wantsHevc ? this.encoderH265 : this.encoderH264;
+    if (this.hwEnabled && detected && !String(detected).startsWith('lib')) {
+      return { encoder: detected, software, hardware: true };
+    }
+    return { encoder: software, software, hardware: false };
+  }
+
+  /**
+   * Falha precoce (poucos segundos) ou erro típico de encoder => vale repetir por software.
+   * Falhas tardias sem relação com o encoder (disco cheio etc.) não são repetidas.
+   */
+  _shouldRetryInSoftware(result, item) {
+    const elapsedMs = Date.now() - (item.startedAt || Date.now());
+    if (elapsedMs < 20000) return true;
+    return /nvenc|encoder|OpenEncodeSession|No capable devices|Could not open|Error while opening|Cannot load|not supported|Invalid argument|Function not implemented|amf|qsv/i
+      .test(result.stderr || '');
+  }
+
+  /** Monta os argumentos do ffmpeg para o item usando o encoder indicado. */
+  _buildArgs(item, config, videoEncoder) {
     const args = [
-      '-y'
+      '-y',
+      '-nostdin',
+      '-hide_banner',
+      '-loglevel', 'error'
     ];
     // Decodificação acelerada por hardware (apenas quando ativo nas Configurações)
     if (this.hwEnabled) args.push('-hwaccel', 'auto');
     args.push('-i', item.file);
 
-    const config = this.currentConfig || {};
     const audioBitrate = config.audioBitrate || '192k';
 
     if (item.outputType === 'mp3') {
@@ -348,23 +539,27 @@ class ConverterService extends EventEmitter {
         hasBitrate = true;
       }
 
-      let codec = config.videoCodec || 'libx264';
+      const isHevc = config.videoCodec === 'libx265';
       const userCrf = config.videoCrf !== undefined && config.videoCrf !== null ? String(config.videoCrf) : null;
       const userPreset = config.preset || 'medium';
+      const crf = userCrf || (isHevc ? '28' : '23');
 
-      if (codec === 'libx265') {
-        args.push('-c:v', 'libx265');
-        if (!hasBitrate) args.push('-crf', userCrf || '28', '-preset', userPreset);
-        else args.push('-preset', userPreset);
-      } else if (codec === 'libx264') {
-        args.push('-c:v', 'libx264');
-        if (!hasBitrate) args.push('-crf', userCrf || '23', '-preset', userPreset);
-        else args.push('-preset', userPreset);
-      } else {
-        // Codec desconhecido → fallback para libx264
-        args.push('-c:v', 'libx264', '-preset', userPreset);
-        if (!hasBitrate) args.push('-crf', userCrf || '23');
+      args.push('-c:v', videoEncoder);
+      let quality = hardwareDetection.getEncoderQualityArgs(videoEncoder, crf, userPreset);
+      if (hasBitrate) {
+        // Com bitrate fixo o parâmetro de qualidade constante (crf/cq/...) não se aplica: mantém só o preset.
+        const qualityFlags = new Set(['-crf', '-cq', '-global_quality', '-qp_i', '-qp_p']);
+        const filtered = [];
+        for (let i = 0; i < quality.length; i++) {
+          if (qualityFlags.has(quality[i])) { i++; continue; }
+          filtered.push(quality[i]);
+        }
+        quality = filtered;
+      } else if (String(videoEncoder).includes('nvenc')) {
+        // NVENC: qualidade constante exige VBR com bitrate-alvo 0 (senão o -cq fica limitado ao bitrate padrão de 2 Mb/s)
+        quality.push('-rc', 'vbr', '-b:v', '0');
       }
+      args.push(...quality);
 
       // Codec de áudio (suporta aac, libmp3lame, pcm_s16le)
       const audioCodec = config.audioCodec || 'aac';
@@ -388,16 +583,15 @@ class ConverterService extends EventEmitter {
       item.output
     );
 
-    logger.info(
-      'converter:file:start',
-      {
-        file: item.file,
-        output: item.output,
-        encoder: this.encoder
-      }
-    );
+    return args;
+  }
 
-    await new Promise(
+  /**
+   * Executa o ffmpeg e resolve com { code, stderr } (stderr limitado ao final, ~8 KB).
+   * Atualiza progresso do item (throttle) a partir do `-progress pipe:1`.
+   */
+  _runEncode(item, ffmpeg, args, duration) {
+    return new Promise(
       (resolve, reject) => {
         const child =
           processRunner.spawn(
@@ -409,100 +603,66 @@ class ConverterService extends EventEmitter {
           child;
 
         let stderr = '';
+        let stdoutRemainder = '';
 
         child.stdout.on(
           'data',
           (chunk) => {
+            // Acumula linhas parciais: um chunk pode terminar no meio de "out_time_ms=123".
+            const text = stdoutRemainder + chunk.toString('utf8');
+            const lines = text.split(/\r?\n/);
+            stdoutRemainder = lines.pop();
 
-            const text =
-              chunk.toString(
-                'utf8'
-              );
-
-            const timeMatch =
-              text.match(
-                /out_time_ms=(\d+)/
-              );
-
-            // Extrai a velocidade (speed) do FFmpeg e aplica suavização exponencial (EMA).
-            // O valor bruto oscila muito; suavizado fica estável para a UI.
-            const speedMatch =
-              text.match(
-                /speed=\s*([\d.]+)x/
-              );
-
-            if (speedMatch) {
-              const rawSpeed =
-                Number(
-                  speedMatch[1]
-                );
-
-              if (
-                Number.isFinite(rawSpeed) &&
-                rawSpeed > 0
-              ) {
-                item._smoothedSpeed =
-                  item._smoothedSpeed
-                    ? (0.3 * rawSpeed + 0.7 * item._smoothedSpeed)
-                    : rawSpeed;
+            let outTimeUs = null;
+            let speed = null;
+            for (const line of lines) {
+              // Só importa o ÚLTIMO out_time_ms do chunk (o mais recente).
+              if (line.startsWith('out_time_ms=')) {
+                const v = Number(line.slice(12));
+                if (Number.isFinite(v) && v >= 0) outTimeUs = v;
+              } else if (line.startsWith('speed=')) {
+                const m = /speed=\s*([\d.]+)x/.exec(line);
+                if (m) speed = Number(m[1]);
               }
             }
 
-            if (
-              timeMatch &&
-              duration > 0
-            ) {
+            // Suaviza a velocidade (EMA): o valor bruto oscila muito.
+            if (Number.isFinite(speed) && speed > 0) {
+              item._smoothedSpeed =
+                item._smoothedSpeed
+                  ? (0.3 * speed + 0.7 * item._smoothedSpeed)
+                  : speed;
+            }
 
-              const current =
-                Number(
-                  timeMatch[1]
-                ) / 1000000;
-
-              const percent =
-                Math.min(
-                  100,
-                  (
-                    current /
-                    duration
-                  ) * 100
-                );
-
-              item.progress =
-                percent;
+            if (outTimeUs !== null && duration > 0) {
+              const current = outTimeUs / 1000000;
+              const percent = Math.min(100, (current / duration) * 100);
+              item.progress = percent;
 
               // Tempo restante individual: usa a última velocidade válida (suavizada).
-              // Sem leitura válida ainda, mantém o último valor (ou null).
-              if (
-                item._smoothedSpeed &&
-                item._smoothedSpeed > 0
-              ) {
+              if (item._smoothedSpeed && item._smoothedSpeed > 0) {
                 item._remainingSeconds =
-                  Math.max(
-                    0,
-                    (
-                      duration - current
-                    ) / item._smoothedSpeed
-                  );
+                  Math.max(0, (duration - current) / item._smoothedSpeed);
               }
 
-              this.emit(
-                'progress',
-                {
-                  id: item.id,
-                  progress: percent,
-                  status:
-                    'Convertendo',
-                  remainingSeconds:
-                    item._remainingSeconds ?? null
-                }
-              );
-
-              this.emit(
-                'queue',
-                this.queue
-              );
-
-              this._emitOverallProgress();
+              // Throttle: no máximo um evento de progresso a cada PROGRESS_EMIT_MS.
+              // No tick vai só { id, progress, ... }; a fila inteira só é emitida em mudança de status.
+              const now = Date.now();
+              if (now - this._lastProgressEmit >= PROGRESS_EMIT_MS) {
+                this._lastProgressEmit = now;
+                this.emit(
+                  'progress',
+                  {
+                    id: item.id,
+                    progress: percent,
+                    status:
+                      'Convertendo',
+                    remainingSeconds:
+                      item._remainingSeconds ?? null
+                  }
+                );
+                this._emitOverallProgress();
+              }
             }
           }
         );
@@ -510,101 +670,28 @@ class ConverterService extends EventEmitter {
         child.stderr.on(
           'data',
           (chunk) => {
-            stderr +=
-              chunk.toString(
-                'utf8'
-              );
+            stderr = (stderr + chunk.toString('utf8')).slice(-STDERR_TAIL_BYTES);
           }
         );
 
         child.on(
           'error',
-          reject
+          (err) => {
+            this.currentProcess = null;
+            reject(err);
+          }
         );
 
         child.on(
           'close',
           (code) => {
-            if (
-              this.cancelRequested
-            ) {
-                item.status =
-                'Cancelado';
-
-                // Remove o arquivo parcial gerado (ffmpeg morto no meio deixa .mp4 inválido)
-                try {
-                  if (item.output && fs.existsSync(item.output)) {
-                    fs.unlinkSync(item.output);
-                  }
-                } catch (cleanupErr) {
-                  logger.warn('converter:cancel:cleanup', { error: cleanupErr.message });
-                }
-
-                this.saveConversion(
-                item
-                );
-
-                this.emit(
-                'fileFinished',
-                {
-                  id: item.id,
-                  status:
-                    'Cancelado'
-                }
-              );
-
-              return resolve();
-            }
-
-            if (code === 0) {
-              item.progress =
-                100;
-              item.status =
-                'Concluído';
-              item.encoder =
-                this.encoder;
-
-                this.saveConversion(
-                item
-                );
-
-                this.emit(
-                'fileFinished',
-                {
-                    id: item.id,
-                    status:
-                    'Concluído'
-                }
-                );
-
-                this.emit(
-                'queue',
-                this.queue
-                );
-
-                return resolve();
-            }
-
-            item.status =
-                'Erro';
-
-            this.saveConversion(
-             item
-            );
-
-            reject(
-                new Error(
-                    stderr ||
-                    `FFmpeg retornou ${code}`
-            )
-            );
+            this.currentProcess = null;
+            resolve({ code, stderr });
           }
         );
       }
     );
   }
-
-
 
   async getVideoDuration(file) {
 
@@ -616,6 +703,24 @@ class ConverterService extends EventEmitter {
       return 0;
     }
 
+    return probeCache.getOrLoad(file, () => this._probeDuration(ffprobe, file), 'duration');
+  }
+
+  /** Pré-carrega as durações da fila com no máximo PROBE_CONCURRENCY ffprobes simultâneos. */
+  _prefetchDurations(files) {
+    const pending = files.slice();
+    const worker = async () => {
+      while (pending.length) {
+        const f = pending.shift();
+        try { await this.getVideoDuration(f); } catch (_) { /* o erro reaparece (e é tratado) na conversão */ }
+      }
+    };
+    const workers = [];
+    for (let i = 0; i < Math.min(PROBE_CONCURRENCY, pending.length); i++) workers.push(worker());
+    return Promise.all(workers);
+  }
+
+  _probeDuration(ffprobe, file) {
     return new Promise(
       (resolve, reject) => {
         const child =

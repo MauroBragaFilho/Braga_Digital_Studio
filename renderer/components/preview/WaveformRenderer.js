@@ -76,6 +76,8 @@ export class WaveformRenderer {
 
   destroy() {
     this.clear();
+    this._base = null;
+    this._played = null;
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -84,30 +86,45 @@ export class WaveformRenderer {
 
   // ── Privados ─────────────────────────────────────────────
 
-  /** Redesenha waveform estático + playhead atual. */
+  /** Pinta as barras da forma de onda numa camada (canvas offscreen) com a cor dada. */
+  _paintLayer(layer, w, h, color, withBackground) {
+    const lctx = layer.getContext('2d');
+    lctx.clearRect(0, 0, w, h);
+    if (withBackground && this.backgroundColor !== 'rgba(0,0,0,0.0)') {
+      lctx.fillStyle = this.backgroundColor;
+      lctx.fillRect(0, 0, w, h);
+    }
+    const mid = h / 2;
+    const step = this.peaks.length / w;
+    lctx.fillStyle = color;
+    for (let x = 0; x < w; x++) {
+      const idx = Math.floor(x * step);
+      const amp = this.peaks[idx] || 0;
+      const barH = Math.max(1, amp * (mid - 2));
+      lctx.fillRect(x, mid - barH, 1, barH * 2);
+    }
+  }
+
+  /**
+   * Redesenha waveform estático + playhead atual.
+   * A forma de onda é pintada UMA vez em canvases offscreen (normal e "já reproduzido");
+   * por quadro só há drawImage + a linha do playhead.
+   */
   _drawStatic() {
     if (!this.peaks || !this.peaks.length) return;
     const { canvas, ctx } = this;
     const w = canvas.width = canvas.clientWidth || 200;
     const h = canvas.height = canvas.clientHeight || 60;
+
+    this._base = this._base || document.createElement('canvas');
+    this._played = this._played || document.createElement('canvas');
+    this._base.width = this._played.width = w;
+    this._base.height = this._played.height = h;
+    this._paintLayer(this._base, w, h, this.color, true);
+    this._paintLayer(this._played, w, h, 'rgba(180,210,255,0.95)', true);
+
     ctx.clearRect(0, 0, w, h);
-
-    // Fundo
-    if (this.backgroundColor !== 'rgba(0,0,0,0.0)') {
-      ctx.fillStyle = this.backgroundColor;
-      ctx.fillRect(0, 0, w, h);
-    }
-
-    const mid = h / 2;
-    const step = this.peaks.length / w;
-
-    ctx.fillStyle = this.color;
-    for (let x = 0; x < w; x++) {
-      const idx = Math.floor(x * step);
-      const amp = this.peaks[idx] || 0;
-      const barH = Math.max(1, amp * (mid - 2));
-      ctx.fillRect(x, mid - barH, 1, barH * 2);
-    }
+    ctx.drawImage(this._base, 0, 0);
 
     // Redesenha playhead se já existia
     if (this._lastPlayheadX >= 0) {
@@ -115,37 +132,18 @@ export class WaveformRenderer {
     }
   }
 
-  /** Desenha apenas a frame de playhead (sobrepõe ao waveform). */
+  /** Quadro: parte já reproduzida (clara) + restante (cor normal) + linha do playhead. */
   _drawFrame(playheadX) {
-    // Redesenha waveform + playhead em uma única chamada (rápido para canvas pequeno)
     if (!this.peaks) return;
     const { canvas, ctx } = this;
     const w = canvas.width;
     const h = canvas.height;
-    const mid = h / 2;
-    const step = this.peaks.length / w;
+    if (!this._base || this._base.width !== w || this._base.height !== h) { this._drawStatic(); return; }
 
+    const px = Math.max(0, Math.min(w, playheadX));
     ctx.clearRect(0, 0, w, h);
-
-    // Fundo
-    if (this.backgroundColor !== 'rgba(0,0,0,0.0)') {
-      ctx.fillStyle = this.backgroundColor;
-      ctx.fillRect(0, 0, w, h);
-    }
-
-    // Desenha waveform: parte à esquerda do playhead fica mais clara
-    for (let x = 0; x < w; x++) {
-      const idx = Math.floor(x * step);
-      const amp = this.peaks[idx] || 0;
-      const barH = Math.max(1, amp * (mid - 2));
-
-      if (x < playheadX) {
-        ctx.fillStyle = 'rgba(180,210,255,0.95)'; // já reproduzido
-      } else {
-        ctx.fillStyle = this.color;
-      }
-      ctx.fillRect(x, mid - barH, 1, barH * 2);
-    }
+    if (px < w) ctx.drawImage(this._base, px, 0, w - px, h, px, 0, w - px, h);
+    if (px > 0) ctx.drawImage(this._played, 0, 0, px, h, 0, 0, px, h);
 
     // Playhead
     this._drawPlayheadLine(playheadX);
@@ -155,10 +153,15 @@ export class WaveformRenderer {
   _drawPlayheadLine(x) {
     const { ctx, canvas } = this;
     ctx.save();
+    // Sem shadowBlur (caro por quadro): um traço escuro mais largo atrás simula a sombra
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = this.playheadWidth + 2;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
     ctx.strokeStyle = this.playheadColor;
     ctx.lineWidth = this.playheadWidth;
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 4;
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, canvas.height);

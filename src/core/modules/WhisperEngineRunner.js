@@ -5,7 +5,7 @@
  * separado e traduz a saída dele em eventos.
  *
  * Contrato com o motor (já existente, nenhuma alteração necessária):
- *   WhisperLegendas.exe --cli jobs [--srt] [--md] [--cpu] [--saida DIR] [--palavras N] <arquivos...>
+ *   WhisperLegendas.exe --cli jobs [--srt] [--md] [--cpu] [--saida DIR] [--palavras N] [--linhas N] <arquivos...>
  *   Variáveis de ambiente:
  *     WL_MODEL_DIR   pasta do modelo faster-whisper (com model.bin)  → modelo escolhido pelo usuário
  *     WL_CUDA_DIR    pasta com as DLLs do CUDA                        → GPU, quando instalada
@@ -51,6 +51,10 @@ function normalizeOptions(options = {}) {
   const md = options.md === true;
   if (!srt && !md) throw new RunnerError('Marque ao menos uma saída: legenda (.srt) ou transcrição (.md).', 'NO_OUTPUT');
 
+  // Linhas por legenda: 1 ou 2 (o motor não aceita mais que isso)
+  const lines = options.lines === undefined || options.lines === null ? 2 : Number(options.lines);
+  if (lines !== 1 && lines !== 2) throw new RunnerError('Linhas por legenda deve ser 1 ou 2.', 'BAD_OPTION');
+
   let maxWords = Number(options.maxWords) || 0;
   if (!Number.isInteger(maxWords) || maxWords < 0 || maxWords > 40) {
     throw new RunnerError('Palavras por legenda deve ser um número entre 0 (automático) e 40.', 'BAD_OPTION');
@@ -61,7 +65,7 @@ function normalizeOptions(options = {}) {
     outDir = String(options.outDir);
     if (!path.isAbsolute(outDir)) throw new RunnerError('A pasta de saída deve ser um caminho completo.', 'BAD_PATH');
   }
-  return { files, srt, md, maxWords, outDir, forceCpu: options.forceCpu === true };
+  return { files, srt, md, maxWords, lines, outDir, forceCpu: options.forceCpu === true };
 }
 
 /** Interpreta uma linha do log do motor. */
@@ -74,6 +78,17 @@ function parseLogLine(line) {
       return Number.isFinite(pct) ? { type: 'progress', percent: Math.min(100, Math.max(0, pct)) } : null;
     }
     return { type: m[1], text: m[2] };
+  }
+  // [file] <n> start | progress <pct> | done | error <mensagem>   (n começa em 1)
+  m = /^\[file\]\s+(\d+)\s+(start|progress|done|error)\s*(.*)$/.exec(text);
+  if (m) {
+    const ev = { type: 'file', index: Number(m[1]) - 1, state: m[2] };
+    if (m[2] === 'progress') {
+      const pct = parseFloat(m[3]);
+      if (!Number.isFinite(pct)) return null;
+      ev.percent = Math.min(100, Math.max(0, pct));
+    } else if (m[2] === 'error') ev.text = m[3];
+    return ev;
   }
   m = /^RESULTADO ok=(\d+) falhas=(\d+)(?:\s+\[(.*)\])?/.exec(text);
   if (m) return { type: 'result', ok: Number(m[1]), failed: Number(m[2]), device: m[3] || '' };
@@ -96,12 +111,13 @@ class WhisperEngineRunner {
    * @param {{engineDir:string, exeName?:string, tempDir:string, command?:string, baseArgs?:string[]}} cfg
    *   command/baseArgs permitem trocar o executável (usado nos testes com um motor falso).
    */
-  constructor({ engineDir, exeName = DEFAULT_EXE, tempDir, command = null, baseArgs = [] }) {
+  constructor({ engineDir, exeName = DEFAULT_EXE, tempDir, command = null, baseArgs = [], extraEnv = {} }) {
     this.engineDir = engineDir;
     this.exeName = exeName;
     this.tempDir = tempDir;
     this.command = command;
     this.baseArgs = baseArgs;
+    this.extraEnv = extraEnv;
   }
 
   /**
@@ -109,7 +125,7 @@ class WhisperEngineRunner {
    * @param {{modelDir:string, cudaDir?:string|null, signal?:AbortSignal, onEvent?:(e:object)=>void}} ctx
    * @returns {Promise<{ok:number, failed:number, device:string, outputs:Array<{source:string,kind:string,path:string}>, errors:string[]}>}
    */
-  async run(options, { modelDir, cudaDir = null, signal = null, onEvent = () => {} } = {}) {
+  async run(options, { modelDir, modelName = '', cudaDir = null, signal = null, onEvent = () => {} } = {}) {
     const opts = normalizeOptions(options);
     if (!modelDir || !fs.existsSync(path.join(modelDir, 'model.bin'))) {
       throw new RunnerError('Nenhum modelo instalado. Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
@@ -129,9 +145,11 @@ class WhisperEngineRunner {
     if (opts.forceCpu) args.push('--cpu');
     if (opts.outDir) args.push('--saida', opts.outDir);
     if (opts.maxWords > 0) args.push('--palavras', String(opts.maxWords));
+    if (opts.srt) args.push('--linhas', String(opts.lines));
     args.push(...opts.files);
 
-    const env = { ...process.env, WL_MODEL_DIR: modelDir, WL_LOG: logPath, PYTHONIOENCODING: 'utf-8' };
+    const env = { ...process.env, ...this.extraEnv, WL_MODEL_DIR: modelDir, WL_LOG: logPath, PYTHONIOENCODING: 'utf-8' };
+    if (modelName) env.WL_MODEL_NAME = modelName;
     if (cudaDir && !opts.forceCpu) env.WL_CUDA_DIR = cudaDir;
     if (opts.forceCpu) env.WL_FORCE_CPU = '1';
 

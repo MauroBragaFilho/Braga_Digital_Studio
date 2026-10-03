@@ -4,9 +4,15 @@ const initSqlJs = require('sql.js');
 
 class HistoryService {
   static async create(databaseDir) {
-    const SQL = await initSqlJs({
-      locateFile: (file) => require.resolve(`sql.js/dist/${file}`)
-    });
+    // [PERF] Reaproveita o módulo WASM do sql.js já inicializado pelo dbManager (evita carregar
+    // e compilar o WASM uma segunda vez no startup). Só inicializa outro se o dbManager ainda não abriu.
+    let SQL = null;
+    try { SQL = require('../core/database/database').SQL || null; } catch (_) { SQL = null; }
+    if (!SQL) {
+      SQL = await initSqlJs({
+        locateFile: (file) => require.resolve(`sql.js/dist/${file}`)
+      });
+    }
     // Agora passamos o diretório, não o arquivo final
     return new HistoryService(SQL, databaseDir);
   }

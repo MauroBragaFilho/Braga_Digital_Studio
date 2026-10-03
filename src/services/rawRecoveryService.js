@@ -385,10 +385,12 @@ class RawRecoveryService extends EventEmitter {
       const child = processRunner.spawn(exePath, args);
       this._currentProcess = child;
 
+      // O resultado é a ÚLTIMA linha JSON do stdout; stderr (progresso do motor) só serve para a mensagem de erro.
+      // Ambos guardam apenas o final, para não crescer sem limite.
       let stdout = '';
       let stderr = '';
-      child.stdout.on('data', (d) => { stdout += d.toString('utf8'); });
-      child.stderr.on('data', (d) => { stderr += d.toString('utf8'); });
+      child.stdout.on('data', (d) => { stdout = (stdout + d.toString('utf8')).slice(-1048576); });
+      child.stderr.on('data', (d) => { stderr = (stderr + d.toString('utf8')).slice(-4096); });
 
       child.on('error', (err) => {
         this._currentProcess = null;
@@ -403,7 +405,7 @@ class RawRecoveryService extends EventEmitter {
         try {
           resolve(JSON.parse(line));
         } catch (_) {
-          reject(new Error(`Resposta inválida do motor RAW: ${stderr.slice(0, 300) || stdout.slice(0, 300)}`));
+          reject(new Error(`Resposta inválida do motor RAW: ${stderr.slice(-300) || stdout.slice(-300)}`));
         }
       });
     });

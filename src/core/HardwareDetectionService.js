@@ -1,8 +1,18 @@
 'use strict';
 
 const fs = require('node:fs');
+const path = require('node:path');
 const { spawn } = require('node:child_process');
 const logger = require('../services/logService');
+const FailureCooldown = require('./FailureCooldown');
+
+/** Tempo máximo da consulta WMI via PowerShell (nesta classe de máquina ela costuma estourar). */
+const WMI_TIMEOUT_MS = 4000;
+/** Depois de uma falha do WMI, não repete a consulta por este período (cache negativo). */
+const WMI_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
+/** Validade dos resultados de mini-encode persistidos em disco. */
+const ENCODER_TEST_TTL_OK_MS = 30 * 24 * 60 * 60 * 1000;
+const ENCODER_TEST_TTL_FAIL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Encoders de software (fallback garantido quando a GPU não está disponível).
@@ -65,6 +75,77 @@ class HardwareDetectionService {
 
     /** Cache da GPU (10 minutos). */
     this._gpuCache = null;
+
+    /** Cache negativo do WMI: sobrevive a invalidateCache() (é uma característica da máquina). */
+    this._wmiCooldown = new FailureCooldown(WMI_FAILURE_COOLDOWN_MS);
+
+    /** Resultados dos mini-encodes de teste: chave "<ffmpeg>|<tamanho>|<mtime>|<encoder>" -> { ok, at }. */
+    this._testResults = new Map();
+    this._testStoreLoaded = false;
+    /** Diretório de cache em disco (dataDir/cache); definido por setCacheDir() ou resolvido sob demanda. */
+    this._cacheDir = null;
+  }
+
+  /** Define o diretório de cache em disco (opcional; por padrão usa dataDir/cache do AppPaths). */
+  setCacheDir(dir) {
+    this._cacheDir = dir || null;
+    this._testStoreLoaded = false;
+    this._testResults.clear();
+  }
+
+  /** Arquivo JSON com os resultados persistidos dos testes de encoder, ou null se indisponível. */
+  _testStorePath() {
+    try {
+      let dir = this._cacheDir;
+      if (!dir) {
+        const { appPaths } = require('../infrastructure/filesystem/AppPaths');
+        dir = path.join(appPaths.dataDir, 'cache');
+      }
+      return path.join(dir, 'hw-encoder-tests.json');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Identifica a versão do ffmpeg pelo caminho + tamanho + data de modificação do binário. */
+  _ffmpegKey(ffmpegPath) {
+    try {
+      const st = fs.statSync(ffmpegPath);
+      return `${ffmpegPath}|${st.size}|${Math.floor(st.mtimeMs)}`;
+    } catch (_) {
+      return ffmpegPath;
+    }
+  }
+
+  _loadTestStore() {
+    if (this._testStoreLoaded) return;
+    this._testStoreLoaded = true;
+    const file = this._testStorePath();
+    if (!file) return;
+    try {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      for (const [k, v] of Object.entries(data || {})) {
+        if (v && typeof v.ok === 'boolean' && Number.isFinite(v.at)) this._testResults.set(k, v);
+      }
+    } catch (_) { /* sem cache em disco ainda */ }
+  }
+
+  _saveTestStore() {
+    const file = this._testStorePath();
+    if (!file) return;
+    const obj = Object.fromEntries(this._testResults);
+    fs.promises.mkdir(path.dirname(file), { recursive: true })
+      .then(() => fs.promises.writeFile(file, JSON.stringify(obj), 'utf8'))
+      .catch(() => { /* cache é só otimização */ });
+  }
+
+  /** Resultado do teste em cache (memória/disco) ainda válido, ou undefined. */
+  _getCachedTest(key, now = Date.now()) {
+    this._loadTestStore();
+    const entry = this._testResults.get(key);
+    if (!entry) return undefined;
+    const ttl = entry.ok ? ENCODER_TEST_TTL_OK_MS : ENCODER_TEST_TTL_FAIL_MS;
+    return (now - entry.at) < ttl ? entry.ok : undefined;
   }
 
   /**
@@ -140,6 +221,19 @@ class HardwareDetectionService {
     const available = await this.listEncoders(ffmpegPath);
     if (available.size > 0 && !available.has(encoder)) return false;
 
+    // [PERF] O mini-encode só é refeito se a versão do ffmpeg mudou ou o resultado expirou.
+    const cacheKey = `${this._ffmpegKey(ffmpegPath)}|${encoder}`;
+    const cached = this._getCachedTest(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const ok = await this._runEncoderTest(ffmpegPath, encoder);
+    this._testResults.set(cacheKey, { ok, at: Date.now() });
+    this._saveTestStore();
+    return ok;
+  }
+
+  /** Executa o mini-encode de teste (sem cache). @private */
+  _runEncoderTest(ffmpegPath, encoder) {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (val) => { if (!settled) { settled = true; resolve(val); } };
@@ -350,7 +444,7 @@ class HardwareDetectionService {
    * Executa um comando PowerShell capturando a saída como texto.
    * @private
    */
-  _runPowerShell(command, timeoutMs = 10000) {
+  _runPowerShell(command, timeoutMs = WMI_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
       const child = spawn(
         'powershell.exe',
@@ -427,7 +521,91 @@ class HardwareDetectionService {
   }
 
   /**
-   * Obtém a lista de GPUs (Win32_VideoController) via WMI, com cache de 10min.
+   * Lê as placas de vídeo do registro do Windows (classe "Display adapters"), sem WMI.
+   * Rápido (dezenas de ms) e não trava com drivers de vídeo virtuais (ex.: spacedesk), que podem
+   * fazer o Win32_VideoController estourar o tempo limite. Só entram adaptadores com ID PCI real
+   * (descarta Microsoft Basic Display e adaptadores virtuais).
+   * @returns {Promise<Array<{name, model, driverVersion, vramMB, vendor, videoMode, source}>>}
+   * @private
+   */
+  async _gpusFromRegistry() {
+    if (process.platform !== 'win32') return [];
+    const KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}';
+    // Só as subchaves (sem /s: a árvore inteira tem centenas de KB e é lenta).
+    const listing = await this._runExecutable('reg', ['query', KEY], 3000);
+    const subkeys = [...listing.matchAll(/\\(\d{4})\s*$/gm)].map((m) => m[1]).slice(0, 12);
+    // Pede só os valores necessários (/v): a subchave inteira de alguns drivers tem >100 KB e leva segundos.
+    const query = (sk, valueName) => this._runExecutable('reg', ['query', `${KEY}\\${sk}`, '/v', valueName], 3000);
+    const parsed = await Promise.all(subkeys.map(async (sk) => {
+      const head = (await Promise.all([query(sk, 'DriverDesc'), query(sk, 'MatchingDeviceId')])).join('\n');
+      if (!/DriverDesc/.test(head) || !/PCI\\VEN_/i.test(head)) return null; // sem ID PCI: virtual/básico
+      const rest = await Promise.all([
+        query(sk, 'DriverVersion'),
+        query(sk, 'HardwareInformation.qwMemorySize'),
+        query(sk, 'HardwareInformation.MemorySize')
+      ]);
+      return this._parseRegistryAdapter([head, ...rest].join('\n'));
+    }));
+    return parsed.filter(Boolean);
+  }
+
+  /**
+   * Interpreta a saída de `reg query <subchave do adaptador>`.
+   * @param {string} raw
+   * @returns {{name, model, driverVersion, vramMB, vendor, videoMode, source}|null}
+   * @private
+   */
+  _parseRegistryAdapter(raw) {
+    if (!raw) return null;
+    const val = (name) => {
+      const m = raw.match(new RegExp('^\\s+' + name.replace(/\./g, '\\.') + '\\s+REG_\\w+\\s+(.*)$', 'm'));
+      return m ? m[1].trim() : null;
+    };
+    const name = val('DriverDesc');
+    const pnp = val('MatchingDeviceId') || '';
+    if (!name || !/PCI\\VEN_/i.test(pnp)) return null;
+
+    let vramMB = null;
+    const qword = val('HardwareInformation.qwMemorySize'); // REG_QWORD: 0x...
+    const binary = val('HardwareInformation.MemorySize');  // REG_BINARY: 4 bytes little-endian
+    if (qword && /^0x[0-9a-f]+$/i.test(qword)) {
+      vramMB = Math.round(Number(BigInt(qword)) / (1024 * 1024));
+    } else if (binary && /^[0-9a-f]{8}$/i.test(binary)) {
+      const bigEndian = binary.match(/../g).reverse().join('');
+      vramMB = Math.round(parseInt(bigEndian, 16) / (1024 * 1024));
+    }
+    if (!(vramMB > 0)) vramMB = null;
+
+    const vendor = this._gpuVendorFromPnp(pnp);
+    return {
+      name,
+      model: this._gpuModelFromName(name, vendor),
+      driverVersion: val('DriverVersion') || '',
+      vramMB,
+      vendor,
+      videoMode: '',
+      source: 'registry'
+    };
+  }
+
+  /**
+   * Junta as fontes rápidas: o nvidia-smi traz nome, driver e VRAM reais da NVIDIA (e vem primeiro);
+   * o registro completa com as demais (Intel/AMD) e só traz a NVIDIA se o nvidia-smi não respondeu.
+   * @private
+   */
+  _mergeGpuSources(smi = [], registry = []) {
+    const gpus = [...smi];
+    for (const r of registry) {
+      if (r.vendor === 'nvidia' && smi.length > 0) continue;
+      if (gpus.some((g) => g.name === r.name)) continue;
+      gpus.push(r);
+    }
+    return gpus;
+  }
+
+  /**
+   * Obtém a lista de GPUs com cache de 10 min. Usa o nvidia-smi e o registro do Windows (rápidos, sem
+   * WMI); o WMI (Win32_VideoController) só é consultado se nenhuma das duas fontes trouxer nada.
    * @param {Object} [opts] - { force?: boolean }
    * @returns {Promise<Array<{name, driverVersion, vramMB, vendor, videoMode}>>}
    */
@@ -436,62 +614,90 @@ class HardwareDetectionService {
       return this._gpuCache.gpus;
     }
 
+    if (process.platform === 'win32') {
+      const [smi, registry] = await Promise.all([
+        this._gpuFromNvidiaSmi().catch(() => []),
+        this._gpusFromRegistry().catch(() => [])
+      ]);
+      const gpus = this._mergeGpuSources(smi, registry);
+      if (gpus.length > 0) {
+        this._gpuCache = { at: Date.now(), gpus };
+        return gpus;
+      }
+    }
+    return this._getGraphicsInfoViaWmi();
+  }
+
+  /**
+   * Último recurso: Win32_VideoController via PowerShell (timeout curto e cache negativo).
+   * @private
+   */
+  async _getGraphicsInfoViaWmi() {
     const gpus = [];
     if (process.platform === 'win32') {
       const script = [
-        'Get-CimInstance Win32_VideoController',
+        `Get-CimInstance Win32_VideoController -OperationTimeoutSec ${Math.ceil(WMI_TIMEOUT_MS / 1000)}`,
         '| Select-Object Name,DriverVersion,AdapterRAM,VideoModeDescription,PNPDeviceID',
         '| ConvertTo-Json -Compress'
       ].join(' ');
 
-      let wmiOk = false;
-      try {
-        const raw = await this._runPowerShell(script);
-        let data = null;
-        if (raw) {
-          try { data = JSON.parse(raw); } catch (_) { data = null; }
-        }
-        if (!Array.isArray(data)) data = data ? [data] : [];
-        if (data.length > 0) wmiOk = true;
+      // nvidia-smi (instantâneo) roda em paralelo ao WMI para não somar as esperas.
+      const smiPromise = this._gpuFromNvidiaSmi().catch(() => []);
 
-        for (const item of data) {
-          if (!item || !item.Name) continue;
-          const vram = Number(item.AdapterRAM);
-          const fullName = String(item.Name).trim();
-          const vendor = this._gpuVendorFromPnp(item.PNPDeviceID);
-          gpus.push({
-            name: fullName,
-            // Remove a marca do nome para obter um "modelo" mais limpo
-            // (ex: "NVIDIA GeForce GTX 1650" → "GeForce GTX 1650").
-            model: this._gpuModelFromName(fullName, vendor),
-            driverVersion: item.DriverVersion ? String(item.DriverVersion).trim() : '',
-            vramMB: vram > 0 ? Math.round(vram / (1024 * 1024)) : null,
-            vendor,
-            videoMode: item.VideoModeDescription ? String(item.VideoModeDescription).trim() : '',
-            source: 'wmi'
-          });
+      let wmiOk = false;
+      if (this._wmiCooldown.shouldSkip()) {
+        // Cache negativo: o WMI falhou há pouco; não repete a consulta lenta.
+        logger.debug('hardware:wmi-skipped-cooldown');
+      } else {
+        try {
+          const raw = await this._runPowerShell(script);
+          let data = null;
+          if (raw) {
+            try { data = JSON.parse(raw); } catch (_) { data = null; }
+          }
+          if (!Array.isArray(data)) data = data ? [data] : [];
+          if (data.length > 0) wmiOk = true;
+
+          for (const item of data) {
+            if (!item || !item.Name) continue;
+            const vram = Number(item.AdapterRAM);
+            const fullName = String(item.Name).trim();
+            const vendor = this._gpuVendorFromPnp(item.PNPDeviceID);
+            gpus.push({
+              name: fullName,
+              // Remove a marca do nome para obter um "modelo" mais limpo
+              // (ex: "NVIDIA GeForce GTX 1650" → "GeForce GTX 1650").
+              model: this._gpuModelFromName(fullName, vendor),
+              driverVersion: item.DriverVersion ? String(item.DriverVersion).trim() : '',
+              vramMB: vram > 0 ? Math.round(vram / (1024 * 1024)) : null,
+              vendor,
+              videoMode: item.VideoModeDescription ? String(item.VideoModeDescription).trim() : '',
+              source: 'wmi'
+            });
+          }
+          if (wmiOk) this._wmiCooldown.reset();
+          else this._wmiCooldown.markFailure();
+        } catch (err) {
+          this._wmiCooldown.markFailure();
+          logger.warn('hardware:wmi-unavailable', { error: err.message });
         }
-      } catch (err) {
-        logger.warn('hardware:wmi-unavailable', { error: err.message });
       }
 
       // O WMI costuma dar timeout no seu ambiente. Quando ele falha ou não
       // traz nenhum nome (ou só traz GPUs sem dados de NVIDIA), complementamos
       // com o nvidia-smi — que é instantâneo e traz nome real + driver + VRAM.
+      const smi = await smiPromise;
       const hasNvidia = gpus.some((g) => g.vendor === 'nvidia' && g.name);
-      if (!hasNvidia) {
-        try {
-          const smi = await this._gpuFromNvidiaSmi();
-          if (!wmiOk && smi.length > 0) {
-            gpus.length = 0;         // o WMI não respondeu: usa só nvidia-smi
-            gpus.push(...smi);
-          } else if (smi.length > 0) {
-            // Mescla com o que o WMI trouxe para não duplicar a NVIDIA.
-            for (const s of smi) {
-              if (!gpus.some((g) => g.vendor === 'nvidia')) gpus.push(s);
-            }
+      if (!hasNvidia && smi.length > 0) {
+        if (!wmiOk) {
+          gpus.length = 0;         // o WMI não respondeu: usa só nvidia-smi
+          gpus.push(...smi);
+        } else {
+          // Mescla com o que o WMI trouxe para não duplicar a NVIDIA.
+          for (const s of smi) {
+            if (!gpus.some((g) => g.vendor === 'nvidia')) gpus.push(s);
           }
-        } catch (_) { /* mantém só o WMI */ }
+        }
       }
     }
 

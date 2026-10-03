@@ -9,31 +9,27 @@
     <div class="devices-control-bar">
       <div class="devices-control-left">
         <span class="devices-count-label">Dispositivos conectados (<span id="devicesCount">0</span>)</span>
-        <button id="btnRefreshDevices" class="devices-icon-btn" title="Atualizar lista" type="button">
+        <button id="btnRefreshDevices" class="devices-icon-btn" title="Procurar dispositivos novamente" aria-label="Procurar dispositivos novamente" type="button">
           <span class="material-symbols-rounded">refresh</span>
         </button>
+        <span id="devicesUpdated" class="devices-updated" role="status" aria-live="polite"></span>
         <button id="btnManageHiddenDevices" class="devices-manage-hidden-btn hidden" type="button">
           <span class="material-symbols-rounded">settings_applications</span>
           Gerenciar Ocultos (<span id="hiddenDevicesCount">0</span>)
         </button>
       </div>
-
-      <button id="btnAddDevice" class="devices-add-btn hidden" type="button">
-        <span class="material-symbols-rounded">add</span>
-        Adicionar dispositivo
-      </button>
     </div>
 
     <!-- Grid com os Cards dos Dispositivos -->
-    <div class="devices-grid" id="devicesGrid">
+    <div class="devices-grid" id="devicesGrid" aria-live="polite" aria-busy="false">
       <!-- Populado via JS -->
     </div>
   </div>
 
   <!-- Coluna Direita: Painel Inspector de Detalhes -->
-  <div class="device-inspector-sidebar hidden" id="deviceInspector">
+  <aside class="device-inspector-sidebar hidden" id="deviceInspector" aria-label="Detalhes do dispositivo">
     <!-- Populado via JS ao selecionar um dispositivo -->
-  </div>
+  </aside>
 </div>
 
 <!-- MTP Explorer Modal -->
@@ -42,8 +38,8 @@
     <div class="devices-modal-header">
       <div class="devices-modal-title-group">
         <h2 class="devices-modal-title">
-          <span class="material-symbols-rounded mtp-icon">photo_camera</span>
-          Explorador de Dispositivo
+          <span class="material-symbols-rounded mtp-icon" id="mtpExplorerIcon">photo_camera</span>
+          <span id="mtpExplorerTitle">Explorador de Dispositivo</span>
         </h2>
         <div id="mtpExplorerBreadcrumb" class="mtp-breadcrumb">
           <!-- Pão de migalhas preenchido via JS -->
@@ -54,12 +50,21 @@
       </button>
     </div>
 
+    <div class="mtp-toolbar" id="mtpToolbar">
+      <label class="mtp-filter">
+        <span class="material-symbols-rounded" aria-hidden="true">search</span>
+        <input id="mtpFilterInput" type="search" placeholder="Filtrar por nome..." autocomplete="off" aria-label="Filtrar arquivos pelo nome" />
+      </label>
+      <button id="btnMtpSelectAll" class="devices-btn-secondary" type="button">Selecionar arquivos</button>
+      <button id="btnMtpClearSel" class="devices-btn-secondary" type="button">Limpar seleção</button>
+    </div>
+
     <div class="devices-modal-body">
       <div id="mtpExplorerLoading" class="mtp-loading hidden">
         <span class="material-symbols-rounded mtp-loading-icon">sync</span>
         <div>Acessando câmera, aguarde...</div>
       </div>
-      <div id="mtpExplorerList" class="mtp-items-grid">
+      <div id="mtpExplorerList" class="mtp-items-grid" role="listbox" aria-multiselectable="true" aria-label="Arquivos do dispositivo">
         <!-- Itens preenchidos via JS -->
       </div>
     </div>
@@ -84,7 +89,8 @@
 
       <div id="mtpImportActionContainer" class="mtp-import-actions">
         <div class="mtp-selected-count">
-          <span id="mtpExplorerSelectedCount">0</span> itens selecionados
+          <span id="mtpExplorerSelectedCount">0</span> itens selecionados<span id="mtpExplorerSelectedSize" class="mtp-selected-size"></span>
+          <div id="mtpDestHint" class="mtp-dest-hint"></div>
         </div>
         <button id="btnMtpImport" class="devices-btn-primary-orange" type="button" disabled>
           <span class="material-symbols-rounded">download</span>

@@ -19,12 +19,11 @@ class SettingsManager {
     this.dataDir = dataDir;
     this.settingsPath = path.join(configDir, 'settings.json');
 
-    // [PERF] Cache em memória — evita leitura + regravação do arquivo
-    // a cada chamada de load() (método chamado com frequência por vários
-    // handlers IPC e serviços em background).
+    // [PERF] Cache em memória SEM expiração — o app é o único escritor do settings.json,
+    // então load() nunca precisa reler o disco depois da primeira leitura (save() atualiza o cache).
     this._cached = null;
-    this._cacheUpdatedAt = 0;
-    this._CACHE_TTL_MS = 1500;
+    this._writeTimer = null;
+    this._dirty = false;
 
     this.defaultSettings = {
       // UI — estado da sidebar (true = colapsada, apenas ícones)
@@ -99,22 +98,8 @@ class SettingsManager {
    * @returns {Object}
    */
   load() {
-    // Cache fresco: retorna a cópia em memória sem tocar no disco
-    if (this._cached && (Date.now() - this._cacheUpdatedAt) < this._CACHE_TTL_MS) {
-      return { ...this._cached };
-    }
-
-    // Cache expirado: tenta reler do disco apenas se o arquivo existir
-    if (this._cached && fs.existsSync(this.settingsPath)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
-        // Só faz merge/regrava se o disco divergir do cache (normalização rara)
-        if (Object.keys(saved).every(k => this._cached[k] === saved[k])) {
-          this._cacheUpdatedAt = Date.now();
-          return { ...this._cached };
-        }
-      } catch (_) { /* arquivo corrompido cai no fluxo completo abaixo */ }
-    }
+    // Cache: devolve a cópia em memória sem tocar no disco
+    if (this._cached) return { ...this._cached };
 
     if (!fs.existsSync(this.settingsPath)) {
       try {
@@ -133,7 +118,7 @@ class SettingsManager {
       // [PERF] Só regrava o arquivo quando o merge realmente adicionou campos novos
       const needsWrite = Object.keys(this.defaultSettings).some(k => saved[k] === undefined);
       if (needsWrite) {
-        fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2), 'utf8');
+        this._writeAtomic(merged);
       }
       this._setCache(merged);
       return { ...merged };
@@ -152,12 +137,63 @@ class SettingsManager {
    * @param {Object} nextSettings - Propriedades a atualizar
    * @returns {Object} Configurações completas salvas
    */
-  save(nextSettings) {
-    const current = { ...this._cached, ...this.load() };
+  save(nextSettings, { defer = false } = {}) {
+    const current = this.load();
     const merged = { ...current, ...this._sanitize(nextSettings) };
-    fs.writeFileSync(this.settingsPath, JSON.stringify(merged, null, 2), 'utf8');
     this._setCache(merged);
+    if (defer) {
+      // Gravação adiada e não bloqueante (ex.: posição da janela durante resize/move).
+      this._dirty = true;
+      clearTimeout(this._writeTimer);
+      this._writeTimer = setTimeout(() => this._flushAsync(), 1500);
+      if (typeof this._writeTimer.unref === 'function') this._writeTimer.unref();
+    } else {
+      this._cancelPending();
+      this._writeAtomic(merged);
+    }
     return merged;
+  }
+
+  /** Grava imediatamente qualquer escrita adiada pendente (chamar no encerramento do app). */
+  flush() {
+    if (!this._dirty || !this._cached) return;
+    this._cancelPending();
+    this._writeAtomic(this._cached);
+  }
+
+  _cancelPending() {
+    clearTimeout(this._writeTimer);
+    this._writeTimer = null;
+    this._dirty = false;
+  }
+
+  async _flushAsync() {
+    this._writeTimer = null;
+    if (!this._dirty || !this._cached) return;
+    this._dirty = false;
+    const json = JSON.stringify(this._cached, null, 2);
+    const tmp = `${this.settingsPath}.${process.pid}.tmp`;
+    try {
+      await fs.promises.writeFile(tmp, json, 'utf8');
+      await fs.promises.rename(tmp, this.settingsPath);
+    } catch (err) {
+      logger.warn('settings:async_write_failed', { error: err.message });
+      this._dirty = true; // tenta de novo no próximo flush()
+    }
+  }
+
+  /** Gravação síncrona atômica: escreve num temporário e renomeia sobre o arquivo final. */
+  _writeAtomic(settings) {
+    const json = JSON.stringify(settings, null, 2);
+    const tmp = `${this.settingsPath}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmp, json, 'utf8');
+      fs.renameSync(tmp, this.settingsPath);
+    } catch (_) {
+      // Rename pode falhar (arquivo travado por antivírus/indexador): cai na gravação direta.
+      try { fs.rmSync(tmp, { force: true }); } catch (__) { /* noop */ }
+      fs.writeFileSync(this.settingsPath, json, 'utf8');
+    }
   }
 
   /**
@@ -203,7 +239,6 @@ class SettingsManager {
 
   _setCache(settings) {
     this._cached = { ...settings };
-    this._cacheUpdatedAt = Date.now();
   }
 }
 

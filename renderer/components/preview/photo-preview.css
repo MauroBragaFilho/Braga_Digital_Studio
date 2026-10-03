@@ -8,8 +8,6 @@
   inset: 0;
   z-index: 99999;
   background: rgba(10, 10, 10, 0.94);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   display: flex;
   flex-direction: column;
   color: #ededed;
@@ -240,7 +238,7 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(20, 20, 20, 0.65);
+  background: rgba(20, 20, 20, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #ffffff;
   display: flex;
@@ -248,7 +246,6 @@
   justify-content: center;
   cursor: pointer;
   z-index: 5;
-  backdrop-filter: blur(6px);
   transition: all 0.2s ease;
 }
 
@@ -270,9 +267,7 @@
 /* Floating Technical Panels: EXIF & Histogram */
 .photo-floating-panel {
   position: absolute;
-  background: rgba(18, 18, 20, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(18, 18, 20, 0.97);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
@@ -519,10 +514,9 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  background: rgba(10, 10, 10, 0.7);
+  background: rgba(10, 10, 10, 0.88);
   padding: 16px 22px;
   border-radius: 12px;
-  backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 

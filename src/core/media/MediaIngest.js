@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../../services/logService');
@@ -32,7 +33,24 @@ function resolveAlbum(filePath) {
     return album;
 }
 
+/** Executa fn (síncrona) numa transação; se já houver uma aberta, apenas executa fn. */
+function inTransaction(db, fn) {
+    let started = false;
+    try { db.exec('BEGIN TRANSACTION'); started = true; } catch (_) { /* transação já aberta */ }
+    try {
+        const r = fn();
+        if (started) db.exec('COMMIT');
+        return r;
+    } catch (e) {
+        if (started) { try { db.exec('ROLLBACK'); } catch (_) {} }
+        throw e;
+    }
+}
+
 /**
+ * Obs.: media.media_type e media.sort_date são mantidos por triggers do banco (migração 12) a cada
+ * INSERT/UPDATE de filename, recorded_at ou imported_at — não precisam ser preenchidos aqui.
+ *
  * @param {Object} p
  * @param {Object} p.db                 better-sqlite3
  * @param {Object} p.ffprobe            instância FFProbe
@@ -41,19 +59,21 @@ function resolveAlbum(filePath) {
  * @param {string} p.filePath
  * @param {string} [p.event]            'CHANGE' => reprocessa se o tamanho mudou
  * @param {boolean} [p.emit=false]      emite MEDIA_IMPORTED ao concluir
+ * @param {boolean} [p.batch=false]     importação em lote: logs por arquivo em debug (não info)
  * @returns {Promise<{id:number, created:boolean, status:string}|null>}
  */
-async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, event = null, emit = false }) {
+async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, event = null, emit = false, batch = false }) {
+    const logFile = batch ? (m) => logger.debug(m) : (m) => logger.info(m);
     const filename = path.basename(filePath);
     if (!isSupported(filename)) return null;
 
-    const existsByPath = db.prepare('SELECT id, status, filesize FROM media WHERE filepath = ?').get(filePath);
-    const stats = fs.statSync(filePath);
+    const existsByPath = db.prepare('SELECT id, status, filesize, uuid FROM media WHERE filepath = ?').get(filePath);
+    const stats = await fsp.stat(filePath);
 
     if (existsByPath && existsByPath.status === 'READY') {
         const changed = event === 'CHANGE' && existsByPath.filesize != null && existsByPath.filesize !== stats.size;
         if (!changed) return { id: existsByPath.id, created: false, status: 'READY' };
-        logger.info(`[MediaIngest] Arquivo alterado (tamanho ${existsByPath.filesize} -> ${stats.size}), reprocessando: ${filename}`);
+        logFile(`[MediaIngest] Arquivo alterado (tamanho ${existsByPath.filesize} -> ${stats.size}), reprocessando: ${filename}`);
     }
 
     const hash = await HashGenerator.generate(filePath);
@@ -69,11 +89,14 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
         const flagged = db.prepare('SELECT missing FROM media WHERE id = ?').get(existingHash.id);
         if (existingHash.filepath !== filePath && (oldGone || (flagged && flagged.missing === 1))) {
             // Arquivo movido/renomeado: preserva o id (projetos, tags, favoritos)
-            if (mediaId != null) db.prepare('DELETE FROM media WHERE id = ? AND status != ?').run(mediaId, 'READY'); // placeholder órfão
-            db.prepare(`UPDATE media SET filepath = ?, filename = ?, album = ?, origin = ?, library_id = COALESCE(?, library_id),
-                        missing = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-                .run(filePath, filename, album, origin, libraryId, existingHash.id);
-            logger.info(`[MediaIngest] Arquivo movido/renomeado reaproveitando registro #${existingHash.id}: ${filename}`);
+            // Remoção do placeholder + atualização do registro movido: uma transação (síncrona, sem await dentro)
+            inTransaction(db, () => {
+                if (mediaId != null) db.prepare('DELETE FROM media WHERE id = ? AND status != ?').run(mediaId, 'READY'); // placeholder órfão
+                db.prepare(`UPDATE media SET filepath = ?, filename = ?, album = ?, origin = ?, library_id = COALESCE(?, library_id),
+                            missing = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+                    .run(filePath, filename, album, origin, libraryId, existingHash.id);
+            });
+            logFile(`[MediaIngest] Arquivo movido/renomeado reaproveitando registro #${existingHash.id}: ${filename}`);
             if (existingHash.status === 'READY') {
                 if (emit) EventBus.emit('MEDIA_IMPORTED', db.prepare('SELECT * FROM media WHERE id = ?').get(existingHash.id));
                 return { id: existingHash.id, created: false, status: 'READY', moved: true };
@@ -85,7 +108,7 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
             if (existingHash.filesize != null && existingHash.filesize !== stats.size) {
                 logger.warn(`[MediaIngest] Hash igual com tamanhos diferentes (possível colisão): ${filename} (#${existingHash.id})`);
             } else {
-                logger.info(`[MediaIngest] Arquivo ignorado (hash duplicado com outro caminho): ${filename}`);
+                logFile(`[MediaIngest] Arquivo ignorado (hash duplicado com outro caminho): ${filename}`);
             }
             return { id: existingHash.id, created: false, status: existingHash.status };
         }
@@ -104,7 +127,10 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
             // Reaproveita a linha (presa em IMPORTING/ERROR, movida ou alterada)
             db.prepare(`UPDATE media SET status = 'IMPORTING', hash = ?, filename = ?, album = ?, origin = ?, missing = 0 WHERE id = ?`)
                 .run(hash, filename, album, origin, mediaId);
-            fileUuid = db.prepare('SELECT uuid FROM media WHERE id = ?').get(mediaId).uuid;
+            // uuid já veio na consulta inicial quando a linha é a mesma (existsByPath); senão busca
+            fileUuid = (existsByPath && existsByPath.id === mediaId && existsByPath.uuid)
+                ? existsByPath.uuid
+                : db.prepare('SELECT uuid FROM media WHERE id = ?').get(mediaId).uuid;
         }
 
         let probeTarget = filePath;
@@ -134,7 +160,7 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
             recordedAt, mediaId
         );
 
-        logger.info(`[MediaIngest] Arquivo indexado com sucesso: ${filename}`);
+        logFile(`[MediaIngest] Arquivo indexado com sucesso: ${filename}`);
         if (emit) EventBus.emit('MEDIA_IMPORTED', db.prepare('SELECT * FROM media WHERE id = ?').get(mediaId));
         return { id: mediaId, created, status: 'READY' };
     } catch (err) {

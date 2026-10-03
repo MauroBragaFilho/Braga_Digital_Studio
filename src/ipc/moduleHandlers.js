@@ -1,10 +1,11 @@
 'use strict';
 
-const { ipcMain, BrowserWindow, shell } = require('electron');
+const { app, ipcMain, BrowserWindow, shell } = require('electron');
 const path = require('node:path');
 const { ModuleManager } = require('../core/modules/ModuleManager');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const moduleConfig = require('../config/modules.config.json');
+const { detectDevEngine } = require('../core/modules/devEngine');
 const { wrap } = require('./wrap');
 
 /**
@@ -15,7 +16,13 @@ module.exports = function registerModuleHandlers(paths) {
   const dataDir = (paths && paths.dataDir) || appPaths.dataDir;
   const tempDir = (paths && paths.tempDir) || appPaths.tempDir;
 
-  const manager = new ModuleManager({ rootDir: dataDir, tempDir, config: moduleConfig });
+  // Só em desenvolvimento: usa o Python local do projeto "Whisper + LM Studio" em vez do motor empacotado.
+  const devEngine = detectDevEngine({
+    isPackaged: app.isPackaged,
+    appRoot: path.join(__dirname, '..', '..'),
+    ffmpegPath: process.env.WL_FFMPEG || null // senão o motor usa o ffmpeg do PATH
+  });
+  const manager = new ModuleManager({ rootDir: dataDir, tempDir, config: { ...moduleConfig, devEngine } });
 
   const broadcast = (channel, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -46,6 +53,7 @@ module.exports = function registerModuleHandlers(paths) {
       srt: o.srt !== false,
       md: o.md === true,
       maxWords: Number(o.maxWords) || 0,
+      lines: o.lines === 1 ? 1 : 2,
       outDir: o.outDir ? str(o.outDir, 'Pasta de saída') : null,
       forceCpu: o.forceCpu === true
     });

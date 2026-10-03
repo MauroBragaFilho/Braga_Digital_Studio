@@ -6,6 +6,11 @@ const EventEmitter = require('node:events');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const logger = require('./logService');
+const probeCache = require('../core/ffmpeg/ProbeCache');
+
+// onProgress com throttle; stderr guarda só o final (~4 KB)
+const PROGRESS_THROTTLE_MS = 250;
+const STDERR_TAIL_BYTES = 4096;
 
 /**
  * Registra logs técnicos detalhados da recuperação em logs/recovery.log
@@ -280,6 +285,7 @@ class VideoRecoveryService extends EventEmitter {
 
     const args = [
       '-y',
+      '-nostdin', '-hide_banner', '-loglevel', 'error',
       '-err_detect', 'ignore_err',
       '-fflags', '+genpts+discardcorrupt',
       '-i', corruptPath,
@@ -352,17 +358,61 @@ class VideoRecoveryService extends EventEmitter {
     if (stats.size < 1024) return false;
 
     try {
-      const probe = await this._probeFile(filePath);
-      return Boolean(probe && (probe.videoStream || probe.audioStream) && (probe.format?.duration > 0 || stats.size > 100000));
+      const probe = await this._probeLight(filePath);
+      return Boolean(probe && (probe.hasVideo || probe.hasAudio) && (probe.duration > 0 || stats.size > 100000));
     } catch (_) {
       return false;
     }
   }
 
   /**
+   * Probe mínimo para validar a saída (só duração e tipos de stream, sem JSON completo de format/streams).
+   * Não usa cache: o arquivo de saída acabou de ser gerado.
+   */
+  async _probeLight(filePath) {
+    const ffprobeExe = dependencyManager.resolveComponent('probeEngine');
+    const args = [
+      '-v', 'error',
+      '-show_entries', 'format=duration:stream=codec_type',
+      '-print_format', 'json',
+      filePath
+    ];
+    return new Promise((resolve, reject) => {
+      const child = processRunner.spawn(ffprobeExe, args);
+      let output = '';
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; processRunner.cancel(child); }, 60000);
+      if (timer.unref) timer.unref();
+      child.stdout.on('data', (d) => { output += d.toString('utf8'); });
+      child.stderr.resume();
+      child.on('error', (err) => { clearTimeout(timer); reject(err); });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut) return reject(new Error('Tempo limite excedido na validação do arquivo.'));
+        if (code !== 0 || !output.trim()) return reject(new Error(`Falha na validação (código ${code})`));
+        try {
+          const data = JSON.parse(output);
+          const streams = data.streams || [];
+          resolve({
+            duration: parseFloat(data.format?.duration) || 0,
+            hasVideo: streams.some((s) => s.codec_type === 'video'),
+            hasAudio: streams.some((s) => s.codec_type === 'audio'),
+          });
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+  }
+
+  /**
    * Lê metadados detalhados de um arquivo com o probeEngine.
    */
   async _probeFile(filePath) {
+    return probeCache.getOrLoad(filePath, () => this._probeFileRaw(filePath), 'recovery-probe');
+  }
+
+  async _probeFileRaw(filePath) {
     const ffprobeExe = dependencyManager.resolveComponent('probeEngine');
     const args = [
       '-v', 'quiet',
@@ -381,6 +431,7 @@ class VideoRecoveryService extends EventEmitter {
       if (timer.unref) timer.unref();
 
       child.stdout.on('data', (d) => { output += d.toString('utf8'); });
+      child.stderr.resume(); // nunca lido: sem drenar, o pipe pode encher e travar o ffprobe
       child.on('error', (err) => { clearTimeout(timer); reject(err); });
       child.on('close', (code) => {
         clearTimeout(timer);
@@ -414,10 +465,20 @@ class VideoRecoveryService extends EventEmitter {
       this._currentProcess = child;
 
       let stderr = '';
+      let lastProgressAt = 0;
+      const tick = () => {
+        const now = Date.now();
+        if (onProgress && now - lastProgressAt >= PROGRESS_THROTTLE_MS) {
+          lastProgressAt = now;
+          onProgress(0.5);
+        }
+      };
       child.stderr.on('data', (d) => {
-        stderr += d.toString('utf8');
-        if (onProgress) onProgress(0.5);
+        stderr = (stderr + d.toString('utf8')).slice(-STDERR_TAIL_BYTES);
+        tick();
       });
+      // stdout nunca é lido por ninguém: drena para o pipe não encher e bloquear o processo
+      child.stdout.on('data', tick);
 
       child.on('error', (err) => {
         this._currentProcess = null;
@@ -432,6 +493,7 @@ class VideoRecoveryService extends EventEmitter {
         if (code === 0) {
           resolve();
         } else {
+          if (stderr) logRecovery('Saída de erro do processo', { code, stderr: stderr.slice(-1000) });
           reject(new Error(`Processo finalizado com status ${code}`));
         }
       });

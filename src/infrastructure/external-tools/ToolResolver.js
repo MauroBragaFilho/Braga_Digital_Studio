@@ -7,7 +7,23 @@ const { getExecutableName } = require('./ToolManifest');
 /**
  * ToolResolver — Resolve o caminho absoluto de um executável externo.
  */
+// A busca no PATH do sistema percorre todos os diretórios do PATH (vários stat); o resultado,
+// positivo ou negativo, é guardado por esta duração e descartado em invalidate().
+const SYSTEM_PATH_CACHE_TTL_MS = 60 * 1000;
+
 class ToolResolver {
+  constructor() {
+    this._systemPathCache = new Map(); // exeName -> { path|null, at }
+  }
+
+  /**
+   * Descarta o cache de busca no PATH. Chamar após instalar/atualizar/reverter uma ferramenta
+   * (ToolUpdater) para que a próxima resolução enxergue o estado novo.
+   */
+  invalidate() {
+    this._systemPathCache.clear();
+  }
+
   /**
    * Resolve o caminho absoluto de uma ferramenta.
    *
@@ -50,6 +66,14 @@ class ToolResolver {
    * @returns {string|null}
    */
   _resolveFromSystemPath(exeName) {
+    const hit = this._systemPathCache.get(exeName);
+    if (hit && (Date.now() - hit.at) < SYSTEM_PATH_CACHE_TTL_MS) return hit.path;
+    const found = this._scanSystemPath(exeName);
+    this._systemPathCache.set(exeName, { path: found, at: Date.now() });
+    return found;
+  }
+
+  _scanSystemPath(exeName) {
     const pathEnv = process.env.PATH || process.env.Path || '';
     const dirs = pathEnv.split(path.delimiter).filter(Boolean);
 

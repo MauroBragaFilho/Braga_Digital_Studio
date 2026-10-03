@@ -102,7 +102,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .lib-view-btn .material-symbols-rounded {
@@ -164,7 +164,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .topbar-icon-btn .material-symbols-rounded {
@@ -265,6 +265,8 @@
 }
 
 .lib-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -345,6 +347,17 @@
   background-color: #000;
   position: relative;
   border-radius: 6px;
+}
+
+.lib-card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border-radius: inherit;
+  display: block;
 }
 
 .lib-card-thumb.audio-placeholder {
@@ -799,7 +812,7 @@
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .inspector-add-tag:hover {
@@ -983,7 +996,7 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .lib-btn-cancel:hover {

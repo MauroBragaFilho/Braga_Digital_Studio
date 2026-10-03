@@ -2,6 +2,8 @@
    SETTINGS SCREEN - MODULAR CSS
    ========================================================================== */
 
+@import url('../components/modules-panel.css');
+
 /* --- CONTAINER --- */
 .settings-container {
   display: flex;
@@ -1345,3 +1347,10 @@
 .st-order-move:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .st-order-move:disabled { opacity: 0.3; cursor: not-allowed; }
 .st-order-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+/* ----- Cartões lado a lado: preenchem a linha em telas largas e empilham em telas estreitas ----- */
+.settings-view { display: block; column-width: 440px; column-gap: 14px; }
+.settings-view.hidden { display: none !important; }
+.settings-view > * { break-inside: avoid; margin-bottom: 14px; }
+.settings-view > .settings-section-title { column-span: all; margin-bottom: 14px; }
+.settings-layout { width: 100%; box-sizing: border-box; } /* ocupa a linha toda (antes encolhia ao conteúdo da aba) */

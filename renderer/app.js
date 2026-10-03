@@ -380,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recuperação e Montagem Automática ainda estão em otimização; ficam disponíveis apenas
   // quando o BDS roda a partir do código-fonte (não empacotado). Assume-se "empacotado" por
   // padrão (fail-safe) até a checagem real do processo principal responder.
-  const DEV_ONLY_SCREENS = ['recovery', 'montage', 'ai', 'modules'];
+  const DEV_ONLY_SCREENS = ['recovery', 'montage', 'ai'];
   let isPackagedApp = true;
 
   function applyDevOnlyVisibility() {
@@ -494,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 3. Importa dinamicamente o arquivo JS da tela correspondente e inicializa
         try {
-          const screenModule = await import(`./screens/${screenName}.js`);
+          const screenModule = await getScreenModule(screenName);
           activeModule = screenModule;
           activeModuleName = screenName;
           if (screenModule.initScreen) {
@@ -517,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateDOMReferences();
 
         try {
-          const screenModule = await import(`./screens/${screenName}.js`);
+          const screenModule = await getScreenModule(screenName);
           activeModule = screenModule;
           activeModuleName = screenName;
           // Re-registra listeners globais removidos em onLeave e atualiza dados se necessário
@@ -563,6 +563,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeModule && typeof activeModule.onKeyDown === 'function') {
       try { activeModule.onKeyDown(e); } catch (err) { console.error('[APP] Erro em onKeyDown:', err); }
     }
+  });
+
+  // F11 alterna a tela cheia da janela; Esc sai dela quando nada mais usou a tecla
+  // (prévia, modal, diálogo, busca...). O listener de Esc fica em `window`, que roda depois dos
+  // de `document`: quem tratou o Esc chamou preventDefault e a janela continua em tela cheia.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'F11' || e.ctrlKey || e.altKey || e.metaKey) return;
+    e.preventDefault();
+    window.bds?.fullscreenWindow?.();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (document.querySelector('dialog[open]')) return;
+    window.bds?.fullscreenWindow?.('exit');
   });
 
   // Storage Polling
@@ -748,7 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!query) return;
       document.querySelector('.sidebar .tab-button[data-view="library"]')?.click();
     } else {
-      import('./screens/library.js')
+      getScreenModule('library')
         .then(m => { if (typeof m.applyGlobalSearch === 'function') m.applyGlobalSearch(query); })
         .catch(() => {});
     }
@@ -860,6 +874,15 @@ function parseCubeResolution(filePath) {
   }
 }
 
+// Módulos de tela já importados (evita import() dinâmico a cada navegação/tick de progresso)
+const screenModules = {};
+function getScreenModule(name) {
+  if (!screenModules[name]) {
+    screenModules[name] = import(`./screens/${name}.js`).catch((err) => { delete screenModules[name]; throw err; });
+  }
+  return screenModules[name];
+}
+
 /**
  * Controla o footer compacto de downloads ativos (visível em qualquer tela).
  * @param {object|null} data  - payload de progresso/conclusão ou null para ocultar
@@ -923,24 +946,52 @@ async function initGlobalElectronListeners() {
 
   // ── Downloads: Queue Manager (canal correto com `id` nos payloads) ──────────
 
+  // ÚNICO assinante de progresso/fila: repassa para a tela de downloads (que não assina mais).
+  // Os payloads podem trazer a fila inteira (array) ou só o item ({ id, ... }).
+  const pendingProgress = new Map(); // id -> payload mais recente (coalescido por quadro)
+  let progressRaf = 0;
+  const flushProgress = () => {
+    progressRaf = 0;
+    if (!pendingProgress.size) return;
+    const batch = Array.from(pendingProgress.values());
+    pendingProgress.clear();
+    const last = batch[batch.length - 1];
+    updateGlobalDownloadFooter(last, 'downloading');
+    getScreenModule('download').then((m) => batch.forEach((d) => m.updateProgressVisuals?.(d))).catch(() => {});
+  };
+  const scheduleProgress = (data) => {
+    pendingProgress.set(data.id ?? '_', { ...(pendingProgress.get(data.id ?? '_') || {}), ...data });
+    if (!progressRaf) progressRaf = (document.hidden ? setTimeout : requestAnimationFrame)(flushProgress, 250);
+  };
+
+  // Mescla um payload de item único na fila local (o item é criado se ainda não existir)
+  const mergeQueueItem = (item) => {
+    const q = Array.isArray(state.downloadQueue) ? state.downloadQueue : [];
+    const i = q.findIndex((x) => x.id === item.id);
+    if (i >= 0) { q[i] = { ...q[i], ...item }; return q; }
+    return q.concat([item]);
+  };
+
   // Progresso granular: `{ id, progress, speed, eta, downloadedBytes, totalBytes }`
   window.bds.downloads?.onProgress?.((data) => {
+    if (!data) return;
+    if (Array.isArray(data)) { handleQueueUpdate(data); return; }
     state.running = true;
     if (typeof data.progress === 'number') {
       state.progressPercent = data.progress;
     }
-
-    // Footer global — visível em qualquer tela
-    updateGlobalDownloadFooter(data, 'downloading');
-
-    // Repassa para a tela de download se estiver aberta
-    import('./screens/download.js')
-      .then(m => m.updateProgressVisuals?.(data))
-      .catch(() => {});
+    // Mantém o item da fila local em dia (sem re-renderizar a lista a cada tick)
+    if (data.id != null && Array.isArray(state.downloadQueue)) {
+      const it = state.downloadQueue.find((x) => x.id === data.id);
+      if (it) Object.assign(it, data);
+    }
+    scheduleProgress(data);
   });
 
-  // Fila atualizada: re-renderiza lista e fecha footer se não houver download ativo
-  window.bds.downloads?.onUpdated?.((queue) => {
+  // Fila atualizada: re-renderiza (no máximo 1x por quadro) e fecha o footer se não houver download ativo
+  let queueRaf = 0;
+  const handleQueueUpdate = (payload) => {
+    const queue = Array.isArray(payload) ? payload : mergeQueueItem(payload);
     state.downloadQueue = queue;
     const active = queue.find(i => i.status === 'downloading');
     state.running = Boolean(active);
@@ -948,11 +999,15 @@ async function initGlobalElectronListeners() {
     if (!active) {
       updateGlobalDownloadFooter(null, 'idle');
     }
-
-    import('./screens/download.js')
-      .then(m => m.renderDownloadQueue?.(queue))
-      .catch(() => {});
-  });
+    if (queueRaf) return;
+    queueRaf = (document.hidden ? setTimeout : requestAnimationFrame)(() => {
+      queueRaf = 0;
+      getScreenModule('download')
+        .then(m => m.renderDownloadQueue?.(state.downloadQueue))
+        .catch(() => {});
+    }, 250);
+  };
+  window.bds.downloads?.onUpdated?.((payload) => { if (payload) handleQueueUpdate(payload); });
 
   // Concluído: mostra flash verde por 3 s e fecha o footer
   window.bds.downloads?.onCompleted?.((item) => {
@@ -960,7 +1015,7 @@ async function initGlobalElectronListeners() {
     updateGlobalDownloadFooter(item, 'completed');
     setTimeout(() => updateGlobalDownloadFooter(null, 'idle'), 3000);
 
-    import('./screens/library.js')
+    getScreenModule('library')
       .then(m => m.fetchMedia?.())
       .catch(() => {});
   });
@@ -977,7 +1032,7 @@ async function initGlobalElectronListeners() {
     state.downloadQueue = queue;
     const isRunning = queue.some(i => i.status === 'downloading');
     state.running = isRunning;
-    import('./screens/download.js')
+    getScreenModule('download')
       .then(m => m.renderDownloadQueue?.(queue))
       .catch(() => {});
   });
@@ -985,58 +1040,10 @@ async function initGlobalElectronListeners() {
   // onFinished (canal `download:finished`) — mantido para compat
   window.bds.onFinished((payload) => {
     state.running = false;
-    import('./screens/download.js').then(m => {
+    getScreenModule('download').then(m => {
       m.setControlsEnabled?.(true);
     }).catch(() => {});
   });
-
-// ===== INÍCIO: LISTENERS DO CONVERSOR =====
-// Listener para atualizar a fila inteira (quando arquivos são adicionados ou removidos)
-window.bds?.onConverterQueue?.((queue) => {
-  console.log('Evento recebido: converter:queue', queue);
-  state.converterQueue = queue;
-  // Chama a função de renderização do converter.js
-  if (typeof renderConverterQueue === 'function') {
-    renderConverterQueue();
-  }
-});
-
-// Listener para atualizar o progresso de um arquivo específico
-window.bds?.onConverterProgress?.((data) => {
-  console.log('Evento recebido: converter:progress', data);
-  const { index, progress, status } = data;
-  
-  // Encontra o item na fila e atualiza seu progresso e status
-  if (state.converterQueue && state.converterQueue[index]) {
-    state.converterQueue[index].progress = progress;
-    if (status) {
-      state.converterQueue[index].status = status;
-    }
-    // Re-renderiza a fila para mostrar a mudança
-    if (typeof renderConverterQueue === 'function') {
-      renderConverterQueue();
-    }
-  }
-});
-
-// Listener para quando a conversão de um arquivo é concluída
-window.bds?.onConverterFileFinished?.((data) => {
-  console.log('Evento recebido: converter:completed', data);
-  const { index, outputPath } = data;
-  
-  if (state.converterQueue && state.converterQueue[index]) {
-    state.converterQueue[index].status = 'completed';
-    state.converterQueue[index].progress = 100;
-    state.converterQueue[index].outputPath = outputPath;
-    // Re-renderiza a fila
-    if (typeof renderConverterQueue === 'function') {
-      renderConverterQueue();
-    }
-  }
-});
-
-// Listener para quando um arquivo falha na conversão
-// Eventos do Conversor que deram erro foram removidos temporariamente
 
   // ===== INÍCIO: UPDATES =====
   // Ouvinte de resposta para checagem automática de atualizações no início do app

@@ -4,11 +4,50 @@ const path = require('path');
 const fs = require('fs');
 const ffmpegLimiter = require('../media/FfmpegLimiter');
 
+const { PRIORITY } = ffmpegLimiter;
 const FFMPEG_TIMEOUT_MS = 10 * 60 * 1000; // teto de segurança por processo
+const STDERR_TAIL_BYTES = 4096;
 
-/** Atualiza atime/mtime de um item de cache lido (LRU real do CacheService). */
+// Cache binário: cabeçalho de 24 bytes + 1 byte (0..255) por pico.
+const WFM_MAGIC = 'BWF1';
+const WFM_HEADER_BYTES = 24;
+
+/** Atualiza atime/mtime de um item de cache lido (LRU real do CacheService), sem bloquear. */
 function touch(p) {
-    try { const now = new Date(); fs.utimesSync(p, now, now); } catch (_) {}
+    const now = new Date();
+    fs.promises.utimes(p, now, now).catch(() => {});
+}
+
+/** Cabeçalho: magic(4) | peaks_per_second u32 | duration f64 | count u32 | stream_index u32 (little endian). */
+function encodeWfm({ peaksPerSecond, duration, streamIndex, quantized }) {
+    const out = Buffer.allocUnsafe(WFM_HEADER_BYTES + quantized.length);
+    out.write(WFM_MAGIC, 0, 'ascii');
+    out.writeUInt32LE(peaksPerSecond, 4);
+    out.writeDoubleLE(duration, 8);
+    out.writeUInt32LE(quantized.length, 16);
+    out.writeUInt32LE(streamIndex, 20);
+    Buffer.from(quantized.buffer, quantized.byteOffset, quantized.length).copy(out, WFM_HEADER_BYTES);
+    return out;
+}
+
+/** @returns {{peaksPerSecond:number,duration:number,streamIndex:number,quantized:Uint8Array}|null} */
+function decodeWfm(buf) {
+    if (!buf || buf.length < WFM_HEADER_BYTES || buf.toString('ascii', 0, 4) !== WFM_MAGIC) return null;
+    const count = buf.readUInt32LE(16);
+    if (buf.length !== WFM_HEADER_BYTES + count) return null;
+    return {
+        peaksPerSecond: buf.readUInt32LE(4),
+        duration: buf.readDoubleLE(8),
+        streamIndex: buf.readUInt32LE(20),
+        quantized: new Uint8Array(buf.buffer, buf.byteOffset + WFM_HEADER_BYTES, count)
+    };
+}
+
+/** Uint8Array (0..255) -> array de amplitudes 0.0..1.0 (formato entregue ao renderer, igual ao antigo). */
+function dequantize(quantized) {
+    const peaks = new Array(quantized.length);
+    for (let i = 0; i < quantized.length; i++) peaks[i] = quantized[i] / 255;
+    return peaks;
 }
 
 /**
@@ -17,10 +56,16 @@ function touch(p) {
  * arquivos de áudio/vídeo usando FFmpeg, para renderização fluida na
  * Mini Timeline e no Source Monitor sem travar a interface.
  *
- * Formato do cache (waveforms/<uuid>.json):
+ * Formato do cache (waveforms/<uuid>[_sN].wfm), binário e quantizado:
+ *   cabeçalho de 24 bytes (ver encodeWfm) + 1 byte por pico (amplitude 0..255).
+ * O cache JSON antigo (waveforms/<uuid>.json, picos como floats) continua sendo lido e é
+ * migrado para .wfm sob demanda (o .json é removido após a migração).
+ *
+ * O objeto entregue ao chamador/renderer NÃO mudou:
  * {
  *   "version": 1,
  *   "uuid": "...",
+ *   "stream_index": 0,
  *   "duration": 120.45,
  *   "peaks_per_second": 100,
  *   "peaks": [0.0, 0.12, 0.98, ...] // amplitude normalizada 0.0 - 1.0
@@ -30,7 +75,7 @@ class WaveformService {
     /**
      * @param {Object} options
      * @param {string} options.ffmpegPath - Caminho para o ffmpeg.exe
-     * @param {string} options.cacheDir - Diretório onde os arquivos .json de waveform serão salvos
+     * @param {string} options.cacheDir - Diretório onde os arquivos de waveform serão salvos
      */
     constructor({ ffmpegPath, cacheDir }) {
         this.ffmpegPath = ffmpegPath;
@@ -43,31 +88,96 @@ class WaveformService {
         }
     }
 
+    _suffix(streamIndex) {
+        return streamIndex > 0 ? `_s${streamIndex}` : '';
+    }
+
+    /** Caminho do cache binário atual (.wfm). */
     getCachePath(uuid, streamIndex = 0) {
-        const suffix = streamIndex > 0 ? `_s${streamIndex}` : '';
-        return path.join(this.cacheDir, `${uuid}${suffix}.json`);
+        return path.join(this.cacheDir, `${uuid}${this._suffix(streamIndex)}.wfm`);
+    }
+
+    /** Caminho do cache JSON legado (somente leitura/migração). */
+    getLegacyCachePath(uuid, streamIndex = 0) {
+        return path.join(this.cacheDir, `${uuid}${this._suffix(streamIndex)}.json`);
     }
 
     hasCache(uuid, streamIndex = 0) {
-        return fs.existsSync(this.getCachePath(uuid, streamIndex));
+        return fs.existsSync(this.getCachePath(uuid, streamIndex))
+            || fs.existsSync(this.getLegacyCachePath(uuid, streamIndex));
     }
 
-    readCache(uuid, streamIndex = 0) {
+    /**
+     * Lê o cache (assíncrono, sem bloquear o main thread). Retorna o objeto de waveform ou null.
+     * Se só existir o JSON legado, migra para o formato binário.
+     */
+    async readCache(uuid, streamIndex = 0) {
         const cachePath = this.getCachePath(uuid, streamIndex);
-        if (!fs.existsSync(cachePath)) return null;
         try {
-            const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-            touch(cachePath);
-            return parsed;
+            const decoded = decodeWfm(await fs.promises.readFile(cachePath));
+            if (decoded) {
+                touch(cachePath);
+                return {
+                    version: 1,
+                    uuid,
+                    stream_index: decoded.streamIndex,
+                    duration: decoded.duration,
+                    peaks_per_second: decoded.peaksPerSecond,
+                    peaks: dequantize(decoded.quantized)
+                };
+            }
+            logger.warn(`[WaveformService] Cache binário inválido para ${uuid} (stream ${streamIndex}), será regenerado.`);
+            fs.promises.unlink(cachePath).catch(() => {});
         } catch (e) {
-            logger.warn(`[WaveformService] Cache corrompido para ${uuid} (stream ${streamIndex}), será regenerado. ${e.message}`);
+            if (e.code !== 'ENOENT') {
+                logger.warn(`[WaveformService] Falha ao ler cache de ${uuid} (stream ${streamIndex}): ${e.message}`);
+            }
+        }
+        return this._migrateLegacy(uuid, streamIndex);
+    }
+
+    async _migrateLegacy(uuid, streamIndex) {
+        const legacyPath = this.getLegacyCachePath(uuid, streamIndex);
+        let parsed;
+        try {
+            parsed = JSON.parse(await fs.promises.readFile(legacyPath, 'utf8'));
+        } catch (e) {
+            if (e.code !== 'ENOENT') {
+                logger.warn(`[WaveformService] Cache corrompido para ${uuid} (stream ${streamIndex}), será regenerado. ${e.message}`);
+            }
             return null;
         }
+        if (!parsed || !Array.isArray(parsed.peaks) || !parsed.peaks_per_second) return null;
+
+        try {
+            const quantized = new Uint8Array(parsed.peaks.length);
+            for (let i = 0; i < quantized.length; i++) {
+                quantized[i] = Math.max(0, Math.min(255, Math.round((Number(parsed.peaks[i]) || 0) * 255)));
+            }
+            await this._writeWfm(uuid, streamIndex, {
+                peaksPerSecond: parsed.peaks_per_second,
+                duration: Number(parsed.duration) || 0,
+                quantized
+            });
+            fs.promises.unlink(legacyPath).catch(() => {});
+        } catch (e) {
+            logger.warn(`[WaveformService] Migração do cache JSON de ${uuid} falhou (mantém o JSON): ${e.message}`);
+        }
+        return parsed;
+    }
+
+    /** Escrita atômica: .tmp + rename, para nunca deixar arquivo truncado no cache. */
+    async _writeWfm(uuid, streamIndex, { peaksPerSecond, duration, quantized }) {
+        const finalPath = this.getCachePath(uuid, streamIndex);
+        const tmpPath = `${finalPath}.tmp`;
+        await fs.promises.writeFile(tmpPath, encodeWfm({ peaksPerSecond, duration, streamIndex, quantized }));
+        await fs.promises.rename(tmpPath, finalPath);
     }
 
     deleteCache(uuid, streamIndex = 0) {
-        const cachePath = this.getCachePath(uuid, streamIndex);
-        if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
+        for (const p of [this.getCachePath(uuid, streamIndex), this.getLegacyCachePath(uuid, streamIndex)]) {
+            if (fs.existsSync(p)) fs.unlinkSync(p);
+        }
     }
 
     /**
@@ -87,29 +197,30 @@ class WaveformService {
     /**
      * Extrai (e cacheia) uma track de áudio isolada em AAC, para tocar em
      * um <audio> próprio sincronizado ao player principal.
+     * @param {number} [priority=PRIORITY.HIGH] pedido do usuário por padrão
      * @returns {Promise<string>} caminho do arquivo extraído
      */
-    async getOrExtractTrack(uuid, filePath, streamIndex = 0, force = false) {
+    async getOrExtractTrack(uuid, filePath, streamIndex = 0, force = false, priority = PRIORITY.HIGH) {
         const outPath = this.getTrackAudioPath(uuid, streamIndex);
         if (!force && fs.existsSync(outPath)) { touch(outPath); return outPath; }
 
         const key = `${uuid}:${streamIndex}`;
         if (this._inflightTracks.has(key)) return this._inflightTracks.get(key);
-        const promise = this._extractTrack(filePath, streamIndex, outPath)
+        const promise = this._extractTrack(filePath, streamIndex, outPath, priority)
             .then(() => outPath)
             .finally(() => this._inflightTracks.delete(key));
         this._inflightTracks.set(key, promise);
         return promise;
     }
 
-    async _extractTrack(filePath, streamIndex, outPath) {
+    async _extractTrack(filePath, streamIndex, outPath, priority = PRIORITY.HIGH) {
         const tmpPath = `${outPath}.tmp.m4a`;
         await ffmpegLimiter.run(() => new Promise((resolve, reject) => {
             const args = [
-                '-v', 'error', '-y',
+                '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
                 '-i', filePath,
                 '-map', `0:a:${streamIndex}`,
-                '-vn',
+                '-vn', '-sn', '-dn',
                 '-c:a', 'aac',
                 '-b:a', '160k',
                 tmpPath
@@ -117,14 +228,14 @@ class WaveformService {
             const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
             let stderr = '';
             const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, FFMPEG_TIMEOUT_MS);
-            proc.stderr.on('data', (d) => { stderr += d.toString(); });
+            proc.stderr.on('data', (d) => { stderr = (stderr + d.toString()).slice(-STDERR_TAIL_BYTES); });
             proc.on('error', (e) => { clearTimeout(timer); reject(e); });
             proc.on('close', (code) => {
                 clearTimeout(timer);
                 if (code === 0) resolve();
                 else reject(new Error(`Falha ao extrair a faixa de áudio ${streamIndex}: ${stderr.slice(-300)}`));
             });
-        }));
+        }), priority);
         try {
             fs.renameSync(tmpPath, outPath);
         } catch (e) {
@@ -142,47 +253,49 @@ class WaveformService {
      * @param {number} [params.peaksPerSecond=100] - Resolução do waveform
      * @param {number} [params.streamIndex=0] - Índice da stream de áudio (0 para 1a stream, 1 para 2a, etc.)
      * @param {boolean} [params.force=false] - Força regeneração ignorando cache existente
+     * @param {number} [params.priority=PRIORITY.HIGH] - Prioridade no FfmpegLimiter (HIGH: pedido do usuário; LOW: lote/regeneração)
      * @returns {Promise<Object>} Objeto de waveform { peaks, duration, peaks_per_second, stream_index }
      */
-    async getOrGenerate({ uuid, filePath, duration = 0, peaksPerSecond = 100, streamIndex = 0, force = false }) {
+    async getOrGenerate({ uuid, filePath, duration = 0, peaksPerSecond = 100, streamIndex = 0, force = false, priority = PRIORITY.HIGH }) {
         if (!uuid || !filePath) throw new Error('uuid e filePath são obrigatórios.');
 
         if (!force) {
-            const cached = this.readCache(uuid, streamIndex);
+            const cached = await this.readCache(uuid, streamIndex);
             if (cached && cached.peaks_per_second === peaksPerSecond) return cached;
         }
 
         const key = `${uuid}:${streamIndex}`;
         if (this._inflight.has(key)) return this._inflight.get(key);
-        const promise = this._generate({ uuid, filePath, duration, peaksPerSecond, streamIndex })
+        const promise = this._generate({ uuid, filePath, duration, peaksPerSecond, streamIndex, priority })
             .finally(() => this._inflight.delete(key));
         this._inflight.set(key, promise);
         return promise;
     }
 
-    async _generate({ uuid, filePath, duration, peaksPerSecond, streamIndex }) {
-        const peaks = await ffmpegLimiter.run(() => this._extractPeaks(filePath, peaksPerSecond, streamIndex));
-        const result = {
+    async _generate({ uuid, filePath, duration, peaksPerSecond, streamIndex, priority = PRIORITY.HIGH }) {
+        const quantized = await ffmpegLimiter.run(() => this._extractPeaks(filePath, peaksPerSecond, streamIndex), priority);
+        const finalDuration = duration || (quantized.length / peaksPerSecond);
+
+        await this._writeWfm(uuid, streamIndex, { peaksPerSecond, duration: finalDuration, quantized });
+        // Cache JSON antigo (se houver) fica obsoleto
+        fs.promises.unlink(this.getLegacyCachePath(uuid, streamIndex)).catch(() => {});
+
+        return {
             version: 1,
             uuid,
             stream_index: streamIndex,
-            duration: duration || (peaks.length / peaksPerSecond),
+            duration: finalDuration,
             peaks_per_second: peaksPerSecond,
-            peaks
+            peaks: dequantize(quantized)
         };
-
-        // Escrita atômica: .tmp + rename, para nunca deixar JSON truncado no cache
-        const finalPath = this.getCachePath(uuid, streamIndex);
-        const tmpPath = `${finalPath}.tmp`;
-        fs.writeFileSync(tmpPath, JSON.stringify(result));
-        fs.renameSync(tmpPath, finalPath);
-        return result;
     }
 
     /**
-     * Extrai os picos de amplitude (min/max por bloco) de um arquivo de mídia
-     * via FFmpeg, decodificando para PCM 16-bit mono a 16kHz.
+     * Extrai os picos de amplitude (máximo absoluto por bloco) de um arquivo de mídia
+     * via FFmpeg, decodificando para PCM 16-bit mono a 16kHz. Já devolve os picos
+     * quantizados (Uint8Array, 0..255) — sem arrays de floats intermediários.
      * @private
+     * @returns {Promise<Uint8Array>}
      */
     _extractPeaks(filePath, peaksPerSecond, streamIndex = 0) {
         const sampleRate = 16000; // Padrão do BDS para análise de áudio (Fase 6 reaproveita a mesma taxa)
@@ -190,10 +303,10 @@ class WaveformService {
 
         return new Promise((resolve, reject) => {
             const args = [
-                '-v', 'error',
+                '-nostdin', '-hide_banner', '-loglevel', 'error',
                 '-i', filePath,
                 '-map', `0:a:${streamIndex}`,
-                '-vn',
+                '-vn', '-sn', '-dn',
                 '-ac', '1',
                 '-ar', String(sampleRate),
                 '-f', 's16le',
@@ -203,30 +316,40 @@ class WaveformService {
             const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
             const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, FFMPEG_TIMEOUT_MS);
 
-            let leftover = Buffer.alloc(0);
-            const peaks = [];
+            // Buffer crescente de picos quantizados (1 byte por pico)
+            let peaks = new Uint8Array(65536);
+            let peakCount = 0;
+            const pushPeak = (maxAbs) => {
+                if (peakCount === peaks.length) {
+                    const bigger = new Uint8Array(peaks.length * 2);
+                    bigger.set(peaks);
+                    peaks = bigger;
+                }
+                peaks[peakCount++] = Math.min(255, Math.round((maxAbs / 32768) * 255));
+            };
 
+            let carry = -1;        // byte baixo pendente de uma amostra cortada entre dois chunks
             let currentMax = 0;
             let sampleCount = 0;
 
             const processBuffer = (buf) => {
-                const combined = leftover.length ? Buffer.concat([leftover, buf]) : buf;
-                // Cada amostra tem 2 bytes (Int16). Garante processar apenas pares completos.
-                const usableLength = combined.length - (combined.length % 2);
-                leftover = combined.subarray(usableLength);
-
-                for (let i = 0; i < usableLength; i += 2) {
-                    const sample = combined.readInt16LE(i);
-                    const abs = Math.abs(sample);
+                let i = 0;
+                const n = buf.length;
+                if (carry >= 0 && n > 0) {
+                    const v = ((carry | (buf[0] << 8)) << 16) >> 16;
+                    const abs = v < 0 ? -v : v;
                     if (abs > currentMax) currentMax = abs;
-                    sampleCount++;
-
-                    if (sampleCount >= samplesPerPeak) {
-                        peaks.push(parseFloat((currentMax / 32768).toFixed(4)));
-                        currentMax = 0;
-                        sampleCount = 0;
-                    }
+                    if (++sampleCount >= samplesPerPeak) { pushPeak(currentMax); currentMax = 0; sampleCount = 0; }
+                    carry = -1;
+                    i = 1;
                 }
+                for (; i + 1 < n; i += 2) {
+                    const v = ((buf[i] | (buf[i + 1] << 8)) << 16) >> 16; // Int16 little-endian
+                    const abs = v < 0 ? -v : v;
+                    if (abs > currentMax) currentMax = abs;
+                    if (++sampleCount >= samplesPerPeak) { pushPeak(currentMax); currentMax = 0; sampleCount = 0; }
+                }
+                if (i < n) carry = buf[i]; // sobrou 1 byte (amostra incompleta)
             };
 
             proc.stdout.on('data', (chunk) => {
@@ -239,7 +362,7 @@ class WaveformService {
             });
 
             let stderrOutput = '';
-            proc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
+            proc.stderr.on('data', (d) => { stderrOutput = (stderrOutput + d.toString()).slice(-STDERR_TAIL_BYTES); });
 
             proc.on('error', (err) => {
                 clearTimeout(killTimer);
@@ -248,15 +371,13 @@ class WaveformService {
 
             proc.on('close', (code) => {
                 clearTimeout(killTimer);
-                if (code !== 0 && peaks.length === 0) {
-                    reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(0, 500)}`));
+                if (code !== 0 && peakCount === 0) {
+                    reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(-500)}`));
                     return;
                 }
                 // Inclui o último bloco parcial, se houver amostras remanescentes
-                if (sampleCount > 0) {
-                    peaks.push(parseFloat((currentMax / 32768).toFixed(4)));
-                }
-                resolve(peaks);
+                if (sampleCount > 0) pushPeak(currentMax);
+                resolve(peaks.slice(0, peakCount));
             });
         });
     }

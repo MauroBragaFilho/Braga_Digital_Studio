@@ -3,6 +3,7 @@ const { execFile } = require('child_process');
 const util = require('util');
 const path = require('path');
 const execFilePromise = util.promisify(execFile);
+const probeCache = require('./ProbeCache');
 
 class FFProbe {
     /**
@@ -19,6 +20,10 @@ class FFProbe {
      * @returns {Promise<Object>} Metadados parseados
      */
     async analyze(filePath) {
+        return probeCache.getOrLoad(filePath, () => this._analyze(filePath), `ffprobe-analyze:${this.ffprobePath}`);
+    }
+
+    async _analyze(filePath) {
         const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath];
 
         try {

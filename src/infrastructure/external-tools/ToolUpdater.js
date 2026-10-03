@@ -133,6 +133,7 @@ class ToolUpdater {
         try { fs.unlinkSync(target); } catch (_) { fs.renameSync(target, `${target}.old_${Date.now()}`); }
       }
       fs.copyFileSync(backupPath, target);
+      toolResolver.invalidate();
       const info = this._readBackupInfo(toolKey);
       logUpdater(`Rollback de ${toolKey} concluído com sucesso.`, info);
       return { success: true, tool: toolKey, restoredVersion: info?.version || null };
@@ -534,6 +535,7 @@ class ToolUpdater {
       // 8. Só agora, com a nova versão validada e funcionando, persistimos o backup de rollback
       //    de longo prazo (substituindo o anterior) e o manifesto de versão/checksum do componente.
       this._persistBackup(toolKey, exeName, target, versionLabel, installedSha256);
+      toolResolver.invalidate();
       this._writeManifest(toolKey, {
         name: toolKey,
         version: versionLabel,
@@ -573,6 +575,7 @@ class ToolUpdater {
     try {
       if (fs.existsSync(target)) fs.rmSync(target, { force: true });
       fs.copyFileSync(preSwapBackup, target);
+      toolResolver.invalidate();
       logUpdater(`Rollback imediato concluído para ${path.basename(target)}.`);
     } catch (rbErr) {
       logUpdater(`Falha crítica no rollback imediato de ${path.basename(target)}: ${rbErr.message}`);
@@ -630,6 +633,7 @@ class ToolUpdater {
         try { fs.unlinkSync(targetExe); } catch (_) { fs.renameSync(targetExe, `${targetExe}.old_${Date.now()}`); }
       }
       fs.copyFileSync(sourceExe, targetExe);
+      toolResolver.invalidate();
       logUpdater(`Componente auxiliar empacotado (${key}) instalado com sucesso.`);
     } catch (e) {
       logUpdater(`Falha ao instalar componente empacotado ${key}: ${e.message}`);

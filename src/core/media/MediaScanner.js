@@ -2,74 +2,63 @@ const logger = require('../../services/logService');
 const fs = require('fs/promises');
 const path = require('path');
 
-const { SUPPORTED_EXTENSIONS, RAW_EXTENSIONS, isJpeg } = require('./MediaTypes');
+const { SUPPORTED_EXTENSIONS, RAW_EXTENSIONS, JPEG_EXTENSIONS } = require('./MediaTypes');
+
+const READDIR_CONCURRENCY = 4; // leituras de pasta em paralelo
 
 class MediaScanner {
     /**
      * Percorre um diretório de forma recursiva e retorna todos os arquivos suportados.
+     * Passe único e iterativo (sem recursão nem concat de arrays): acumula os arquivos num array,
+     * lê subpastas em paralelo limitado e aplica a desduplicação RAW/JPG uma vez no final.
      * @param {string} dirPath - Caminho base da biblioteca
      * @returns {Promise<string[]>} Array de caminhos completos dos arquivos
      */
     static async scanDirectory(dirPath) {
-        let results = [];
-        try {
-            const entries = await fs.readdir(dirPath, { withFileTypes: true });
+        const found = [];
+        const pending = [dirPath];
+        let active = 0;
 
+        const readOne = async (dir) => {
+            let entries;
+            try {
+                entries = await fs.readdir(dir, { withFileTypes: true });
+            } catch (error) {
+                logger.error(`[MediaScanner] Erro ao ler o diretório ${dir}:`, error.message);
+                return;
+            }
             for (const entry of entries) {
-                const fullPath = path.join(dirPath, entry.name);
-                
                 if (entry.isDirectory()) {
-                    // Ignora pastas ocultas ou do sistema se necessário
-                    if (!entry.name.startsWith('.')) {
-                        const subResults = await this.scanDirectory(fullPath);
-                        results = results.concat(subResults);
-                    }
+                    // Ignora pastas ocultas
+                    if (!entry.name.startsWith('.')) pending.push(path.join(dir, entry.name));
                 } else if (entry.isFile()) {
-                    const ext = path.extname(entry.name).toLowerCase();
-                    if (SUPPORTED_EXTENSIONS.has(ext)) {
-                        results.push(fullPath);
+                    if (SUPPORTED_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+                        found.push(path.join(dir, entry.name));
                     }
                 }
             }
-            
-            // Lógica de desduplicação: Prioriza RAW sobre JPG na mesma pasta
-            const filteredResults = [];
-            const dirGroups = {};
-            
-            // Agrupar por pasta e nome base
-            for (const resPath of results) {
-                const dir = path.dirname(resPath);
-                const ext = path.extname(resPath).toLowerCase();
-                const base = path.parse(resPath).name.toLowerCase();
-                
-                if (!dirGroups[dir]) dirGroups[dir] = {};
-                if (!dirGroups[dir][base]) dirGroups[dir][base] = [];
-                
-                dirGroups[dir][base].push({ path: resPath, ext });
-            }
-            
-            
-            for (const dir in dirGroups) {
-                for (const base in dirGroups[dir]) {
-                    const files = dirGroups[dir][base];
-                    let hasRaw = files.some(f => RAW_EXTENSIONS.has(f.ext));
-                    
-                    for (const f of files) {
-                        if (hasRaw && isJpeg(f.path)) {
-                            // Pula o JPG se existir o RAW
-                            continue;
-                        }
-                        filteredResults.push(f.path);
-                    }
-                }
-            }
-            
-            results = filteredResults;
+        };
 
-        } catch (error) {
-            logger.error(`[MediaScanner] Erro ao ler o diretório ${dirPath}:`, error.message);
+        await new Promise((resolve) => {
+            const pump = () => {
+                while (active < READDIR_CONCURRENCY && pending.length > 0) {
+                    const dir = pending.pop();
+                    active++;
+                    readOne(dir).finally(() => { active--; pump(); });
+                }
+                if (active === 0 && pending.length === 0) resolve();
+            };
+            pump();
+        });
+
+        // Desduplicação: prioriza RAW sobre JPG de mesmo nome base na mesma pasta
+        const rawKeys = new Set();
+        const keyOf = (p) => path.join(path.dirname(p), path.parse(p).name.toLowerCase());
+        for (const f of found) {
+            if (RAW_EXTENSIONS.has(path.extname(f).toLowerCase())) rawKeys.add(keyOf(f));
         }
-        return results;
+        if (rawKeys.size === 0) return found;
+        return found.filter((f) => !(JPEG_EXTENSIONS.has(path.extname(f).toLowerCase()) && rawKeys.has(keyOf(f))));
     }
 }
 

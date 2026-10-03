@@ -9,6 +9,8 @@ const { appPaths } = require('../../infrastructure/filesystem/AppPaths');
 const { ingestFile } = require('./MediaIngest');
 const { isSupported, isAudio } = require('./MediaTypes');
 
+const IMPORT_CONCURRENCY = 3; // arquivos processados em paralelo em importLibrary
+
 class MediaImporter {
     /**
      * @param {Object} options
@@ -60,9 +62,16 @@ class MediaImporter {
         const files = await MediaScanner.scanDirectory(library.path);
         logger.info(`[MediaImporter] Encontrados ${files.length} arquivos compatíveis.`);
 
-        for (const filePath of files) {
-            await this.importFile(library, filePath);
-        }
+        // Pool de workers: ffprobe + miniatura de vários arquivos em paralelo (ffmpeg já é limitado por FfmpegLimiter)
+        let next = 0;
+        const worker = async () => {
+            while (next < files.length) {
+                const filePath = files[next++];
+                await this.importFile(library, filePath, { batch: true });
+            }
+        };
+        const poolSize = Math.max(1, Math.min(IMPORT_CONCURRENCY, files.length));
+        await Promise.all(Array.from({ length: poolSize }, worker));
 
         logger.info(`[MediaImporter] Importação de ${library.name} concluída.`);
     }
@@ -71,8 +80,10 @@ class MediaImporter {
      * Processa e importa um único arquivo para o banco de dados
      * @param {Object} library 
      * @param {string} filePath 
+     * @param {Object} [opts]
+     * @param {boolean} [opts.batch=false] - chamada vinda de importLibrary (logs por arquivo em debug)
      */
-    async importFile(library, filePath) {
+    async importFile(library, filePath, { batch = false } = {}) {
         const filename = path.basename(filePath);
 
         // Validação de extensão para ignorar exes, dlls e arquivos não suportados
@@ -86,10 +97,11 @@ class MediaImporter {
                 library,
                 filePath,
                 emit: false, // os handlers IPC já notificam a UI ao final
+                batch,
                 generateThumbnail: (fp, uuid, duration) => this._generateThumbnail(fp, filename, uuid, duration),
             });
             if (!result) return;
-            if (result.created) logger.info(`[MediaImporter] Arquivo importado: ${filename}`);
+            if (result.created) (batch ? logger.debug : logger.info).call(logger, `[MediaImporter] Arquivo importado: ${filename}`);
             return { id: result.id, created: result.created };
         } catch (error) {
             logger.error(`[MediaImporter] Falha ao importar ${filePath}: ${error.stack || error.message || error}`);
