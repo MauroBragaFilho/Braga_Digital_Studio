@@ -97,6 +97,7 @@ class AIService {
       hasKey: !!c.apiKeyEnc,
       encryptionAvailable: this._encryptionAvailable(),
       isOfficialOpenAI: OpenAIProvider.isOfficialOpenAI(c.baseUrl),
+      isLocal: this.isLocalServer(),
       presets: SERVER_PRESETS,
       tasks: tasks.list()
     };
@@ -168,27 +169,47 @@ class AIService {
     return extra ? `${SYSTEM_PROMPT}\n\nInstruções do usuário:\n${extra}` : SYSTEM_PROMPT;
   }
 
-  /** Envia a conversa ao provedor ativo. */
-  async chat({ messages, system } = {}) {
+  /** Envia a conversa ao provedor ativo. `signal` (opcional) cancela a requisição. */
+  async chat({ messages, system, signal = null } = {}) {
     const clean = this._sanitizeMessages(messages);
     const model = this._load().model;
     if (!model) throw new Error('Nenhum modelo definido. Informe um modelo nas configurações da IA.');
-    return this._buildProvider().chat({
+    const result = await this._buildProvider().chat({
       model,
       system: system || this._systemPrompt(),
       messages: clean,
-      maxTokens: this._load().maxTokens
+      maxTokens: this._load().maxTokens,
+      signal
     });
+    return { ...result, model };
   }
 
   // ------------------------------------------------------------------ tarefas
 
   listTasks() { return tasks.list(); }
 
-  async runTask(name, payload) {
+  /**
+   * Executa uma tarefa registrada. `extra` (opcional): { signal, onProgress } — cancelamento e
+   * andamento de tarefas longas. A tarefa recebe ctx = { chat, model(), signal, onProgress }.
+   */
+  async runTask(name, payload, extra = {}) {
     const task = tasks.get(name);
     if (!task) throw new Error('Tarefa desconhecida.');
-    return task.run(payload, { chat: (args) => this.chat(args) });
+    const signal = extra.signal || null;
+    return task.run(payload, {
+      chat: (args) => this.chat({ signal, ...args }),
+      model: () => this._load().model,
+      signal,
+      onProgress: typeof extra.onProgress === 'function' ? extra.onProgress : () => {}
+    });
+  }
+
+  /** O servidor configurado está na própria máquina? (a interface avisa quando o texto sai do computador) */
+  isLocalServer() {
+    try {
+      const host = new URL(this._load().baseUrl).hostname;
+      return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host) || host.endsWith('.localhost');
+    } catch (_) { return false; }
   }
 }
 

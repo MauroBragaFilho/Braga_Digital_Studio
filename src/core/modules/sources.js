@@ -3,16 +3,70 @@
 /**
  * sources.js — Fontes oficiais de onde os módulos baixam seus componentes.
  *
- *  - Hugging Face: modelos do Whisper (formato faster-whisper / CTranslate2).
- *  - NVIDIA: bibliotecas CUDA (cuBLAS e cuDNN) pelos manifestos "redistrib" oficiais.
+ *  - GitHub (ggml-org/whisper.cpp, releases oficiais): o motor (whisper-cli) para CPU e a versão para
+ *    placas NVIDIA (CUDA, que já traz as bibliotecas da NVIDIA).
+ *  - Hugging Face (ggerganov/whisper.cpp): os modelos do Whisper no formato ggml.
  *
- * Nada é redistribuído pelo BDS: tamanhos e SHA-256 vêm da própria fonte na hora da instalação.
+ * Nada é redistribuído pelo BDS. Os pacotes do motor ficam FIXADOS aqui (versão, tamanho e SHA-256), então só
+ * o arquivo exato que foi testado é aceito. Os modelos mudam de revisão no Hugging Face, então tamanho e
+ * SHA-256 deles vêm da própria fonte na hora da instalação.
  */
 
 const { fetchJson } = require('./FileDownloader');
 
-// Arquivos de um modelo faster-whisper necessários para executar (o resto do repositório é ignorado).
-const MODEL_REQUIRED = [/^config\.json$/, /^model\.bin$/, /^tokenizer\.json$/, /^vocabulary\.(json|txt)$/, /^preprocessor_config\.json$/];
+/**
+ * Release do whisper.cpp testada com o BDS. Para atualizar: escolha uma tag "bNNNN" em
+ * https://github.com/ggml-org/whisper.cpp/releases (as tags "vX.Y.Z" não trazem binários), confira o SHA-256 de
+ * cada pacote (a página da release mostra "sha256:…"), troque os valores abaixo e rode a validação do motor.
+ */
+const WHISPER_CPP_RELEASE = {
+  tag: 'b5130',
+  assets: {
+    cpu: {
+      label: 'Motor de transcrição (CPU)',
+      name: 'whisper-bin-x64.zip',
+      size: 8573270,
+      sha256: 'f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c'
+    },
+    cuda: {
+      label: 'Aceleração NVIDIA (CUDA 12.4)',
+      name: 'whisper-cublas-12.4.0-bin-x64.zip',
+      size: 674539285,
+      sha256: 'af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7',
+      cudaVersion: '12.4'
+    }
+  }
+};
+
+/** Arquivos que precisam existir depois de extrair cada pacote. */
+const ENGINE_FILES = { cli: 'whisper-cli.exe', cuda: 'ggml-cuda.dll' };
+
+const CUDA_LICENSE_LINKS = [
+  { label: 'CUDA Toolkit EULA (bibliotecas da NVIDIA)', url: 'https://docs.nvidia.com/cuda/eula/index.html' }
+];
+
+class WhisperCppSource {
+  constructor({ baseUrl = 'https://github.com', release = WHISPER_CPP_RELEASE } = {}) {
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.release = release;
+  }
+
+  /** @param {'cpu'|'cuda'} kind */
+  asset(kind) {
+    const a = this.release.assets[kind];
+    if (!a) throw new Error(`Pacote desconhecido: ${kind}.`);
+    return {
+      kind,
+      label: a.label,
+      tag: this.release.tag,
+      name: a.name,
+      size: a.size,
+      sha256: a.sha256,
+      cudaVersion: a.cudaVersion || null,
+      url: `${this.baseUrl}/ggml-org/whisper.cpp/releases/download/${this.release.tag}/${a.name}`
+    };
+  }
+}
 
 class HuggingFaceSource {
   constructor({ baseUrl = 'https://huggingface.co', getJson = fetchJson } = {}) {
@@ -21,30 +75,22 @@ class HuggingFaceSource {
   }
 
   /**
-   * Lista os arquivos do modelo na revisão atual, com tamanho e SHA-256 (arquivos LFS).
-   * @returns {Promise<{repoId:string, revision:string, license:string|null, files:Array<{path:string,size:number,sha256:string|null}>}>}
+   * Localiza um arquivo de modelo na revisão atual do repositório, com tamanho e SHA-256 (arquivos LFS).
+   * @returns {Promise<{repoId:string, revision:string, license:string|null, file:{path:string,size:number,sha256:string|null}}>}
    */
-  async getModelFiles(repoId) {
+  async getModelFile(repoId, fileName) {
     // blobs=true inclui tamanho e o hash LFS. Repositórios renomeados respondem com redirecionamento.
     const info = await this._getJson(`${this.baseUrl}/api/models/${repoId}?blobs=true`);
     if (!info || !Array.isArray(info.siblings) || !info.sha) {
       throw new Error(`Resposta inesperada do Hugging Face para ${repoId}.`);
     }
-    const files = info.siblings
-      .filter((f) => MODEL_REQUIRED.some((re) => re.test(f.rfilename)))
-      .map((f) => ({ path: f.rfilename, size: Number(f.size) || 0, sha256: (f.lfs && f.lfs.sha256) || null }));
-
-    const names = files.map((f) => f.path);
-    for (const needed of ['model.bin', 'config.json', 'tokenizer.json']) {
-      if (!names.includes(needed)) throw new Error(`O repositório ${repoId} não contém ${needed}.`);
-    }
-    if (!names.some((n) => /^vocabulary\./.test(n))) throw new Error(`O repositório ${repoId} não contém o vocabulário.`);
-
+    const f = info.siblings.find((s) => s.rfilename === fileName);
+    if (!f) throw new Error(`O repositório ${repoId} não contém ${fileName}.`);
     return {
       repoId: info.id || repoId,           // id canônico (repositórios podem ser renomeados)
-      revision: info.sha,                  // fixa a revisão: todos os arquivos vêm do mesmo commit
+      revision: info.sha,                  // fixa a revisão do arquivo baixado
       license: (info.cardData && info.cardData.license) || null,
-      files
+      file: { path: f.rfilename, size: Number(f.size) || 0, sha256: (f.lfs && f.lfs.sha256) || null }
     };
   }
 
@@ -53,55 +99,4 @@ class HuggingFaceSource {
   }
 }
 
-/**
- * Versões fixadas (as mesmas que o motor foi construído e testado): CUDA 12.9.2 (cuBLAS) e
- * cuDNN 9.27.0 para CUDA 12. Para atualizar, troque aqui e valide o motor com as novas DLLs.
- */
-const CUDA_PLAN = {
-  cublas: { label: 'NVIDIA cuBLAS', manifest: 'compute/cuda/redist/redistrib_12.9.2.json', component: 'libcublas', dir: 'compute/cuda/redist' },
-  cudnn: { label: 'NVIDIA cuDNN', manifest: 'compute/cudnn/redist/redistrib_9.27.0.json', component: 'cudnn', variant: 'cuda12', dir: 'compute/cudnn/redist' }
-};
-
-// DLLs que o faster-whisper (CTranslate2 4.x) carrega, e que são copiadas dos pacotes da NVIDIA.
-const CUDA_DLL_PATTERNS = [/^cublas64_12\.dll$/i, /^cublasLt64_12\.dll$/i, /^cudnn.*64_9\.dll$/i];
-const CUDA_REQUIRED_DLLS = ['cublas64_12.dll', 'cublasLt64_12.dll', 'cudnn64_9.dll'];
-
-const CUDA_LICENSE_LINKS = [
-  { label: 'CUDA Toolkit EULA (cuBLAS)', url: 'https://docs.nvidia.com/cuda/eula/index.html' },
-  { label: 'cuDNN Software License Agreement', url: 'https://docs.nvidia.com/deeplearning/cudnn/sla/index.html' }
-];
-
-class NvidiaCudaSource {
-  constructor({ baseUrl = 'https://developer.download.nvidia.com', getJson = fetchJson } = {}) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this._getJson = getJson;
-  }
-
-  /**
-   * Resolve, nos manifestos oficiais da NVIDIA, o URL, tamanho e SHA-256 dos pacotes Windows.
-   * @returns {Promise<Array<{id:string,label:string,version:string,url:string,sha256:string,size:number}>>}
-   */
-  async resolve() {
-    const out = [];
-    for (const [id, plan] of Object.entries(CUDA_PLAN)) {
-      const manifest = await this._getJson(`${this.baseUrl}/${plan.manifest}`);
-      const comp = manifest && manifest[plan.component];
-      let entry = comp && comp['windows-x86_64'];
-      if (entry && plan.variant) entry = entry[plan.variant];
-      if (!entry || !entry.relative_path || !entry.sha256) {
-        throw new Error(`O manifesto da NVIDIA não traz o pacote Windows de ${plan.label}.`);
-      }
-      out.push({
-        id,
-        label: plan.label,
-        version: comp.version,
-        url: `${this.baseUrl}/${plan.dir}/${entry.relative_path}`,
-        sha256: entry.sha256,
-        size: Number(entry.size) || 0
-      });
-    }
-    return out;
-  }
-}
-
-module.exports = { HuggingFaceSource, NvidiaCudaSource, CUDA_PLAN, CUDA_DLL_PATTERNS, CUDA_REQUIRED_DLLS, CUDA_LICENSE_LINKS, MODEL_REQUIRED };
+module.exports = { WhisperCppSource, HuggingFaceSource, WHISPER_CPP_RELEASE, ENGINE_FILES, CUDA_LICENSE_LINKS };

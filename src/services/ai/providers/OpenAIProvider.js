@@ -55,9 +55,14 @@ class OpenAIProvider {
     return headers;
   }
 
-  async _request(url, options, timeoutMs) {
+  /** `signal` (opcional) permite cancelar de fora: o erro sai com code 'CANCELLED', diferente do tempo esgotado. */
+  async _request(url, options, timeoutMs, signal = null) {
+    const cancelled = () => Object.assign(new Error('Cancelado.'), { code: 'CANCELLED' });
+    if (signal && signal.aborted) throw cancelled();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = () => controller.abort();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
     try {
       const res = await this._fetch(url, { ...options, signal: controller.signal });
       const text = await res.text();
@@ -69,13 +74,17 @@ class OpenAIProvider {
       }
       return data;
     } catch (err) {
-      if (err.name === 'AbortError') throw new Error('Tempo esgotado ao falar com o servidor de IA.');
+      if (err.name === 'AbortError') {
+        if (signal && signal.aborted) throw cancelled();
+        throw new Error('Tempo esgotado ao falar com o servidor de IA.');
+      }
       if (err.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(err.message)) {
         throw new Error('Não foi possível conectar ao servidor de IA. Confira a URL e se ele está em execução.');
       }
       throw err;
     } finally {
       clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
     }
   }
 
@@ -92,10 +101,10 @@ class OpenAIProvider {
   }
 
   /**
-   * @param {{model:string, system:string, messages:Array<{role:string,content:string}>, maxTokens:number}} p
-   * @returns {Promise<{text:string, usage:object|null}>}
+   * @param {{model:string, system:string, messages:Array<{role:string,content:string}>, maxTokens:number, signal?:AbortSignal}} p
+   * @returns {Promise<{text:string, usage:object|null, finishReason:string|null}>}  finishReason 'length' = resposta cortada
    */
-  async chat({ model, system, messages, maxTokens }) {
+  async chat({ model, system, messages, maxTokens, signal = null }) {
     const base = this._base();
     // A OpenAI atual exige max_completion_tokens; servidores compatíveis usam max_tokens.
     const limitField = OpenAIProvider.isOfficialOpenAI(base) ? 'max_completion_tokens' : 'max_tokens';
@@ -103,9 +112,9 @@ class OpenAIProvider {
       method: 'POST',
       headers: this._headers(base),
       body: JSON.stringify({ model, [limitField]: maxTokens, messages: [{ role: 'system', content: system }, ...messages] })
-    }, 300000); // servidores locais podem demorar no primeiro carregamento do modelo
+    }, 300000, signal); // servidores locais podem demorar no primeiro carregamento do modelo
     const text = data?.choices?.[0]?.message?.content || '';
-    return { text, usage: data?.usage || null };
+    return { text, usage: data?.usage || null, finishReason: data?.choices?.[0]?.finish_reason || null };
   }
 }
 

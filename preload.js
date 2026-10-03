@@ -233,6 +233,10 @@ const api = {
   aiChat: (messages) => ipcRenderer.invoke('ai:chat', { messages }),
   aiListTasks: () => ipcRenderer.invoke('ai:listTasks'),
   aiRunTask: (name, payload) => ipcRenderer.invoke('ai:runTask', name, payload),
+  // Análise de transcrição (.md/.srt): grava <nome>.analise.md ao lado; o andamento chega pelo evento
+  aiAnalyzeTranscript: (path) => ipcRenderer.invoke('ai:analyzeTranscript', { path }),
+  aiCancelAnalysis: () => ipcRenderer.invoke('ai:cancelAnalysis'),
+  onAiAnalysisProgress: (cb) => registerListener('ai:analysisProgress', cb),
 
   // Módulos opcionais (Whisper: motor, modelos, CUDA e transcrição)
   modulesGetStatus: () => ipcRenderer.invoke('modules:getStatus'),

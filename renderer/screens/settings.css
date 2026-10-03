@@ -1353,4 +1353,6 @@
 .settings-view.hidden { display: none !important; }
 .settings-view > * { break-inside: avoid; margin-bottom: 14px; }
 .settings-view > .settings-section-title { column-span: all; margin-bottom: 14px; }
+/* Transcrição: o módulo (modelos, GPU) é um bloco largo e a análise com IA vem logo abaixo; sempre em coluna única. */
+#settingsTranscriptionView { column-width: auto; column-count: 1; }
 .settings-layout { width: 100%; box-sizing: border-box; } /* ocupa a linha toda (antes encolhia ao conteúdo da aba) */

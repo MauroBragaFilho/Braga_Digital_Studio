@@ -4,16 +4,18 @@
  * ModuleManager — módulos opcionais do BDS (hoje: Whisper, para legendas e transcrição).
  *
  * Nada é obrigatório: o BDS funciona sem nenhum módulo, e cada parte é instalada só quando o
- * usuário pede, direto da fonte:
- *   - Motor        : pacote publicado pelo desenvolvedor (manifesto) ou instalado de um .zip local.
- *   - Modelos      : Hugging Face (escolha do usuário; tamanho e SHA-256 vêm da fonte).
- *   - GPU (CUDA)   : bibliotecas oficiais da NVIDIA (exige aceitar a licença da NVIDIA).
+ * usuário pede, direto da fonte oficial:
+ *   - Motor      : whisper.cpp (release oficial no GitHub, versão e SHA-256 fixados), versão para CPU (~8 MB).
+ *   - Modelos    : Hugging Face, ggerganov/whisper.cpp (escolha do usuário; tamanho e SHA-256 vêm da fonte).
+ *   - GPU NVIDIA : o mesmo whisper.cpp compilado para CUDA (~640 MB, já com as bibliotecas da NVIDIA);
+ *                  exige aceitar a licença da NVIDIA. Sem ele tudo funciona na CPU, só que mais devagar.
  *
  * Layout em disco (<dataDir>/modules):
  *   modules.json                  estado (versões, modelo ativo, datas)
- *   whisper/engine/               motor (WhisperLegendas.exe + dependências)
- *   whisper/models/<id>/          um modelo faster-whisper por pasta
- *   whisper/cuda/                 DLLs do CUDA
+ *   whisper/engine/               motor para CPU (whisper-cli.exe + DLLs)
+ *   whisper/cuda/                 motor para NVIDIA (whisper-cli.exe + ggml-cuda.dll + bibliotecas CUDA)
+ *   whisper/models/<id>/model.bin um modelo ggml por pasta
+ *   whisper/work/                 arquivos temporários de cada transcrição (apagados ao terminar)
  *
  * Eventos: 'progress' { opId, kind, phase, label, percent, receivedBytes, totalBytes, speedBps, message }
  *          'status'   (o estado mudou; a interface deve consultar getStatus())
@@ -24,12 +26,11 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { downloadFile, fetchJson, sha256File, CANCELLED } = require('./FileDownloader');
 const { extractZip, walkFiles } = require('./ZipExtractor');
-const { HuggingFaceSource, NvidiaCudaSource, CUDA_DLL_PATTERNS, CUDA_REQUIRED_DLLS, CUDA_LICENSE_LINKS } = require('./sources');
+const { WhisperCppSource, HuggingFaceSource, ENGINE_FILES, CUDA_LICENSE_LINKS } = require('./sources');
 const { WHISPER_MODELS, DEFAULT_MODEL_ID, REFERENCE_NOTE, getModel } = require('./WhisperCatalog');
-const { WhisperEngineRunner, DEFAULT_EXE } = require('./WhisperEngineRunner');
+const { WhisperCppRunner } = require('./WhisperCppRunner');
 
-const MODULE_API_VERSION = 1;
-const CUDA_APPROX_DOWNLOAD_BYTES = 549731131 + 1924314965; // cuBLAS + cuDNN (valores reais atuais; o definitivo vem da NVIDIA)
+const MODULE_API_VERSION = 2;
 
 class ModuleError extends Error {
   constructor(message, code) { super(message); this.name = 'ModuleError'; this.code = code; }
@@ -43,12 +44,13 @@ const fmtBytes = (n) => {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
 };
 
-const rmrf = (p) => { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* noop */ } };
+const rmrf = (p) => { try { fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (_) { /* noop */ } };
 
 class ModuleManager extends EventEmitter {
   /**
    * @param {{rootDir:string, tempDir:string, config?:object, getJson?:Function}} opts
-   *   config: { manifestUrl, huggingFaceBaseUrl, nvidiaBaseUrl, bdsVersion, engineCommand, engineBaseArgs, platform }
+   *   config: { huggingFaceBaseUrl, githubBaseUrl, release, ffmpegPath (texto ou função), platform,
+   *             cliCommand, cliBaseArgs, ffmpegBaseArgs, downloadAttempts (os quatro últimos, para testes) }
    */
   constructor({ rootDir, tempDir, config = {}, getJson = fetchJson }) {
     super();
@@ -60,15 +62,14 @@ class ModuleManager extends EventEmitter {
       state: path.join(this.root, 'modules.json'),
       engine: path.join(this.root, 'whisper', 'engine'),
       models: path.join(this.root, 'whisper', 'models'),
-      cuda: path.join(this.root, 'whisper', 'cuda')
+      cuda: path.join(this.root, 'whisper', 'cuda'),
+      work: path.join(this.root, 'whisper', 'work')
     };
     this._getJson = getJson;
     this.hf = new HuggingFaceSource({ baseUrl: config.huggingFaceBaseUrl, getJson });
-    this.nvidia = new NvidiaCudaSource({ baseUrl: config.nvidiaBaseUrl, getJson });
+    this.cpp = new WhisperCppSource({ baseUrl: config.githubBaseUrl, release: config.release });
     this._active = null;
     this._platform = config.platform || process.platform;
-    // Motor de desenvolvimento (Python local + modelos do cache do Hugging Face); null no app final.
-    this.dev = config.devEngine || null;
   }
 
   // ------------------------------------------------------------------ estado em disco
@@ -91,31 +92,15 @@ class ModuleManager extends EventEmitter {
     this._writeState(state);
   }
 
-  _exeName() { return (this._readState().whisper.engine || {}).exe || DEFAULT_EXE; }
-
-  _engineInstalled() {
-    if (this.dev) return true;
-    return fs.existsSync(path.join(this.paths.engine, this._exeName()));
-  }
-
-  /** Modelos do modo desenvolvimento ficam fora do BDS (cache do Hugging Face) e nunca são apagados por ele. */
-  _isExternalModel(id) { return Boolean(this.dev && this.dev.models && this.dev.models[id]); }
-
-  _modelDir(id) { return this._isExternalModel(id) ? this.dev.models[id] : path.join(this.paths.models, id); }
-
-  _devGuard(what) {
-    if (this.dev) throw new ModuleError(`${what}: em modo de desenvolvimento o BDS usa o motor local (${this.dev.label}).`, 'DEV_ENGINE');
-  }
-
-  _modelInstalled(id) {
-    const dir = this._modelDir(id);
-    return ['model.bin', 'config.json', 'tokenizer.json'].every((f) => fs.existsSync(path.join(dir, f)));
-  }
+  _engineInstalled() { return fs.existsSync(path.join(this.paths.engine, ENGINE_FILES.cli)); }
 
   _cudaInstalled() {
-    if (this.dev) return true; // as DLLs do CUDA vêm do ambiente Python do projeto
-    return CUDA_REQUIRED_DLLS.every((f) => fs.existsSync(path.join(this.paths.cuda, f)));
+    return fs.existsSync(path.join(this.paths.cuda, ENGINE_FILES.cli)) && fs.existsSync(path.join(this.paths.cuda, ENGINE_FILES.cuda));
   }
+
+  _modelDir(id) { return path.join(this.paths.models, id); }
+
+  _modelInstalled(id) { return fs.existsSync(path.join(this._modelDir(id), 'model.bin')); }
 
   _activeModelId() {
     const saved = this._readState().whisper.activeModel;
@@ -123,6 +108,11 @@ class ModuleManager extends EventEmitter {
     if (this._modelInstalled(DEFAULT_MODEL_ID)) return DEFAULT_MODEL_ID; // o recomendado vem antes do primeiro da lista
     const first = WHISPER_MODELS.find((m) => this._modelInstalled(m.id));
     return first ? first.id : null;
+  }
+
+  _ffmpegPath() {
+    const f = this.config.ffmpegPath;
+    try { return (typeof f === 'function' ? f() : f) || null; } catch (_) { return null; }
   }
 
   // ------------------------------------------------------------------ consulta
@@ -133,6 +123,7 @@ class ModuleManager extends EventEmitter {
     const activeId = this._activeModelId();
     const engineOk = this._engineInstalled();
     const cudaOk = this._cudaInstalled();
+    const cudaAsset = this.cpp.asset('cuda');
 
     let freeBytes = null;
     try {
@@ -144,7 +135,7 @@ class ModuleManager extends EventEmitter {
     return {
       apiVersion: MODULE_API_VERSION,
       platformSupported: this._platform === 'win32',
-      manifestConfigured: Boolean(this.config.manifestUrl),
+      engineDownload: true, // o motor é baixado da release oficial (também dá para instalar de um .zip)
       busy: this._active ? { opId: this._active.opId, kind: this._active.kind, label: this._active.label } : null,
       disk: { freeBytes },
       whisper: {
@@ -154,9 +145,9 @@ class ModuleManager extends EventEmitter {
         engine: {
           installed: engineOk,
           version: engineOk ? (state.engine || {}).version || null : null,
-          source: this.dev ? 'dev' : (engineOk ? (state.engine || {}).source || null : null),
+          source: engineOk ? (state.engine || {}).source || null : null,
           installedAt: engineOk ? (state.engine || {}).installedAt || null : null,
-          dev: this.dev ? { label: this.dev.label } : null
+          downloadBytes: this.cpp.asset('cpu').size
         },
         models: WHISPER_MODELS.map((m) => {
           const installed = this._modelInstalled(m.id);
@@ -165,7 +156,6 @@ class ModuleManager extends EventEmitter {
             speed: m.speed, speedLevel: m.speedLevel, quality: m.quality, vramGb: m.vramGb,
             recommendedFor: m.recommendedFor || null,
             installed, active: installed && m.id === activeId,
-            external: this._isExternalModel(m.id),
             sizeOnDisk: installed ? this._sizeOnDisk(m.id, installedModels) : 0
           };
         }),
@@ -175,9 +165,9 @@ class ModuleManager extends EventEmitter {
         cuda: {
           installed: cudaOk,
           versions: cudaOk ? (state.cuda || {}).versions || null : null,
-          approxDownloadBytes: CUDA_APPROX_DOWNLOAD_BYTES,
+          approxDownloadBytes: cudaAsset.size,
           licenseLinks: CUDA_LICENSE_LINKS,
-          requirement: 'Exige uma placa de vídeo NVIDIA com driver atualizado. Sem o CUDA, a transcrição funciona normalmente, só que mais devagar (na CPU).'
+          requirement: 'Exige uma placa de vídeo NVIDIA com driver atualizado (versão 551 ou mais nova). Sem a aceleração, a transcrição funciona normalmente na CPU, só que bem mais devagar.'
         },
         ready: engineOk && Boolean(activeId)
       }
@@ -185,9 +175,7 @@ class ModuleManager extends EventEmitter {
   }
 
   _sizeOnDisk(id, installedModels) {
-    if (this._isExternalModel(id)) {
-      try { return fs.statSync(path.join(this._modelDir(id), 'model.bin')).size; } catch (_) { /* usa a estimativa */ }
-    }
+    try { return fs.statSync(path.join(this._modelDir(id), 'model.bin')).size; } catch (_) { /* usa a estimativa */ }
     return (installedModels[id] || {}).sizeBytes || (getModel(id) || {}).sizeBytes || 0;
   }
 
@@ -258,70 +246,72 @@ class ModuleManager extends EventEmitter {
       if (!sha256 || (await sha256File(dest, signal)).toLowerCase() === sha256.toLowerCase()) return { path: dest, size: fs.statSync(dest).size };
       rmrf(dest);
     }
-    return downloadFile({ url, dest, expectedSha256: sha256 || null, expectedSize: size || null, onProgress, signal });
+    return downloadFile({
+      url, dest, expectedSha256: sha256 || null, expectedSize: size || null, onProgress, signal,
+      ...(this.config.downloadAttempts ? { attempts: this.config.downloadAttempts, backoffMs: 1 } : {}) // (testes: sem esperar entre tentativas)
+    });
   }
 
-  // ------------------------------------------------------------------ motor
+  /**
+   * Extrai um pacote do motor (.zip) e o coloca em `targetDir` de forma atômica (com desfazer se falhar).
+   * O pacote pode ter o programa na raiz ou dentro de uma única pasta ("Release/").
+   */
+  async _placeEnginePackage({ archive, work, targetDir, requiredFiles, signal, op, label }) {
+    this._progress(op, { phase: 'extract', message: `Extraindo ${label}…` });
+    const extracted = path.join(work, 'files');
+    await extractZip(archive, extracted, { signal });
+
+    const cli = walkFiles(extracted).find((f) => path.basename(f).toLowerCase() === ENGINE_FILES.cli);
+    if (!cli) throw new ModuleError(`O pacote não contém ${ENGINE_FILES.cli}.`, 'BAD_ZIP');
+    const source = path.dirname(cli);
+    for (const f of requiredFiles) {
+      if (!fs.existsSync(path.join(source, f))) throw new ModuleError(`O pacote está incompleto (falta ${f}).`, 'BAD_ZIP');
+    }
+
+    this._progress(op, { phase: 'install', message: 'Instalando…' });
+    fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+    const backup = `${targetDir}.old`;
+    rmrf(backup);
+    if (fs.existsSync(targetDir)) fs.renameSync(targetDir, backup);
+    try {
+      fs.renameSync(source, targetDir);
+    } catch (err) {
+      if (fs.existsSync(backup)) fs.renameSync(backup, targetDir); // desfaz
+      throw err;
+    }
+    rmrf(backup);
+  }
+
+  // ------------------------------------------------------------------ motor (CPU)
 
   /**
-   * Instala o motor do Whisper.
-   * @param {{zipPath?:string}} [opts]  Sem zipPath, usa o manifesto publicado (config.manifestUrl).
+   * Instala o motor do Whisper (whisper.cpp para CPU).
+   * @param {{zipPath?:string}} [opts]  Sem zipPath, baixa a release oficial; com zipPath, instala de um .zip local.
    */
   async installEngine({ zipPath = null } = {}) {
-    this._devGuard('Instalar o motor');
     this._requireWindows();
     return this._run('engine', 'Instalando o motor de transcrição', async (op) => {
       const signal = op.controller.signal;
       fs.mkdirSync(this.tempDir, { recursive: true });
       const work = path.join(this.tempDir, `engine_${Date.now()}`);
       let archive = zipPath;
-      let meta = { version: null, source: 'zip', exe: DEFAULT_EXE };
-
+      let meta;
       try {
         if (zipPath) {
           if (!/\.zip$/i.test(zipPath) || !fs.existsSync(zipPath)) throw new ModuleError('Selecione um arquivo .zip válido do motor.', 'BAD_ZIP');
+          meta = { version: null, source: 'zip' };
         } else {
-          if (!this.config.manifestUrl) {
-            throw new ModuleError('A distribuição do motor ainda não foi configurada (manifestUrl vazio). Instale a partir de um arquivo .zip.', 'NO_MANIFEST');
-          }
-          this._progress(op, { phase: 'prepare', message: 'Consultando o servidor de módulos…' });
-          const manifest = await this._getJson(this.config.manifestUrl);
-          const entry = manifest && manifest.modules && manifest.modules.whisper;
-          const plat = entry && entry.platform && entry.platform[this._platform];
-          if (!entry || !plat || !plat.url || !plat.sha256) throw new ModuleError('O manifesto não traz o motor de transcrição para este sistema.', 'BAD_MANIFEST');
-          if (entry.apiVersion && entry.apiVersion > MODULE_API_VERSION) {
-            throw new ModuleError('Este motor exige uma versão mais nova do BDS. Atualize o BDS e tente de novo.', 'INCOMPATIBLE');
-          }
-          await this._ensureSpace(this.root, (Number(plat.size) || 0) * 2.2);
-          archive = path.join(work, 'engine.zip');
+          const asset = this.cpp.asset('cpu');
+          await this._ensureSpace(this.root, asset.size * 4);
+          archive = path.join(work, asset.name);
           this._progress(op, { phase: 'download', message: 'Baixando o motor…' });
           await this._fetchVerified({
-            url: plat.url, dest: archive, sha256: plat.sha256, size: Number(plat.size) || null, signal,
+            url: asset.url, dest: archive, sha256: asset.sha256, size: asset.size, signal,
             onProgress: (p) => this._progress(op, { phase: 'download', message: 'Baixando o motor…', ...p })
           });
-          meta = { version: entry.version || null, source: 'manifest', exe: plat.exe || DEFAULT_EXE };
+          meta = { version: asset.tag, source: 'github' };
         }
-
-        this._progress(op, { phase: 'extract', message: 'Extraindo arquivos…' });
-        const extracted = path.join(work, 'files');
-        await extractZip(archive, extracted, { signal });
-
-        const exeFile = walkFiles(extracted).find((f) => path.basename(f).toLowerCase() === meta.exe.toLowerCase());
-        if (!exeFile) throw new ModuleError(`O pacote não contém ${meta.exe}.`, 'BAD_ZIP');
-
-        this._progress(op, { phase: 'install', message: 'Instalando…' });
-        fs.mkdirSync(path.dirname(this.paths.engine), { recursive: true });
-        const backup = `${this.paths.engine}.old`;
-        rmrf(backup);
-        if (fs.existsSync(this.paths.engine)) fs.renameSync(this.paths.engine, backup);
-        try {
-          fs.renameSync(path.dirname(exeFile), this.paths.engine);
-        } catch (err) {
-          if (fs.existsSync(backup)) fs.renameSync(backup, this.paths.engine); // rollback
-          throw err;
-        }
-        rmrf(backup);
-
+        await this._placeEnginePackage({ archive, work, targetDir: this.paths.engine, requiredFiles: [], signal, op, label: 'o motor' });
         this._patchWhisper((w) => { w.engine = { ...meta, installedAt: new Date().toISOString() }; });
       } finally {
         rmrf(work);
@@ -331,7 +321,6 @@ class ModuleManager extends EventEmitter {
   }
 
   async uninstallEngine() {
-    this._devGuard('Remover o motor');
     return this._run('engine', 'Removendo o motor de transcrição', async () => {
       rmrf(this.paths.engine);
       this._patchWhisper((w) => { delete w.engine; });
@@ -344,32 +333,23 @@ class ModuleManager extends EventEmitter {
   async installModel(modelId) {
     const model = getModel(modelId);
     if (!model) throw new ModuleError('Modelo desconhecido.', 'BAD_MODEL');
-    if (this._isExternalModel(modelId)) throw new ModuleError('Esse modelo já está disponível no computador (cache do Hugging Face).', 'DEV_ENGINE');
     return this._run('model', `Baixando o modelo ${model.label}`, async (op) => {
       const signal = op.controller.signal;
       this._progress(op, { phase: 'prepare', message: 'Consultando o Hugging Face…' });
-      const info = await this.hf.getModelFiles(model.repo);
-      const totalBytes = info.files.reduce((s, f) => s + f.size, 0);
+      const info = await this.hf.getModelFile(model.repo, model.file);
+      const totalBytes = info.file.size;
       await this._ensureSpace(this.paths.models, totalBytes * 1.05);
 
       const partial = path.join(this.paths.models, `${modelId}.partial`);
+      rmrf(partial);
       fs.mkdirSync(partial, { recursive: true });
 
-      let done = 0;
-      for (const file of info.files) {
-        const dest = path.join(partial, file.path);
-        const base = done;
-        this._progress(op, { phase: 'download', message: `Baixando ${file.path}…`, receivedBytes: base, totalBytes, percent: (base / totalBytes) * 100 });
-        await this._fetchVerified({
-          url: this.hf.fileUrl(info.repoId, info.revision, file.path),
-          dest, sha256: file.sha256, size: file.size || null, signal,
-          onProgress: (p) => {
-            const received = base + p.receivedBytes;
-            this._progress(op, { phase: 'download', message: `Baixando ${file.path}…`, receivedBytes: received, totalBytes, percent: (received / totalBytes) * 100, speedBps: p.speedBps });
-          }
-        });
-        done += file.size;
-      }
+      this._progress(op, { phase: 'download', message: `Baixando ${model.label}…`, receivedBytes: 0, totalBytes, percent: 0 });
+      await this._fetchVerified({
+        url: this.hf.fileUrl(info.repoId, info.revision, info.file.path),
+        dest: path.join(partial, 'model.bin'), sha256: info.file.sha256, size: info.file.size || null, signal,
+        onProgress: (p) => this._progress(op, { phase: 'download', message: `Baixando ${model.label}…`, receivedBytes: p.receivedBytes, totalBytes, percent: totalBytes ? (p.receivedBytes / totalBytes) * 100 : null, speedBps: p.speedBps })
+      });
 
       this._progress(op, { phase: 'install', message: 'Finalizando…', percent: 100 });
       // O modelo ativo só muda sozinho se ainda não houver nenhum utilizável.
@@ -380,7 +360,7 @@ class ModuleManager extends EventEmitter {
 
       this._patchWhisper((w) => {
         w.models = w.models || {};
-        w.models[modelId] = { installedAt: new Date().toISOString(), sizeBytes: totalBytes, repo: info.repoId, revision: info.revision };
+        w.models[modelId] = { installedAt: new Date().toISOString(), sizeBytes: totalBytes, repo: info.repoId, revision: info.revision, file: info.file.path };
         if (!hadActive) w.activeModel = modelId;
       });
       return this.getStatus();
@@ -389,7 +369,6 @@ class ModuleManager extends EventEmitter {
 
   async removeModel(modelId) {
     if (!getModel(modelId)) throw new ModuleError('Modelo desconhecido.', 'BAD_MODEL');
-    if (this._isExternalModel(modelId)) return this._removeExternalModel(modelId);
     return this._run('model', 'Removendo modelo', async () => {
       rmrf(this._modelDir(modelId));
       rmrf(path.join(this.paths.models, `${modelId}.partial`));
@@ -405,29 +384,6 @@ class ModuleManager extends EventEmitter {
     });
   }
 
-  /**
-   * Remove um modelo que está no cache do Hugging Face (modo desenvolvimento) para liberar espaço.
-   * Só apaga a pasta do repositório desse modelo (models--org--nome) e nunca o modelo em uso.
-   */
-  async _removeExternalModel(modelId) {
-    if (this._activeModelId() === modelId) {
-      throw new ModuleError('Esse modelo está em uso. Escolha outro modelo antes de removê-lo.', 'IN_USE');
-    }
-    const repoDir = this.dev.repoDirs && this.dev.repoDirs[modelId];
-    const snapshot = this.dev.models[modelId];
-    const safe = repoDir && /^models--/.test(path.basename(repoDir))
-      && path.relative(repoDir, snapshot).split(path.sep)[0] === 'snapshots';
-    if (!safe) throw new ModuleError('Não foi possível confirmar a pasta desse modelo; nada foi removido.', 'UNSAFE_PATH');
-    return this._run('model', 'Removendo modelo', async () => {
-      rmrf(repoDir);
-      if (fs.existsSync(repoDir)) throw new ModuleError('Não foi possível apagar todos os arquivos do modelo (algum está em uso).', 'REMOVE_FAILED');
-      delete this.dev.models[modelId];
-      delete this.dev.repoDirs[modelId];
-      this._patchWhisper((w) => { if (w.models) delete w.models[modelId]; });
-      return this.getStatus();
-    });
-  }
-
   async setActiveModel(modelId) {
     if (!getModel(modelId)) throw new ModuleError('Modelo desconhecido.', 'BAD_MODEL');
     if (!this._modelInstalled(modelId)) throw new ModuleError('Esse modelo ainda não foi baixado.', 'NOT_INSTALLED');
@@ -436,75 +392,49 @@ class ModuleManager extends EventEmitter {
     return this.getStatus();
   }
 
-  // ------------------------------------------------------------------ GPU (CUDA)
+  // ------------------------------------------------------------------ GPU (NVIDIA / CUDA)
 
-  /** Baixa as bibliotecas CUDA (cuBLAS + cuDNN) da NVIDIA. Exige aceitar a licença da NVIDIA. */
+  /**
+   * Baixa o whisper.cpp para placas NVIDIA (já com as bibliotecas CUDA da NVIDIA).
+   * Exige o motor instalado e que o usuário aceite a licença da NVIDIA.
+   */
   async installCuda({ acceptLicense = false } = {}) {
-    this._devGuard('Baixar o CUDA');
     this._requireWindows();
     if (acceptLicense !== true) {
-      throw new ModuleError('É preciso aceitar os termos de licença da NVIDIA (CUDA e cuDNN) para baixar as bibliotecas.', 'LICENSE');
+      throw new ModuleError('É preciso aceitar os termos de licença da NVIDIA (CUDA) para baixar as bibliotecas.', 'LICENSE');
     }
-    return this._run('cuda', 'Baixando o CUDA (NVIDIA)', async (op) => {
+    if (!this._engineInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
+    return this._run('cuda', 'Baixando a aceleração NVIDIA (CUDA)', async (op) => {
       const signal = op.controller.signal;
-      this._progress(op, { phase: 'prepare', message: 'Consultando os pacotes oficiais da NVIDIA…' });
-      const plan = await this.nvidia.resolve();
-      const totalBytes = plan.reduce((s, c) => s + c.size, 0);
-      await this._ensureSpace(this.root, totalBytes * 1.8);
+      const asset = this.cpp.asset('cuda');
+      await this._ensureSpace(this.root, asset.size * 2.4); // zip + arquivos extraídos
 
       fs.mkdirSync(this.tempDir, { recursive: true });
       const work = path.join(this.tempDir, `cuda_${Date.now()}`);
-      const staging = path.join(this.root, 'whisper', 'cuda.partial');
-      rmrf(staging);
-      fs.mkdirSync(staging, { recursive: true });
-
       try {
-        let done = 0;
-        const versions = {};
-        for (const comp of plan) {
-          const base = done;
-          const zip = path.join(work, `${comp.id}.zip`);
-          this._progress(op, { phase: 'download', message: `Baixando ${comp.label} ${comp.version}…`, receivedBytes: base, totalBytes, percent: (base / totalBytes) * 100 });
-          await this._fetchVerified({
-            url: comp.url, dest: zip, sha256: comp.sha256, size: comp.size, signal,
-            onProgress: (p) => {
-              const received = base + p.receivedBytes;
-              this._progress(op, { phase: 'download', message: `Baixando ${comp.label} ${comp.version}…`, receivedBytes: received, totalBytes, percent: (received / totalBytes) * 100, speedBps: p.speedBps });
-            }
-          });
-          done += comp.size;
-
-          this._progress(op, { phase: 'extract', message: `Extraindo ${comp.label}…`, percent: (done / totalBytes) * 100 });
-          const out = path.join(work, `${comp.id}_files`);
-          await extractZip(zip, out, { include: ['*.dll'], signal });
-          for (const file of walkFiles(out)) {
-            const name = path.basename(file);
-            if (CUDA_DLL_PATTERNS.some((re) => re.test(name))) fs.copyFileSync(file, path.join(staging, name));
-          }
-          rmrf(zip);
-          rmrf(out);
-          versions[comp.id] = comp.version;
-        }
-
-        const missing = CUDA_REQUIRED_DLLS.filter((f) => !fs.existsSync(path.join(staging, f)));
-        if (missing.length) throw new ModuleError(`Pacote da NVIDIA incompleto (faltam: ${missing.join(', ')}).`, 'BAD_CUDA');
-
-        rmrf(this.paths.cuda);
-        fs.renameSync(staging, this.paths.cuda);
-        this._patchWhisper((w) => { w.cuda = { installedAt: new Date().toISOString(), versions }; });
+        const archive = path.join(work, asset.name);
+        this._progress(op, { phase: 'download', message: `Baixando ${asset.label}…`, receivedBytes: 0, totalBytes: asset.size, percent: 0 });
+        await this._fetchVerified({
+          url: asset.url, dest: archive, sha256: asset.sha256, size: asset.size, signal,
+          onProgress: (p) => this._progress(op, { phase: 'download', message: `Baixando ${asset.label}…`, ...p })
+        });
+        await this._placeEnginePackage({
+          archive, work, targetDir: this.paths.cuda, requiredFiles: [ENGINE_FILES.cuda], signal, op, label: 'a aceleração NVIDIA'
+        });
+        this._patchWhisper((w) => {
+          w.cuda = { installedAt: new Date().toISOString(), versions: { whispercpp: asset.tag, cuda: asset.cudaVersion } };
+        });
       } finally {
         rmrf(work);
-        rmrf(staging);
       }
       return this.getStatus();
     });
   }
 
   async removeCuda() {
-    this._devGuard('Remover o CUDA');
-    return this._run('cuda', 'Removendo o CUDA', async () => {
+    return this._run('cuda', 'Removendo a aceleração NVIDIA', async () => {
       rmrf(this.paths.cuda);
-      rmrf(path.join(this.root, 'whisper', 'cuda.partial'));
+      rmrf(`${this.paths.cuda}.old`);
       this._patchWhisper((w) => { delete w.cuda; });
       return this.getStatus();
     });
@@ -513,28 +443,32 @@ class ModuleManager extends EventEmitter {
   // ------------------------------------------------------------------ transcrição
 
   /**
-   * Gera legendas/transcrição com o modelo ativo. Usa a GPU se o CUDA estiver instalado.
+   * Gera legendas/transcrição com o modelo ativo. Usa a GPU se a aceleração NVIDIA estiver instalada
+   * (e volta para a CPU sozinho se a placa falhar).
    * @param {{files:string[], srt?:boolean, md?:boolean, maxWords?:number, lines?:1|2, outDir?:string, forceCpu?:boolean}} options
    */
   async transcribe(options) {
     this._requireWindows();
-    if (!this._engineInstalled() && !this.config.engineCommand) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
+    const custom = Boolean(this.config.cliCommand);
+    if (!custom && !this._engineInstalled() && !this._cudaInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
     const modelId = this._activeModelId();
     if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
 
     return this._run('transcribe', 'Gerando legendas/transcrição', async (op) => {
-      const runner = new WhisperEngineRunner({
+      const runner = new WhisperCppRunner({
         engineDir: this.paths.engine,
-        exeName: this._exeName(),
+        cudaDir: this._cudaInstalled() ? this.paths.cuda : null,
         tempDir: this.tempDir,
-        command: (this.dev && this.dev.command) || this.config.engineCommand || null,
-        baseArgs: (this.dev && this.dev.baseArgs) || this.config.engineBaseArgs || [],
-        extraEnv: (this.dev && this.dev.env) || {}
+        workRoot: this.paths.work,
+        ffmpegPath: this._ffmpegPath(),
+        cliCommand: this.config.cliCommand || null,
+        cliBaseArgs: this.config.cliBaseArgs || [],
+        ffmpegBaseArgs: this.config.ffmpegBaseArgs || []
       });
       const result = await runner.run(options, {
         modelDir: this._modelDir(modelId),
+        modelId,
         modelName: modelId,
-        cudaDir: !this.dev && this._cudaInstalled() ? this.paths.cuda : null,
         signal: op.controller.signal,
         onEvent: (ev) => {
           if (ev.type === 'progress') this._progress(op, { phase: 'transcribe', message: 'Transcrevendo…', percent: ev.percent });

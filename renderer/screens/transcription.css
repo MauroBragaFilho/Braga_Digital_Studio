@@ -228,6 +228,16 @@
 .tr-toggle-text small { font-size: 11px; opacity: 0.85; }
 .tr-toggle.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .tr-toggle.active .tr-toggle-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tr-toggle-wide { grid-column: 1 / -1; }
+
+/* Situação da análise por IA (aparece só com a opção ligada) */
+.tr-ai-status { display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.tr-ai-status .material-symbols-rounded { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.tr-ai-status.warn { color: var(--warning); }
+.tr-ai-status button { padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.tr-ai-status button:hover { color: var(--accent); }
+.tr-ai-status button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.tr-row-sub .tr-state-note { font-size: 11px; color: var(--warning); }
 
 .tr-field { display: flex; flex-direction: column; gap: 8px; }
 .tr-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12.5px; }
@@ -265,7 +275,8 @@
 .tr-advanced > summary:hover { color: var(--text); }
 .tr-advanced-body { display: flex; flex-direction: column; gap: 14px; padding: 0 18px 16px; }
 
-.tr-cta { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 16px 18px 18px; }
+/* O botão principal fica sempre à vista: só os ajustes rolam quando a janela é baixa. */
+.tr-cta { margin-top: auto; position: sticky; bottom: 0; z-index: 1; background: var(--card); display: flex; flex-direction: column; gap: 8px; padding: 16px 18px 18px; }
 .tr-cta small { text-align: center; min-height: 14px; }
 
 /* ----- Em andamento / concluído ----- */
