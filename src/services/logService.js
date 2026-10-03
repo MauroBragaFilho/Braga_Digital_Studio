@@ -23,6 +23,15 @@ function resolveLogsDir() {
   return path.join(os.homedir(), '.braga-digital-studio', 'logs');
 }
 
+function isPackagedApp() {
+  try {
+    const { app } = require('electron');
+    return !!(app && app.isPackaged);
+  } catch (_) {
+    return false;
+  }
+}
+
 const logsDir = resolveLogsDir();
 try {
   if (!fs.existsSync(logsDir)) {
@@ -30,8 +39,21 @@ try {
   }
 } catch (_) {}
 
+// [PERF] A chave do dia só é recalculada quando o minuto muda (Intl.DateTimeFormat é caro
+// para ser chamado a cada linha de log; virar o dia só é detectado com até 1 min de atraso).
+let _dayKeyMinute = -1;
+let _dayKeyValue = '';
+function cachedDateKey() {
+  const minute = Math.floor(Date.now() / 60000);
+  if (minute !== _dayKeyMinute) {
+    _dayKeyMinute = minute;
+    _dayKeyValue = localDateKey();
+  }
+  return _dayKeyValue;
+}
+
 function currentLogFile() {
-  const day = localDateKey();
+  const day = cachedDateKey();
   return path.join(logsDir, `${day}.log`);
 }
 
@@ -51,7 +73,7 @@ class DailyFileTransport extends winston.Transport {
 
   log(info, callback) {
     try {
-      const day = localDateKey();
+      const day = cachedDateKey();
       if (day !== this._day || !this._inner) {
         const previous = this._inner;
         this._day = day;
@@ -107,12 +129,14 @@ const logger = winston.createLogger({
         maxsize: 5 * 1024 * 1024,
         maxFiles: 14
       }
-    }),
-    new winston.transports.Console({
-      format: winston.format.simple()
     })
   ]
 });
+
+// Console só em desenvolvimento: empacotado não há terminal e o transporte só gasta CPU.
+if (!isPackagedApp()) {
+  logger.add(new winston.transports.Console({ format: winston.format.simple() }));
+}
 
 // Para quem precisa ler o log atual (ex.: ErrorReporter): o nome muda a cada dia.
 logger.getCurrentLogFile = currentLogFile;

@@ -66,6 +66,7 @@ function renderGrid() {
     if (!grid) return;
     
     grid.innerHTML = '';
+    bindGridDelegation();
     
     if (projectsList.length === 0) {
         grid.innerHTML = '<div class="proj-empty-state">Nenhum projeto encontrado.</div>';
@@ -83,6 +84,7 @@ function renderGrid() {
         
         const card = document.createElement('div');
         card.className = `proj-card ${selectedProjectId === proj.id ? 'selected' : ''}`;
+        card.dataset.id = String(proj.id);
         card.innerHTML = `
             <div class="proj-card-cover" style="background-image: ${bgSize};">
                 <div class="proj-card-cover-gradient" style="background: linear-gradient(0deg, ${bgColor}33 0%, transparent 100%);"></div>
@@ -103,16 +105,36 @@ function renderGrid() {
             </div>
         `;
         
-        card.addEventListener('click', () => selectProject(proj.id));
-        card.addEventListener('dblclick', () => openProjectWorkspace(proj.id));
-        
         grid.appendChild(card);
     });
 }
 
+// Delegação única no grid (cliques/duplo clique) em vez de dois listeners por cartão
+function bindGridDelegation() {
+    const grid = document.getElementById('projectsGrid');
+    if (!grid || grid.dataset.delegated) return;
+    grid.dataset.delegated = '1';
+    const idOf = (e) => {
+        const card = e.target.closest('.proj-card');
+        return card && grid.contains(card) ? Number(card.dataset.id) : null;
+    };
+    grid.addEventListener('click', (e) => { const id = idOf(e); if (id !== null) selectProject(id); });
+    grid.addEventListener('dblclick', (e) => { const id = idOf(e); if (id !== null) openProjectWorkspace(id); });
+}
+
+/** Atualiza só o destaque de seleção (cartão anterior e novo), sem reconstruir a grade. */
+function updateCardSelection() {
+    const grid = document.getElementById('projectsGrid');
+    if (!grid) return;
+    grid.querySelector('.proj-card.selected')?.classList.remove('selected');
+    if (selectedProjectId !== null) {
+        grid.querySelector(`.proj-card[data-id="${CSS.escape(String(selectedProjectId))}"]`)?.classList.add('selected');
+    }
+}
+
 function selectProject(id) {
     selectedProjectId = id;
-    renderGrid(); // update selection highlight
+    updateCardSelection(); // update selection highlight
     
     const proj = projectsList.find(p => p.id === id);
     if (!proj) return;
@@ -148,7 +170,7 @@ export function onKeyDown(e) {
     if (inspector && inspector.classList.contains('open')) {
         inspector.classList.remove('open');
         selectedProjectId = null;
-        renderGrid();
+        updateCardSelection();
     }
 }
 
@@ -247,7 +269,7 @@ function setupEventListeners() {
     document.getElementById('closeProjInspectorBtn')?.addEventListener('click', () => {
         document.getElementById('projectInspector').classList.remove('open');
         selectedProjectId = null;
-        renderGrid();
+        updateCardSelection();
     });
     
     document.getElementById('inspectorProjCover')?.addEventListener('click', async () => {

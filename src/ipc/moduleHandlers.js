@@ -10,12 +10,19 @@ const { wrap } = require('./wrap');
 /**
  * Handlers IPC dos módulos opcionais (Whisper). Todos devolvem { ok, data } ou { ok:false, error, code }.
  * O progresso das operações longas chega ao renderer pelo evento "modules:progress".
+ *
+ * @param {object} paths
+ * @param {{getFfmpegPath?:()=>string|null}} [deps]  getFfmpegPath: o ffmpeg que o BDS já usa (lê vídeos e áudios).
  */
-module.exports = function registerModuleHandlers(paths) {
+module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null } = {}) {
   const dataDir = (paths && paths.dataDir) || appPaths.dataDir;
   const tempDir = (paths && paths.tempDir) || appPaths.tempDir;
 
-  const manager = new ModuleManager({ rootDir: dataDir, tempDir, config: moduleConfig });
+  const manager = new ModuleManager({
+    rootDir: dataDir,
+    tempDir,
+    config: { ...moduleConfig, ffmpegPath: getFfmpegPath || (() => process.env.WL_FFMPEG || null) }
+  });
 
   const broadcast = (channel, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -46,6 +53,7 @@ module.exports = function registerModuleHandlers(paths) {
       srt: o.srt !== false,
       md: o.md === true,
       maxWords: Number(o.maxWords) || 0,
+      lines: o.lines === 1 ? 1 : 2,
       outDir: o.outDir ? str(o.outDir, 'Pasta de saída') : null,
       forceCpu: o.forceCpu === true
     });

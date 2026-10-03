@@ -47,7 +47,7 @@ const api = {
   // Controles de Janela
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
-  fullscreenWindow: () => ipcRenderer.invoke('window:fullscreen'),
+  fullscreenWindow: (mode) => ipcRenderer.invoke('window:fullscreen', mode === 'exit' ? 'exit' : undefined),
   closeWindow: () => ipcRenderer.invoke('window:close'),
 
   // Montagem (Fila/Lote)
@@ -233,6 +233,10 @@ const api = {
   aiChat: (messages) => ipcRenderer.invoke('ai:chat', { messages }),
   aiListTasks: () => ipcRenderer.invoke('ai:listTasks'),
   aiRunTask: (name, payload) => ipcRenderer.invoke('ai:runTask', name, payload),
+  // Análise de transcrição (.md/.srt): grava <nome>.analise.md ao lado; o andamento chega pelo evento
+  aiAnalyzeTranscript: (path) => ipcRenderer.invoke('ai:analyzeTranscript', { path }),
+  aiCancelAnalysis: () => ipcRenderer.invoke('ai:cancelAnalysis'),
+  onAiAnalysisProgress: (cb) => registerListener('ai:analysisProgress', cb),
 
   // Módulos opcionais (Whisper: motor, modelos, CUDA e transcrição)
   modulesGetStatus: () => ipcRenderer.invoke('modules:getStatus'),
@@ -301,7 +305,9 @@ const api = {
 
   // LUTs - Adicionado parse
   getLuts: () => ipcRenderer.invoke('luts:get'),
-  importLut: () => ipcRenderer.invoke('luts:import'),
+  importLut: (paths) => ipcRenderer.invoke('luts:import', paths), // sem argumento: abre o seletor
+  revealLut: (filePath) => ipcRenderer.invoke('luts:reveal', filePath),
+  getLutReferenceImage: (filePath) => ipcRenderer.invoke('luts:getReferenceImage', filePath),
   deleteLut: (filePath) => ipcRenderer.invoke('luts:delete', filePath),
   renameLut: (oldPath, newName) => ipcRenderer.invoke('luts:rename', oldPath, newName),
   parseLutCube: (filePath) => ipcRenderer.invoke('luts:parse', filePath), // <-- Novo!

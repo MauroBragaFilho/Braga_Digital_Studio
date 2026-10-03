@@ -137,23 +137,35 @@ function loadSavedWindowBounds() {
   }
 }
 
-/** Grava o tamanho/posição da janela (com atraso) enquanto a opção estiver ligada. */
+/**
+ * Grava o tamanho/posição da janela (com atraso de 1,5 s) enquanto a opção estiver ligada.
+ * A gravação em disco é adiada e assíncrona (defer): arrastar/redimensionar não bloqueia o
+ * processo principal. No fechamento grava na hora (e o shutdown ainda descarrega pendências).
+ */
 function trackWindowBounds(win) {
   let timer = null;
-  const persist = () => {
+  const persist = (immediate = false) => {
     try {
       if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
       if (!bootstrap.settingsManager.load().rememberWindowBounds) return;
       const r = win.getNormalBounds();
-      bootstrap.settingsManager.save({ windowBounds: { x: r.x, y: r.y, width: r.width, height: r.height, maximized: win.isMaximized() } });
+      bootstrap.settingsManager.save(
+        { windowBounds: { x: r.x, y: r.y, width: r.width, height: r.height, maximized: win.isMaximized() } },
+        { defer: !immediate }
+      );
     } catch (_) { /* não impede o app de funcionar */ }
   };
-  const schedule = () => { clearTimeout(timer); timer = setTimeout(persist, 600); };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => persist(false), 1500); };
   ['resize', 'move', 'maximize', 'unmaximize'].forEach((evt) => win.on(evt, schedule));
-  win.on('close', () => { clearTimeout(timer); persist(); });
+  win.on('close', () => { clearTimeout(timer); persist(true); });
 }
 
-function createWindow() {
+/**
+ * @param {Object} [opts]
+ * @param {boolean} [opts.load=true] false = só cria a janela (o renderer sobe em paralelo à
+ *   abertura do banco); o chamador deve chamar loadMainWindow() quando os handlers IPC existirem.
+ */
+function createWindow({ load = true } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
@@ -271,8 +283,14 @@ function createWindow() {
   if (savedBounds && savedBounds.maximized) mainWindow.maximize();
   trackWindowBounds(mainWindow);
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   bootstrap.setMainWindow(mainWindow);
+  if (load) loadMainWindow();
+}
+
+/** Carrega a interface na janela principal (os handlers IPC já devem estar registrados). */
+function loadMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
 // [THUMB] Registra o esquema personalizado bds-thumb:// como seguro,
@@ -315,6 +333,11 @@ app.whenReady().then(async () => {
     }
   });
 
+  // [PERF] A janela (e o processo do renderer) é criada ANTES da inicialização pesada (banco,
+  // serviços, handlers IPC), para que o Chromium suba em paralelo. A interface só é carregada
+  // (loadFile) depois do init(), pois o renderer chama IPC logo ao abrir.
+  createWindow({ load: false });
+
   try {
     await bootstrap.init();
   } catch (err) {
@@ -323,7 +346,7 @@ app.whenReady().then(async () => {
     app.exit(1);
     return;
   }
-  createWindow();
+  loadMainWindow();
 
   // Inicia serviços de background (watchers, discovery) após a interface estar montada
   setTimeout(() => { if (!quitting) bootstrap.startBackgroundServices(); }, 500);

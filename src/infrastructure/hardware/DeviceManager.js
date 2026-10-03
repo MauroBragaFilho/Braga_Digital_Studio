@@ -1,6 +1,11 @@
 ﻿'use strict';
 
 const EventEmitter = require('node:events');
+const { cachedAsync } = require('./cachedAsync');
+
+// Enumerar MTP/USB custa um PowerShell cada: o resultado é reaproveitado por este tempo
+// (sidebar de armazenamento, tela Dispositivos) e chamadas simultâneas são deduplicadas.
+const DEVICE_LIST_TTL_MS = 25000;
 
 /**
  * DeviceManager — Facade multiplataforma para acesso a dispositivos de hardware.
@@ -25,6 +30,8 @@ class DeviceManager extends EventEmitter {
     this._mtpProvider = null;
     this._storageProvider = null;
     this._initialized = false;
+    this._mtpList = cachedAsync(() => { this._ensureInit(); return this._mtpProvider.getDevices(); }, DEVICE_LIST_TTL_MS);
+    this._storageList = cachedAsync(() => { this._ensureInit(); return this._storageProvider.getDevices(); }, DEVICE_LIST_TTL_MS);
   }
 
   /**
@@ -59,9 +66,8 @@ class DeviceManager extends EventEmitter {
   // ─── MTP ──────────────────────────────────────────────────────────────────
 
   /** @returns {Promise<Array>} */
-  getMtpDevices() {
-    this._ensureInit();
-    return this._mtpProvider.getDevices();
+  getMtpDevices({ force = false } = {}) {
+    return this._mtpList.get({ force });
   }
 
   /**
@@ -89,9 +95,14 @@ class DeviceManager extends EventEmitter {
   // ─── Storage / USB ────────────────────────────────────────────────────────
 
   /** @returns {Promise<Array>} */
-  getStorageDevices() {
-    this._ensureInit();
-    return this._storageProvider.getDevices();
+  getStorageDevices({ force = false } = {}) {
+    return this._storageList.get({ force });
+  }
+
+  /** Descarta as listas em cache (ex.: após importar/ejetar). */
+  invalidateDeviceCache() {
+    this._mtpList.invalidate();
+    this._storageList.invalidate();
   }
 
   /**

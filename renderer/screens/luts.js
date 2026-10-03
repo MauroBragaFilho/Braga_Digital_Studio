@@ -1,10 +1,12 @@
 // Importação com tratamento de erro (embora geralmente deva funcionar se o caminho estiver certo)
 let escapeHtmlFunc;
+let appState = null; // estado global do app (state.settings.lutPreviewImage)
 try {
     // Certifique-se de que o caminho relativo está correto para a estrutura real
     // renderer/screens/luts.js -> renderer/app.js = ../app.js
-    const { escapeHtml: importedEscapeHtml } = await import('../app.js');
+    const { escapeHtml: importedEscapeHtml, state: importedState } = await import('../app.js');
     escapeHtmlFunc = importedEscapeHtml;
+    appState = importedState;
     console.debug("[LUTS] Função escapeHtml importada com sucesso.");
 } catch (e) {
     console.error("[LUTS] Erro ao importar escapeHtml de '../app.js':", e);
@@ -52,9 +54,25 @@ let cachedBaseImgSrc = null;
 const parsedLutCache = new Map(); // path -> Promise<{data, size} | null>
 // Cache das miniaturas reais (data URL) já renderizadas para cada LUT
 const thumbnailCache = new Map(); // path -> dataURL
+const LUT_CACHE_MAX = 100; // LRU: Map preserva a ordem de inserção; o mais antigo sai primeiro
+
+function lruSet(map, key, value) {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > LUT_CACHE_MAX) map.delete(map.keys().next().value);
+}
+
+function lruGet(map, key) {
+    if (!map.has(key)) return undefined;
+    const value = map.get(key);
+    map.delete(key);
+    map.set(key, value); // marca como recém-usado
+    return value;
+}
 
 function getParsedLut(path) {
-    if (!parsedLutCache.has(path)) {
+    if (parsedLutCache.has(path)) return lruGet(parsedLutCache, path);
+    {
         const promise = (window.bds?.parseLutCube ? window.bds.parseLutCube(path) : Promise.resolve(null))
             .then((result) => {
                 if (!result) {
@@ -69,19 +87,50 @@ function getParsedLut(path) {
                 parsedLutCache.delete(path);
                 return null;
             });
-        parsedLutCache.set(path, promise);
+        lruSet(parsedLutCache, path, promise);
     }
     return parsedLutCache.get(path);
 }
 
+const DEFAULT_BASE_IMAGE = './assets/lut_preview.jpg';
+let baseImageSrc = DEFAULT_BASE_IMAGE; // imagem de referência atual (padrão ou a escolhida nas Configurações)
+let baseImageSetting = '';             // valor da configuração que gerou baseImageSrc
+
 function getBasePreviewImageUrl() {
-    try {
-        const customImg = window.bds?.state?.settings?.lutPreviewImage;
-        if (customImg && customImg.trim() !== '') {
-            return `file://${customImg.replace(/\\/g, '/')}`;
-        }
-    } catch (_) {}
-    return './assets/lut_preview.jpg';
+    return baseImageSrc;
+}
+
+/**
+ * Resolve a imagem de referência das Configurações (data URL, para o canvas poder ler os pixels).
+ * Retorna true se a imagem mudou desde a última chamada.
+ */
+async function syncBaseImage() {
+    const wanted = String(appState?.settings?.lutPreviewImage || '').trim();
+    if (wanted === baseImageSetting) return false;
+    baseImageSetting = wanted;
+    let next = DEFAULT_BASE_IMAGE;
+    if (wanted && window.bds?.getLutReferenceImage) {
+        try { next = (await window.bds.getLutReferenceImage(wanted)) || DEFAULT_BASE_IMAGE; } catch (_) { /* usa a padrão */ }
+    }
+    if (next === baseImageSrc) return false;
+    baseImageSrc = next;
+    cachedBaseImg = null;
+    cachedBaseImgSrc = null;
+    thumbnailCache.clear();
+    return true;
+}
+
+/** Depois de trocar a imagem de referência: volta os cartões ao estado "sem miniatura" e refaz sob demanda. */
+function refreshAllThumbnails() {
+    cardCache.forEach((card) => {
+        const img = card.querySelector('.lut-card-img');
+        if (!img) return;
+        img.src = baseImageSrc;
+        img.classList.add('lut-card-img-loading');
+    });
+    thumbQueue.length = 0;
+    observePendingThumbs();
+    if (selectedLut) updateInspector();
 }
 
 function loadBaseImage(src) {
@@ -307,7 +356,18 @@ export async function initScreen() {
             btnImport: document.getElementById('btnImportLut'),
             btnRefresh: document.getElementById('btnRefreshLuts'),
             btnCloseInspector: document.getElementById('btnCloseInspector'),
-            btnApply: document.getElementById('btnSendLutToBDSM'),
+            btnReveal: document.getElementById('btnRevealLut'),
+            btnOpenFolder: document.getElementById('btnOpenLutsFolder'),
+            btnEmptyImport: document.getElementById('btnEmptyImport'),
+            gridArea: document.getElementById('lutsGridArea'),
+            dropZone: document.getElementById('lutsDropZone'),
+            notice: document.getElementById('lutsNotice'),
+            noticeText: document.getElementById('lutsNoticeText'),
+            noticeIcon: document.getElementById('lutsNoticeIcon'),
+            btnNoticeClose: document.getElementById('btnLutsNoticeClose'),
+            cardMenu: document.getElementById('lutCardMenu'),
+            emptyText: document.getElementById('lutsEmptyText'),
+            emptyHint: document.getElementById('lutsEmptyHint'),
             btnFullscreen: document.getElementById('btnFullscreenLut'),
             btnRename: document.getElementById('btnRenameLut'),
             btnDelete: document.getElementById('btnDeleteLut'),
@@ -363,7 +423,12 @@ export async function initScreen() {
 
     // 3. Adiciona Eventos com tratamento de erro
     try {
-        domRefs.btnImport?.addEventListener('click', importLut);
+        domRefs.btnImport?.addEventListener('click', () => importLut());
+        domRefs.btnEmptyImport?.addEventListener('click', () => importLut());
+        domRefs.btnOpenFolder?.addEventListener('click', () => { if (luts[0]) revealLut(luts[0]); });
+        domRefs.btnNoticeClose?.addEventListener('click', hideNotice);
+        bindDragAndDrop();
+        bindCardMenu();
         domRefs.btnRefresh?.addEventListener('click', () => {
           // Opcional: Dar feedback visual ao usuário (icone girando, por exemplo)
           const btn = domRefs.btnRefresh;
@@ -374,7 +439,10 @@ export async function initScreen() {
         });
         domRefs.btnCloseInspector?.addEventListener('click', () => selectLut(null));
 
-        domRefs.searchInput?.addEventListener('input', applyFilters);
+        domRefs.searchInput?.addEventListener('input', () => {
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(applyFilters, 180);
+        });
         domRefs.typeFilter?.addEventListener('change', applyFilters);
         domRefs.sortFilter?.addEventListener('change', applyFilters);
 
@@ -384,30 +452,12 @@ export async function initScreen() {
         document.getElementById('btnCompactView')?.addEventListener('click', () => setViewMode('compact'));
 
         // Inspector Actions
-        domRefs.btnApply?.addEventListener('click', sendToBDSM);
-        domRefs.btnDelete?.addEventListener('click', deleteLut);
-        domRefs.btnRename?.addEventListener('click', renameLut);
+        domRefs.btnReveal?.addEventListener('click', () => revealLut(selectedLut));
+        domRefs.btnDelete?.addEventListener('click', () => deleteLut(selectedLut));
+        domRefs.btnRename?.addEventListener('click', () => renameLut(selectedLut));
         domRefs.btnFullscreen?.addEventListener('click', openFullscreen);
 
-        // Evento de cópia de caminho (opcional, se for reativado)
-        domRefs.inspector?.addEventListener('click', (e) => {
-            if (e.target.classList.contains('inspector-copy-btn')) {
-                const pathText = document.getElementById('insPath')?.textContent || '';
-                if (pathText) {
-                    navigator.clipboard.writeText(pathText).then(() => {
-                        const btn = e.target;
-                        const original = btn.textContent;
-                        btn.textContent = 'check';
-                        setTimeout(() => { btn.textContent = original; }, 2000);
-                    }).catch(err => {
-                         console.warn('[LUTS] Erro ao copiar caminho:', err);
-                         // Opcional: alertar usuário
-                     });
-                }
-            }
-        });
-
-        domRefs.btnFsClose?.addEventListener('click', () => { domRefs.fsModal?.classList.add('hidden'); });
+        domRefs.btnFsClose?.addEventListener('click', closeFullscreen);
 
         // Arquivo .cube - modal de conteúdo bruto
         domRefs.btnViewCubeRaw?.addEventListener('click', openCubeRawModal);
@@ -427,7 +477,8 @@ export async function initScreen() {
     // 4. Setup Sliders com tratamento de erro
     bindSliders();
 
-    // 5. Carrega LUTs
+    // 5. Imagem de referência das Configurações e carga inicial das LUTs
+    await syncBaseImage();
     await loadLuts(); // Chamada inicial
 
     // 6. A liberação de memória (modal .cube bruto) e dos listeners de window dos sliders
@@ -457,11 +508,40 @@ function destroySliders() {
 /** Ao sair da tela: remove listeners de window dos sliders e libera o conteúdo pesado do modal .cube. */
 export function onLeave() {
     destroySliders();
+    // Interrompe a geração de miniaturas pendente (retomada em onEnter para os cards ainda sem miniatura)
+    thumbQueue.length = 0;
+    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+    clearTimeout(searchDebounce);
+    hideCardMenu();
+    dragDepth = 0;
+    domRefs.dropZone?.classList.add('hidden');
+    closeFullscreen();
     try { closeCubeRawModal(); } catch (_) { /* noop */ }
 }
 
 export function onEnter() {
     bindSliders();
+    // A imagem de referência pode ter mudado nas Configurações; a pasta pode ter mudado (ex.: sincronização).
+    syncBaseImage().then((changed) => {
+        if (changed) refreshAllThumbnails(); else observePendingThumbs();
+    });
+    if (loadedOnce) loadLuts({ silent: true });
+}
+
+/** Atalhos da tela (o app.js roteia o teclado para a tela ativa). */
+export function onKeyDown(e) {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || e.target?.isContentEditable;
+    if (e.key === 'Escape') {
+        if (!domRefs.cardMenu?.classList.contains('hidden')) { e.preventDefault(); hideCardMenu(); return; }
+        if (domRefs.fsModal && !domRefs.fsModal.classList.contains('hidden')) { e.preventDefault(); closeFullscreen(); return; }
+        if (domRefs.cubeRawModal && !domRefs.cubeRawModal.classList.contains('hidden')) { e.preventDefault(); closeCubeRawModal(); return; }
+        return;
+    }
+    if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (document.querySelector('dialog[open]')) return; // um diálogo (renomear/excluir) está aberto
+    if (!selectedLut) return;
+    if (e.key === 'Delete') { e.preventDefault(); deleteLut(selectedLut); }
+    else if (e.key === 'F2') { e.preventDefault(); renameLut(selectedLut); }
 }
 
 function setViewMode(mode) {
@@ -555,29 +635,82 @@ function setupSlider(container, overlay, divider) {
     };
 }
 
-async function loadLuts() {
-  try {
-    // Opcional: Limpar a lista antes de carregar (mostra loading)
-    domRefs.lutsGrid.innerHTML = '<div class="luts-loading">Atualizando...</div>';
-    domRefs.emptyState?.classList.add('hidden');
+let loadedOnce = false;
+let loadSeq = 0;
 
-    console.log('[LUTS] Solicitando lista de LUTs ao backend...');
-    luts = await window.bds.getLuts() || []; // Chama o backend
-    console.log(`[LUTS] Backend retornou ${luts.length} LUTs.`);
-    applyFilters(); // Aplica filtros e re-renderiza a grid
-    console.log('[LUTS] Lista de LUTs atualizada na tela.');
-  } catch (err) {
-    console.error('[LUTS] Erro ao carregar LUTs no frontend:', err);
-    // Opcional: Mostrar mensagem de erro na tela
-    domRefs.lutsGrid.innerHTML = `<div class="luts-error">Erro ao carregar: ${escapeHtmlFunc(err.message || "Falha desconhecida")}</div>`;
-    domRefs.emptyState?.classList.add('hidden');
-    // Opcional: Alertar via bdsModal
-    // window.bdsModal?.alert(`Erro ao carregar LUTs: ${err.message}`);
-  }
+/** Assinatura de uma LUT: muda se o arquivo for substituído/editado (invalida miniatura e interpretação). */
+function lutSignature(l) { return `${l.size}:${l.modifiedAt}:${l.id || ''}`; }
+
+/**
+ * Carrega a lista do disco. Com { silent: true } mantém os cartões na tela e só aplica as diferenças
+ * (usado ao voltar para a tela e depois de importar/renomear/excluir).
+ */
+async function loadLuts({ silent = false } = {}) {
+    const seq = ++loadSeq;
+    try {
+        if (!silent) {
+            resetCards();
+            domRefs.lutsGrid.innerHTML = '<div class="luts-loading" role="status">Carregando LUTs...</div>';
+            domRefs.emptyState?.classList.add('hidden');
+        }
+
+        const fresh = (await window.bds.getLuts()) || [];
+        if (seq !== loadSeq) return; // uma carga mais nova já foi pedida
+
+        const before = new Map(luts.map((l) => [l.path, lutSignature(l)]));
+        const sameList = before.size === fresh.length && fresh.every((l) => before.get(l.path) === lutSignature(l));
+        if (silent && sameList) return; // nada mudou: não mexe na tela
+
+        // Mantém o tipo (1D/3D) já descoberto; descarta caches de arquivos alterados ou removidos
+        const known = new Map(luts.map((l) => [l.path, l]));
+        const freshPaths = new Set(fresh.map((l) => l.path));
+        for (const l of fresh) {
+            const old = known.get(l.path);
+            if (old && lutSignature(old) === lutSignature(l)) { l.type = old.type; continue; }
+            if (old) dropLutCaches(l.path);
+        }
+        for (const path of known.keys()) {
+            if (!freshPaths.has(path)) dropLutCaches(path);
+        }
+
+        luts = fresh;
+        loadedOnce = true;
+        lutByPath.clear();
+        luts.forEach((l) => lutByPath.set(l.path, l));
+        // Se o item selecionado ainda existe, aponta para o objeto novo
+        if (selectedLut) selectedLut = lutByPath.get(selectedLut.path) || null;
+        applyFilters();
+        if (domRefs.btnOpenFolder) domRefs.btnOpenFolder.disabled = luts.length === 0;
+    } catch (err) {
+        console.error('[LUTS] Erro ao carregar LUTs:', err);
+        if (silent) { showNotice(`Não foi possível atualizar a lista: ${errMsg(err)}`, 'danger'); return; }
+        domRefs.lutsGrid.innerHTML = '';
+        const box = document.createElement('div');
+        box.className = 'luts-error';
+        box.setAttribute('role', 'alert');
+        box.innerHTML = '<span class="luts-error-text"></span><button type="button" class="lut-btn-outline" data-action="retry">TENTAR NOVAMENTE</button>';
+        box.querySelector('.luts-error-text').textContent = `Erro ao carregar as LUTs: ${errMsg(err)}`;
+        domRefs.lutsGrid.appendChild(box);
+        domRefs.emptyState?.classList.add('hidden');
+    }
+}
+
+/** Esquece cartão, interpretação e miniatura de um arquivo (renomeado, substituído ou excluído). */
+function dropLutCaches(path) {
+    const card = cardCache.get(path);
+    if (card) { card.remove(); cardCache.delete(path); }
+    parsedLutCache.delete(path);
+    thumbnailCache.delete(path);
+}
+
+/** Mensagem legível de um erro vindo do IPC (remove o prefixo "Error invoking remote method"). */
+function errMsg(err) {
+    const raw = typeof err === 'string' ? err : (err && err.message) || 'Falha desconhecida.';
+    return raw.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
 }
 
 function applyFilters() {
-    const query = domRefs.searchInput?.value.toLowerCase() || '';
+    const query = (domRefs.searchInput?.value || '').trim().toLowerCase();
     const type = domRefs.typeFilter?.value || 'all';
     const sort = domRefs.sortFilter?.value || 'recent';
 
@@ -591,8 +724,9 @@ function applyFilters() {
     filteredLuts = luts.filter(lut => {
         const matchesQuery = lut.name.toLowerCase().includes(query);
         let matchesType = true;
-        if (type === '3d') matchesType = lut.type && lut.type.toLowerCase().includes('3d');
-        if (type === '1d') matchesType = lut.type && lut.type.toLowerCase().includes('1d');
+        // O tipo só é conhecido depois de interpretar o .cube (feito sob demanda); sem tipo, assume 3D
+        if (type === '3d') matchesType = !lut.type || lut.type.toLowerCase().includes('3d');
+        if (type === '1d') matchesType = !!lut.type && lut.type.toLowerCase().includes('1d');
         if (type === 'all') matchesType = true; // Permite todos se 'all'
         return matchesQuery && matchesType;
     });
@@ -604,6 +738,8 @@ function applyFilters() {
     } else { // recent (padrão)
         filteredLuts.sort((a, b) => (b.modifiedAt || 0) - (a.modifiedAt || 0));
     }
+
+    if (type !== 'all') ensureLutTypes();
 
     // Se o selecionado nao esta no filtro, deseleciona
     if (selectedLut && !filteredLuts.find(l => l.path === selectedLut.path)) {
@@ -619,14 +755,21 @@ function renderGrid() {
         return;
     }
 
-    domRefs.lutsGrid.innerHTML = '';
+    // Remove placeholders ("Atualizando...", erros) que não são cards
+    Array.from(domRefs.lutsGrid.children).forEach((el) => { if (!el.classList.contains('lut-card')) el.remove(); });
 
     if (!filteredLuts || filteredLuts.length === 0) {
+        cardCache.forEach((card) => card.classList.add('hidden'));
         const emptyEl = domRefs.emptyState;
         if (emptyEl) {
             emptyEl.classList.remove('hidden');
             emptyEl.classList.add('active');
         }
+        // Biblioteca vazia → convida a importar; busca/filtro sem resultado → só informa
+        const libraryEmpty = !luts || luts.length === 0;
+        if (domRefs.emptyText) domRefs.emptyText.textContent = libraryEmpty ? 'Sua biblioteca de LUTs está vazia.' : 'Nenhuma LUT corresponde à busca ou ao filtro.';
+        if (domRefs.emptyHint) domRefs.emptyHint.textContent = libraryEmpty ? 'Importe arquivos .cube ou arraste-os para esta tela.' : 'Limpe a busca ou escolha "Todos os tipos".';
+        domRefs.btnEmptyImport?.classList.toggle('hidden', !libraryEmpty);
         domRefs.ftTotal.textContent = '0 LUTs';
         // ✅ CORREÇÃO (Maximum call stack size exceeded): antes chamava selectLut(null) aqui,
         // que por sua vez chama renderGrid() de volta — com a lista vazia e selectedLut já
@@ -648,33 +791,276 @@ function renderGrid() {
     }
     domRefs.ftTotal.textContent = `${filteredLuts.length} LUT${filteredLuts.length !== 1 ? 's' : ''}`;
 
+    bindGridDelegation();
+
+    // Reaproveita os cards já criados: os que não passam no filtro ficam ocultos (sem recriar DOM)
+    const frag = document.createDocumentFragment();
+    const shown = new Set();
     filteredLuts.forEach((lut) => {
-        const isSelected = selectedLut && selectedLut.path === lut.path;
+        const card = getCard(lut);
+        card.classList.remove('hidden');
+        markSelected(card, !!(selectedLut && selectedLut.path === lut.path));
+        shown.add(lut.path);
+        frag.appendChild(card);
+    });
+    for (const [path, card] of cardCache) {
+        if (shown.has(path)) continue;
+        card.classList.add('hidden');
+        frag.appendChild(card);
+    }
+    domRefs.lutsGrid.appendChild(frag);
+}
 
-        const card = document.createElement('div');
-        card.className = `lut-card ${isSelected ? 'selected' : ''} view-${currentViewMode}`;
-        card.dataset.path = lut.path; // Para facilitar a seleção
+// --- Cards reaproveitáveis, delegação de clique e miniaturas sob demanda ---
+const cardCache = new Map();   // path -> elemento .lut-card
+const lutByPath = new Map();   // path -> objeto lut
+let thumbObserver = null;
+const thumbQueue = [];
+let thumbActive = 0;
+const THUMB_CONCURRENCY = 2;
+let searchDebounce = null;
+let typeScanRunning = false;
 
-        const dateObj = lut.modifiedAt ? new Date(lut.modifiedAt) : new Date();
-        const dateStr = dateObj.toLocaleDateString('pt-BR');
+function resetCards() {
+    cardCache.clear();
+    thumbQueue.length = 0;
+    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+}
 
-        // ✅ CORREÇÃO: Função para renderizar o card (melhora legibilidade e segurança)
-        card.innerHTML = renderLutCard(lut, dateStr);
+function getThumbObserver() {
+    if (thumbObserver || typeof IntersectionObserver === 'undefined') return thumbObserver;
+    thumbObserver = new IntersectionObserver((entries, obs) => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            obs.unobserve(entry.target);
+            thumbQueue.push(entry.target);
+        }
+        pumpThumbs();
+    }, { root: null, rootMargin: '200px' });
+    return thumbObserver;
+}
 
-        card.addEventListener('click', (e) => {
-            if (e.target.closest('.lut-icon-btn')) {
-                // Ações do menu "Mais opções" aqui, se necessário
-                console.log('[LUTS] Clicado no botão de mais opções do card:', lut.name);
-                return; // Não seleciona se clicar no botão
-            }
-            selectLut(lut); // Seleciona o LUT
-        });
+function observePendingThumbs() {
+    cardCache.forEach((card) => {
+        if (card.querySelector('.lut-card-img-loading')) getThumbObserver()?.observe(card);
+    });
+}
 
-        domRefs.lutsGrid.appendChild(card);
-
-        // Renderiza (ou reaproveita do cache) a miniatura REAL com a LUT aplicada
+function pumpThumbs() {
+    while (thumbActive < THUMB_CONCURRENCY && thumbQueue.length) {
+        const card = thumbQueue.shift();
+        const lut = lutByPath.get(card.dataset.path);
         const imgEl = card.querySelector('.lut-card-img');
-        renderCardThumbnail(lut, imgEl);
+        if (!lut || !imgEl || !card.isConnected) continue;
+        thumbActive++;
+        renderCardThumbnail(lut, imgEl).finally(() => { thumbActive--; pumpThumbs(); });
+    }
+}
+
+function getCard(lut) {
+    let card = cardCache.get(lut.path);
+    if (card && card.dataset.mode === currentViewMode) return card;
+    const dateObj = lut.modifiedAt ? new Date(lut.modifiedAt) : new Date();
+    const fresh = !card;
+    if (!card) {
+        card = document.createElement('div');
+        card.dataset.path = lut.path; // Para facilitar a seleção
+        card.tabIndex = 0;
+        card.setAttribute('role', 'option');
+        card.setAttribute('aria-selected', 'false');
+        card.innerHTML = renderLutCard(lut, dateObj.toLocaleDateString('pt-BR'));
+        const cardImg = card.querySelector('.lut-card-img');
+        if (cardImg) {
+            if (baseImageSrc !== DEFAULT_BASE_IMAGE) cardImg.src = baseImageSrc;
+            cardImg.addEventListener('error', () => { cardImg.style.visibility = 'hidden'; });
+        }
+        cardCache.set(lut.path, card);
+    }
+    card.dataset.mode = currentViewMode;
+    card.className = `lut-card view-${currentViewMode}`;
+    if (fresh) {
+        const imgEl = card.querySelector('.lut-card-img');
+        const cached = lruGet(thumbnailCache, lut.path);
+        if (cached && imgEl) {
+            imgEl.src = cached;
+            imgEl.classList.remove('lut-card-img-loading');
+        } else {
+            // Miniatura real só é gerada quando o card se aproxima da área visível
+            getThumbObserver()?.observe(card);
+        }
+    }
+    return card;
+}
+
+function bindGridDelegation() {
+    const grid = domRefs.lutsGrid;
+    if (!grid || grid.dataset.delegated) return;
+    grid.dataset.delegated = '1';
+    grid.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="retry"]')) { loadLuts(); return; }
+        const card = e.target.closest('.lut-card');
+        if (!card || !grid.contains(card)) return;
+        const lut = lutByPath.get(card.dataset.path);
+        if (!lut) return;
+        if (e.target.closest('[data-action="menu"]')) {
+            e.stopPropagation();
+            const r = e.target.closest('[data-action="menu"]').getBoundingClientRect();
+            selectLut(lut);
+            openCardMenu(lut, r.right - 190, r.bottom);
+            return;
+        }
+        selectLut(lut);
+    });
+    grid.addEventListener('dblclick', (e) => {
+        const card = e.target.closest('.lut-card');
+        const lut = card && lutByPath.get(card.dataset.path);
+        if (lut) { selectLut(lut); openFullscreen(); }
+    });
+    grid.addEventListener('contextmenu', (e) => {
+        const card = e.target.closest('.lut-card');
+        const lut = card && lutByPath.get(card.dataset.path);
+        if (!lut) return;
+        e.preventDefault();
+        selectLut(lut);
+        openCardMenu(lut, e.clientX, e.clientY);
+    });
+    grid.addEventListener('keydown', (e) => {
+        const card = e.target.closest?.('.lut-card');
+        if (!card || e.target !== card) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const lut = lutByPath.get(card.dataset.path);
+            if (lut) selectLut(lut);
+        } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) {
+            e.preventDefault();
+            const visible = Array.from(grid.querySelectorAll('.lut-card:not(.hidden)'));
+            const i = visible.indexOf(card);
+            const step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1 : -1;
+            visible[Math.min(Math.max(i + step, 0), visible.length - 1)]?.focus();
+        }
+    });
+}
+
+function markSelected(card, on) {
+    card.classList.toggle('selected', on);
+    card.setAttribute('aria-selected', on ? 'true' : 'false');
+}
+
+// --- Aviso (substitui os alertas): sucesso, atenção e erro ---
+let noticeTimer = null;
+function showNotice(text, tone = 'info', autoHideMs = 0) {
+    if (!domRefs.notice) return;
+    clearTimeout(noticeTimer);
+    const icons = { info: 'info', success: 'check_circle', warning: 'warning', danger: 'error' };
+    domRefs.notice.className = `luts-notice tone-${tone}`;
+    if (domRefs.noticeIcon) domRefs.noticeIcon.textContent = icons[tone] || 'info';
+    if (domRefs.noticeText) domRefs.noticeText.textContent = text;
+    if (autoHideMs > 0) noticeTimer = setTimeout(hideNotice, autoHideMs);
+}
+function hideNotice() {
+    clearTimeout(noticeTimer);
+    domRefs.notice?.classList.add('hidden');
+}
+
+// --- Menu de ações do cartão (Renomear / Mostrar na pasta / Excluir) ---
+let menuLut = null;
+let menuBound = false;
+function openCardMenu(lut, x, y) {
+    const menu = domRefs.cardMenu;
+    if (!menu) return;
+    menuLut = lut;
+    menu.classList.remove('hidden');
+    const w = menu.offsetWidth || 200;
+    const h = menu.offsetHeight || 130;
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - w - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y + 4, window.innerHeight - h - 8))}px`;
+    menu.querySelector('button')?.focus();
+}
+function hideCardMenu() {
+    menuLut = null;
+    domRefs.cardMenu?.classList.add('hidden');
+}
+function bindCardMenu() {
+    if (menuBound || !domRefs.cardMenu) return;
+    menuBound = true;
+    domRefs.cardMenu.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn || !menuLut) return;
+        const lut = menuLut;
+        hideCardMenu();
+        if (btn.dataset.action === 'rename') renameLut(lut);
+        else if (btn.dataset.action === 'reveal') revealLut(lut);
+        else if (btn.dataset.action === 'delete') deleteLut(lut);
+    });
+    document.addEventListener('pointerdown', (e) => {
+        if (!domRefs.cardMenu || domRefs.cardMenu.classList.contains('hidden')) return;
+        if (!domRefs.cardMenu.contains(e.target)) hideCardMenu();
+    }, true);
+    window.addEventListener('blur', hideCardMenu);
+}
+
+// --- Arrastar e soltar .cube para importar ---
+let dragDepth = 0;
+let dndBound = false;
+function bindDragAndDrop() {
+    const root = domRefs.gridArea?.closest('.luts-screen-container');
+    if (dndBound || !root) return;
+    dndBound = true;
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    root.addEventListener('dragenter', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth++;
+        domRefs.dropZone?.classList.remove('hidden');
+    });
+    root.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+    root.addEventListener('dragleave', (e) => {
+        if (!hasFiles(e)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) domRefs.dropZone?.classList.add('hidden');
+    });
+    root.addEventListener('drop', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth = 0;
+        domRefs.dropZone?.classList.add('hidden');
+        const paths = Array.from(e.dataTransfer.files)
+            .map((f) => (window.bds?.getPathForFile ? window.bds.getPathForFile(f) : f.path || ''))
+            .filter(Boolean);
+        if (paths.length) importLut(paths);
+    });
+}
+
+// Descobre o tipo (1D/3D) dos LUTs ainda não interpretados, em segundo plano (só com filtro de tipo ativo)
+async function ensureLutTypes() {
+    if (typeScanRunning) return;
+    typeScanRunning = true;
+    try {
+        const pending = luts.filter((l) => !l.type);
+        let changed = false;
+        for (let i = 0; i < pending.length; i += THUMB_CONCURRENCY) {
+            const batch = pending.slice(i, i + THUMB_CONCURRENCY);
+            await Promise.all(batch.map(async (l) => {
+                const parsed = await getParsedLut(l.path);
+                if (parsed && parsed.size) { l.type = parsed.is1D ? 'LUT 1D' : 'LUT 3D'; changed = true; }
+            }));
+            await idleYield();
+        }
+        if (changed && (domRefs.typeFilter?.value || 'all') !== 'all') applyFiltersSoon();
+    } finally {
+        typeScanRunning = false;
+    }
+}
+
+function applyFiltersSoon() {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(applyFilters, 50);
+}
+
+function idleYield() {
+    return new Promise((resolve) => {
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 200 });
+        else setTimeout(resolve, 16);
     });
 }
 
@@ -684,7 +1070,7 @@ function renderLutCard(lut, dateStr) {
     const lutType = lut.type || '3D';
     // Enquanto a miniatura real (com a LUT aplicada) é gerada, mostra a imagem base "crua"
     return `
-        <img src="./assets/lut_preview.jpg" class="lut-card-img lut-card-img-loading" onerror="this.style.display='none'">
+        <img src="${DEFAULT_BASE_IMAGE}" class="lut-card-img lut-card-img-loading" alt="" draggable="false">
         <span class="lut-badge-3d">${escapeHtmlFunc(lutType)}</span>
         <div class="lut-checkbox"><span class="material-symbols-rounded">check</span></div>
 
@@ -696,7 +1082,7 @@ function renderLutCard(lut, dateStr) {
                     <span>${dateStr}</span>
                 </div>
             </div>
-            <button class="lut-icon-btn lut-icon-btn-small" title="Mais opções">
+            <button type="button" class="lut-icon-btn lut-icon-btn-small" data-action="menu" title="Mais opções" aria-label="Mais opções de ${escapedName}" aria-haspopup="menu">
                 <span class="material-symbols-rounded">more_vert</span>
             </button>
         </div>
@@ -708,7 +1094,7 @@ function renderLutCard(lut, dateStr) {
 async function renderCardThumbnail(lut, imgEl) {
     if (!imgEl) return;
 
-    const cached = thumbnailCache.get(lut.path);
+    const cached = lruGet(thumbnailCache, lut.path);
     if (cached) {
         imgEl.src = cached;
         imgEl.classList.remove('lut-card-img-loading');
@@ -729,13 +1115,15 @@ async function renderCardThumbnail(lut, imgEl) {
         const badgeEl = imgEl.closest('.lut-card')?.querySelector('.lut-badge-3d');
         if (badgeEl) badgeEl.textContent = lut.type;
 
+        await idleYield(); // cede a thread antes do trabalho pesado de pixels
+        if (!imgEl.isConnected) return;
         const offscreen = document.createElement('canvas');
         // applyLutToCanvas já limita as dimensões internamente (maxDim=640),
         // suficiente para uma miniatura nítida sem pesar na geração.
         applyLutToCanvas(parsed.data, parsed.size, sourceImg, offscreen, parsed.is1D);
 
         const dataUrl = offscreen.toDataURL('image/jpeg', 0.85);
-        thumbnailCache.set(lut.path, dataUrl);
+        lruSet(thumbnailCache, lut.path, dataUrl);
 
         // Só aplica se o elemento ainda estiver na tela apontando para o mesmo LUT
         if (imgEl.isConnected) {
@@ -750,28 +1138,30 @@ async function renderCardThumbnail(lut, imgEl) {
 
 
 function selectLut(lut) {
+    const previous = selectedLut;
     selectedLut = lut;
-    renderGrid(); // Atualiza seleção no grid
+    // Só alterna a classe nos dois cards afetados (sem reconstruir a grade)
+    if (previous) { const c = cardCache.get(previous.path); if (c) markSelected(c, false); }
+    if (lut) { const c = cardCache.get(lut.path); if (c) markSelected(c, true); }
     updateInspector(); // Atualiza o painel lateral
 }
 
 // ✅ Função separada para atualizar o inspector, usando escapeHtmlFunc
 function updateInspector() {
-    const btnApply = domRefs.btnApply;
+    const btnReveal = domRefs.btnReveal;
     const btnFullscreen = domRefs.btnFullscreen;
     const btnRename = domRefs.btnRename;
     const btnDelete = domRefs.btnDelete;
 
     if (!selectedLut) {
-        const badgeEl = document.querySelector('.lut-badge-3d');
-        if (badgeEl) {
-            badgeEl.textContent = '--';
-        }
+        const badgeEl = document.getElementById('insBadge');
+        if (badgeEl) badgeEl.textContent = '--';
         domRefs.ftSelected.textContent = '0 LUTs';
         document.getElementById('insName').textContent = 'Selecione um LUT';
         document.getElementById('insType').textContent = '--';
         document.getElementById('insSize').textContent = '--';
-        document.getElementById('insRes').textContent = '--';
+        const insResEl = document.getElementById('insRes');
+        if (insResEl) insResEl.textContent = '--';
         document.getElementById('insDate').textContent = '--';
 
         // Esconder canvas de preview real e mostrar img padrão
@@ -784,22 +1174,25 @@ function updateInspector() {
         if (domRefs.sliderOverlay && domRefs.sliderOverlay.style) domRefs.sliderOverlay.style.clipPath = 'inset(0 0 0 50%)';
         if (domRefs.fsSliderOverlay && domRefs.fsSliderOverlay.style) domRefs.fsSliderOverlay.style.clipPath = 'inset(0 0 0 50%)';
 
-        if (btnApply) btnApply.disabled = true;
+        if (btnReveal) btnReveal.disabled = true;
         if (btnFullscreen) btnFullscreen.disabled = true;
         if (btnRename) btnRename.disabled = true;
         if (btnDelete) btnDelete.disabled = true;
 
-        if (domRefs.cubeSection) domRefs.cubeSection.style.display = 'none';
+        if (domRefs.cubeSection) domRefs.cubeSection.classList.add('hidden');
         return;
     }
 
     domRefs.ftSelected.textContent = '1 LUT';
     const dateObj = selectedLut.modifiedAt ? new Date(selectedLut.modifiedAt) : new Date();
 
-    document.getElementById('insName').textContent = escapeHtmlFunc(selectedLut.name);
+    document.getElementById('insName').textContent = selectedLut.name;
+    const insBadge = document.getElementById('insBadge');
+    if (insBadge) insBadge.textContent = selectedLut.type || '3D LUT';
     document.getElementById('insType').textContent = selectedLut.type || '3D LUT';
     document.getElementById('insSize').textContent = formatBytes(selectedLut.size);
-    document.getElementById('insRes').textContent = selectedLut.resolution || '--';
+    const insResEl = document.getElementById('insRes');
+    if (insResEl) insResEl.textContent = selectedLut.resolution || '--';
     document.getElementById('insDate').textContent =
         dateObj.toLocaleDateString('pt-BR') + ' ' +
         dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -814,7 +1207,7 @@ function updateInspector() {
     // Aplicação real da LUT no slider via Canvas
     renderRealLutPreview(selectedLut, baseImgSrc);
 
-    if (btnApply) btnApply.disabled = false;
+    if (btnReveal) btnReveal.disabled = false;
     if (btnFullscreen) btnFullscreen.disabled = false;
     if (btnRename) btnRename.disabled = false;
     if (btnDelete) btnDelete.disabled = false;
@@ -870,7 +1263,7 @@ async function updateCubeSection(lut) {
 
     if (!window.bds?.getLutHeader) {
         console.warn('[LUTS] window.bds.getLutHeader indisponível.');
-        domRefs.cubeSection.style.display = 'none';
+        domRefs.cubeSection.classList.add('hidden');
         return;
     }
 
@@ -913,7 +1306,7 @@ async function updateCubeSection(lut) {
 
         renderCubeRgbTable(header.preview || []);
 
-        domRefs.cubeSection.style.display = '';
+        domRefs.cubeSection.classList.remove('hidden');
     } catch (err) {
         console.error('[LUTS] Erro ao carregar cabeçalho do .cube:', err);
         if (selectedLut !== requestedLut) return;
@@ -922,7 +1315,7 @@ async function updateCubeSection(lut) {
         if (domRefs.cubeRgbTable) {
             domRefs.cubeRgbTable.innerHTML = '<div class="cube-rgb-empty">Não foi possível ler este arquivo .cube.</div>';
         }
-        domRefs.cubeSection.style.display = '';
+        domRefs.cubeSection.classList.remove('hidden');
     }
 }
 
@@ -1045,111 +1438,119 @@ function highlightCubeContent(lines) {
 
 // AÇÕES (com tratamento de erro e uso de bdsModal)
 
-async function importLut() {
-  // 1. Verifica se o backend está disponível
-  if (!window.bds || typeof window.bds.importLut !== 'function') {
-    console.error('[LUTS] window.bds.importLut não está disponível.');
-    // Opcional: Mostrar alerta amigável
-    if (window.bdsModal) {
-      window.bdsModal.alert(
-        'Erro: A funcionalidade de importação de LUTs não está disponível.\n' +
-        'Verifique se o sistema está inicializado corretamente.'
-      );
-    } else {
-      alert('Erro: A funcionalidade de importação de LUTs não está disponível.');
-    }
-    return;
-  }
+let importing = false;
+let busyAction = false; // evita abrir dois diálogos (ex.: Delete repetido)
 
-  // 2. Executa a ação com try/catch completo
-  try {
-    console.log('[LUTS] Iniciando importação de LUT...');
-    const success = await window.bds.importLut();
-    console.log(`[LUTS] Importação concluída: ${success}`);
-
-    if (success) {
-      await loadLuts(); // Recarrega a lista
-    } else {
-      // O backend retornou false, mas não lançou erro
-      console.warn('[LUTS] Importação foi cancelada ou falhou sem erro.');
-      if (window.bdsModal) {
-        window.bdsModal.alert('Importação cancelada ou falha silenciosa.');
-      }
-    }
-  } catch (err) {
-    console.error('[LUTS] Erro crítico ao importar LUT:', err);
-    let errorMessage = 'Erro desconhecido.';
-    if (err && typeof err.message === 'string') {
-      errorMessage = err.message;
-    } else if (err && typeof err === 'string') {
-      errorMessage = err;
-    }
-    
-    if (window.bdsModal) {
-      window.bdsModal.alert(`Erro ao importar LUT:\n${errorMessage}`);
-    } else {
-      alert(`Erro ao importar LUT: ${errorMessage}`);
-    }
-  }
+function listNames(items, max = 4) {
+    const shown = items.slice(0, max).join(', ');
+    return items.length > max ? `${shown} e mais ${items.length - max}` : shown;
 }
 
-async function deleteLut() {
-    if (!selectedLut) return;
+/** Importa .cube pelo seletor de arquivos (sem argumento) ou pelos caminhos soltos na tela. */
+async function importLut(droppedPaths) {
+    if (importing) return;
+    if (!window.bds || typeof window.bds.importLut !== 'function') {
+        showNotice('A importação de LUTs não está disponível nesta versão.', 'danger');
+        return;
+    }
+    importing = true;
+    domRefs.btnImport?.setAttribute('disabled', '');
+    try {
+        const res = await window.bds.importLut(Array.isArray(droppedPaths) ? droppedPaths : undefined);
+        if (!res) return; // o usuário fechou o seletor: não é erro
+
+        const imported = res.imported || [];
+        const renamed = res.renamed || [];
+        const duplicates = res.duplicates || [];
+        const invalid = res.invalid || [];
+        await loadLuts({ silent: true });
+
+        const lines = [];
+        if (imported.length) lines.push(`${imported.length} LUT${imported.length > 1 ? 's importadas' : ' importada'}.`);
+        if (renamed.length) lines.push(`Já existia outra com o mesmo nome; salva como: ${listNames(renamed.map((r) => r.to))}.`);
+        if (duplicates.length) lines.push(`Já estava na biblioteca (conteúdo idêntico): ${listNames(duplicates)}.`);
+        if (invalid.length) lines.push(`Recusada${invalid.length > 1 ? 's' : ''}: ${listNames(invalid.map((i) => `${i.name} (${i.reason})`), 3)}.`);
+        if (!lines.length) lines.push('Nenhum arquivo para importar.');
+        const tone = imported.length && !invalid.length ? 'success' : (imported.length || duplicates.length ? 'warning' : 'danger');
+        showNotice(lines.join('\n'), tone, tone === 'success' ? 6000 : 0);
+
+        // Seleciona (e mostra) a primeira LUT importada
+        const first = imported[0] && lutByPath.get(imported[0].path);
+        if (first) {
+            if (domRefs.searchInput?.value) { domRefs.searchInput.value = ''; }
+            if (domRefs.typeFilter) domRefs.typeFilter.value = 'all';
+            applyFilters();
+            selectLut(first);
+            cardCache.get(first.path)?.scrollIntoView({ block: 'nearest' });
+        }
+    } catch (err) {
+        console.error('[LUTS] Erro ao importar:', err);
+        showNotice(`Erro ao importar: ${errMsg(err)}`, 'danger');
+    } finally {
+        importing = false;
+        domRefs.btnImport?.removeAttribute('disabled');
+    }
+}
+
+/** Move a LUT para a lixeira do sistema (recuperável). */
+async function deleteLut(lut) {
+    if (!lut || busyAction) return;
     if (!window.bds || typeof window.bds.deleteLut !== 'function') {
-        console.error('[LUTS] window.bds.deleteLut não está disponível.');
-        if (window.bdsModal) window.bdsModal.alert('Erro: API de exclusão indisponível.');
+        showNotice('A exclusão de LUTs não está disponível nesta versão.', 'danger');
         return;
     }
-
-    let confirmDelete = false;
-    if (window.bdsModal && window.bdsModal.confirm) {
-         confirmDelete = await window.bdsModal.confirm(`Tem certeza que deseja excluir "${selectedLut.name}"?`);
-    } else {
-         confirmDelete = confirm(`Tem certeza que deseja excluir "${selectedLut.name}"?`);
-    }
-
-    if (!confirmDelete) return;
-
+    busyAction = true;
     try {
-        const success = await window.bds.deleteLut(selectedLut.path);
-        if (success) {
-            selectedLut = null;
-            await loadLuts(); // Recarrega após excluir
-        }
+        const ok = await window.bdsModal.confirm(`Mover "${lut.name}" para a lixeira?`);
+        if (!ok) return;
+        const success = await window.bds.deleteLut(lut.path);
+        if (selectedLut && selectedLut.path === lut.path) selectLut(null);
+        await loadLuts({ silent: true });
+        showNotice(success ? `"${lut.name}" foi movida para a lixeira.` : `"${lut.name}" já não existe na pasta.`, success ? 'success' : 'warning', 5000);
     } catch (err) {
-        console.error('[LUTS] Erro ao excluir LUT', err);
-        if (window.bdsModal) window.bdsModal.alert('Erro ao excluir LUT: ' + err.message);
+        console.error('[LUTS] Erro ao excluir:', err);
+        showNotice(`Erro ao excluir: ${errMsg(err)}`, 'danger');
+    } finally {
+        busyAction = false;
     }
 }
 
-async function renameLut() {
-    if (!selectedLut) return;
+async function renameLut(lut) {
+    if (!lut || busyAction) return;
     if (!window.bds || typeof window.bds.renameLut !== 'function') {
-        console.error('[LUTS] window.bds.renameLut não está disponível.');
-        if (window.bdsModal) window.bdsModal.alert('Erro: API de renomeação indisponível.');
+        showNotice('A renomeação de LUTs não está disponível nesta versão.', 'danger');
         return;
     }
-
-    let newName = "";
-    if (window.bdsModal && window.bdsModal.prompt) {
-         newName = await window.bdsModal.prompt('Digite o novo nome para o LUT (sem a extensão .cube):', selectedLut.name.replace('.cube', ''));
-    } else {
-         newName = prompt('Digite o novo nome para o LUT (sem a extensão .cube):', selectedLut.name.replace('.cube', ''));
-    }
-
-    if (!newName) return; // Cancelou
-
-    if (newName.toLowerCase() === selectedLut.name.replace('.cube', '').toLowerCase()) return;
-
+    busyAction = true;
     try {
-        const success = await window.bds.renameLut(selectedLut.path, newName);
-        if (success) {
-            selectedLut = null;
-            await loadLuts(); // Recarrega após renomear
-        }
+        const current = lut.name.replace(/\.cube$/i, '');
+        const answer = await window.bdsModal.prompt('Novo nome da LUT (sem a extensão .cube):', current);
+        const newName = (answer || '').trim();
+        if (!newName || newName === current) return; // cancelou ou não mudou
+
+        const oldPaths = new Set(luts.map((l) => l.path));
+        const success = await window.bds.renameLut(lut.path, newName);
+        if (!success) { showNotice('A LUT não foi encontrada na pasta.', 'warning'); await loadLuts({ silent: true }); return; }
+        await loadLuts({ silent: true });
+        // O único caminho que não existia antes é o da LUT renomeada
+        const renamed = luts.find((l) => !oldPaths.has(l.path));
+        if (renamed) { selectLut(renamed); cardCache.get(renamed.path)?.scrollIntoView({ block: 'nearest' }); }
+        else if (selectedLut && selectedLut.path === lut.path) selectLut(null);
+        showNotice('LUT renomeada.', 'success', 4000);
     } catch (err) {
-        console.error('[LUTS] Erro ao renomear LUT', err);
-        if (window.bdsModal) window.bdsModal.alert('Erro ao renomear LUT: ' + err.message);
+        console.error('[LUTS] Erro ao renomear:', err);
+        showNotice(`Erro ao renomear: ${errMsg(err)}`, 'danger');
+    } finally {
+        busyAction = false;
+    }
+}
+
+async function revealLut(lut) {
+    if (!lut) return;
+    try {
+        await window.bds.revealLut(lut.path);
+    } catch (err) {
+        showNotice(`Não foi possível abrir a pasta: ${errMsg(err)}`, 'danger');
     }
 }
 
@@ -1160,7 +1561,7 @@ function openFullscreen() {
         return;
     }
 
-    domRefs.fsLutName.textContent = escapeHtmlFunc(selectedLut.name);
+    domRefs.fsLutName.textContent = selectedLut.name;
 
     const baseImgSrc = getBasePreviewImageUrl();
     if (domRefs.fsSliderBaseImg) domRefs.fsSliderBaseImg.src = baseImgSrc;
@@ -1176,38 +1577,12 @@ function openFullscreen() {
 
     domRefs.fsModal.classList.remove('hidden');
     domRefs.fsModal.classList.add('active');
+    domRefs.btnFsClose?.focus();
 }
 
-async function sendToBDSM() {
-    if (!selectedLut) return;
-    // Simula aplicacao por 1.5s ou chama API real (ex: window.bds.applyLutToBdsm(selectedLut.path))
-
-    const btn = domRefs.btnApply;
-    if (!btn) {
-        console.error('[LUTS] Botão de aplicar LUT ausente.');
-        return;
-    }
-
-    const originalHTML = btn.innerHTML;
-    btn.innerHTML = '<span class="material-symbols-rounded">sync</span> APLICANDO...';
-    btn.disabled = true;
-
-    try {
-        // Simula aplicacao por 1.5s
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        // await window.bds.applyLutToBdsm(selectedLut.path); // Chamada real (exemplo)
-
-        btn.innerHTML = '<span class="material-symbols-rounded">check</span> APLICADO!';
-        setTimeout(() => {
-            btn.innerHTML = originalHTML;
-            btn.disabled = false;
-        }, 2000);
-    } catch (err) {
-        console.error('[LUTS] Erro ao aplicar LUT', err);
-        btn.innerHTML = originalHTML;
-        btn.disabled = false;
-        if (window.bdsModal) window.bdsModal.alert('Erro ao aplicar LUT: ' + err.message);
-    }
+function closeFullscreen() {
+    domRefs.fsModal?.classList.add('hidden');
+    domRefs.fsModal?.classList.remove('active');
 }
 
 function formatBytes(bytes, decimals = 2) {

@@ -1,45 +1,59 @@
 const logger = require('../../services/logService');
-const FolderWatcher = require('./FolderWatcher');
 const fsp = require('fs').promises;
 const dbManager = require('../database/database');
 const EventBus = require('../EventBus');
+const { mapLimit, classifyRows } = require('./reconcile');
+
+// Concorrência moderada: disco frio/HD externo e a UI competem pelo mesmo I/O.
+const RECONCILE_CONCURRENCY = 12;
 
 class LibraryWatcherService {
     constructor(importQueue) {
         this.importQueue = importQueue;
-        this.watchers = new Map(); 
-        
+        this.watchers = new Map();
+
         // Escuta os eventos e atualiza o banco (handler guardado para ser removido em stopAll)
         this._onMediaRemoved = (payload) => this.handleMediaRemoved(payload);
         EventBus.on('MEDIA_REMOVED', this._onMediaRemoved);
     }
 
+    /**
+     * Inicia os watchers das bibliotecas ativas. NÃO reconcilia arquivos: a reconciliação é
+     * disparada à parte (startReconcile) só no startup — reiniciar watchers (ex.: ao trocar uma
+     * pasta nas configurações) não precisa varrer o disco de novo.
+     */
     startAll() {
         if (!this._onMediaRemoved) {
             this._onMediaRemoved = (payload) => this.handleMediaRemoved(payload);
             EventBus.on('MEDIA_REMOVED', this._onMediaRemoved);
         }
         const db = dbManager.get();
-        const libraries = db.prepare('SELECT * FROM libraries WHERE enabled = 1 AND auto_scan = 1').all();
-        
-        // Reconcilia arquivos deletados em segundo plano após o startup.
-        // [PERF] A promise é exposta via whenReconcileDone() para que o regen de
-        // thumbnails SÓ comece depois da reconciliação terminar — os processos
-        // ffmpeg do regen competiam por I/O com os fs.access() da reconciliação
-        // (observado: reconciliação saltava de ~1.6s para ~13.5s quando rodavam juntos).
-        this._reconcilePromise = new Promise((resolve) => {
-            setTimeout(() => {
-                this.reconcileMissingFiles()
-                    .catch(err => logger.error(`[LibraryWatcherService] Falha na reconciliação: ${err.message}`))
-                    .finally(resolve);
-            }, 1500);
-        });
-        
+        const libraries = db.prepare('SELECT id, path FROM libraries WHERE enabled = 1 AND auto_scan = 1').all();
+
         for (const lib of libraries) {
             if (lib.path) {
                 this.startWatcher(lib.id, lib.path);
             }
         }
+    }
+
+    /**
+     * Agenda a reconciliação de arquivos (ausentes/restaurados) em segundo plano, após o startup.
+     * [PERF] A promise é exposta via whenReconcileDone() para que o regen de thumbnails SÓ comece
+     * depois da reconciliação terminar — os ffmpeg do regen competiam por I/O com ela.
+     * Idempotente: chamadas repetidas reaproveitam a mesma execução.
+     * @param {number} [delayMs=1500]
+     */
+    startReconcile(delayMs = 1500) {
+        if (this._reconcilePromise) return this._reconcilePromise;
+        this._reconcilePromise = new Promise((resolve) => {
+            setTimeout(() => {
+                this.reconcileMissingFiles()
+                    .catch(err => logger.error(`[LibraryWatcherService] Falha na reconciliação: ${err.message}`))
+                    .finally(resolve);
+            }, delayMs);
+        });
+        return this._reconcilePromise;
     }
 
     /**
@@ -55,76 +69,60 @@ class LibraryWatcherService {
     /**
      * Verifica todos os arquivos no banco e marca como missing=1
      * aqueles que não existem mais no disco de forma assíncrona.
-     * [PERF] Toda a verificação de disco é assíncrona (fs.promises) e
-     * com concorrência limitada, para não travar o event loop do
-     * processo principal mesmo com bibliotecas de milhares de arquivos.
+     * [PERF] Verificação 100% assíncrona, agrupada por pasta (um readdir por pasta em vez de um
+     * fs.access por arquivo), com concorrência moderada e cedendo ao event loop entre lotes.
+     * Bibliotecas cuja raiz está inacessível (HD externo/rede desconectado) são puladas.
      */
     async reconcileMissingFiles() {
         const db = dbManager.get();
         const t0 = Date.now();
-        
+
         try {
-            // Uma única consulta (ativos + ausentes), já com a raiz da biblioteca de cada mídia
-            const candidates = db.prepare(`
-                SELECT m.id, m.filepath, m.missing, l.path AS lib_path
-                FROM media m LEFT JOIN libraries l ON l.id = m.library_id
-            `).all();
+            // Só as colunas necessárias; a raiz de cada biblioteca vem de uma consulta pequena à parte
+            const candidates = db.prepare('SELECT id, filepath, missing, library_id FROM media').all();
 
             if (candidates.length === 0) {
                 logger.info('[LibraryWatcherService] Reconciliação concluída — nenhum arquivo para verificar.');
                 return;
             }
 
-            // Bibliotecas offline (raiz inacessível, ex.: HD externo/rede desconectado) são puladas:
+            const libPaths = new Map(db.prepare('SELECT id, path FROM libraries').all().map(l => [l.id, l.path]));
+
+            // Bibliotecas offline (raiz inacessível) são puladas:
             // nunca marcar tudo como ausente só porque o disco não está montado.
             const offlineRoots = new Set();
-            const roots = [...new Set(candidates.map(c => c.lib_path).filter(Boolean))];
-            await Promise.all(roots.map(async (root) => {
+            const roots = [...new Set([...libPaths.values()].filter(Boolean))];
+            await mapLimit(roots, RECONCILE_CONCURRENCY, async (root) => {
                 const ok = await fsp.access(root).then(() => true).catch(() => false);
                 if (!ok) {
                     offlineRoots.add(root);
                     logger.warn(`[LibraryWatcherService] Raiz da biblioteca inacessível, pulando reconciliação: ${root}`);
                 }
-            }));
+            });
 
-            const CONCURRENCY = 32;
-            const toMark = [];
-            const toRestore = [];
-            let cursor = 0;
+            const rows = candidates.filter((row) => {
+                if (!row.filepath) return false;
+                const root = libPaths.get(row.library_id);
+                return !(root && offlineRoots.has(root));
+            });
 
-            const worker = async () => {
-                while (cursor < candidates.length) {
-                    const row = candidates[cursor++];
-                    if (!row.filepath) continue;
-                    if (row.lib_path && offlineRoots.has(row.lib_path)) continue;
-                    try {
-                        const exists = await fsp.access(row.filepath).then(() => true).catch(() => false);
-                        // Se não existe no disco e não estava ausente -> marcar ausente
-                        if (!exists && row.missing !== 1) {
-                            toMark.push(row.id);
-                        }
-                        // Se existe e estava ausente -> restaurar
-                        if (exists && row.missing === 1) {
-                            toRestore.push(row.id);
-                        }
-                    } catch (_) {
-                        /* ignora erros de acesso isolados */
-                    }
+            const { toMark, toRestore } = await classifyRows(
+                rows,
+                { readdir: (dir) => fsp.readdir(dir), access: (file) => fsp.access(file) },
+                { concurrency: RECONCILE_CONCURRENCY }
+            );
+
+            // Batch UPDATE (em fatias, para respeitar o limite de variáveis do SQLite)
+            const updateIn = (value, ids) => {
+                for (let i = 0; i < ids.length; i += 500) {
+                    const slice = ids.slice(i, i + 500);
+                    const placeholders = slice.map(() => '?').join(',');
+                    db.prepare(`UPDATE media SET missing = ${value} WHERE id IN (${placeholders})`).run(...slice);
                 }
             };
+            if (toMark.length > 0) updateIn(1, toMark);
+            if (toRestore.length > 0) updateIn(0, toRestore);
 
-            await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, worker));
-
-            // Batch UPDATE — cria cada statement uma única vez por chamada
-            if (toMark.length > 0) {
-                const placeholders = toMark.map(() => '?').join(',');
-                db.prepare(`UPDATE media SET missing = 1 WHERE id IN (${placeholders})`).run(...toMark);
-            }
-            if (toRestore.length > 0) {
-                const placeholders = toRestore.map(() => '?').join(',');
-                db.prepare(`UPDATE media SET missing = 0 WHERE id IN (${placeholders})`).run(...toRestore);
-            }
-            
             await this.requeueStuckImports(offlineRoots);
 
             const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -150,23 +148,27 @@ class LibraryWatcherService {
             FROM media m LEFT JOIN libraries l ON l.id = m.library_id
             WHERE m.status IN ('IMPORTING', 'ERROR') AND (m.missing = 0 OR m.missing IS NULL)
         `).all();
+        const eligible = rows.filter(row => row.filepath && !(row.lib_path && offlineRoots.has(row.lib_path)));
+
+        // Verificação de existência em lote paralelo limitado (antes era um fs.access sequencial por linha)
+        const found = await mapLimit(eligible, 8, (row) => fsp.access(row.filepath).then(() => true, () => false));
         let queued = 0;
-        for (const row of rows) {
-            if (!row.filepath || (row.lib_path && offlineRoots.has(row.lib_path))) continue;
-            const exists = await fsp.access(row.filepath).then(() => true).catch(() => false);
-            if (!exists) continue;
+        eligible.forEach((row, i) => {
+            if (!found[i]) return;
             this.importQueue.add({ libraryId: row.library_id, path: row.filepath, event: 'CREATE' });
             queued++;
-        }
+        });
         if (queued > 0) logger.info(`[LibraryWatcherService] ${queued} importações pendentes/com erro reenfileiradas.`);
         return queued;
     }
 
     startWatcher(libraryId, folderPath) {
         if (this.watchers.has(libraryId)) {
-            return; 
+            return;
         }
-        
+
+        // require tardio: o chokidar só é carregado quando existe uma pasta para monitorar
+        const FolderWatcher = require('./FolderWatcher');
         const watcher = new FolderWatcher(libraryId, folderPath, this.importQueue);
         watcher.start();
         this.watchers.set(libraryId, watcher);
@@ -190,11 +192,11 @@ class LibraryWatcherService {
             this._onMediaRemoved = null;
         }
     }
-    
+
     handleMediaRemoved(payload) {
         const db = dbManager.get();
         const { path: filePath } = payload;
-        
+
         // Marca como desaparecido, nunca deleta direto da base
         db.prepare('UPDATE media SET missing = 1 WHERE filepath = ?').run(filePath);
         logger.info(`[LibraryWatcherService] Marcado como perdido: ${filePath}`);

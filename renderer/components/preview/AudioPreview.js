@@ -60,11 +60,10 @@ export class AudioPreview {
     btnInfo?.addEventListener('click', ()=>this._toggleInfo());
     btnCls?.addEventListener('click', ()=>this.close());
     timeline?.addEventListener('mousedown', e=>this._startScrub(e));
-    document.addEventListener('mousemove', this._mmh);
-    document.addEventListener('mouseup', this._muh);
     document.addEventListener('keydown', this._kb);
     document.addEventListener('fullscreenchange', this._fsh);
-    this.dom.root?.addEventListener('mousemove', ()=>this._resetIdle());
+    this._rootMove=()=>this._resetIdle();
+    this.dom.root?.addEventListener('mousemove', this._rootMove);
   }
 
   _unbind() {
@@ -72,7 +71,8 @@ export class AudioPreview {
     document.removeEventListener('mouseup', this._muh);
     document.removeEventListener('keydown', this._kb);
     document.removeEventListener('fullscreenchange', this._fsh);
-    clearTimeout(this._idleT);
+    if(this._rootMove) this.dom.root?.removeEventListener('mousemove', this._rootMove);
+    clearTimeout(this._idleT); this._idleT=null;
   }
 
   // ── Load ──
@@ -90,11 +90,12 @@ export class AudioPreview {
   }
 
   _stopAll() {
-    this._audioEls.forEach(a=>{ try{a.pause();}catch(_){} });
+    this._audioEls.forEach(a=>{ try{ a.pause(); a.removeAttribute('src'); a.load(); }catch(_){} });
+    this.tRenderers.forEach(r=>{ try{ r.destroy(); }catch(_){} });
     this._audioEls=[]; this._masterAudio=null;
     this.tRenderers=[]; this.tMuted=[];
     if(this._raf){ cancelAnimationFrame(this._raf); this._raf=null; }
-    clearTimeout(this._idleT);
+    clearTimeout(this._idleT); this._idleT=null;
   }
 
   async _buildAudio(media) {
@@ -141,7 +142,13 @@ export class AudioPreview {
   }
 
   // ── Scrub ──
-  _startScrub(e) { e.preventDefault(); this.isScrub=true; this.dom.timeline?.classList.add('scrubbing'); this._scrubMove(e); }
+  _startScrub(e) {
+    e.preventDefault(); this.isScrub=true;
+    // mousemove/mouseup globais só existem durante o arraste
+    document.addEventListener('mousemove', this._mmh);
+    document.addEventListener('mouseup', this._muh);
+    this.dom.timeline?.classList.add('scrubbing'); this._scrubMove(e);
+  }
   _scrubMove(e) {
     if(!this.isScrub)return; const rect=this.dom.tlTrack?.getBoundingClientRect(); if(!rect)return;
     const pct=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
@@ -152,6 +159,8 @@ export class AudioPreview {
   _handleMouseMove(e){ this._scrubMove(e); }
   _handleMouseUp() {
     if(!this.isScrub)return; this.isScrub=false;
+    document.removeEventListener('mousemove', this._mmh);
+    document.removeEventListener('mouseup', this._muh);
     this.dom.timeline?.classList.remove('scrubbing');
     const t=this._lastScrubPct*this.duration;
     this._audioEls.forEach(a=>{ if(a)a.currentTime=t; });
@@ -201,16 +210,29 @@ export class AudioPreview {
 
   // ── Idle ──
   _resetIdle() {
-    clearTimeout(this._idleT);
-    this.dom.header?.classList.remove('idle-hidden');
-    this.dom.controls?.classList.remove('idle-hidden');
-    this._idleT=setTimeout(()=>this._hideIdle(),3000);
+    this._lastAct=performance.now();
+    if(this._idleHidden){
+      this._idleHidden=false;
+      this.dom.header?.classList.remove('idle-hidden');
+      this.dom.controls?.classList.remove('idle-hidden');
+    }
+    if(!this._idleT) this._scheduleIdle(3000); // um único timer; mousemove só atualiza o timestamp
+  }
+
+  _scheduleIdle(ms) {
+    this._idleT=setTimeout(()=>{
+      this._idleT=null;
+      const left=3000-(performance.now()-this._lastAct);
+      if(left>5){ this._scheduleIdle(left); return; }
+      this._hideIdle();
+    },ms);
   }
 
   _hideIdle() {
     if(!this._masterAudio||this._masterAudio.paused)return;
     this.dom.header?.classList.add('idle-hidden');
     this.dom.controls?.classList.add('idle-hidden');
+    this._idleHidden=true;
   }
 
   // ── Keyboard ──

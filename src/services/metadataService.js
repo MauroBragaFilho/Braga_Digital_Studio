@@ -6,6 +6,11 @@ const { ffmpegTool } = require('../infrastructure/external-tools/adapters/Ffmpeg
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
+const probeCache = require('../core/ffmpeg/ProbeCache');
+
+// Progresso para a UI no máximo a cada 250 ms; stderr do ffmpeg guarda só o final (~4 KB)
+const EMIT_THROTTLE_MS = 250;
+const STDERR_TAIL_BYTES = 4096;
 
 class MetadataService extends EventEmitter {
   constructor({ paths }) {
@@ -16,6 +21,10 @@ class MetadataService extends EventEmitter {
   }
 
   async probeFile(filePath) {
+    return probeCache.getOrLoad(filePath, () => this._probeFileRaw(filePath), 'metadata-probe');
+  }
+
+  async _probeFileRaw(filePath) {
     const ffprobe = ffprobeTool.resolve();
     let result;
     try {
@@ -63,7 +72,7 @@ class MetadataService extends EventEmitter {
         const coverStream = info?.streams?.find(s => s.disposition && s.disposition.attached_pic === 1);
         if (coverStream) {
           await this._runFfmpegQuiet(ffmpeg, [
-            '-v', 'quiet',
+            '-nostdin', '-hide_banner', '-loglevel', 'error',
             '-y',
             '-i', filePath,
             '-map', `0:${coverStream.index}`,
@@ -76,7 +85,7 @@ class MetadataService extends EventEmitter {
 
       // 2. Extrai o frame real do vídeo a 1s
       await this._runFfmpegQuiet(ffmpeg, [
-        '-v', 'quiet',
+        '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-y',
         '-ss', '00:00:01',
         '-i', filePath,
@@ -89,7 +98,7 @@ class MetadataService extends EventEmitter {
 
       // 3. Backup: extrai o frame a 0s caso o vídeo seja muito curto
       await this._runFfmpegQuiet(ffmpeg, [
-        '-v', 'quiet',
+        '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-y',
         '-ss', '00:00:00',
         '-i', filePath,
@@ -150,7 +159,7 @@ class MetadataService extends EventEmitter {
     const metaTxtPath = path.join(this.paths.dataDir, `meta_${Date.now()}.txt`);
     fs.writeFileSync(metaTxtPath, this.buildFfmetadataContent(tags, chapters), 'utf8');
 
-    let args = ['-y', '-i', filePath, '-i', metaTxtPath];
+    let args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-i', filePath, '-i', metaTxtPath];
     let inputsCount = 2;
 
     if (thumbnailAction === 'add' || thumbnailAction === 'replace') {
@@ -192,16 +201,25 @@ class MetadataService extends EventEmitter {
       }
     }
 
-    args.push('-progress', 'pipe:1', workingDest);
+    args.push('-progress', 'pipe:1', '-nostats', workingDest);
 
     return new Promise((resolve, reject) => {
       const child = processRunner.spawn(ffmpeg, args);
       this.currentProcess = child;
 
-      child.stderr.on('data', chunk => this.emit('log', chunk.toString()));
-      
-      // Como é stream copy, será muito rápido, progresso simples
-      child.stdout.on('data', chunk => {
+      let stderrTail = '';
+      child.stderr.on('data', chunk => {
+        const text = chunk.toString();
+        stderrTail = (stderrTail + text).slice(-STDERR_TAIL_BYTES);
+        this.emit('log', text);
+      });
+
+      // Como é stream copy, será muito rápido, progresso simples (com throttle)
+      let lastProgressAt = 0;
+      child.stdout.on('data', () => {
+          const now = Date.now();
+          if (now - lastProgressAt < EMIT_THROTTLE_MS) return;
+          lastProgressAt = now;
           this.emit('progress', { status: 'Copiando dados...' });
       });
 
@@ -223,7 +241,7 @@ class MetadataService extends EventEmitter {
 
         if (code !== 0) {
           try { if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest); } catch (_) {}
-          return reject(new Error(`Erro do motor de mídia (código ${code})`));
+          return reject(new Error(`Erro do motor de mídia (código ${code})${stderrTail ? `: ${stderrTail.trim().slice(-300)}` : ''}`));
         }
 
         // Se for modo overwrite, substitui o original pelo tmp SEM nunca apagar o original antes

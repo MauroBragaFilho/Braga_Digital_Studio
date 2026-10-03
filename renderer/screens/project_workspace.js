@@ -172,7 +172,7 @@ function renderImportModalList() {
   // Exclui mídias já adicionadas ao projeto
   const alreadyInProject = new Set(projectMedia.map(pm => pm.id));
   const available = libraryMedia.filter(m =>
-    !alreadyInProject.has(m.id) && m.filename.toLowerCase().includes(search)
+    !alreadyInProject.has(m.id) && filenameLower(m).includes(search)
   );
 
   list.innerHTML = '';
@@ -248,7 +248,9 @@ async function loadInitialData() {
 
 async function reloadLibrary() {
   try {
-    libraryMedia = await window.bds.searchLibrary({});
+    // searchLibrary devolve { items, totalCount, ... } (não um array)
+    const res = await window.bds.searchLibrary({ limit: 1000 });
+    libraryMedia = Array.isArray(res) ? res : ((res && res.items) || []);
     renderLibrary();
   } catch (e) {
     console.error(e);
@@ -810,9 +812,8 @@ function renderLibrary() {
   const search = document.getElementById('wsLibSearch')?.value.toLowerCase() || '';
   container.innerHTML = '';
 
-  const filtered = libraryMedia.filter(m =>
-    m.filename.toLowerCase().includes(search)
-  );
+  const filtered = libraryMedia.filter(m => filenameLower(m).includes(search));
+  bindLibraryDragDelegation(container);
 
   filtered.forEach(m => {
     const thumbUrl = m.thumbnail_path ? `url('file:///${m.thumbnail_path.replace(/\\/g, '/')}')` : 'none';
@@ -828,12 +829,22 @@ function renderLibrary() {
       </div>
       <span class="material-symbols-rounded" style="color: var(--muted); font-size: 16px;">drag_indicator</span>
     `;
-    el.addEventListener('dragstart', (e) => {
-      draggedItem = { type: 'library_media', id: m.id };
-      e.dataTransfer.effectAllowed = 'copy';
-      e.dataTransfer.setData('text/plain', m.id);
-    });
     container.appendChild(el);
+  });
+}
+
+// Delegação única de dragstart para os itens da biblioteca lateral
+function bindLibraryDragDelegation(container) {
+  if (!container || container.dataset.dragDelegated) return;
+  container.dataset.dragDelegated = '1';
+  container.addEventListener('dragstart', (e) => {
+    const el = e.target.closest && e.target.closest('.ws-lib-item');
+    if (!el) return;
+    const m = libraryMedia.find(x => String(x.id) === el.dataset.id);
+    if (!m) return;
+    draggedItem = { type: 'library_media', id: m.id };
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', m.id);
   });
 }
 
@@ -843,10 +854,27 @@ function mediaMatchesFilter(pm) {
   return mediaTypeFilter === 'audio' ? isAudio : !isAudio;
 }
 
+// Set de mídias sincronizadas, calculado uma vez e invalidado quando syncGroupsCache é substituído
+let syncedIdsSet = null;
+let syncedIdsFor = null;
 function isMediaSynced(pm) {
-  const syncedMediaIds = new Set();
-  syncGroupsCache.forEach(g => (g.items || []).forEach(it => syncedMediaIds.add(it.media_id)));
-  return syncedMediaIds.has(pm.id);
+  if (syncedIdsFor !== syncGroupsCache || !syncedIdsSet) {
+    syncedIdsSet = new Set();
+    syncGroupsCache.forEach(g => (g.items || []).forEach(it => syncedIdsSet.add(it.media_id)));
+    syncedIdsFor = syncGroupsCache;
+  }
+  return syncedIdsSet.has(pm.id);
+}
+
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+// Nome em minúsculas pré-calculado (evita toLowerCase por item a cada tecla digitada)
+function filenameLower(m) {
+  if (m._fnLower === undefined) m._fnLower = (m.filename || '').toLowerCase();
+  return m._fnLower;
 }
 
 function setMediaTypeFilter(filter) {
@@ -1728,11 +1756,11 @@ function setupEventListeners() {
   document.getElementById('wsImportLibraryModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'wsImportLibraryModal') closeImportLibraryModal();
   });
-  document.getElementById('wsImportModalSearch')?.addEventListener('input', renderImportModalList);
+  document.getElementById('wsImportModalSearch')?.addEventListener('input', debounce(renderImportModalList, 150));
   document.getElementById('wsBtnConfirmImportLibrary')?.addEventListener('click', confirmImportFromLibrary);
 
   document.getElementById('wsBtnReloadLib')?.addEventListener('click', reloadLibrary);
-  document.getElementById('wsLibSearch')?.addEventListener('input', renderLibrary);
+  document.getElementById('wsLibSearch')?.addEventListener('input', debounce(renderLibrary, 150));
   document.getElementById('wsBtnNewBin')?.addEventListener('click', async () => {
     const parentId = selectedItem?.type === 'bin' ? selectedItem.id : null;
     const name = await window.bdsModal.prompt('Nome da Nova Pasta:');

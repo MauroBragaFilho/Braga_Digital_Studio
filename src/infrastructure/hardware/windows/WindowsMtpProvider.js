@@ -57,7 +57,7 @@ $devices | ConvertTo-Json -Depth 5
       const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
       exec(
         `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
-        { encoding: 'utf8' },
+        { encoding: 'utf8', timeout: 8000, windowsHide: true },
         (error, stdout) => {
           if (error) {
             logger.error('WindowsMtpProvider:getDevices:error', { error: error.message });
@@ -119,7 +119,7 @@ $results | ConvertTo-Json -Depth 5
       const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
       exec(
         `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
-        { encoding: 'utf8' },
+        { encoding: 'utf8', windowsHide: true },
         (error, stdout) => {
           if (error) {
             logger.error('WindowsMtpProvider:listFolder:error', { error: error.message });

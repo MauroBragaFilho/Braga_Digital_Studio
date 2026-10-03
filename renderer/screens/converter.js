@@ -74,8 +74,21 @@ function getConverterVideoCodec() {
  * Aplica os padrões escolhidos em Configurações > Conversão (formato, codec, resolução e bitrates).
  * Roda ao abrir a tela; valores ausentes ou inválidos mantêm o padrão do HTML.
  */
+/** Assinatura dos padrões do Conversor (Configurações): muda quando o usuário altera algum deles. */
+function converterDefaultsKey(s = appState.settings || {}) {
+  return JSON.stringify([
+    s.converterDefaultFormat, s.converterDefaultCodec, s.converterDefaultResolution,
+    s.converterDefaultVideoBitrate, s.converterDefaultAudioBitrate
+  ]);
+}
+
+// Padrões já aplicados nos controles. Escolhas feitas na própria tela valem só nesta sessão:
+// só são sobrescritas quando os padrões mudam nas Configurações (ver onEnter).
+let appliedDefaultsKey = null;
+
 function applyConverterDefaults() {
   const s = appState.settings || {};
+  appliedDefaultsKey = converterDefaultsKey(s);
 
   const format = s.converterDefaultFormat === 'mp3' ? 'mp3' : 'mp4';
   const toggle = document.getElementById('converterFormatToggle');
@@ -315,8 +328,16 @@ function removeErrorHandlers() {
 }
 
 /** Retorna à tela: reinstala os handlers removidos em onLeave */
-export function onEnter() {
+export async function onEnter() {
   if (!errorHandlers) installErrorHandlers();
+  // Padrões alterados em Configurações desde a última vez: mostra os novos valores aqui.
+  // Sem mudança nos padrões, mantém o que o usuário escolheu nesta sessão.
+  if (appliedDefaultsKey !== null && converterDefaultsKey() !== appliedDefaultsKey) {
+    applyConverterDefaults();
+    updateConverterFormatVisibility();
+    await applyConverterEncoderAvailability();
+    updateConverterStepperVisuals();
+  }
 }
 
 /** Chamado pelo app.js ao trocar de tela — limpa listeners temporários */

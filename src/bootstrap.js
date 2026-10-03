@@ -12,6 +12,12 @@ const { DEVELOPER_EMAIL } = require('./config/appInfo');
 const SettingsManager = require('./core/settings/SettingsManager');
 const LutManager = require('./core/luts/LutManager');
 const { errorReporter } = require('./infrastructure/telemetry/ErrorReporter');
+const {
+  libraryFoldersChanged, hardwareSettingsChanged, notificationSettingsChanged, updateServerChanged
+} = require('./core/settings/settingsChanges');
+const KeyedThrottle = require('./infrastructure/desktop/KeyedThrottle');
+const { mapLimit } = require('./core/library/reconcile');
+const { deviceManager } = require('./infrastructure/hardware/DeviceManager');
 
 const { ffmpegTool } = require('./infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('./infrastructure/external-tools/adapters/FfprobeTool');
@@ -68,6 +74,7 @@ class Bootstrap {
 
     this.services = {};
     this.mainWindow = null;
+    this._throttle = new KeyedThrottle(250);
   }
 
   setMainWindow(window) {
@@ -99,6 +106,33 @@ class Bootstrap {
     } catch (err) {
       logger.warn('Bootstrap:send:error', { channel, error: err.message });
     }
+  }
+
+  /**
+   * [PERF] Envio ao renderer limitado a ~4 Hz por canal (o último valor vence). Usado nos canais
+   * de progresso/fila, que podem disparar dezenas de vezes por segundo.
+   */
+  _sendThrottled(channel, payload) {
+    this._throttle.push(`ipc:${channel}`, payload, (v) => this._send(channel, v));
+  }
+
+  /** Progresso da barra da taskbar limitado a ~4 Hz por tarefa. */
+  _reportProgressThrottled(task, fraction) {
+    this._throttle.push(`tpc:${task}`, fraction, (v) => taskProgressCenter.reportProgress(task, v));
+  }
+
+  /**
+   * Entrega já os valores pendentes dos canais/tarefas informados. Chamado antes de um evento de
+   * mudança de estado (finalizado/erro/cancelado) para preservar a ordem: o último progresso
+   * chega antes do evento final, e este nunca é atrasado.
+   */
+  _flushThrottled(...keys) {
+    for (const k of keys) this._throttle.flush(k);
+  }
+
+  /** Descarta progresso pendente de uma tarefa cujo estado final torna o valor obsoleto. */
+  _cancelThrottled(...keys) {
+    for (const k of keys) this._throttle.cancel(k);
   }
 
   async init() {
@@ -203,23 +237,9 @@ class Bootstrap {
       watcherService
     };
 
-    // Auto-limpeza de cache no startup (se habilitado nas configurações)
-    try {
-      const CacheService = require('./core/CacheService');
-      const cacheSvc = new CacheService(this.appPaths, {
-        maxSizeMB: settings.cacheMaxSizeMB || 500,
-        autoClean: !!settings.cacheAutoClean,
-      });
-      const result = cacheSvc.autoCleanIfNeeded();
-      if (result.trimmed) {
-        logger.info(`[Bootstrap] Auto-limpeza de cache no startup: liberado ${result.totalFormatted}`);
-      }
-      // [PERF] Remove apenas arquivos temporários de execuções anteriores (>1h)
-      // [FIX] Agora limitado à pasta temp — NÃO toca em thumbnails/waveforms
-      cacheSvc.cleanStaleTempFiles(60 * 60 * 1000);
-    } catch (err) {
-      logger.warn('Bootstrap:autoCleanCache:error', { error: err.message });
-    }
+    // [PERF] A auto-limpeza de cache e a remoção de temporários antigos saíram do init():
+    // varrer thumbnails/waveforms de forma síncrona atrasava a abertura da janela. Agora rodam
+    // em segundo plano (versões assíncronas) a partir de startBackgroundServices().
 
     // [FIX] Regenera thumbnails ausentes em background (não bloqueia startup).
     // Lógica compartilhada com o handler IPC e com o clearCache (systemHandlers),
@@ -286,12 +306,13 @@ class Bootstrap {
 
     // Download Events
     downloadService.on('downloads:added', (item) => this._send('downloads:added', item));
-    downloadService.on('downloads:updated', (queue) => this._send('downloads:updated', queue));
+    downloadService.on('downloads:updated', (queue) => this._sendThrottled('downloads:updated', queue));
     downloadService.on('downloads:progress', (data) => {
-      taskProgressCenter.reportProgress('downloads', (data.progress || 0) / 100);
-      this._send('downloads:progress', data);
+      this._reportProgressThrottled('downloads', (data.progress || 0) / 100);
+      this._sendThrottled('downloads:progress', data);
     });
     downloadService.on('downloads:completed', (item) => {
+      this._flushThrottled('ipc:downloads:updated', 'ipc:downloads:progress');
       this._send('downloads:completed', item);
       if (item.outputPath && importQueue) {
         try {
@@ -308,11 +329,18 @@ class Bootstrap {
       }
     });
     downloadService.on('downloads:failed', (data) => {
+      this._flushThrottled('ipc:downloads:updated', 'ipc:downloads:progress');
+      this._cancelThrottled('tpc:downloads');
       taskProgressCenter.reportError('downloads');
       this._send('downloads:failed', data);
     });
-    downloadService.on('downloads:removed', (id) => this._send('downloads:removed', id));
+    downloadService.on('downloads:removed', (id) => {
+      this._flushThrottled('ipc:downloads:updated');
+      this._send('downloads:removed', id);
+    });
     downloadService.on('downloads:queue-completed', () => {
+      this._flushThrottled('ipc:downloads:updated', 'ipc:downloads:progress');
+      this._cancelThrottled('tpc:downloads');
       taskProgressCenter.reportIdle('downloads');
       notificationCenter.notifyTaskCompleted('downloads', {});
       this._send('downloads:queue-completed');
@@ -325,18 +353,26 @@ class Bootstrap {
 
     // Converter Events
     converterService.on('queue', (p) => this._send('converter:queue', p));
-    converterService.on('fileStarted', (p) => this._send('converter:fileStarted', p));
-    converterService.on('progress', (p) => {
-      taskProgressCenter.reportProgress('converter', (p?.progress || 0) / 100);
-      this._send('converter:progress', p);
+    converterService.on('fileStarted', (p) => {
+      this._flushThrottled('ipc:converter:progress');
+      this._send('converter:fileStarted', p);
     });
-    converterService.on('fileFinished', (p) => this._send('converter:fileFinished', p));
+    converterService.on('progress', (p) => {
+      this._reportProgressThrottled('converter', (p?.progress || 0) / 100);
+      this._sendThrottled('converter:progress', p);
+    });
+    converterService.on('fileFinished', (p) => {
+      this._flushThrottled('ipc:converter:progress');
+      this._send('converter:fileFinished', p);
+    });
     // Progresso geral do lote (ponderado por duração) emitido pelo serviço a cada ~500ms
     converterService.on('overallProgress', (p) => {
-      taskProgressCenter.reportProgress('converter', (p?.percent || 0) / 100);
-      this._send('converter:overallProgress', p);
+      this._reportProgressThrottled('converter', (p?.percent || 0) / 100);
+      this._sendThrottled('converter:overallProgress', p);
     });
     converterService.on('finished', (p) => {
+      this._flushThrottled('ipc:converter:progress', 'ipc:converter:overallProgress');
+      this._cancelThrottled('tpc:converter');
       taskProgressCenter.reportIdle('converter');
       if (p?.status === 'error') {
         taskProgressCenter.reportError('converter');
@@ -360,10 +396,12 @@ class Bootstrap {
 
     // Silence Events
     silenceService.on('progress', (p) => {
-      taskProgressCenter.reportProgress('silence', (p?.percent || 0) / 100);
-      this._send('silence:progress', p);
+      this._reportProgressThrottled('silence', (p?.percent || 0) / 100);
+      this._sendThrottled('silence:progress', p);
     });
     silenceService.on('finished', (p) => {
+      this._flushThrottled('ipc:silence:progress');
+      this._cancelThrottled('tpc:silence');
       taskProgressCenter.reportIdle('silence');
       if (p?.status === 'error') {
         taskProgressCenter.reportError('silence');
@@ -410,8 +448,9 @@ class Bootstrap {
 
       const active = q.find((job) => job.status === 'uploading' || job.status === 'Enviando...');
       if (active) {
-        taskProgressCenter.reportProgress('copy', (active.progress || 0) / 100);
+        this._reportProgressThrottled('copy', (active.progress || 0) / 100);
       } else {
+        this._cancelThrottled('tpc:copy');
         taskProgressCenter.reportIdle('copy');
       }
 
@@ -450,7 +489,7 @@ class Bootstrap {
     require('./ipc/jobHandlers')();
     require('./ipc/aiHandlers')(this.paths);
     // O ModuleManager é guardado para ser cancelado no encerramento do app.
-    this.moduleManager = require('./ipc/moduleHandlers')(this.paths);
+    this.moduleManager = require('./ipc/moduleHandlers')(this.paths, { getFfmpegPath: () => ffmpegTool.resolve({ mustExist: false }) });
 
     // Settings
     // Segredos (token do Telegram) são mascarados antes de chegar ao renderer.
@@ -460,26 +499,31 @@ class Bootstrap {
         throw new Error('Configurações inválidas.');
       }
       // Campo ainda mascarado = não alterado: preserva o valor real guardado no main.
-      const toSave = restoreMaskedSecrets(settings, this.settingsManager.load());
+      const previous = this.settingsManager.load();
+      const toSave = restoreMaskedSecrets(settings, previous);
       const saved = this.settingsManager.save(toSave);
       notificationCenter.updateSettings(saved);
       // Sincroniza o canal Telegram com as preferências (token, chat id, flag)
       telegramDeliveryChannel.updateSettings(saved);
+      // [PERF] Chaves de interface (sidebarCollapsed, theme, windowBounds...) só gravam o JSON:
+      // os efeitos abaixo só rodam quando as chaves relacionadas realmente mudaram.
       // Reavalia prazos imediatamente após salvar preferências de notificação
-      if (typeof deadlineNotifier.checkDeadlines === 'function') {
+      if (notificationSettingsChanged(previous, saved) && typeof deadlineNotifier.checkDeadlines === 'function') {
         deadlineNotifier.checkDeadlines(saved);
       }
-      if (libManager && watcherService) {
+      // Reinicia os watchers (e ressincroniza as bibliotecas) apenas se uma pasta monitorada mudou.
+      if (libManager && watcherService && libraryFoldersChanged(previous, saved)) {
         this._syncLibraries(libManager, saved);
         watcherService.stopAll();
         setTimeout(() => watcherService.startAll(), 1000);
       }
-      updateService?.applyUpdateServerSettings();
-      // Reaplica as preferências de aceleração de hardware e limpa o cache de encoders.
+      if (updateServerChanged(previous, saved)) updateService?.applyUpdateServerSettings();
+      // Reaplica as preferências de aceleração de hardware; o cache de encoders só é
+      // invalidado se a aceleração ou o fabricante preferido mudaram.
       try {
         const hardwareDetection = require('./core/HardwareDetectionService');
         hardwareDetection.configure(saved);
-        hardwareDetection.invalidateCache();
+        if (hardwareSettingsChanged(previous, saved)) hardwareDetection.invalidateCache();
       } catch (_) {}
       return maskSettings(saved);
     });
@@ -566,8 +610,14 @@ class Bootstrap {
       if (this.mainWindow.isMaximized()) this.mainWindow.unmaximize();
       else this.mainWindow.maximize();
     });
-    ipcMain.handle('window:fullscreen', () => {
-      if (this.mainWindow) this.mainWindow.setFullScreen(!this.mainWindow.isFullScreen());
+    // Sem argumento alterna; com 'exit' só sai da tela cheia (usado pela tecla Esc).
+    ipcMain.handle('window:fullscreen', (_, mode) => {
+      if (!this.mainWindow) return;
+      if (mode === 'exit') {
+        if (this.mainWindow.isFullScreen()) this.mainWindow.setFullScreen(false);
+        return;
+      }
+      this.mainWindow.setFullScreen(!this.mainWindow.isFullScreen());
     });
     ipcMain.handle('window:close', () => this.mainWindow?.close());
 
@@ -710,8 +760,12 @@ class Bootstrap {
     // Devices & Hardware
     ipcMain.handle('devices:get-all', async (_, force = false) => {
       if (force) await deviceDiscoveryService.forceRescan();
-      const mtpDevices = await MtpService.getDevices();
-      const usbDevices = await UsbService.getDevices();
+      // MTP e USB em paralelo, reaproveitando o cache de 25 s do DeviceManager (compartilhado com a
+      // sidebar de armazenamento); "force" (atualizar manualmente) ignora o cache.
+      const [mtpDevices, usbDevices] = await Promise.all([
+        deviceManager.getMtpDevices({ force: !!force }),
+        deviceManager.getStorageDevices({ force: !!force })
+      ]);
       const bdsmDevices = deviceDiscoveryService.getDevices();
       const sonyDevices = sonyCameraService.getCameras();
 
@@ -726,7 +780,7 @@ class Bootstrap {
         const mtpName = normalizeDeviceName(d.name || d.Name);
         const matchesBdsm = mtpName && bdsmNames.has(mtpName);
         if (matchesBdsm) {
-          logger.info('devices:get-all:mtp_suppressed_duplicate_of_bdsm', { name: d.name || d.Name });
+          logger.debug('devices:get-all:mtp_suppressed_duplicate_of_bdsm', { name: d.name || d.Name });
         }
         return !matchesBdsm;
       });
@@ -830,7 +884,7 @@ class Bootstrap {
       const targetDir = customDir ? assertAbsolutePath(customDir, 'Pasta de uploads')
         : (settings.uploadsFolder || path.join(os.homedir(), 'Videos', 'Uploads'));
       let isDir = false;
-      try { isDir = fs.statSync(targetDir).isDirectory(); } catch (_) { /* inexistente */ }
+      try { isDir = (await fs.promises.stat(targetDir)).isDirectory(); } catch (_) { /* inexistente */ }
       if (!isDir) return [];
       return uploadScannerService.scanDirectory(targetDir);
     });
@@ -853,11 +907,11 @@ class Bootstrap {
       };
       const result = win ? await dialog.showOpenDialog(win, dialogOptions) : await dialog.showOpenDialog(dialogOptions);
       if (!result.canceled && result.filePaths.length > 0) {
-        const fileList = [];
-        for (const filePath of result.filePaths) {
-          const stats = fs.statSync(filePath);
+        // ffprobe em paralelo limitado a 3 (antes serial); a ordem da lista é preservada.
+        const fileList = await mapLimit(result.filePaths, 3, async (filePath) => {
+          const stats = await fs.promises.stat(filePath);
           const meta = await uploadScannerService.getVideoMetadata(filePath);
-          fileList.push({
+          return {
             id: Buffer.from(filePath).toString('base64'),
             name: path.basename(filePath),
             path: filePath,
@@ -867,8 +921,8 @@ class Bootstrap {
             createdAt: stats.birthtime,
             modifiedAt: stats.mtime,
             ...meta
-          });
-        }
+          };
+        }, 3);
         return fileList;
       }
       return [];
@@ -881,9 +935,11 @@ class Bootstrap {
 
   startBackgroundServices() {
     try {
-      // 1. Inicia watcher de bibliotecas
+      // 1. Inicia watcher de bibliotecas (a reconciliação de arquivos é agendada à parte, só aqui
+      // no startup — reiniciar watchers ao trocar uma pasta não varre o disco de novo)
       if (this.services.watcherService) {
         this.services.watcherService.startAll();
+        this.services.watcherService.startReconcile();
 
         // [FIX] Regenera thumbnails ausentes em background — encadeado APÓS a
         // reconciliação de arquivos terminar, para os processos ffmpeg do regen
@@ -914,9 +970,33 @@ class Bootstrap {
 
       // 3. Inicia verificação de prazos dos projetos (lembretes de deadline)
       deadlineNotifier.start(this.settingsManager.load());
+
+      // 4. Auto-limpeza de cache e temporários antigos — assíncrona e depois do primeiro paint,
+      // com pequena folga para não competir com a reconciliação/IPC iniciais.
+      setTimeout(() => this._runCacheMaintenance(), 3000);
       logger.info('Serviços em segundo plano inicializados.');
     } catch (err) {
       logger.error('Erro ao iniciar serviços em segundo plano:', { error: err.message });
+    }
+  }
+
+  /** Auto-limpeza de cache (se habilitada) e remoção de temporários com mais de 1 h, sem bloquear o event loop. */
+  async _runCacheMaintenance() {
+    try {
+      const settings = this.settingsManager.load();
+      const CacheService = require('./core/CacheService');
+      const cacheSvc = new CacheService(this.appPaths, {
+        maxSizeMB: settings.cacheMaxSizeMB || 500,
+        autoClean: !!settings.cacheAutoClean,
+      });
+      const result = await cacheSvc.autoCleanIfNeededAsync();
+      if (result.trimmed) {
+        logger.info(`[Bootstrap] Auto-limpeza de cache no startup: liberado ${result.totalFormatted}`);
+      }
+      // Remove apenas arquivos temporários de execuções anteriores (>1h); NÃO toca em thumbnails/waveforms
+      await cacheSvc.cleanStaleTempFilesAsync(60 * 60 * 1000);
+    } catch (err) {
+      logger.warn('Bootstrap:autoCleanCache:error', { error: err.message });
     }
   }
 
@@ -1016,6 +1096,9 @@ class Bootstrap {
       await step('deadline', () => deadlineNotifier.stop());
       await step('discovery', () => deviceDiscoveryService?.stop?.());
       await step('sony', () => sonyCameraService?.stop?.());
+
+      // Grava configurações com escrita adiada pendente (ex.: posição da janela)
+      await step('settings', () => this.settingsManager.flush());
 
       // Gravação final do banco: síncrona, para não perder dados ao sair
       await step('database', () => {

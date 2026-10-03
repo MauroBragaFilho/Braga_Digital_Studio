@@ -4,6 +4,10 @@ const path = require('path');
 const logger = require('../../services/logService');
 
 const BACKUP_KEEP = 5; // Quantidade de backups datados mantidos por tipo (daily / premigrate)
+const PERSIST_DEBOUNCE_MS = 1000;   // Agrupa escritas: grava 1 s após a última
+const PERSIST_MAX_WAIT_MS = 8000;   // Sob escrita contínua, força a gravação a cada ~8 s (maxWait)
+const BAK_INTERVAL_MS = 10 * 60 * 1000; // O .bak (cópia do arquivo anterior) é renovado no máximo a cada 10 min nas gravações assíncronas
+const STMT_CACHE_MAX = 300;         // Teto de statements compilados reutilizáveis (LRU simples)
 
 class DBManager {
     constructor() {
@@ -16,6 +20,10 @@ class DBManager {
         this.dirty = false;       // Houve escrita pedida enquanto uma gravação estava em andamento
         this.epoch = 0;           // Incrementa a cada persistSync: invalida gravações assíncronas mais antigas
         this.mainIsValid = false; // O arquivo atual em disco já foi validado (seguro de virar .bak)
+        this.firstDirtyAt = 0;    // Instante da primeira escrita ainda não gravada (base do maxWait)
+        this.lastBakAt = 0;       // Última vez que o .bak foi renovado
+        this.writeSeq = 0;        // Incrementa a cada escrita efetiva via prepare().run (base de caches de leitura)
+        this.stmtCache = new Map(); // SQL -> Statement compilado (reutilizado com reset)
     }
 
     /** Abre um buffer como banco e roda quick_check. Lança erro se inválido. */
@@ -40,6 +48,23 @@ class DBManager {
         } finally {
             try { db.close(); } catch (_) {}
         }
+    }
+
+    /**
+     * Validação barata do .tmp recém-gravado (a cada gravação assíncrona): assinatura 'SQLite format 3',
+     * tamanho de página válido, tamanho do arquivo coerente com o buffer e com a contagem de páginas do cabeçalho.
+     * A validação completa (abrir o banco) fica para persistSync/init.
+     */
+    _validateTmpCheap(buffer, fileSize) {
+        if (buffer.length < 100) throw new Error('arquivo .tmp pequeno demais');
+        if (buffer.toString('latin1', 0, 15) !== 'SQLite format 3') throw new Error('assinatura SQLite ausente no .tmp');
+        if (fileSize !== buffer.length) throw new Error(`tamanho do .tmp incoerente (${fileSize} != ${buffer.length})`);
+        let pageSize = buffer.readUInt16BE(16);
+        if (pageSize === 1) pageSize = 65536;
+        if (pageSize < 512 || (pageSize & (pageSize - 1)) !== 0) throw new Error(`tamanho de página inválido (${pageSize})`);
+        if (buffer.length % pageSize !== 0) throw new Error('tamanho do .tmp não é múltiplo da página');
+        const pages = buffer.readUInt32BE(28);
+        if (pages > 0 && pages * pageSize !== buffer.length) throw new Error('contagem de páginas do cabeçalho incoerente');
     }
 
     _tryLoad(file) {
@@ -142,49 +167,100 @@ class DBManager {
         if (this.mainIsValid) this.createBackup('daily', { oncePerDay: true });
     }
 
-    /** Intercepta .prepare para imitar a API do better-sqlite3 e auto-liberar a memória */
+    /** Descarta o cache de statements (sql.js já os libera em export()/close()). */
+    _clearStmtCache() {
+        this.stmtCache.clear();
+    }
+
+    /**
+     * Obtém (ou compila) o statement do SQL. Statements são reutilizados com reset entre usos:
+     * o wrapper é síncrono e nunca mantém um statement aberto entre chamadas, então reuso é seguro.
+     */
+    _getStmt(sql, rawPrepare) {
+        let stmt = this.stmtCache.get(sql);
+        if (stmt) {
+            this.stmtCache.delete(sql); // reinsere para manter ordem LRU
+            this.stmtCache.set(sql, stmt);
+            return stmt;
+        }
+        stmt = rawPrepare(sql);
+        if (this.stmtCache.size >= STMT_CACHE_MAX) {
+            const oldestKey = this.stmtCache.keys().next().value;
+            const old = this.stmtCache.get(oldestKey);
+            this.stmtCache.delete(oldestKey);
+            try { old.free(); } catch (_) {}
+        }
+        this.stmtCache.set(sql, stmt);
+        return stmt;
+    }
+
+    /** Intercepta .prepare para imitar a API do better-sqlite3 com cache de statements por SQL */
     _applyPrepareWrapper() {
         if (this.db.__bdsWrapped) return;
         this.db.__bdsWrapped = true;
         const originalPrepare = this.db.prepare.bind(this.db);
-        this.db.prepare = (sql) => {
-            const stmt = originalPrepare(sql);
+        const isInsert = (sql) => /^\s*(INSERT|REPLACE)\b/i.test(sql);
+        const isDml = (sql) => /^\s*(INSERT|REPLACE|UPDATE|DELETE)\b/i.test(sql);
 
-            const get = (...params) => {
-                stmt.bind(params);
-                const res = stmt.step() ? stmt.getAsObject() : null;
-                stmt.free();
-                return res;
+        this.db.prepare = (sql) => {
+            // Compila já aqui para que SQL inválido continue falhando em prepare()
+            this._getStmt(sql, originalPrepare);
+            const insert = isInsert(sql);
+            const dml = isDml(sql);
+
+            // Os métodos resolvem o statement no uso: se o sql.js o liberou (export/close), recompila.
+            const use = (fn) => {
+                const stmt = this._getStmt(sql, originalPrepare);
+                try {
+                    return fn(stmt);
+                } finally {
+                    try { stmt.reset(); } catch (_) {}
+                }
             };
 
-            const all = (...params) => {
+            const get = (...params) => use((stmt) => {
+                stmt.bind(params);
+                return stmt.step() ? stmt.getAsObject() : null;
+            });
+
+            const all = (...params) => use((stmt) => {
                 stmt.bind(params);
                 const res = [];
-                while(stmt.step()) {
-                    res.push(stmt.getAsObject());
-                }
-                stmt.free();
+                while (stmt.step()) res.push(stmt.getAsObject());
                 return res;
-            };
+            });
 
             const run = (...params) => {
-                stmt.run(params);
-                stmt.free();
+                use((stmt) => { stmt.run(params); });
                 // changes precisa ser lido ANTES de qualquer outro SELECT
                 const changes = this.db.getRowsModified();
-                this.schedulePersist();
+                // Só agenda gravação se algo mudou (ou se não é DML, ex.: DDL)
+                if (changes > 0 || !dml) { this.writeSeq++; this.schedulePersist(); }
 
-                try {
-                    // [PERF] Extrai o id diretamente do array retornado por exec()
-                    const result = this.db.exec("SELECT last_insert_rowid()")[0];
-                    const id = result ? result.values[0][0] : 0;
+                if (insert) {
+                    // Inserts leem o rowid na hora (valor correto mesmo se lido depois de outros statements)
+                    let id = 0;
+                    try {
+                        const result = this.db.exec('SELECT last_insert_rowid()')[0];
+                        id = result ? result.values[0][0] : 0;
+                    } catch (e) { id = 0; }
                     return { changes, lastInsertRowid: id };
-                } catch(e) {
-                    return { changes, lastInsertRowid: 0 };
                 }
+                // UPDATE/DELETE/DDL: lastInsertRowid sob demanda (getter lazy), sem exec extra a cada run()
+                const self = this;
+                return {
+                    changes,
+                    get lastInsertRowid() {
+                        try {
+                            const result = self.db.exec('SELECT last_insert_rowid()')[0];
+                            return result ? result.values[0][0] : 0;
+                        } catch (e) { return 0; }
+                    }
+                };
             };
 
-            return { get, all, run, free: () => stmt.free() };
+            // free() é no-op: o statement pertence ao cache
+            return { get, all, run, free: () => {} };
         };
     }
 
@@ -195,21 +271,31 @@ class DBManager {
         return this.db;
     }
 
+    /**
+     * Agenda a gravação com debounce de 1 s e maxWait de 8 s: sob escrita contínua o debounce
+     * sozinho adiaria para sempre; o teto garante gravação periódica.
+     */
     schedulePersist() {
+        const now = Date.now();
+        if (!this.firstDirtyAt) this.firstDirtyAt = now;
         if (this.saveTimer) clearTimeout(this.saveTimer);
+        const wait = Math.max(0, Math.min(PERSIST_DEBOUNCE_MS, this.firstDirtyAt + PERSIST_MAX_WAIT_MS - now));
         this.saveTimer = setTimeout(() => {
             this.saveTimer = null;
             this.persistAsync().catch(err => {
                 logger.error('[DBManager] Erro ao persistir banco:', { error: err.message });
             });
-        }, 1000); // Salva 1000ms após a última escrita de forma agrupada
+        }, wait);
+        if (this.saveTimer.unref) this.saveTimer.unref();
     }
 
     /** export() do sql.js reinicia a conexão e perde foreign_keys: reaplica sempre. */
     _export() {
         const data = this.db.export();
+        this._clearStmtCache(); // export() do sql.js libera todos os statements abertos
         try { this.db.exec('PRAGMA foreign_keys = ON;'); } catch (_) {}
-        return Buffer.from(data);
+        // Sem cópia extra: Buffer sobre a mesma memória do Uint8Array exportado
+        return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
     }
 
     async persistAsync() {
@@ -220,18 +306,21 @@ class DBManager {
         const epoch = this.epoch;
         const tempPath = `${this.dbPath}.tmp`;
         try {
+            this.firstDirtyAt = 0; // escritas a partir daqui iniciam novo ciclo de maxWait
             const buffer = this._export();
-            // [FASE 3] Persistência atômica: escreve em .tmp, valida e renomeia
+            // [FASE 3] Persistência atômica: escreve em .tmp, valida (barato) e renomeia
             await fs.promises.writeFile(tempPath, buffer);
-            this._validateBytes(buffer);
+            const tmpStat = await fs.promises.stat(tempPath);
+            this._validateTmpCheap(buffer, tmpStat.size);
             // Um persistSync mais novo já gravou (ou o banco foi fechado): snapshot obsoleto
             if (epoch !== this.epoch || !this.db) {
                 await fs.promises.unlink(tempPath).catch(() => {});
                 return;
             }
-            // Backup .bak do arquivo atual somente se ele foi validado
-            if (this.mainIsValid && fs.existsSync(this.dbPath)) {
-                await fs.promises.copyFile(this.dbPath, `${this.dbPath}.bak`).catch(() => {});
+            // Backup .bak do arquivo atual somente se ele foi validado e no máximo 1x por intervalo
+            // (o .bak também é renovado em persistSync: shutdown e antes de migrar)
+            if (this.mainIsValid && Date.now() - this.lastBakAt >= BAK_INTERVAL_MS && fs.existsSync(this.dbPath)) {
+                await fs.promises.copyFile(this.dbPath, `${this.dbPath}.bak`).then(() => { this.lastBakAt = Date.now(); }).catch(() => {});
             }
             // No Windows, rename para um destino existente pode falhar com EPERM
             try {
@@ -262,13 +351,14 @@ class DBManager {
         if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
         this.epoch++;
         this.dirty = false;
+        this.firstDirtyAt = 0;
         const tempPath = `${this.dbPath}.tmp.sync`;
         try {
             const buffer = this._export();
             fs.writeFileSync(tempPath, buffer);
             this._validateBytes(buffer);
             if (this.mainIsValid && fs.existsSync(this.dbPath)) {
-                try { fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`); } catch (_) {}
+                try { fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`); this.lastBakAt = Date.now(); } catch (_) {}
             }
             try {
                 fs.renameSync(tempPath, this.dbPath);
@@ -295,6 +385,7 @@ class DBManager {
         if (!this.db) return;
         if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
         this.persistSync();
+        this._clearStmtCache();
         try { this.db.close(); } catch (_) {}
         this.db = null;
     }

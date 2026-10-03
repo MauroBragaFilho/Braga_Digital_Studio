@@ -5,8 +5,12 @@ const path = require('path');
 const fs = require('fs');
 const { isRaw: isRawPath, isImage, findSiblingJpg } = require('./MediaTypes');
 const ffmpegLimiter = require('./FfmpegLimiter');
+const { PRIORITY } = ffmpegLimiter;
 
 const FFMPEG_TIMEOUT_MS = 45000;
+const THUMB_WIDTH = 480;       // grade ~300 px; 480 cobre telas HiDPI
+const THUMB_QUALITY = 4;       // -q:v do MJPEG (2 = máxima; 4 reduz bastante o tamanho sem perda visível)
+const LONG_VIDEO_SECONDS = 60; // acima disso usa -skip_frame nokey no primeiro ponto de busca
 const execFilePromise = util.promisify(execFile);
 
 class ThumbnailGenerator {
@@ -30,9 +34,10 @@ class ThumbnailGenerator {
      * @param {string} videoPath - Caminho do vídeo original
      * @param {string} uuid - UUID do arquivo (usado para o nome da imagem)
      * @param {number} duration - Duração do vídeo em segundos (extraída pelo FFprobe)
+     * @param {Object} [opts] opts.priority - prioridade no FfmpegLimiter (padrão LOW: importação/regeneração)
      * @returns {Promise<string>} O caminho absoluto do arquivo JPG gerado
      */
-    async generate(videoPath, uuid, duration = 0) {
+    async generate(videoPath, uuid, duration = 0, { priority = PRIORITY.LOW } = {}) {
         const outputPath = path.join(this.thumbnailsDir, `${uuid}.jpg`);
         
         // Define o tempo: 5 segundos ou metade do vídeo se for menor que 5s
@@ -59,34 +64,53 @@ class ThumbnailGenerator {
             if (sibling) thumbSource = sibling;
         }
 
-        // Comando FFmpeg: seek rápido (-ss antes de -i), extrai 1 frame (-vframes 1) em JPG de alta qualidade (-q:v 2)
+        // Comando FFmpeg: seek rápido (-ss antes de -i), 1 frame JPEG reduzido. A grade usa ~300 px
+        // (HiDPI => 480 px): antes o vídeo saía na resolução cheia (~115-390 KB); agora ~10-15 KB.
         const isPhoto = thumbSource.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i) || isRaw;
-        let args;
-        
+
         // yuvj420p (faixa total) é o que o encoder MJPEG aceita; vídeos de câmera (ex.: Sony, faixa
         // limitada ou 10 bits) falhavam com "Non full-range YUV is non-standard" e ficavam sem miniatura.
-        const toJpegFormat = 'format=yuvj420p';
-        const run = (extra, filters) => execFilePromise(
+        // min(...) evita ampliar mídias menores que a miniatura
+        const filters = `scale=w='min(${THUMB_WIDTH},iw)':h=-2:flags=fast_bilinear,format=yuvj420p`;
+        const run = (extra) => execFilePromise(
             this.ffmpegPath,
-            [...extra, '-vf', filters, '-vframes', '1', '-q:v', '2', '-y', outputPath],
+            [
+                '-an', '-sn', '-dn', '-nostdin', '-hide_banner', '-loglevel', 'error',
+                ...extra,
+                '-vf', filters, '-vframes', '1', '-q:v', String(THUMB_QUALITY), '-y', outputPath
+            ],
             { windowsHide: true, timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' }
         );
+        const assertNotEmpty = () => {
+            if (fs.statSync(outputPath).size === 0) throw new Error('Miniatura vazia');
+        };
 
         try {
           await ffmpegLimiter.run(async () => {
             if (isPhoto) {
-                await run(['-i', thumbSource], `scale=320:-1,${toJpegFormat}`);
+                await run(['-i', thumbSource]);
             } else {
-                try {
-                    await run(['-ss', timeString, '-i', thumbSource], toJpegFormat);
-                    if (fs.statSync(outputPath).size === 0) throw new Error('Miniatura vazia');
-                } catch (firstErr) {
-                    if (timeString === '00:00:00.000') throw firstErr;
-                    // Ponto de busca inválido (vídeo curto/duração incorreta): tenta o primeiro frame
-                    await run(['-i', thumbSource], toJpegFormat);
+                // Tentativas em ordem: (1) só keyframes (vídeos longos: ~4x mais rápido em GOP longo),
+                // (2) seek normal, (3) primeiro frame (ponto de busca inválido / vídeo curto).
+                const attempts = [];
+                if (duration > LONG_VIDEO_SECONDS) attempts.push(['-skip_frame', 'nokey', '-ss', timeString, '-i', thumbSource]);
+                attempts.push(['-ss', timeString, '-i', thumbSource]);
+                if (timeString !== '00:00:00.000') attempts.push(['-i', thumbSource]);
+
+                let lastErr;
+                for (const extra of attempts) {
+                    try {
+                        await run(extra);
+                        assertNotEmpty();
+                        lastErr = null;
+                        break;
+                    } catch (err) {
+                        lastErr = err;
+                    }
                 }
+                if (lastErr) throw lastErr;
             }
-          });
+          }, priority);
             return outputPath;
         } catch (error) {
             logger.error(`[ThumbnailGenerator] Falha ao gerar miniatura para ${videoPath}:`, error.message);

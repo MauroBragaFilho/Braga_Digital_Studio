@@ -69,6 +69,9 @@ function setupTabs() {
       tab.classList.add('active');
       const targetView = document.getElementById(targetId);
       if (targetView) targetView.classList.remove('hidden');
+      // O painel do módulo de transcrição só existe enquanto a aba está aberta
+      if (targetId === 'settingsTranscriptionView') mountTranscriptionPanel();
+      else unmountTranscriptionPanel();
       // Recarrega a lista de crash reports ao abrir a aba Sistema
       if (targetId === 'settingsSystemView') {
         loadCrashReports();
@@ -77,6 +80,39 @@ function setupTabs() {
       }
     });
   });
+}
+
+/* ==========================================================================
+   PAINEL DE TRANSCRIÇÃO (motor, modelos e GPU)
+   ========================================================================== */
+let modulesPanel = null;
+let analysisPanel = null;
+
+async function mountTranscriptionPanel() {
+  const host = document.getElementById('settingsTranscriptionPanel');
+  if (!host) return;
+  try {
+    modulesPanel = modulesPanel || await import('../components/modules-panel.js');
+    await modulesPanel.mountModulesPanel(host);
+  } catch (err) {
+    console.error('[SETTINGS] Falha ao carregar o painel de transcrição:', err);
+    host.textContent = 'Não foi possível carregar o painel de transcrição.';
+  }
+  // Servidor de IA da análise de transcrições (opcional): um erro aqui não derruba o painel acima
+  const aiHost = document.getElementById('settingsAnalysisPanel');
+  if (!aiHost) return;
+  try {
+    analysisPanel = analysisPanel || await import('../components/analysis-panel.js');
+    await analysisPanel.mountAnalysisPanel(aiHost);
+  } catch (err) {
+    console.error('[SETTINGS] Falha ao carregar o painel de análise com IA:', err);
+    aiHost.textContent = 'Não foi possível carregar a configuração da análise com IA.';
+  }
+}
+
+function unmountTranscriptionPanel() {
+  try { modulesPanel?.unmountModulesPanel(); } catch (_) { /* noop */ }
+  try { analysisPanel?.unmountAnalysisPanel(); } catch (_) { /* noop */ }
 }
 
 /* ==========================================================================
@@ -683,6 +719,7 @@ function setupSaveBar() {
 
 /** Ao sair da tela com alterações não salvas, desfaz as prévias para não deixar o app "meio mudado". */
 export function onLeave() {
+  unmountTranscriptionPanel();
   if (settingsDirty) {
     const s = state.settings || {};
     applyTheme(s.theme, s.accentColor);

@@ -248,7 +248,7 @@
 }
 
 .dev-card-status-dot.online {
-  background: #4caf50;
+  background: var(--success, #4caf50);
 }
 
 /* --- MEIO DO CARD (Wi-Fi, FTP, Storage) --- */
@@ -283,7 +283,7 @@
 
 .battery-info .material-symbols-rounded {
   font-size: 18px;
-  color: #4caf50;
+  color: var(--success, #4caf50);
 }
 
 .dev-card-middle-storage {
@@ -314,17 +314,17 @@
 
 .dev-card-storage-fill {
   height: 100%;
-  background: #4caf50;
+  background: var(--success, #4caf50);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
 
 .dev-card-storage-fill.warning {
-  background: #ff9800;
+  background: var(--warning, #ff9800);
 }
 
 .dev-card-storage-fill.critical {
-  background: #f44336;
+  background: var(--danger, #e53935);
 }
 
 /* FTP info */
@@ -420,7 +420,7 @@
 
 .inspector-badge {
   background: rgba(76, 175, 80, 0.15);
-  color: #4caf50;
+  color: var(--success, #4caf50);
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
@@ -541,7 +541,7 @@
 
 .inspector-footer-btn.danger {
   background: rgba(229, 57, 53, 0.15);
-  color: #e53935;
+  color: var(--danger-fg, #ff6b63);
   border: 1px solid rgba(229, 57, 53, 0.3);
 }
 
@@ -617,7 +617,7 @@
 
 .inspector-storage-fill {
   height: 100%;
-  background: #4caf50;
+  background: var(--success, #4caf50);
   transition: width 0.3s ease;
 }
 
@@ -742,11 +742,11 @@
 }
 
 .mtp-icon {
-  color: #00bcd4;
+  color: var(--info, #00bcd4);
 }
 
 .bdsm-icon {
-  color: #f25c05;
+  color: var(--accent);
 }
 
 .devices-modal-close-btn {
@@ -838,12 +838,12 @@
 
 .mtp-breadcrumb .bc-link {
   cursor: pointer;
-  color: #00bcd4;
+  color: var(--info, #00bcd4);
   transition: color 0.2s;
 }
 
 .mtp-breadcrumb .bc-link:hover {
-  color: #4dd0e1;
+  color: var(--info, #4dd0e1);
 }
 
 .mtp-breadcrumb .bc-current {
@@ -882,7 +882,7 @@
 .mtp-items-grid.error-state {
   display: block;
   text-align: center;
-  color: #f44336;
+  color: var(--danger, #e53935);
   padding: 40px;
 }
 
@@ -896,8 +896,10 @@
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s;
   position: relative;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 
 .mtp-item:hover {
@@ -906,7 +908,7 @@
 }
 
 .mtp-item.selected {
-  border-color: #00bcd4;
+  border-color: var(--info, #00bcd4);
   background: rgba(0, 188, 212, 0.1);
 }
 
@@ -916,7 +918,7 @@
   left: 8px;
   width: 18px;
   height: 18px;
-  accent-color: #00bcd4;
+  accent-color: var(--info, #00bcd4);
   pointer-events: none;
 }
 
@@ -925,11 +927,11 @@
 }
 
 .mtp-item .item-icon.folder {
-  color: #FFC107;
+  color: var(--warning, #ffc107);
 }
 
 .mtp-item .item-icon.file {
-  color: #00bcd4;
+  color: var(--info, #00bcd4);
 }
 
 .mtp-item .item-name {
@@ -976,7 +978,7 @@
 
 .mtp-progress-fill {
   height: 100%;
-  background: #00bcd4;
+  background: var(--info, #00bcd4);
   width: 0%;
   transition: width 0.2s;
 }
@@ -1079,7 +1081,7 @@
 }
 
 .mtp-item.bdsm-new .item-icon {
-  color: #f25c05;
+  color: var(--accent);
 }
 
 /* --- MANAGE HIDDEN MODAL --- */
@@ -1098,7 +1100,7 @@
 
 .manage-hidden-icon-active {
   font-size: 16px;
-  color: #4caf50;
+  color: var(--success, #4caf50);
 }
 
 .manage-hidden-icon-muted {
@@ -1154,11 +1156,11 @@
 }
 
 .manage-hidden-toggle-btn:hover.hide {
-  color: #f44336;
+  color: var(--danger, #e53935);
 }
 
 .manage-hidden-toggle-btn:hover.restore {
-  color: #4caf50;
+  color: var(--success, #4caf50);
 }
 
 .manage-hidden-toggle-btn .material-symbols-rounded {
@@ -1241,3 +1243,96 @@
 @media (prefers-reduced-motion: reduce) {
   .device-card, .dev-card-storage-fill, .inspector-storage-fill, .mtp-item { transition: none; }
 }
+
+/* ==========================================================================
+   REFORMULAÇÃO: estados (carregando/erro/vazio), chips por tipo e explorador em lista
+   ========================================================================== */
+.devices-updated { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.devices-icon-btn.spinning .material-symbols-rounded { animation: spin 0.9s linear infinite; }
+.devices-icon-btn:focus-visible, .dev-card-hide-btn:focus-visible, .dev-card-btn:focus-visible,
+.inspector-tab-btn:focus-visible, .inspector-footer-btn:focus-visible, .inspector-close-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Cartão */
+.device-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.device-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dev-card-info { padding-right: 30px; } /* espaço do botão de ocultar (antes cobria o nome) */
+.dev-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-card-category.tone-usb { color: var(--warning, #ff9800); }
+.dev-card-category.tone-bdsm { color: var(--accent); }
+.dev-card-category.tone-sony { color: #c26bff; }
+.dev-card-category.tone-mtp { color: var(--info, #00bcd4); }
+.dev-card-image-wrap.no-image, .inspector-image.no-image { color: var(--muted); }
+.dev-card-image-wrap.no-image .material-symbols-rounded { font-size: 34px; }
+.inspector-image.no-image { display: flex; align-items: center; justify-content: center; min-height: 140px; }
+.inspector-image.no-image .material-symbols-rounded { font-size: 64px; }
+.dev-card-storage-label { flex-wrap: wrap; row-gap: 2px; }
+.dev-card-storage-free { margin-left: auto; color: var(--muted); font-size: 11px; }
+.dev-card-btn.primary { background: var(--accent); }
+.inspector-footer { display: flex; flex-direction: column; gap: 8px; }
+.inspector-footer-btn.primary { background: var(--accent); border: none; }
+.inspector-footer-btn.primary:hover { filter: brightness(1.1); }
+.inspector-detail-value { max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.inspector-note { margin: 0; padding: 14px; border-radius: 10px; background: var(--card-2, var(--bg)); color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+
+/* Esqueleto de carregamento */
+.dev-skeleton { cursor: default; pointer-events: none; }
+.dev-skel-img, .dev-skel-lines i, .dev-skel-bar, .dev-skel-btn {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 6%, transparent), color-mix(in srgb, var(--text) 13%, transparent), color-mix(in srgb, var(--text) 6%, transparent));
+  background-size: 200% 100%; animation: devShimmer 1.4s ease-in-out infinite; border-radius: 8px;
+}
+.dev-skel-img { width: 80px; height: 75px; flex-shrink: 0; }
+.dev-skel-lines { flex: 1; display: flex; flex-direction: column; gap: 9px; }
+.dev-skel-lines i { display: block; height: 11px; }
+.dev-skel-lines i:nth-child(1) { width: 70%; height: 14px; } .dev-skel-lines i:nth-child(2) { width: 45%; } .dev-skel-lines i:nth-child(3) { width: 85%; }
+.dev-skel-bar { height: 40px; } .dev-skel-btn { height: 38px; }
+@keyframes devShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Vazio e erro */
+.devices-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 44px 20px; border: 1.5px dashed var(--line); border-radius: 14px; color: var(--muted); }
+.devices-empty-icon { font-size: 46px; color: var(--accent); opacity: 0.8; }
+.devices-empty h3 { margin: 0; color: var(--text); font-size: 16px; }
+.devices-empty p { margin: 0; font-size: 13px; }
+.devices-empty ul { list-style: none; margin: 6px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 7px; text-align: left; font-size: 12.5px; }
+.devices-empty li { display: flex; align-items: center; gap: 10px; }
+.devices-empty li .material-symbols-rounded { font-size: 19px; color: var(--accent); }
+.devices-error { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--danger, #e53935) 50%, var(--line)); background: color-mix(in srgb, var(--danger, #e53935) 9%, var(--card)); }
+.devices-error > .material-symbols-rounded { color: var(--danger-fg, #ff6b63); font-size: 24px; }
+.devices-error div { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.devices-error span { color: var(--muted); }
+
+/* Explorador em lista: nome, tamanho e seleção por linha */
+.mtp-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.mtp-filter { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; }
+.mtp-filter:focus-within { border-color: var(--accent); }
+.mtp-filter .material-symbols-rounded { font-size: 18px; color: var(--muted); }
+.mtp-filter input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 12.5px; padding: 8px 0; }
+.mtp-toolbar .devices-btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+.mtp-items-grid { display: flex; flex-direction: column; gap: 4px; }
+.mtp-items-grid.empty-state, .mtp-items-grid.error-state { display: block; text-align: center; padding: 40px 16px; color: var(--muted); }
+.mtp-item { flex-direction: row; align-items: center; gap: 12px; padding: 8px 12px; text-align: left; contain-intrinsic-size: auto 44px; }
+.mtp-item .item-name { flex: 1; min-width: 0; text-align: left; word-break: normal; white-space: nowrap; font-size: 12.5px; }
+.mtp-item .item-meta { flex-shrink: 0; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mtp-item .item-icon { font-size: 22px; }
+.mtp-item .item-icon.ok { color: var(--success, #4caf50); }
+.mtp-item.imported-item { opacity: 0.6; }
+.mtp-selected-size { color: var(--muted); font-variant-numeric: tabular-nums; }
+.mtp-dest-hint { margin-top: 3px; font-size: 11px; color: var(--muted); max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtp-breadcrumb .bc-link { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.mtp-breadcrumb .bc-link:hover { text-decoration: underline; }
+.mtp-breadcrumb .bc-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.dev-spin { animation: spin 1s linear infinite; }
+.mtp-item .checkbox { position: static; flex-shrink: 0; width: 17px; height: 17px; margin: 0; accent-color: var(--accent); }
+.mtp-item.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card-2, var(--card))); }
+.mtp-item:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.mtp-item.imported-item .checkbox, .mtp-item.bdsm-new .checkbox { display: none; }
+
+/* Grade responsiva: usa quantas colunas couberem (com o painel de detalhes aberto cai para uma coluna, sem rolagem lateral) */
+.devices-left-column { min-width: 0; }
+.devices-grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+.device-card { min-width: 0; }
+.dev-card-btn { min-width: 0; white-space: normal; }
+.dev-card-actions { flex-wrap: wrap; }
+
+/* Lista do celular (BDS Mobile): uma linha por vídeo */
+.bdsm-media-grid { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.bdsm-media-grid .mtp-item { cursor: default; }

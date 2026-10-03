@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const { assertAbsolutePath, assertSafePath, assertExternalUrl } = require('./validate');
+const { cachedAsync } = require('../infrastructure/hardware/cachedAsync');
 
 // Extensões que podem ser abertas com o aplicativo padrão do sistema (mídia, legendas e documentos simples).
 // Qualquer outra (.exe, .bat, .cmd, .com, .msi, .scr, .ps1, .vbs, .js, .lnk, .hta, .jar...) é recusada.
@@ -84,14 +85,15 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
     return appPaths.downloadsDir;
   });
 
-  ipcMain.handle('system:getCacheInfo', () => {
+  ipcMain.handle('system:getCacheInfo', async () => {
     const CacheService = require('../core/CacheService');
     const settings = getSettings();
     const svc = new CacheService(appPaths, {
       maxSizeMB: settings.cacheMaxSizeMB || 500,
       autoClean: !!settings.cacheAutoClean,
     });
-    return svc.getCacheInfo();
+    // Versão assíncrona: varrer thumbnails/waveforms de forma síncrona travaria o processo principal.
+    return svc.getCacheInfoAsync();
   });
 
   ipcMain.handle('system:clearCache', (_, categoryKey) => {
@@ -126,16 +128,22 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
     return result;
   });
 
-  ipcMain.handle('system:getStorageInfo', async () => {
+  // Armazenamento da sidebar: cache de 20 s com deduplicação de chamadas concorrentes (a sidebar
+  // consulta com frequência e cada enumeração de dispositivos MTP/USB custa um PowerShell).
+  const computeStorageInfo = async () => {
     const fs = require('fs/promises');
     try {
       const rootsToCheck = process.platform === 'win32'
         ? [appPaths.systemRoot, 'D:\\']
         : [appPaths.systemRoot];
 
-      const statsList = await Promise.all(
-        rootsToCheck.map(root => fs.statfs(root).catch(() => null))
-      );
+      // Disco do PC e provedores MTP/USB em paralelo (antes eram sequenciais).
+      const { deviceManager } = require('../infrastructure/hardware/DeviceManager');
+      const [statsList, mtpDevs, usbDevs] = await Promise.all([
+        Promise.all(rootsToCheck.map(root => fs.statfs(root).catch(() => null))),
+        deviceManager.getMtpDevices().catch((e) => { console.error('Error fetching MTP devices for sidebar', e); return []; }),
+        deviceManager.getStorageDevices().catch((e) => { console.error('Error fetching USB devices for sidebar', e); return []; })
+      ]);
 
       let totalPC = 0;
       let freePC = 0;
@@ -158,10 +166,6 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
 
       let device = null;
       try {
-        const MtpService = require('../core/MtpService');
-        const UsbService = require('../core/UsbService');
-        const mtpDevs = await MtpService.getDevices();
-        const usbDevs = await UsbService.getDevices();
         const devs = [...mtpDevs, ...usbDevs];
         if (devs.length > 0) {
           const d = devs[0];
@@ -202,5 +206,7 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
       console.error('Storage info error:', e);
       return null;
     }
-  });
+  };
+  const storageInfoCache = cachedAsync(computeStorageInfo, 20000);
+  ipcMain.handle('system:getStorageInfo', () => storageInfoCache.get());
 };
