@@ -45,7 +45,7 @@ $results | ConvertTo-Json -Compress
       const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
       exec(
         `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
-        { encoding: 'utf8' },
+        { encoding: 'utf8', timeout: 8000, windowsHide: true },
         (error, stdout) => {
           if (error) {
             logger.error('WindowsStorageProvider:getDevices:error', { error: error.message });

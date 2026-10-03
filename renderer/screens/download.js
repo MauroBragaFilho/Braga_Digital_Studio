@@ -188,7 +188,6 @@ export function initScreen() {
   }
 
   fetchQueue();
-  setupEventListeners();
 }
 
 
@@ -217,122 +216,29 @@ async function fetchQueue() {
   }
 }
 
-// Assinaturas IPC ativas (a função retornada pelo preload cancela a assinatura)
-let ipcUnsubs = [];
-
-function setupEventListeners() {
-  const api = getDownloadsApi();
-  clearIpcSubscriptions();
-
-  if (api.onUpdated) {
-    const unsub = api.onUpdated((queue) => {
-      state.downloadQueue = queue;
-      renderDownloadQueue(queue);
-    });
-    if (typeof unsub === 'function') ipcUnsubs.push(unsub);
-  }
-
-  if (api.onProgress) {
-    const unsub = api.onProgress((data) => {
-      updateProgressVisuals(data);
-    });
-    if (typeof unsub === 'function') ipcUnsubs.push(unsub);
-  }
-}
-
-function clearIpcSubscriptions() {
-  ipcUnsubs.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
-  ipcUnsubs = [];
-}
+// As assinaturas de progresso/fila (onProgress/onUpdated) ficam SOMENTE em app.js (um unico assinante),
+// que repassa para renderDownloadQueue / updateProgressVisuals exportados aqui.
 
 export function onLeave() {
   clearTimeout(metadataTimer);
   metadataTimer = null;
-  clearIpcSubscriptions();
 }
 
 export function onEnter() {
-  // Reassina os eventos e atualiza a fila (pode ter mudado enquanto a tela estava oculta)
+  // Atualiza a fila (pode ter mudado enquanto a tela estava oculta)
   fetchQueue();
-  setupEventListeners();
 }
 
-export function renderDownloadQueue(queue) {
-  const container = document.getElementById('downloadQueueContainer');
-  const activeSection = document.getElementById('activeDownloadSection');
-  const activeContent = document.getElementById('activeDownloadContent');
-  if (!container) return;
+// ---- Renderização da fila: diff por item.id (apenas linhas alteradas são recriadas) ----
+const rowCache = new Map();   // id -> { sig, el, fill, pct, speed }
+let queueEmptyShown = false;
+let activeRefs = null;        // { key, id, fill, pct, bytes, speed }
+let queueDelegated = false;
 
-  const items = queue || [];
-
-  // Métricas
-  const total = items.length;
-  const queuedCount = items.filter(i => i.status === 'queued').length;
-  const activeItem = items.find(i => i.status === 'downloading');
-  const activeCount = activeItem ? 1 : 0;
-  const completedCount = items.filter(i => i.status === 'completed').length;
-  const failedCount = items.filter(i => i.status === 'failed').length;
-
-  const metricTotal = document.getElementById('metricTotal');
-  const metricQueued = document.getElementById('metricQueued');
-  const metricActive = document.getElementById('metricActive');
-  const metricCompleted = document.getElementById('metricCompleted');
-  const metricFailed = document.getElementById('metricFailed');
-
-  if (metricTotal) metricTotal.textContent = total;
-  if (metricQueued) metricQueued.textContent = queuedCount;
-  if (metricActive) metricActive.textContent = activeCount;
-  if (metricCompleted) metricCompleted.textContent = completedCount;
-  if (metricFailed) metricFailed.textContent = failedCount;
-
-  // Download Ativo
-  if (activeItem && activeSection && activeContent) {
-    activeSection.classList.remove('hidden');
-    activeSection.classList.add('active');
-    
-    const thumbHtml = activeItem.thumbnail 
-      ? `<img src="${escapeHtml(activeItem.thumbnail)}" class="active-download-thumb" />` 
-      : `<div class="active-download-thumb-placeholder"><span class="material-symbols-rounded">movie</span></div>`;
-
-    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : escapeHtml(activeItem.platform || 'YouTube');
-
-    activeContent.innerHTML = `
-      ${thumbHtml}
-      <div class="active-download-info">
-        <div class="active-download-title-row">
-          <span class="active-download-title" title="${escapeHtml(activeItem.title)}">${escapeHtml(activeItem.title)}</span>
-          <span class="active-download-badge">${escapeHtml(activeItem.format)} • ${escapeHtml(activeItem.quality)}</span>
-        </div>
-        <div class="active-download-meta">
-          ${channelInfo} • ${activeItem.duration ? formatDuration(activeItem.duration) : '--'}
-        </div>
-        <div class="active-download-progress">
-          <div id="dl-fill-${activeItem.id}" class="active-download-progress-fill" style="width: ${activeItem.progress || 0}%;"></div>
-        </div>
-        <div class="active-download-stats">
-          <span id="dl-percent-${activeItem.id}">${Math.round(activeItem.progress || 0)}%</span>
-          <span id="dl-bytes-${activeItem.id}">${formatBytes(activeItem.downloadedBytes)} / ${formatBytes(activeItem.totalBytes)}</span>
-          <span id="dl-speed-${activeItem.id}">${escapeHtml(activeItem.speed || '--')} • ETA ${escapeHtml(activeItem.eta || '--')}</span>
-        </div>
-      </div>
-      <button type="button" class="active-download-cancel-btn" data-action="cancel" data-id="${activeItem.id}">
-        <span class="material-symbols-rounded">cancel</span>
-        Cancelar
-      </button>
-    `;
-  } else if (activeSection) {
-    activeSection.classList.add('hidden');
-    activeSection.classList.remove('active');
-  }
-
-  if (items.length === 0) {
-    container.innerHTML = `<div class="queue-empty-state">Nenhum download na fila.</div>`;
-    setBusy(false);
-    return;
-  }
-
-  let html = '';
-  items.forEach((item) => {
+function buildRowHtml(item, dyn) {
+  const prog = dyn ? (item.progress || 0) : 0;
+  const speed = dyn ? (item.speed || '--') : '--';
+  const eta = dyn ? item.eta : '';
     let statusBadge = '';
     let actionsHtml = '';
     let cardClass = 'download-card';
@@ -395,7 +301,7 @@ export function renderDownloadQueue(queue) {
     }
 
     const thumbHtml = item.thumbnail
-      ? `<img src="${escapeHtml(item.thumbnail)}" class="download-card-thumb" />`
+      ? `<img src="${escapeHtml(item.thumbnail)}" class="download-card-thumb" loading="lazy" decoding="async" alt="" />`
       : `<div class="download-card-thumb-placeholder"><span class="material-symbols-rounded">movie</span></div>`;
 
     let formatAndQualitySelectors = '';
@@ -440,7 +346,7 @@ export function renderDownloadQueue(queue) {
     const durationText = item.duration ? formatDuration(item.duration) : '';
     const metaSubtitle = `${channelText} • ${escapeHtml(item.platform || 'YouTube')}${durationText ? ' • ' + durationText : ''}`;
 
-    html += `
+    return `
       <div class="${cardClass}" data-item-id="${item.id}">
         <div class="download-card-top">
           <div class="download-card-info">
@@ -456,11 +362,11 @@ export function renderDownloadQueue(queue) {
         <div class="download-card-bottom">
           <div class="download-card-progress-section">
             <div class="download-card-progress-track">
-              <div class="download-card-progress-fill" style="width: ${item.progress || 0}%;"></div>
+              <div class="download-card-progress-fill dl-row-fill" style="width: ${prog}%;"></div>
             </div>
             <div class="download-card-progress-info">
-              <span>${Math.round(item.progress || 0)}%</span>
-              <span class="speed-info">${escapeHtml(item.speed || '--')} ${item.eta ? '• ETA ' + escapeHtml(item.eta) : ''}</span>
+              <span class="dl-row-pct">${Math.round(prog)}%</span>
+              <span class="speed-info">${escapeHtml(speed)} ${eta ? '• ETA ' + escapeHtml(eta) : ''}</span>
             </div>
           </div>
           <div class="download-card-actions">
@@ -472,51 +378,161 @@ export function renderDownloadQueue(queue) {
         </div>
       </div>
     `;
-  });
+}
 
-  container.innerHTML = html;
-  
-  // Event delegation para botões dinâmicos
-  container.querySelectorAll('[data-action]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const action = btn.dataset.action;
-      const id = btn.dataset.id;
-      const path = btn.dataset.path;
-      
-      handleQueueAction(action, id, path);
-    });
+function bindQueueDelegation(container, activeContent) {
+  if (queueDelegated) return;
+  queueDelegated = true;
+  const onClick = (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn || btn.tagName === 'SELECT') return;
+    e.stopPropagation();
+    handleQueueAction(btn.dataset.action, btn.dataset.id, btn.dataset.path);
+  };
+  container.addEventListener('click', onClick);
+  if (activeContent) activeContent.addEventListener('click', onClick);
+  container.addEventListener('change', (e) => {
+    const select = e.target.closest('select[data-action]');
+    if (!select) return;
+    if (select.dataset.action === 'toggle-format') toggleItemFormat(select.dataset.id, select.value);
+    else if (select.dataset.action === 'update-quality') updateItemQuality(select.dataset.id, select.value);
   });
-  
-  // Selects de formato e qualidade
-  container.querySelectorAll('[data-action="toggle-format"]').forEach(select => {
-    select.addEventListener('change', (e) => {
-      const id = select.dataset.id;
-      const newFormat = e.target.value;
-      toggleItemFormat(id, newFormat);
-    });
-  });
-  
-  container.querySelectorAll('[data-action="update-quality"]').forEach(select => {
-    select.addEventListener('change', (e) => {
-      const id = select.dataset.id;
-      const newQuality = e.target.value;
-      updateItemQuality(id, newQuality);
-    });
-  });
-  
-  // Event delegation para seção de download ativo
-  if (activeContent) {
-    activeContent.querySelectorAll('[data-action]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const action = btn.dataset.action;
-        const id = btn.dataset.id;
-        handleQueueAction(action, id, null);
-      });
-    });
+}
+
+function rowFromHtml(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html.trim();
+  return tpl.content.firstElementChild;
+}
+
+function patchRowProgress(entry, item) {
+  if (typeof item.progress !== 'number') return;
+  if (entry.fill) entry.fill.style.width = `${item.progress}%`;
+  if (entry.pct) entry.pct.textContent = `${Math.round(item.progress)}%`;
+  if (entry.speed) entry.speed.textContent = `${item.speed || '--'} ${item.eta ? '• ETA ' + item.eta : ''}`;
+}
+
+export function renderDownloadQueue(queue) {
+  const container = document.getElementById('downloadQueueContainer');
+  const activeSection = document.getElementById('activeDownloadSection');
+  const activeContent = document.getElementById('activeDownloadContent');
+  if (!container) return;
+
+  const items = queue || [];
+
+  // Tela oculta: não gasta DOM; onEnter busca a fila de novo e desenha
+  const viewEl = container.closest('.view');
+  if (viewEl && viewEl.classList.contains('hidden')) return;
+  bindQueueDelegation(container, activeContent);
+
+  // Métricas (uma passada)
+  let queuedCount = 0, completedCount = 0, failedCount = 0, activeItem = null;
+  for (const i of items) {
+    if (i.status === 'queued') queuedCount++;
+    else if (i.status === 'completed') completedCount++;
+    else if (i.status === 'failed') failedCount++;
+    else if (i.status === 'downloading' && !activeItem) activeItem = i;
   }
-  
+  const total = items.length;
+  const activeCount = activeItem ? 1 : 0;
+  const setText = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== String(v)) el.textContent = v; };
+  setText('metricTotal', total);
+  setText('metricQueued', queuedCount);
+  setText('metricActive', activeCount);
+  setText('metricCompleted', completedCount);
+  setText('metricFailed', failedCount);
+
+  // Download Ativo
+  if (activeItem && activeSection && activeContent) {
+    activeSection.classList.remove('hidden');
+    activeSection.classList.add('active');
+    
+    const thumbHtml = activeItem.thumbnail 
+      ? `<img src="${escapeHtml(activeItem.thumbnail)}" class="active-download-thumb" />` 
+      : `<div class="active-download-thumb-placeholder"><span class="material-symbols-rounded">movie</span></div>`;
+
+    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : escapeHtml(activeItem.platform || 'YouTube');
+
+    const activeKey = [activeItem.id, activeItem.thumbnail, activeItem.title, activeItem.channel, activeItem.platform, activeItem.duration, activeItem.format, activeItem.quality].join('|');
+    if (activeRefs && activeRefs.key === activeKey && activeContent.contains(activeRefs.fill)) {
+      updateProgressVisuals(activeItem);
+    } else {
+    activeContent.innerHTML = `
+      ${thumbHtml}
+      <div class="active-download-info">
+        <div class="active-download-title-row">
+          <span class="active-download-title" title="${escapeHtml(activeItem.title)}">${escapeHtml(activeItem.title)}</span>
+          <span class="active-download-badge">${escapeHtml(activeItem.format)} • ${escapeHtml(activeItem.quality)}</span>
+        </div>
+        <div class="active-download-meta">
+          ${channelInfo} • ${activeItem.duration ? formatDuration(activeItem.duration) : '--'}
+        </div>
+        <div class="active-download-progress">
+          <div id="dl-fill-${activeItem.id}" class="active-download-progress-fill" style="width: ${activeItem.progress || 0}%;"></div>
+        </div>
+        <div class="active-download-stats">
+          <span id="dl-percent-${activeItem.id}">${Math.round(activeItem.progress || 0)}%</span>
+          <span id="dl-bytes-${activeItem.id}">${formatBytes(activeItem.downloadedBytes)} / ${formatBytes(activeItem.totalBytes)}</span>
+          <span id="dl-speed-${activeItem.id}">${escapeHtml(activeItem.speed || '--')} • ETA ${escapeHtml(activeItem.eta || '--')}</span>
+        </div>
+      </div>
+      <button type="button" class="active-download-cancel-btn" data-action="cancel" data-id="${activeItem.id}">
+        <span class="material-symbols-rounded">cancel</span>
+        Cancelar
+      </button>
+    `;
+    activeRefs = {
+      key: activeKey,
+      id: activeItem.id,
+      fill: activeContent.querySelector('.active-download-progress-fill'),
+      pct: activeContent.querySelector('[id^="dl-percent-"]'),
+      bytes: activeContent.querySelector('[id^="dl-bytes-"]'),
+      speed: activeContent.querySelector('[id^="dl-speed-"]')
+    };
+    }
+  } else if (activeSection) {
+    activeRefs = null;
+    activeSection.classList.add('hidden');
+    activeSection.classList.remove('active');
+  }
+
+  if (items.length === 0) {
+    rowCache.clear();
+    container.innerHTML = `<div class="queue-empty-state">Nenhum download na fila.</div>`;
+    queueEmptyShown = true;
+    setBusy(false);
+    return;
+  }
+  if (queueEmptyShown) { container.innerHTML = ''; queueEmptyShown = false; }
+
+  const seen = new Set();
+  items.forEach((item, idx) => {
+    const key = String(item.id);
+    seen.add(key);
+    const sig = buildRowHtml(item, false);
+    let entry = rowCache.get(key);
+    if (!entry || entry.sig !== sig || entry.el.parentNode !== container) {
+      const el = rowFromHtml(buildRowHtml(item, true));
+      if (!el) return;
+      if (entry && entry.el.parentNode === container) container.replaceChild(el, entry.el);
+      entry = {
+        sig, el,
+        fill: el.querySelector('.dl-row-fill'),
+        pct: el.querySelector('.dl-row-pct'),
+        speed: el.querySelector('.speed-info')
+      };
+      rowCache.set(key, entry);
+    } else if (item.status === 'downloading') {
+      patchRowProgress(entry, item);
+    }
+    const ref = container.children[idx];
+    if (ref !== entry.el) container.insertBefore(entry.el, ref || null);
+  });
+  for (const [key, entry] of rowCache) {
+    if (!seen.has(key)) { entry.el.remove(); rowCache.delete(key); }
+  }
+  while (container.children.length > items.length) container.lastElementChild.remove();
+
   setBusy(activeCount > 0);
 }
 
@@ -544,24 +560,16 @@ async function handleQueueAction(action, id, path) {
 }
 
 export function updateProgressVisuals(payload) {
-  if (!payload.id) return;
-  const fill = document.getElementById(`dl-fill-${payload.id}`);
-  const percentEl = document.getElementById(`dl-percent-${payload.id}`);
-  const speedEl = document.getElementById(`dl-speed-${payload.id}`);
-  const bytesEl = document.getElementById(`dl-bytes-${payload.id}`);
-
-  if (fill && typeof payload.progress === 'number') {
-    fill.style.width = `${payload.progress}%`;
+  if (!payload || !payload.id) return;
+  if (activeRefs && activeRefs.id === payload.id) {
+    const r = activeRefs;
+    if (r.fill && typeof payload.progress === 'number') r.fill.style.width = `${payload.progress}%`;
+    if (r.pct && typeof payload.progress === 'number') r.pct.textContent = `${Math.round(payload.progress)}%`;
+    if (r.speed) r.speed.textContent = `${payload.speed || '--'} • ETA ${payload.eta || '--'}`;
+    if (r.bytes) r.bytes.textContent = `${formatBytes(payload.downloadedBytes)} / ${formatBytes(payload.totalBytes)}`;
   }
-  if (percentEl && typeof payload.progress === 'number') {
-    percentEl.textContent = `${Math.round(payload.progress)}%`;
-  }
-  if (speedEl) {
-    speedEl.textContent = `${payload.speed || '--'} | ETA ${payload.eta || '--'}`;
-  }
-  if (bytesEl) {
-    bytesEl.textContent = `${formatBytes(payload.downloadedBytes)} / ${formatBytes(payload.totalBytes)}`;
-  }
+  const row = rowCache.get(String(payload.id));
+  if (row) patchRowProgress(row, payload);
 }
 
 export function setControlsEnabled(enabled) {

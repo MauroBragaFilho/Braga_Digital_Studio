@@ -9,7 +9,7 @@
  *
  * Cobertura:
  *   • Interação direta do usuário (drag/teclado): evento input em capture.
- *   • Alterações programáticas (slider.value = X): watchdog periódico 120ms.
+ *   • Alterações programáticas (slider.value = X): watchdog periódico de 1s (pausado com a janela oculta).
  *   • Sliders criados dinamicamente (ex.: linhas .montage-pct-slider): polling.
  *
  * Nenhum arquivo de tela precisa de alteração — o helper se auto-inicializa
@@ -18,7 +18,7 @@
  */
 
 const SLIDER_SELECTOR = 'input[type="range"]';
-const POLL_INTERVAL_MS = 120;
+const POLL_INTERVAL_MS = 1000; // watchdog só para mudanças programáticas (a interação do usuário é imediata via eventos)
 
 function computePct(el) {
   const min = parseFloat(el.min);
@@ -65,5 +65,6 @@ export function initSliderSync() {
 
   // Watchdog leve: cobre mudanças programáticas (slider.value = X) e
   // sliders criados dinamicamente (ex.: .montage-pct-slider do metadata.js).
-  setInterval(syncAllSliders, POLL_INTERVAL_MS);
+  setInterval(() => { if (!document.hidden) syncAllSliders(); }, POLL_INTERVAL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncAllSliders(); });
 }

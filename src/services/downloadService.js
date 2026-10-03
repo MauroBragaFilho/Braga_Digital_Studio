@@ -97,40 +97,36 @@ class DownloadManager extends EventEmitter {
     }
   }
 
+  /** UPSERT em um único statement (antes: SELECT + UPDATE/INSERT). created_at nunca é sobrescrito. */
+  static get UPSERT_SQL() {
+    return `
+      INSERT INTO download_queue (
+        id, url, title, thumbnail, channel, platform, duration, format, quality, status, progress,
+        downloaded_bytes, total_bytes, speed, eta, output_path, error,
+        position, created_at, started_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        url = excluded.url, title = excluded.title, thumbnail = excluded.thumbnail,
+        channel = excluded.channel, platform = excluded.platform, duration = excluded.duration,
+        format = excluded.format, quality = excluded.quality, status = excluded.status,
+        progress = excluded.progress, downloaded_bytes = excluded.downloaded_bytes,
+        total_bytes = excluded.total_bytes, speed = excluded.speed, eta = excluded.eta,
+        output_path = excluded.output_path, error = excluded.error, position = excluded.position,
+        started_at = excluded.started_at, completed_at = excluded.completed_at
+    `;
+  }
+
   saveItemToDb(item) {
     try {
       const db = dbManager.get();
-      const exists = db.prepare('SELECT id FROM download_queue WHERE id = ?').get(item.id);
-      if (exists) {
-        db.prepare(`
-          UPDATE download_queue SET
-            url = ?, title = ?, thumbnail = ?, channel = ?, platform = ?, duration = ?,
-            format = ?, quality = ?, status = ?, progress = ?, downloaded_bytes = ?, total_bytes = ?,
-            speed = ?, eta = ?, output_path = ?, error = ?, position = ?,
-            started_at = ?, completed_at = ?
-          WHERE id = ?
-        `).run(
-          item.url, item.title, item.thumbnail, item.channel || '', item.platform || '', item.duration || null,
-          item.format, item.quality, item.status, item.progress, item.downloadedBytes, item.totalBytes,
-          item.speed, item.eta, item.outputPath, item.error, item.position,
-          item.startedAt || null, item.completedAt || null,
-          item.id
-        );
-      } else {
-        db.prepare(`
-          INSERT INTO download_queue (
-            id, url, title, thumbnail, channel, platform, duration, format, quality, status, progress,
-            downloaded_bytes, total_bytes, speed, eta, output_path, error,
-            position, created_at, started_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          item.id, item.url, item.title, item.thumbnail, item.channel || '', item.platform || '', item.duration || null,
-          item.format, item.quality, item.status, item.progress, item.downloadedBytes, item.totalBytes,
-          item.speed, item.eta, item.outputPath, item.error, item.position,
-          item.createdAt || new Date().toISOString(),
-          item.startedAt || null, item.completedAt || null
-        );
-      }
+      // O DBManager já mantém cache de statements por SQL: prepare() aqui é barato.
+      db.prepare(DownloadManager.UPSERT_SQL).run(
+        item.id, item.url, item.title, item.thumbnail, item.channel || '', item.platform || '', item.duration || null,
+        item.format, item.quality, item.status, item.progress, item.downloadedBytes, item.totalBytes,
+        item.speed, item.eta, item.outputPath, item.error, item.position,
+        item.createdAt || new Date().toISOString(),
+        item.startedAt || null, item.completedAt || null
+      );
     } catch (err) {
       logger.error('[DownloadManager] Erro ao salvar item no banco:', err);
     }
@@ -670,10 +666,12 @@ class DownloadManager extends EventEmitter {
 
     if (!changed) return;
 
-    // Throttle (~500ms) de gravação no SQLite e de emissão para a UI; mudanças de destino
-    // (outputPath/título) são gravadas na hora. Estados finais sempre são gravados à parte.
+    // O progresso parcial NÃO é gravado no SQLite a cada tick: ao reiniciar, itens em andamento voltam
+    // com progresso 0 (initDatabaseQueue) e o yt-dlp retoma o ".part", então só mudanças de estado/destino
+    // (outputPath/título) e a finalização (completed/failed/cancelled/paused) são persistidas.
+    // A emissão para a UI continua com throttle (~500ms) e leva só o item, nunca a fila inteira.
     const now = Date.now();
-    if (forceSave || now - this._lastSaveAt >= PROGRESS_THROTTLE_MS) {
+    if (forceSave) {
       this._lastSaveAt = now;
       this.saveItemToDb(item);
     }

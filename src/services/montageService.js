@@ -7,6 +7,11 @@ const { ffmpegTool } = require('../infrastructure/external-tools/adapters/Ffmpeg
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
+const probeCache = require('../core/ffmpeg/ProbeCache');
+
+// Progresso/log para a UI no máximo a cada 250 ms; stderr guarda só o final (~8 KB)
+const EMIT_THROTTLE_MS = 250;
+const STDERR_TAIL_BYTES = 8192;
 
 class MontageService extends EventEmitter {
   constructor({ paths, getSettings }) {
@@ -25,6 +30,10 @@ class MontageService extends EventEmitter {
   }
 
   async probeFile(filePath) {
+    return probeCache.getOrLoad(filePath, () => this._probeFileRaw(filePath), 'montage-probe');
+  }
+
+  async _probeFileRaw(filePath) {
     const ffprobe = ffprobeTool.resolve();
 
     let result;
@@ -206,19 +215,18 @@ class MontageService extends EventEmitter {
         if (!filePath || !fs.existsSync(filePath)) return;
         
         const currentIdx = inputIndex;
-        inputFiles.push(filePath);
-        inputIndex++;
-        
-        let vFilter = '';
-        let aFilter = '';
-        
+        // Corte do vídeo principal (início/duração) aplicado na ENTRADA (-ss/-t): o ffmpeg busca o ponto
+        // e decodifica só o trecho, em vez de decodificar tudo e descartar frames com trim.
+        const inputOpts = [];
         if (isMain) {
-            vFilter = `[${currentIdx}:v]trim=start=${mainCutStart}:duration=${mainCutDuration},setpts=PTS-STARTPTS[v${currentIdx}_trim];[v${currentIdx}_trim]`;
-            aFilter = `[${currentIdx}:a]atrim=start=${mainCutStart}:duration=${mainCutDuration},asetpts=PTS-STARTPTS[a${currentIdx}_trim];[a${currentIdx}_trim]`;
-        } else {
-            vFilter = `[${currentIdx}:v]`;
-            aFilter = `[${currentIdx}:a]`;
+            if (Number(mainCutStart) > 0) inputOpts.push('-ss', String(mainCutStart));
+            if (Number(mainCutDuration) > 0) inputOpts.push('-t', String(mainCutDuration));
         }
+        inputFiles.push({ path: filePath, opts: inputOpts });
+        inputIndex++;
+
+        let vFilter = `[${currentIdx}:v]`;
+        let aFilter = `[${currentIdx}:a]`;
         
         vFilter += `scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=decrease,pad=${targetRes.w}:${targetRes.h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
         if (fps !== 'Manter original') {
@@ -251,11 +259,11 @@ class MontageService extends EventEmitter {
 
     const filterComplex = filterParts.join(';');
 
-    let args = ['-y'];
+    let args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'warning'];
     // Decodificação acelerada apenas quando o usuário mantém HW habilitado
     const settingsHw = hardwareDetection.settings || {};
     if (settingsHw.useHardwareAcceleration !== false) args.push('-hwaccel', 'auto');
-    inputFiles.forEach(f => args.push('-i', f));
+    inputFiles.forEach(f => args.push(...f.opts, '-i', f.path));
     
     args.push('-filter_complex', filterComplex);
     args.push('-map', '[vfinal]', '-map', '[afinal]');
@@ -272,31 +280,56 @@ class MontageService extends EventEmitter {
         this.currentProcess = child;
         
         let stderr = '';
+        let stdoutRemainder = '';
+        let lastEmit = 0;
+        let pendingLog = '';
+        let logTimer = null;
+        const flushLog = () => {
+            if (logTimer) { clearTimeout(logTimer); logTimer = null; }
+            if (pendingLog) { this.emit('log', pendingLog); pendingLog = ''; }
+        };
 
         child.stdout.on('data', (chunk) => {
-            const text = chunk.toString('utf8');
-            const outTimeMatch = text.match(/out_time_ms=(\d+)/);
-            const speedMatch = text.match(/speed=\s*([\d.]+)x/);
-            const fpsMatch = text.match(/fps=\s*([\d.]+)/);
+            // Linhas completas apenas (um chunk pode cortar "out_time_ms=123" ao meio); vale o ÚLTIMO valor.
+            const lines = (stdoutRemainder + chunk.toString('utf8')).split(/\r?\n/);
+            stdoutRemainder = lines.pop();
 
-            if (outTimeMatch && totalDuration > 0) {
-                const currentSec = Number(outTimeMatch[1]) / 1000000;
+            let outTimeUs = null;
+            let speed = '';
+            let fpsVal = '';
+            for (const line of lines) {
+                if (line.startsWith('out_time_ms=')) {
+                    const v = Number(line.slice(12));
+                    if (Number.isFinite(v) && v >= 0) outTimeUs = v;
+                } else if (line.startsWith('speed=')) {
+                    const m = /speed=\s*([\d.]+)x/.exec(line);
+                    if (m) speed = `${m[1]}x`;
+                } else if (line.startsWith('fps=')) {
+                    fpsVal = line.slice(4).trim();
+                }
+            }
+
+            const now = Date.now();
+            if (outTimeUs !== null && totalDuration > 0 && now - lastEmit >= EMIT_THROTTLE_MS) {
+                lastEmit = now;
+                const currentSec = outTimeUs / 1000000;
                 const percent = Math.min(100, (currentSec / totalDuration) * 100);
-                
+
                 this.emit('progress', {
                     percent,
                     currentFile: this.currentBatchItem ? this.currentBatchItem.currentFile : 1,
                     totalFiles: this.currentBatchItem ? this.currentBatchItem.totalFiles : 1,
-                    speed: speedMatch ? `${speedMatch[1]}x` : '',
-                    fps: fpsMatch ? fpsMatch[1] : ''
+                    speed,
+                    fps: fpsVal
                 });
             }
         });
 
         child.stderr.on('data', (chunk) => {
             const text = chunk.toString('utf8');
-            stderr += text;
-            this.emit('log', text);
+            stderr = (stderr + text).slice(-STDERR_TAIL_BYTES);
+            pendingLog = (pendingLog + text).slice(-STDERR_TAIL_BYTES);
+            if (!logTimer) logTimer = setTimeout(flushLog, EMIT_THROTTLE_MS);
         });
 
         // Remove o arquivo de saída parcial (ffmpeg interrompido/falho deixa um contêiner inválido)
@@ -309,11 +342,13 @@ class MontageService extends EventEmitter {
         };
 
         child.on('error', (err) => {
+            flushLog();
             this.currentProcess = null;
             removePartialOutput();
             reject(err);
         });
         child.on('close', (code) => {
+            flushLog();
             this.currentProcess = null;
             if (this.cancelRequested) {
                 removePartialOutput();
@@ -323,7 +358,7 @@ class MontageService extends EventEmitter {
                 return resolve();
             }
             removePartialOutput();
-            reject(new Error(`O motor de mídia finalizou com código ${code}`));
+            reject(new Error(`O motor de mídia finalizou com código ${code}${stderr ? `: ${stderr.trim().slice(-300)}` : ''}`));
         });
     });
   }

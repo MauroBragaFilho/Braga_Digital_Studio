@@ -2,9 +2,10 @@ const logger = require('../../services/logService');
 const fs = require('fs');
 const path = require('path');
 const dbManager = require('./database');
+const { mediaTypeCaseSql } = require('../media/MediaTypes');
 
 // [FASE 3.2] Controle de versao do schema com tabela de metadados.
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 function getAppliedMigrations(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -36,6 +37,10 @@ function addColumn(db, table, column, definition) {
         if (/duplicate column/i.test(e.message)) return;
         throw e;
     }
+}
+
+function indexExists(db, name) {
+    return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?").get(name);
 }
 
 function createIndexes(db, defs) {
@@ -154,6 +159,43 @@ const MIGRATIONS = [
             ['idx_sync_group_items_group', 'sync_group_items', 'sync_group_id'],
             ['idx_sync_history_device_hash', 'sync_history', 'device_id, hash']
         ])
+    },
+    {
+        // Colunas derivadas da listagem (media_type, sort_date) + índices de desempenho adicionais.
+        // media_type: 'video'|'audio'|'photo'|'raw' (mesmas listas de extensão de MediaTypes; RAW = 'raw' e conta
+        // também como foto nas consultas). sort_date = COALESCE(recorded_at, imported_at) materializada para o ORDER BY.
+        // Triggers mantêm as duas colunas em qualquer INSERT/UPDATE de media (inclusive fora do módulo de ingestão).
+        version: 12,
+        up: (db) => {
+            addColumn(db, 'media', 'media_type', 'TEXT');
+            addColumn(db, 'media', 'sort_date', 'DATETIME');
+            db.exec(`UPDATE media SET media_type = ${mediaTypeCaseSql('filename')}, sort_date = COALESCE(recorded_at, imported_at);`);
+            const typeSql = mediaTypeCaseSql('NEW.filename');
+            const derive = `UPDATE media SET media_type = ${typeSql}, sort_date = COALESCE(NEW.recorded_at, NEW.imported_at) WHERE id = NEW.id;`;
+            db.exec(`CREATE TRIGGER IF NOT EXISTS trg_media_derived_ins AFTER INSERT ON media BEGIN ${derive} END;`);
+            db.exec(`CREATE TRIGGER IF NOT EXISTS trg_media_derived_upd AFTER UPDATE OF filename, recorded_at, imported_at ON media BEGIN ${derive} END;`);
+            createIndexes(db, [
+                // Listagem: percorre por (sort_date, id) = o ORDER BY da biblioteca, sem ordenação temporária, e avalia status/missing/media_type só no índice (sem tabela)
+                ['idx_media_sort_listing', 'media', 'sort_date, id, status, missing, media_type'],
+                // Estatísticas/contagens por tipo: índice de cobertura (getStats/getFilterOptions sem ler a tabela)
+                ['idx_media_type_stats', 'media', 'media_type, status, missing, filesize'],
+                // Resoluções/FPS dos vídeos e álbuns (filtros da biblioteca) sem ler a tabela
+                ['idx_media_type_hf', 'media', 'media_type, height, fps'],
+                ['idx_media_album_ready', 'media', 'album, status, missing'],
+                ['idx_media_imported_at', 'media', 'imported_at'],
+                ['idx_project_media_media_id', 'project_media', 'media_id'],
+                ['idx_timeline_clips_media_id', 'timeline_clips', 'media_id'],
+                ['idx_timeline_clips_project_media_id', 'timeline_clips', 'project_media_id'],
+                ['idx_sync_group_items_media_id', 'sync_group_items', 'media_id'],
+                ['idx_sync_groups_project_id', 'sync_groups', 'project_id'],
+                ['idx_project_markers_project_id', 'project_markers', 'project_id']
+            ]);
+            // idx_media_album (migração 11) passa a ser prefixo de idx_media_album_ready: remove a redundante
+            if (indexExists(db, 'idx_media_album_ready')) db.exec('DROP INDEX IF EXISTS idx_media_album;');
+            if (columnExists(db, 'media', 'favorite')) {
+                db.exec('CREATE INDEX IF NOT EXISTS idx_media_favorite ON media(favorite) WHERE favorite = 1;');
+            }
+        }
     }
 ];
 

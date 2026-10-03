@@ -2,7 +2,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { ipcMain, dialog, BrowserWindow } = require('electron');
+const { ipcMain, dialog, shell, BrowserWindow } = require('electron');
+const { PathGuard } = require('../infrastructure/filesystem/PathGuard');
 const CubeParser = require('../core/luts/CubeParser');
 const logger = require('../services/logService');
 
@@ -80,16 +81,21 @@ module.exports = function registerLutHandlers(lutManager) {
     return lutManager.list();
   });
 
-  ipcMain.handle('luts:import', async () => {
+  // Sem argumento abre o seletor de arquivos; com uma lista de caminhos (arrastar-e-soltar) importa direto.
+  // Retorna false se o usuário cancelou, ou { imported, renamed, duplicates, invalid }.
+  ipcMain.handle('luts:import', async (_, droppedPaths) => {
     try {
-      const win = BrowserWindow.getFocusedWindow();
-      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-        title: 'Importar LUT (.cube)',
-        filters: [{ name: 'LUTs', extensions: ['cube'] }],
-        properties: ['openFile', 'multiSelections']
-      });
-
-      if (canceled || filePaths.length === 0) return false;
+      let filePaths = Array.isArray(droppedPaths) ? droppedPaths.filter((p) => typeof p === 'string') : null;
+      if (!filePaths) {
+        const win = BrowserWindow.getFocusedWindow();
+        const picked = await dialog.showOpenDialog(win, {
+          title: 'Importar LUT (.cube)',
+          filters: [{ name: 'LUTs', extensions: ['cube'] }],
+          properties: ['openFile', 'multiSelections']
+        });
+        if (picked.canceled || picked.filePaths.length === 0) return false;
+        filePaths = picked.filePaths;
+      }
       return lutManager.importFiles(filePaths);
     } catch (err) {
       logger.error('IPC:luts:import:error', { error: err.message });
@@ -108,9 +114,37 @@ module.exports = function registerLutHandlers(lutManager) {
 
   ipcMain.handle('luts:delete', async (_, filePath) => {
     try {
-      return lutManager.delete(filePath);
+      // Vai para a lixeira do sistema: o usuário pode recuperar se excluir sem querer.
+      return await lutManager.delete(filePath, (p) => shell.trashItem(p));
     } catch (err) {
       logger.error('IPC:luts:delete:error', { error: err.message });
+      throw err;
+    }
+  });
+
+  // Imagem de referência escolhida nas Configurações, como data URL (o canvas precisa ler os pixels,
+  // o que um <img src="file://..."> bloquearia). Retorna null se não for uma imagem utilizável.
+  ipcMain.handle('luts:getReferenceImage', async (_, filePath) => {
+    try {
+      const mimes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+      if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return null;
+      const mime = mimes[path.extname(filePath).toLowerCase()];
+      if (!mime || !fs.existsSync(filePath)) return null;
+      if (fs.statSync(filePath).size > 15 * 1024 * 1024) return null;
+      return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+    } catch (err) {
+      logger.warn?.('IPC:luts:getReferenceImage:error', { error: err.message });
+      return null;
+    }
+  });
+
+  ipcMain.handle('luts:reveal', async (_, filePath) => {
+    try {
+      PathGuard.assertWithin(lutManager.lutsDir, assertCubePath(filePath));
+      shell.showItemInFolder(filePath);
+      return true;
+    } catch (err) {
+      logger.error('IPC:luts:reveal:error', { error: err.message });
       throw err;
     }
   });

@@ -1,6 +1,9 @@
 const logger = require('../../services/logService');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const ffmpegLimiter = require('../media/FfmpegLimiter');
+
+const STDERR_TAIL_BYTES = 4096;
 
 /**
  * AudioSyncService
@@ -39,6 +42,11 @@ class AudioSyncService {
      * @returns {Promise<Float32Array>} Envelope RMS normalizado (0.0 - 1.0)
      */
     extractEnvelope(filePath) {
+        // Sincronização é uma ação do usuário: prioridade alta no limitador de ffmpeg
+        return ffmpegLimiter.run(() => this._extractEnvelope(filePath), ffmpegLimiter.PRIORITY.HIGH);
+    }
+
+    _extractEnvelope(filePath) {
         return new Promise((resolve, reject) => {
             if (!filePath || !fs.existsSync(filePath)) {
                 reject(new Error(`Arquivo não encontrado no disco: ${filePath}`));
@@ -50,9 +58,9 @@ class AudioSyncService {
             }
 
             const args = [
-                '-v', 'error',
+                '-nostdin', '-hide_banner', '-loglevel', 'error',
                 '-i', filePath,
-                '-vn',
+                '-vn', '-sn', '-dn',
                 '-ac', '1',
                 '-ar', String(this.sampleRate),
                 '-f', 's16le',
@@ -87,13 +95,13 @@ class AudioSyncService {
             });
 
             let stderrOutput = '';
-            proc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
+            proc.stderr.on('data', (d) => { stderrOutput = (stderrOutput + d.toString()).slice(-STDERR_TAIL_BYTES); });
 
             proc.on('error', (err) => reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`)));
 
             proc.on('close', (code) => {
                 if (code !== 0 && envelope.length === 0) {
-                    reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(0, 500)}`));
+                    reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(-500)}`));
                     return;
                 }
                 if (sampleCount > 0) {

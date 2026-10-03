@@ -7,6 +7,13 @@ const { ffmpegTool } = require('../infrastructure/external-tools/adapters/Ffmpeg
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
 const logger = require('./logService');
+const probeCache = require('../core/ffmpeg/ProbeCache');
+const ffmpegLimiter = require('../core/media/FfmpegLimiter');
+const { findSiblingJpg } = require('../core/media/MediaTypes');
+
+// Miniatura de RAW/TIFF: lado maior de 480 px (grade ~300 px + HiDPI)
+const THUMB_MAX_DIMENSION = 480;
+const STDERR_TAIL_BYTES = 4096;
 
 const RAW_EXTENSIONS = new Set([
   '.cr2', '.cr3', '.arw', '.nef', '.dng', '.raf', '.orf', '.rw2', '.pef', '.srw'
@@ -214,13 +221,35 @@ class PhotoPreviewService {
     const highResCacheFile = path.join(this.cacheDir, `${cacheKey}_preview.jpg`);
     const thumbCacheFile = path.join(this.cacheDir, `${cacheKey}_thumb.jpg`);
 
-    if (options.thumbnailOnly && fs.existsSync(thumbCacheFile)) {
-      return {
-        renderablePath: thumbCacheFile,
-        isCached: true,
-        isRaw: isRawFile,
-        isThumbnail: true
-      };
+    // Miniatura (grade): devolve a do cache ou a GERA (480 px) e grava em <chave>_thumb.jpg.
+    if (options.thumbnailOnly) {
+      if (fs.existsSync(thumbCacheFile)) {
+        return {
+          renderablePath: thumbCacheFile,
+          isCached: true,
+          isRaw: isRawFile,
+          isThumbnail: true
+        };
+      }
+      // Pedidos simultâneos da mesma miniatura compartilham uma única geração
+      this._thumbInflight = this._thumbInflight || new Map();
+      let pending = this._thumbInflight.get(thumbCacheFile);
+      if (!pending) {
+        pending = this._generateThumbnail(filePath, isRawFile, highResCacheFile, thumbCacheFile)
+          .finally(() => this._thumbInflight.delete(thumbCacheFile));
+        this._thumbInflight.set(thumbCacheFile, pending);
+      }
+      const thumb = await pending;
+      if (thumb) {
+        return {
+          renderablePath: thumbCacheFile,
+          isCached: true,
+          isRaw: isRawFile,
+          isThumbnail: true,
+          hasPeerJpg: thumb.usedPeerJpg || undefined
+        };
+      }
+      // Sem como gerar a miniatura: segue o fluxo normal (JPG par / preview em alta)
     }
 
     if (fs.existsSync(highResCacheFile)) {
@@ -232,18 +261,14 @@ class PhotoPreviewService {
     }
 
     // Se existir JPG par na mesma pasta com mesmo nome base, podemos usar como thumbnail/preview rápido
-    const dir = path.dirname(filePath);
-    const base = path.parse(filePath).name;
-    for (const candidateExt of ['.jpg', '.JPG', '.jpeg', '.JPEG']) {
-      const peerJpg = path.join(dir, base + candidateExt);
-      if (fs.existsSync(peerJpg)) {
-        return {
-          renderablePath: peerJpg,
-          isCached: false,
-          isRaw: isRawFile,
-          hasPeerJpg: true
-        };
-      }
+    const peerJpg = findSiblingJpg(filePath);
+    if (peerJpg) {
+      return {
+        renderablePath: peerJpg,
+        isCached: false,
+        isRaw: isRawFile,
+        hasPeerJpg: true
+      };
     }
 
     // Decodificação via RawRecoveryEngine (se for RAW) ou FFmpeg (se for TIFF)
@@ -293,11 +318,67 @@ class PhotoPreviewService {
     throw new Error('Não foi possível gerar visualização para este formato de imagem.');
   }
 
+  /**
+   * Gera a miniatura de 480 px em `thumbFile`. Fonte, em ordem: preview em alta já em cache, JPG par da
+   * mesma pasta, ou decodificação do RAW (motor RAW -> TIFF temporário) / do próprio arquivo (TIFF etc.).
+   * @returns {Promise<{usedPeerJpg: boolean}|null>} null se não foi possível gerar.
+   */
+  async _generateThumbnail(filePath, isRawFile, highResCacheFile, thumbFile) {
+    let ffmpeg;
+    try {
+      ffmpeg = ffmpegTool.resolve();
+    } catch (_) {
+      return null;
+    }
+
+    const attempt = async (source, usedPeerJpg) => {
+      // Escrita atômica: gera em .tmp.jpg e renomeia, para nunca deixar miniatura truncada no cache
+      const tmpFile = `${thumbFile}.tmp.jpg`;
+      try {
+        await this._convertWithFfmpeg(ffmpeg, source, tmpFile, THUMB_MAX_DIMENSION, 4);
+        fs.renameSync(tmpFile, thumbFile);
+        return { usedPeerJpg };
+      } catch (err) {
+        try { fs.unlinkSync(tmpFile); } catch (_) {}
+        logger.warn('[PhotoPreviewService] Falha ao gerar miniatura:', err.message);
+        return null;
+      }
+    };
+
+    if (fs.existsSync(highResCacheFile)) {
+      const r = await attempt(highResCacheFile, false);
+      if (r) return r;
+    }
+
+    const peerJpg = findSiblingJpg(filePath);
+    if (peerJpg) {
+      const r = await attempt(peerJpg, true);
+      if (r) return r;
+    }
+
+    if (isRawFile && dependencyManager.isAvailable('rawEngine')) {
+      const rawEngineExe = dependencyManager.resolveComponent('rawEngine');
+      const tempTiff = `${thumbFile}.tmp.tiff`;
+      try {
+        await this._runRawEngineExport(rawEngineExe, filePath, tempTiff);
+        const r = await attempt(tempTiff, false);
+        if (r) return r;
+      } catch (err) {
+        logger.warn('[PhotoPreviewService] Miniatura RAW via motor falhou:', err.message);
+      } finally {
+        try { fs.unlinkSync(tempTiff); } catch (_) {}
+      }
+    }
+
+    return attempt(filePath, false);
+  }
+
   _runRawEngineIdentify(exePath, filePath) {
     return new Promise((resolve) => {
       const child = spawn(exePath, ['identify', filePath], { windowsHide: true });
       let stdout = '';
       child.stdout.on('data', d => { stdout += d.toString('utf8'); });
+      child.stderr.resume(); // o motor escreve progresso no stderr: sem drenar, o pipe pode encher e travar
       child.on('close', code => {
         if (code !== 0) return resolve(null);
         try {
@@ -315,43 +396,56 @@ class PhotoPreviewService {
     return new Promise((resolve, reject) => {
       const child = spawn(exePath, ['export', filePath, outputPath, '--tolerant'], { windowsHide: true });
       let stderr = '';
-      child.stderr.on('data', d => { stderr += d.toString('utf8'); });
+      child.stdout.resume();
+      child.stderr.on('data', d => { stderr = (stderr + d.toString('utf8')).slice(-STDERR_TAIL_BYTES); });
       child.on('close', code => {
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve(outputPath);
         } else {
-          reject(new Error(`Falha ao exportar RAW (código ${code}): ${stderr}`));
+          reject(new Error(`Falha ao exportar RAW (código ${code}): ${stderr.slice(-300)}`));
         }
       });
       child.on('error', reject);
     });
   }
 
-  _convertWithFfmpeg(ffmpegPath, inputPath, outputPath, maxDimension = 2560) {
-    return new Promise((resolve, reject) => {
+  /**
+   * Converte/reduz uma imagem para JPG via ffmpeg (pedido do usuário => prioridade ALTA no limitador).
+   * stderr é drenado (só o final é guardado); sem isso o pipe cheio podia travar o ffmpeg.
+   */
+  _convertWithFfmpeg(ffmpegPath, inputPath, outputPath, maxDimension = 2560, quality = 2) {
+    return ffmpegLimiter.run(() => new Promise((resolve, reject) => {
       const vf = `scale=if(gte(iw\\,ih)\\,min(${maxDimension}\\,iw)\\,-2):if(lt(iw\\,ih)\\,min(${maxDimension}\\,ih)\\,-2)`;
       const args = [
+        '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-y',
         '-i', inputPath,
         '-vf', vf,
         '-vframes', '1',
-        '-q:v', '2',
+        '-q:v', String(quality),
         outputPath
       ];
 
       const child = spawn(ffmpegPath, args, { windowsHide: true });
+      let stderr = '';
+      child.stdout.resume();
+      child.stderr.on('data', d => { stderr = (stderr + d.toString('utf8')).slice(-STDERR_TAIL_BYTES); });
       child.on('close', code => {
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve(outputPath);
         } else {
-          reject(new Error(`O motor de mídia finalizou com código ${code}`));
+          reject(new Error(`O motor de mídia finalizou com código ${code}${stderr ? `: ${stderr.trim().slice(-300)}` : ''}`));
         }
       });
       child.on('error', reject);
-    });
+    }), ffmpegLimiter.PRIORITY.HIGH);
   }
 
   _probeImage(filePath) {
+    return probeCache.getOrLoad(filePath, () => this._probeImageRaw(filePath), 'photo-probe');
+  }
+
+  _probeImageRaw(filePath) {
     const ffprobe = ffprobeTool.resolve();
     return new Promise((resolve, reject) => {
       const child = spawn(ffprobe, [
@@ -364,6 +458,7 @@ class PhotoPreviewService {
 
       let stdout = '';
       child.stdout.on('data', d => { stdout += d.toString('utf8'); });
+      child.stderr.resume();
       child.on('close', code => {
         if (code !== 0) return reject(new Error(`Erro ao analisar a imagem (código ${code})`));
         try {

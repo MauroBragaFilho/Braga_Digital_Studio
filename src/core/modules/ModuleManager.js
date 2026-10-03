@@ -67,6 +67,8 @@ class ModuleManager extends EventEmitter {
     this.nvidia = new NvidiaCudaSource({ baseUrl: config.nvidiaBaseUrl, getJson });
     this._active = null;
     this._platform = config.platform || process.platform;
+    // Motor de desenvolvimento (Python local + modelos do cache do Hugging Face); null no app final.
+    this.dev = config.devEngine || null;
   }
 
   // ------------------------------------------------------------------ estado em disco
@@ -92,10 +94,18 @@ class ModuleManager extends EventEmitter {
   _exeName() { return (this._readState().whisper.engine || {}).exe || DEFAULT_EXE; }
 
   _engineInstalled() {
+    if (this.dev) return true;
     return fs.existsSync(path.join(this.paths.engine, this._exeName()));
   }
 
-  _modelDir(id) { return path.join(this.paths.models, id); }
+  /** Modelos do modo desenvolvimento ficam fora do BDS (cache do Hugging Face) e nunca são apagados por ele. */
+  _isExternalModel(id) { return Boolean(this.dev && this.dev.models && this.dev.models[id]); }
+
+  _modelDir(id) { return this._isExternalModel(id) ? this.dev.models[id] : path.join(this.paths.models, id); }
+
+  _devGuard(what) {
+    if (this.dev) throw new ModuleError(`${what}: em modo de desenvolvimento o BDS usa o motor local (${this.dev.label}).`, 'DEV_ENGINE');
+  }
 
   _modelInstalled(id) {
     const dir = this._modelDir(id);
@@ -103,12 +113,14 @@ class ModuleManager extends EventEmitter {
   }
 
   _cudaInstalled() {
+    if (this.dev) return true; // as DLLs do CUDA vêm do ambiente Python do projeto
     return CUDA_REQUIRED_DLLS.every((f) => fs.existsSync(path.join(this.paths.cuda, f)));
   }
 
   _activeModelId() {
     const saved = this._readState().whisper.activeModel;
     if (saved && getModel(saved) && this._modelInstalled(saved)) return saved;
+    if (this._modelInstalled(DEFAULT_MODEL_ID)) return DEFAULT_MODEL_ID; // o recomendado vem antes do primeiro da lista
     const first = WHISPER_MODELS.find((m) => this._modelInstalled(m.id));
     return first ? first.id : null;
   }
@@ -142,8 +154,9 @@ class ModuleManager extends EventEmitter {
         engine: {
           installed: engineOk,
           version: engineOk ? (state.engine || {}).version || null : null,
-          source: engineOk ? (state.engine || {}).source || null : null,
-          installedAt: engineOk ? (state.engine || {}).installedAt || null : null
+          source: this.dev ? 'dev' : (engineOk ? (state.engine || {}).source || null : null),
+          installedAt: engineOk ? (state.engine || {}).installedAt || null : null,
+          dev: this.dev ? { label: this.dev.label } : null
         },
         models: WHISPER_MODELS.map((m) => {
           const installed = this._modelInstalled(m.id);
@@ -152,7 +165,8 @@ class ModuleManager extends EventEmitter {
             speed: m.speed, speedLevel: m.speedLevel, quality: m.quality, vramGb: m.vramGb,
             recommendedFor: m.recommendedFor || null,
             installed, active: installed && m.id === activeId,
-            sizeOnDisk: installed ? (installedModels[m.id] || {}).sizeBytes || m.sizeBytes : 0
+            external: this._isExternalModel(m.id),
+            sizeOnDisk: installed ? this._sizeOnDisk(m.id, installedModels) : 0
           };
         }),
         referenceNote: REFERENCE_NOTE,
@@ -168,6 +182,13 @@ class ModuleManager extends EventEmitter {
         ready: engineOk && Boolean(activeId)
       }
     };
+  }
+
+  _sizeOnDisk(id, installedModels) {
+    if (this._isExternalModel(id)) {
+      try { return fs.statSync(path.join(this._modelDir(id), 'model.bin')).size; } catch (_) { /* usa a estimativa */ }
+    }
+    return (installedModels[id] || {}).sizeBytes || (getModel(id) || {}).sizeBytes || 0;
   }
 
   // ------------------------------------------------------------------ operações
@@ -247,6 +268,7 @@ class ModuleManager extends EventEmitter {
    * @param {{zipPath?:string}} [opts]  Sem zipPath, usa o manifesto publicado (config.manifestUrl).
    */
   async installEngine({ zipPath = null } = {}) {
+    this._devGuard('Instalar o motor');
     this._requireWindows();
     return this._run('engine', 'Instalando o motor de transcrição', async (op) => {
       const signal = op.controller.signal;
@@ -309,6 +331,7 @@ class ModuleManager extends EventEmitter {
   }
 
   async uninstallEngine() {
+    this._devGuard('Remover o motor');
     return this._run('engine', 'Removendo o motor de transcrição', async () => {
       rmrf(this.paths.engine);
       this._patchWhisper((w) => { delete w.engine; });
@@ -321,6 +344,7 @@ class ModuleManager extends EventEmitter {
   async installModel(modelId) {
     const model = getModel(modelId);
     if (!model) throw new ModuleError('Modelo desconhecido.', 'BAD_MODEL');
+    if (this._isExternalModel(modelId)) throw new ModuleError('Esse modelo já está disponível no computador (cache do Hugging Face).', 'DEV_ENGINE');
     return this._run('model', `Baixando o modelo ${model.label}`, async (op) => {
       const signal = op.controller.signal;
       this._progress(op, { phase: 'prepare', message: 'Consultando o Hugging Face…' });
@@ -365,6 +389,7 @@ class ModuleManager extends EventEmitter {
 
   async removeModel(modelId) {
     if (!getModel(modelId)) throw new ModuleError('Modelo desconhecido.', 'BAD_MODEL');
+    if (this._isExternalModel(modelId)) return this._removeExternalModel(modelId);
     return this._run('model', 'Removendo modelo', async () => {
       rmrf(this._modelDir(modelId));
       rmrf(path.join(this.paths.models, `${modelId}.partial`));
@@ -376,6 +401,29 @@ class ModuleManager extends EventEmitter {
           if (next) w.activeModel = next.id; else delete w.activeModel;
         }
       });
+      return this.getStatus();
+    });
+  }
+
+  /**
+   * Remove um modelo que está no cache do Hugging Face (modo desenvolvimento) para liberar espaço.
+   * Só apaga a pasta do repositório desse modelo (models--org--nome) e nunca o modelo em uso.
+   */
+  async _removeExternalModel(modelId) {
+    if (this._activeModelId() === modelId) {
+      throw new ModuleError('Esse modelo está em uso. Escolha outro modelo antes de removê-lo.', 'IN_USE');
+    }
+    const repoDir = this.dev.repoDirs && this.dev.repoDirs[modelId];
+    const snapshot = this.dev.models[modelId];
+    const safe = repoDir && /^models--/.test(path.basename(repoDir))
+      && path.relative(repoDir, snapshot).split(path.sep)[0] === 'snapshots';
+    if (!safe) throw new ModuleError('Não foi possível confirmar a pasta desse modelo; nada foi removido.', 'UNSAFE_PATH');
+    return this._run('model', 'Removendo modelo', async () => {
+      rmrf(repoDir);
+      if (fs.existsSync(repoDir)) throw new ModuleError('Não foi possível apagar todos os arquivos do modelo (algum está em uso).', 'REMOVE_FAILED');
+      delete this.dev.models[modelId];
+      delete this.dev.repoDirs[modelId];
+      this._patchWhisper((w) => { if (w.models) delete w.models[modelId]; });
       return this.getStatus();
     });
   }
@@ -392,6 +440,7 @@ class ModuleManager extends EventEmitter {
 
   /** Baixa as bibliotecas CUDA (cuBLAS + cuDNN) da NVIDIA. Exige aceitar a licença da NVIDIA. */
   async installCuda({ acceptLicense = false } = {}) {
+    this._devGuard('Baixar o CUDA');
     this._requireWindows();
     if (acceptLicense !== true) {
       throw new ModuleError('É preciso aceitar os termos de licença da NVIDIA (CUDA e cuDNN) para baixar as bibliotecas.', 'LICENSE');
@@ -452,6 +501,7 @@ class ModuleManager extends EventEmitter {
   }
 
   async removeCuda() {
+    this._devGuard('Remover o CUDA');
     return this._run('cuda', 'Removendo o CUDA', async () => {
       rmrf(this.paths.cuda);
       rmrf(path.join(this.root, 'whisper', 'cuda.partial'));
@@ -464,7 +514,7 @@ class ModuleManager extends EventEmitter {
 
   /**
    * Gera legendas/transcrição com o modelo ativo. Usa a GPU se o CUDA estiver instalado.
-   * @param {{files:string[], srt?:boolean, md?:boolean, maxWords?:number, outDir?:string, forceCpu?:boolean}} options
+   * @param {{files:string[], srt?:boolean, md?:boolean, maxWords?:number, lines?:1|2, outDir?:string, forceCpu?:boolean}} options
    */
   async transcribe(options) {
     this._requireWindows();
@@ -477,17 +527,20 @@ class ModuleManager extends EventEmitter {
         engineDir: this.paths.engine,
         exeName: this._exeName(),
         tempDir: this.tempDir,
-        command: this.config.engineCommand || null,
-        baseArgs: this.config.engineBaseArgs || []
+        command: (this.dev && this.dev.command) || this.config.engineCommand || null,
+        baseArgs: (this.dev && this.dev.baseArgs) || this.config.engineBaseArgs || [],
+        extraEnv: (this.dev && this.dev.env) || {}
       });
       const result = await runner.run(options, {
         modelDir: this._modelDir(modelId),
-        cudaDir: this._cudaInstalled() ? this.paths.cuda : null,
+        modelName: modelId,
+        cudaDir: !this.dev && this._cudaInstalled() ? this.paths.cuda : null,
         signal: op.controller.signal,
         onEvent: (ev) => {
           if (ev.type === 'progress') this._progress(op, { phase: 'transcribe', message: 'Transcrevendo…', percent: ev.percent });
           else if (ev.type === 'status') this._progress(op, { phase: 'transcribe', message: ev.text });
           else if (ev.type === 'device') this._progress(op, { phase: 'transcribe', message: `Dispositivo: ${ev.text}`, device: ev.text });
+          else if (ev.type === 'file') this._progress(op, { phase: 'transcribe', file: { index: ev.index, state: ev.state, percent: ev.percent ?? null, message: ev.text || null } });
           else if (ev.type === 'line' || ev.type === 'error') this._progress(op, { phase: 'transcribe', message: ev.text, log: true });
         }
       });

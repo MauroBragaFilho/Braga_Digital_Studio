@@ -217,6 +217,37 @@ function assertUserFile(p, label = 'Arquivo') {
   return resolved;
 }
 
+/** Versão assíncrona de assertUserDirectory (não bloqueia o processo principal em discos lentos). */
+async function assertUserDirectoryAsync(p, label = 'Pasta') {
+  const resolved = assertAbsolutePath(p, label);
+  if (isDriveRoot(resolved)) {
+    throw new Error(`${label} não pode ser a raiz de um drive.`);
+  }
+  let st;
+  try { st = await fs.promises.stat(resolved); } catch (_) { throw new Error(`${label} não encontrada: '${p}'`); }
+  if (!st.isDirectory()) throw new Error(`${label} não é uma pasta: '${p}'`);
+  return resolved;
+}
+
+/** Versão assíncrona de assertUserFile. */
+async function assertUserFileAsync(p, label = 'Arquivo') {
+  const resolved = assertAbsolutePath(p, label);
+  let st;
+  try { st = await fs.promises.stat(resolved); } catch (_) { throw new Error(`${label} não encontrado: '${p}'`); }
+  if (!st.isFile()) throw new Error(`${label} não é um arquivo: '${p}'`);
+  return resolved;
+}
+
+/** Versão assíncrona de assertExists. */
+async function assertExistsAsync(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error(`Caminho não encontrado: '${filePath}'`);
+  }
+  try { await fs.promises.access(filePath); } catch (_) {
+    throw new Error(`Caminho não encontrado: '${filePath}'`);
+  }
+}
+
 /**
  * Valida uma lista de ids (inteiros positivos, sem repetição) com limite máximo.
  * @returns {number[]}
@@ -312,6 +343,9 @@ module.exports = {
   assertAbsolutePath,
   assertUserDirectory,
   assertUserFile,
+  assertUserDirectoryAsync,
+  assertUserFileAsync,
+  assertExistsAsync,
   assertIdArray,
   assertPort,
   assertPrivateIp,

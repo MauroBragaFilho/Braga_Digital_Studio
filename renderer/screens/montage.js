@@ -140,6 +140,18 @@ function applySortOrder(list, mode) {
   if (mode === 'duration') return [...list].sort((a, b) => b.durationSeconds - a.durationSeconds);
   return [...list];
 }
+
+// Cache da lista ordenada: só recalcula quando a lista (referência/tamanho), o modo ou as durações mudam.
+let sortedCache = { ref: null, len: -1, mode: null, ver: -1, list: null };
+let sortVersion = 0; // incrementar quando durationSeconds/name de algum item mudar
+function getSortedItems() {
+  if (state.sort === 'default') return state.items; // ordem natural: sem cópia
+  const c = sortedCache;
+  if (c.list && c.ref === state.items && c.len === state.items.length && c.mode === state.sort && c.ver === sortVersion) return c.list;
+  const list = applySortOrder(state.items, state.sort);
+  sortedCache = { ref: state.items, len: state.items.length, mode: state.sort, ver: sortVersion, list };
+  return list;
+}
 /* =====================================================================
    PERSISTÊNCIA DE SESSÃO (localStorage)
    ===================================================================== */
@@ -152,7 +164,9 @@ function saveSession() {
   const payload = {
     v: 1,
     items: state.items.map(i => ({
-      id: i.id, name: i.name, path: i.path, thumbnail: i.thumbnail,
+      id: i.id, name: i.name, path: i.path,
+      // miniaturas em data: URL (base64) pesam no localStorage; nome de arquivo/URL curta continua salvo
+      thumbnail: (typeof i.thumbnail === 'string' && i.thumbnail.startsWith('data:')) ? '' : i.thumbnail,
       durationSeconds: i.durationSeconds, width: i.width, height: i.height,
       durMode: i.durMode, pctUsed: i.pctUsed, fixedSeconds: i.fixedSeconds
     })),
@@ -170,7 +184,7 @@ function saveSession() {
 
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { saveSession(); }, 400);
+  saveTimer = setTimeout(() => { saveSession(); }, 800);
 }
 
 function loadSession() {
@@ -264,6 +278,23 @@ function rowHtml(item, idx) {
   </div>`;
 }
 
+const STATUS_PILLS = ['pending', 'queued', 'exporting', 'done', 'error', 'cancelled'];
+/** Atualiza só a pílula/classe de status de uma linha já desenhada. */
+function updateRowStatusDom(item) {
+  const body = $('montageMainBody');
+  if (!body) return;
+  const row = body.querySelector(`.mg-row[data-id="${CSS.escape(String(item.id))}"]`);
+  if (!row) return; // fora da janela virtual: será desenhada com o estado certo ao rolar
+  const st = statusMeta(item);
+  STATUS_PILLS.forEach((p) => { if (p !== st.pill) row.classList.remove(p); });
+  row.classList.add(st.pill);
+  const pill = row.querySelector('.mg-pill');
+  if (pill) {
+    pill.className = `mg-pill ${st.pill}`;
+    if (pill.textContent !== st.label) pill.textContent = st.label;
+  }
+}
+
 function renderEmptyList() {
   const body = $('montageMainBody');
   if (!body) return;
@@ -276,19 +307,22 @@ function renderEmptyList() {
   body.style.height = 'auto';
 }
 
-function renderVirtual(scrollPos) {
+let lastRenderRange = { start: -1, end: -1, count: -1 };
+function renderVirtual(scrollPos, onlyIfRangeChanged = false) {
   const body = $('montageMainBody');
   const area = $('mgVirtualArea');
   if (!body || !area) return;
   const count = state.items.length;
 
-  if (!count) { renderEmptyList(); return; }
+  if (!count) { lastRenderRange = { start: -1, end: -1, count: -1 }; renderEmptyList(); return; }
 
   const viewH = area.clientHeight || 480;
   const scroll = typeof scrollPos === 'number' ? scrollPos : (area.scrollTop || 0);
   const start = Math.max(0, Math.floor(scroll / ROW_HEIGHT) - OVERSCAN);
   const end = Math.min(count, Math.ceil((scroll + viewH) / ROW_HEIGHT) + OVERSCAN);
-  const sorted = applySortOrder(state.items, state.sort);
+  if (onlyIfRangeChanged && lastRenderRange.start === start && lastRenderRange.end === end && lastRenderRange.count === count) return;
+  lastRenderRange = { start, end, count };
+  const sorted = getSortedItems();
 
   body.style.height = (count * ROW_HEIGHT) + 'px';
   const frag = document.createDocumentFragment();
@@ -1049,8 +1083,7 @@ function setupIPCListeners() {
       );
       updateExportProgress(state.export.percent, payload.fileName, curFile, totFiles);
       refreshStepper();
-      refreshSelectionUI();
-      renderVirtual();
+      if (item) updateRowStatusDom(item); // só a linha afetada (sem reconstruir a lista virtual)
     });
     listenerCleanups.push(unsub);
   }
@@ -1096,9 +1129,13 @@ function bindListEvents() {
   const body = $('montageMainBody');
   if (!area || !body) return;
 
-  const onScroll = () => renderVirtual();
+  let scrollRaf = 0;
+  const onScroll = () => {
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; renderVirtual(undefined, true); });
+  };
   area.addEventListener('scroll', onScroll, { passive: true });
-  listenerCleanups.push(() => area.removeEventListener('scroll', onScroll));
+  listenerCleanups.push(() => { area.removeEventListener('scroll', onScroll); if (scrollRaf) cancelAnimationFrame(scrollRaf); scrollRaf = 0; });
 
   // --- Clique na linha: seleção ---
   const onClickRow = (e) => {
@@ -1423,6 +1460,7 @@ async function reprobeZeroDurationItems() {
       const meta = await getFileMeta(item.path);
       if (meta.durationSeconds > 0) {
         item.durationSeconds = meta.durationSeconds;
+        sortVersion++;
         updated++;
       }
       if (meta.width && meta.height) {

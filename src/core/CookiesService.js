@@ -22,7 +22,7 @@ class CookiesService {
       base = app && typeof app.getPath === 'function' ? app.getPath('userData') : null;
     } catch (_) { base = null; }
     if (!base) base = path.join(require('os').homedir(), '.braga-digital-studio');
-    return path.join(base, 'cookies');
+    return path.join(base, 'bds-cookies'); // NÃO usar 'cookies': no Windows colide (sem distinção de caixa) com o arquivo 'Cookies' do Chromium
   }
 
   /** Caminho padrão (privado) do arquivo de cookies de um serviço, ex.: getDefaultCookiesPath('youtube'). */

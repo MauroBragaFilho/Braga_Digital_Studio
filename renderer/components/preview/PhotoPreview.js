@@ -307,6 +307,9 @@ export class PhotoPreview {
       if (e.button !== 0) return; // Apenas botão esquerdo
       if (this.scale > this.fitScale) {
         this.isDragging = true;
+        // mousemove/mouseup globais só existem durante o arraste (pan)
+        window.addEventListener('mousemove', this._boundMouseMove);
+        window.addEventListener('mouseup', this._boundMouseUp);
         this.dragStartX = e.clientX;
         this.dragStartY = e.clientY;
         this.startTranslateX = this.translateX;
@@ -314,9 +317,6 @@ export class PhotoPreview {
         this.dom.viewport.classList.add('is-dragging');
       }
     });
-
-    window.addEventListener('mousemove', this._boundMouseMove);
-    window.addEventListener('mouseup', this._boundMouseUp);
 
     // Duplo clique: Fit <-> 100%
     this.dom.viewport.addEventListener('dblclick', (e) => {
@@ -335,7 +335,8 @@ export class PhotoPreview {
     });
 
     // Reset idle timer on mouse activity
-    this.dom.root.addEventListener('mousemove', () => this._resetIdleTimer());
+    this._rootMouseMove = () => this._resetIdleTimer();
+    this.dom.root.addEventListener('mousemove', this._rootMouseMove);
     this._resetIdleTimer();
   }
 
@@ -344,10 +345,13 @@ export class PhotoPreview {
     window.removeEventListener('resize', this._boundResize);
     window.removeEventListener('mousemove', this._boundMouseMove);
     window.removeEventListener('mouseup', this._boundMouseUp);
+    if (this._rootMouseMove && this.dom && this.dom.root) this.dom.root.removeEventListener('mousemove', this._rootMouseMove);
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
   }
 
   _resetIdleTimer() {
+    this._lastActivity = performance.now();
     if (this.isIdle) {
       this.isIdle = false;
       this.dom.header.classList.remove('idle-hidden');
@@ -357,8 +361,16 @@ export class PhotoPreview {
       this.dom.viewport.style.cursor = '';
     }
 
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    // Um único timer; eventos de mouse só atualizam o timestamp
+    if (this.idleTimer) return;
+    this._scheduleIdle(2800);
+  }
+
+  _scheduleIdle(ms) {
     this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      const left = 2800 - (performance.now() - this._lastActivity);
+      if (left > 5) { this._scheduleIdle(left); return; }
       // Esconde controles se não estiver arrastando ou com painéis abertos
       if (!this.isDragging && !this.showMetadata && !this.showHistogram) {
         this.isIdle = true;
@@ -368,7 +380,7 @@ export class PhotoPreview {
         this.dom.filmstrip.classList.add('idle-hidden');
         this.dom.viewport.style.cursor = 'none';
       }
-    }, 2800);
+    }, ms);
   }
 
   _handleWheel(e) {
@@ -407,6 +419,8 @@ export class PhotoPreview {
       this.isDragging = false;
       this.dom.viewport.classList.remove('is-dragging');
     }
+    window.removeEventListener('mousemove', this._boundMouseMove);
+    window.removeEventListener('mouseup', this._boundMouseUp);
   }
 
   _handleResize() {
