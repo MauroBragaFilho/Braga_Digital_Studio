@@ -114,7 +114,7 @@ test('handleOutput: ticks de progresso não gravam no banco nem emitem a fila in
   assert.strictEqual(events[0].id, 'dl_3');
 
   // mudança de destino é gravada na hora
-  m.handleOutput('[download] Destination: C:\\videos\\Meu Video.mp4', item);
+  m.handleOutput('[download] Destination: ' + path.join(os.tmpdir(), 'videos', 'Meu Video.mp4'), item);
   assert.strictEqual(saves, 1);
   assert.strictEqual(item.title, 'Meu Video');
 });

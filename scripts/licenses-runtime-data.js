@@ -85,7 +85,7 @@ const RUNTIME = [
 
 /**
  * Fontes empacotadas no aplicativo (renderer/assets/fonts), baixadas só dos repositórios oficiais de cada projeto.
- * Origem, versão e SHA-256 de cada arquivo: .docs/FONTES_ORIGEM.md. Licença: SIL Open Font License 1.1.
+ * Origem, versão e SHA-256 de cada arquivo: renderer/assets/fonts/FONTES_ORIGEM.md. Licença: SIL Open Font License 1.1.
  */
 const BUNDLED_FONTS = [
   { id: 'font-inter', name: 'Inter (fonte)', version: '4.1', license: 'OFL-1.1', url: 'https://github.com/rsms/inter', licenseFile: 'renderer/assets/fonts/OFL-Inter.txt' },
