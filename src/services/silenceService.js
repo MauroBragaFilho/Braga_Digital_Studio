@@ -89,12 +89,14 @@ class SilenceService extends EventEmitter {
    * linha a linha, sem acumular o texto completo.
    */
   async analyzeSilence(filePath, threshold, minDuration, totalDuration = 0) {
+    // Valida os números ANTES de procurar o FFmpeg: dado inválido é sempre reportado como inválido
+    // (e não como "ferramenta ausente"), com ou sem o programa instalado.
+    const th = Number(threshold);
+    const md = Number(minDuration);
+    if (!Number.isFinite(th) || th > 0 || th < -120) throw new Error('Sensibilidade inválida (use um valor entre -120 e 0 dB).');
+    if (!Number.isFinite(md) || md < 0.01 || md > 3600) throw new Error('Duração mínima inválida.');
     const ffmpeg = ffmpegTool.resolve();
     return new Promise((resolve, reject) => {
-      const th = Number(threshold);
-      const md = Number(minDuration);
-      if (!Number.isFinite(th) || th > 0 || th < -120) return reject(new Error('Sensibilidade inválida (use um valor entre -120 e 0 dB).'));
-      if (!Number.isFinite(md) || md < 0.01 || md > 3600) return reject(new Error('Duração mínima inválida.'));
       const args = [
         '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'info',
         '-i', filePath,
