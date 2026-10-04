@@ -15,31 +15,40 @@
     "check": "node scripts/check-syntax.js",
     "lint": "eslint .",
     "test": "node --test \"tests/**/*.test.js\"",
-    "build": "electron-builder --win nsis",
-    "build:win": "electron-builder --win nsis",
-    "build:win:portable": "electron-builder --win portable",
-    "build:linux": "electron-builder --linux AppImage deb",
-    "build:linux:appimage": "electron-builder --linux AppImage",
-    "build:linux:deb": "electron-builder --linux deb"
+    "build": "npm run verify:package && electron-builder --win nsis",
+    "build:win": "npm run verify:package && electron-builder --win nsis",
+    "build:win:portable": "npm run verify:package && electron-builder --win portable",
+    "build:linux": "npm run verify:package && electron-builder --linux AppImage deb",
+    "build:linux:appimage": "npm run verify:package && electron-builder --linux AppImage",
+    "build:linux:deb": "npm run verify:package && electron-builder --linux deb",
+    "verify:package": "node scripts/verify-package-contents.js",
+    "generate:licenses": "node scripts/generate-licenses.js",
+    "generate:preload": "node scripts/generate-preload.js",
+    "verify:preload": "node scripts/generate-preload.js --check"
   },
   "dependencies": {
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "bonjour-service": "^1.4.4",
     "chokidar": "^5.0.0",
-    "puppeteer-core": "^25.3.0",
     "sql.js": "^1.12.0",
     "uuid": "^14.0.1",
     "winston": "^3.19.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "electron": "^43.2.0",
+    "electron": "^43.7.7",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.5",
-    "globals": "^17.13.0"
+    "globals": "^17.13.0",
+    "linkedom": "^0.18.13"
   },
   "build": {
     "npmRebuild": false,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false
+    },
     "appId": "com.bragadev.digitalstudio",
     "productName": "Braga Digital Studio",
     "artifactName": "BragaDigitalStudioSetup.${ext}",
@@ -72,10 +81,35 @@
       "!**/*.map",
       "!**/*.md",
       "!**/*.psd",
+      "!**/*.d.ts",
+      "!**/*.ts.map",
       "!**/_Archives/**",
       "!**/.freebuff/**",
       "!**/.Teste*/**",
-      "!**/tests/**"
+      "!**/tests/**",
+      "!**/test/**",
+      "!**/__tests__/**",
+      "!**/fixtures/**",
+      "!**/docs/**",
+      "!**/.docs/**",
+      "!**/examples/**",
+      "!**/scripts/**",
+      "!dist/**",
+      "!raw_recovery_engine/**",
+      "!data/**",
+      "!database/**",
+      "!config/**",
+      "!logs/*.log",
+      "!**/settings.json",
+      "!**/*.db",
+      "!**/*.db.bak",
+      "!**/*.db.tmp",
+      "!node_modules/**/{README,readme,CHANGELOG,changelog,HISTORY,history}*",
+      "!node_modules/**/{.github,.vscode,benchmark,benchmarks}/**",
+      "!node_modules/sql.js/**",
+      "node_modules/sql.js/package.json",
+      "node_modules/sql.js/dist/sql-wasm.js",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
     ],
     "asarUnpack": [
       "node_modules/sql.js/dist/sql-wasm.wasm"
@@ -89,7 +123,12 @@
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true
     },
-    "compression": "maximum"
+    "compression": "maximum",
+    "electronLanguages": [
+      "pt-BR",
+      "en-US"
+    ],
+    "afterPack": "scripts/after-pack-check.js"
   },
   "engines": {
     "node": ">=22"

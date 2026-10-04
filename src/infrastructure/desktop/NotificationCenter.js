@@ -44,9 +44,8 @@ class NotificationCenter {
 
     /**
      * Canais de entrega de notificações. Por padrão usamos apenas o canal nativo
-     * do sistema operacional. Futuramente podemos registrar um canal Telegram
-     * (ex: TelegramDeliveryChannel) sem alterar o fluxo de disparo, apenas
-     * adicionando-o a esta lista.
+     * do sistema operacional. Outros canais podem ser registrados sem alterar o fluxo de disparo,
+     * apenas adicionando-os a esta lista.
      * @type {Array<{name: string, deliver: (note: Object) => Promise<void>|void}>}
      */
     this.deliveryChannels = [];
@@ -96,7 +95,7 @@ class NotificationCenter {
   }
 
   /**
-   * Registra um canal de entrega adicional de notificações (ex: Telegram no futuro).
+   * Registra um canal de entrega adicional de notificações (extensível).
    * O canal recebe um objeto `note` com `{ title, body, screen }` e pode fazer o
    * envio assíncrono. Se o canal falhar, apenas logamos — nunca bloqueia o fluxo.
    * @param {{name: string, deliver: (note: Object) => Promise<void>|void}} channel
@@ -152,7 +151,7 @@ class NotificationCenter {
   /**
    * Dispatcha uma notificação através de todos os canais de entrega registrados,
    * incluindo o canal nativo do sistema. Usado sobretudo pelos lembretes de prazo,
-   * garantindo que o mesmo aviso chegue ao sistema e (futuramente) ao Telegram.
+   * garantindo que o mesmo aviso chegue ao sistema e aos canais adicionais.
    * @param {Object} note - `{ title, body, screen }` já montado
    * @private
    */
@@ -175,7 +174,7 @@ class NotificationCenter {
       }
     }
 
-    // Canais adicionais (ex: Telegram no futuro)
+    // Canais adicionais (extensível)
     for (const channel of this.deliveryChannels) {
       Promise.resolve()
         .then(() => channel.deliver({ ...note, createdAt: new Date().toISOString() }))

@@ -14,6 +14,19 @@ class PremiereExporter {
         });
     }
 
+    /**
+     * pathurl do FCP7 XML: file://localhost/ + caminho com CADA segmento codificado (espaço, #, ?, %, acentos...),
+     * mantendo o ':' da unidade (RK-038). UNC vira file://localhost//servidor/share/...
+     */
+    _pathUrl(filepath) {
+        const p = String(filepath || '').replace(/\\/g, '/');
+        const enc = (seg) => encodeURIComponent(seg).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+        if (p.startsWith('//')) return 'file://localhost//' + p.slice(2).split('/').map(enc).join('/');
+        const drive = /^([A-Za-z]:)(\/.*)?$/.exec(p);
+        if (drive) return 'file://localhost/' + drive[1] + (drive[2] || '/').split('/').map(enc).join('/');
+        return 'file://localhost' + (p.startsWith('/') ? '' : '/') + p.split('/').map(enc).join('/');
+    }
+
     _escapeXml(unsafe) {
         if (!unsafe) return '';
         return unsafe.toString().replace(/[<>&'"]/g, function (c) {
@@ -49,7 +62,7 @@ class PremiereExporter {
             const clipId = `clip-${item.pm_id}`;
             const fileId = `file-${item.pm_id}`;
             // Convert to absolute file:// URL (FCP 7 XML spec)
-            const filePathUrl = 'file://localhost/' + item.filepath.replace(/\\/g, '/').replace(/ /g, '%20');
+            const filePathUrl = this._pathUrl(item.filepath);
             const itemName = item.custom_name || item.filename;
 
             xml += `
@@ -110,7 +123,7 @@ class PremiereExporter {
         for (const item of rootMedia) {
             const clipId = `clip-${item.pm_id}`;
             const fileId = `file-${item.pm_id}`;
-            const filePathUrl = 'file://localhost/' + item.filepath.replace(/\\/g, '/').replace(/ /g, '%20');
+            const filePathUrl = this._pathUrl(item.filepath);
             const itemName = item.custom_name || item.filename;
 
             xml += `
@@ -153,21 +166,24 @@ class PremiereExporter {
         const clipId = `clipitem-${clip.media_id}-${clipIndex}`;
         const fileId = `file-${clip.media_id}`;
         const itemName = clip.filename;
-        const filePathUrl = 'file://localhost/' + (clip.filepath || '').replace(/\\/g, '/').replace(/ /g, '%20');
+        const filePathUrl = this._pathUrl(clip.filepath);
 
+        // start/end na base da sequência; in/out/duration/rate do arquivo na base do próprio clipe (RK-038)
+        const clipFps = clip.fps || fps;
+        const clipNtsc = Math.abs(clipFps - Math.round(clipFps)) > 0.001;
         const startFrames = this._framesFromSeconds(clip.start, fps);
-        const durationFrames = this._framesFromSeconds(clip.duration, fps);
-        const inFrames = this._framesFromSeconds(clip.in, fps);
+        const endFrames = startFrames + this._framesFromSeconds(clip.duration, fps);
+        const durationFrames = this._framesFromSeconds(clip.duration, clipFps);
+        const inFrames = this._framesFromSeconds(clip.in, clipFps);
         const outFrames = inFrames + durationFrames;
-        const endFrames = startFrames + durationFrames;
 
         return `
                 <clipitem id="${clipId}">
                     <name>${this._escapeXml(itemName)}</name>
                     <duration>${durationFrames}</duration>
                     <rate>
-                        <timebase>${Math.round(fps)}</timebase>
-                        <ntsc>${ntsc ? 'TRUE' : 'FALSE'}</ntsc>
+                        <timebase>${Math.round(clipFps)}</timebase>
+                        <ntsc>${clipNtsc ? 'TRUE' : 'FALSE'}</ntsc>
                     </rate>
                     <start>${startFrames}</start>
                     <end>${endFrames}</end>
@@ -177,8 +193,8 @@ class PremiereExporter {
                         <name>${this._escapeXml(itemName)}</name>
                         <pathurl>${this._escapeXml(filePathUrl)}</pathurl>
                         <rate>
-                            <timebase>${Math.round(fps)}</timebase>
-                            <ntsc>${ntsc ? 'TRUE' : 'FALSE'}</ntsc>
+                            <timebase>${Math.round(clipFps)}</timebase>
+                            <ntsc>${clipNtsc ? 'TRUE' : 'FALSE'}</ntsc>
                         </rate>
                         <duration>${durationFrames}</duration>
                     </file>

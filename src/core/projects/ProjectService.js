@@ -71,9 +71,17 @@ class ProjectService {
     }
 
     deleteProject(id) {
-        const stmt = this.db.prepare(`DELETE FROM projects WHERE id = ?`);
-        const info = stmt.run(id);
-        return info.changes > 0;
+        // media.project_id referencia projects(id) sem ON DELETE: solta as mídias da Biblioteca antes (RK-018)
+        this.db.exec('BEGIN TRANSACTION');
+        try {
+            this.db.prepare(`UPDATE media SET project_id = NULL WHERE project_id = ?`).run(id);
+            const info = this.db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
+            this.db.exec('COMMIT');
+            return info.changes > 0;
+        } catch (e) {
+            try { this.db.exec('ROLLBACK'); } catch (_) {}
+            throw e;
+        }
     }
 
     // --- BINS ---
@@ -114,6 +122,12 @@ class ProjectService {
     }
 
     addMediaToBin(projectId, binId, mediaId, customName = null) {
+        // Dedupe por (project_id, media_id): reaproveita o vínculo existente (RK-084)
+        const existing = this.db.prepare(`SELECT id FROM project_media WHERE project_id = ? AND media_id = ? LIMIT 1`).get(projectId, mediaId);
+        if (existing) {
+            if (binId) this.db.prepare(`UPDATE project_media SET bin_id = ? WHERE id = ?`).run(binId, existing.id);
+            return existing.id;
+        }
         const stmt = this.db.prepare(`
             INSERT INTO project_media (project_id, bin_id, media_id, custom_name)
             VALUES (?, ?, ?, ?)

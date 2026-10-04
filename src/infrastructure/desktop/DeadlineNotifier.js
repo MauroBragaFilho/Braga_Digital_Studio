@@ -1,8 +1,10 @@
 'use strict';
 
+const fs = require('node:fs');
 const logger = require('../../services/logService');
 const projectService = require('../../core/projects/ProjectService');
 const notificationCenter = require('./NotificationCenter');
+const { daysUntilLocal } = require('../../services/localDate');
 
 /**
  * DeadlineNotifier
@@ -14,14 +16,37 @@ const notificationCenter = require('./NotificationCenter');
  *
  * A entrega é feita via NotificationCenter.notifyProjectDeadline(), que roteia o
  * aviso para todos os canais registrados (nativo do sistema e, futuramente,
- * Telegram). Para evitar notificações duplicadas, cada projeto só é notificado
+ * outros canais). Para evitar notificações duplicadas, cada projeto só é notificado
  * uma vez por "janela" (dias restantes) por dia.
  */
 class DeadlineNotifier {
   constructor() {
+    this.stateFile = null; // onde guardar os lembretes já enviados (sobrevive a reinícios do app)
     this.timer = null;
     this.checkEveryMs = 60 * 60 * 1000; // 1 hora
     this._lastRemindedByProject = new Map(); // projectId -> { window, dayKey }
+  }
+
+  /** Define o arquivo de estado e carrega os lembretes já enviados (evita repetir o aviso a cada abertura do app). */
+  setStateFile(file) {
+    this.stateFile = file;
+    try {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      for (const [id, v] of Object.entries(data || {})) {
+        if (v && typeof v.window === 'string' && typeof v.dayKey === 'string') this._lastRemindedByProject.set(String(id), v);
+      }
+    } catch (_) { /* primeira execução ou arquivo ilegível: começa vazio */ }
+  }
+
+  _saveState() {
+    if (!this.stateFile) return;
+    try {
+      const tmp = `${this.stateFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(this._lastRemindedByProject)));
+      fs.renameSync(tmp, this.stateFile);
+    } catch (err) {
+      logger.warn('[DeadlineNotifier] Não foi possível gravar os lembretes enviados', { error: err.message });
+    }
   }
 
   /**
@@ -45,14 +70,8 @@ class DeadlineNotifier {
    * @private
    */
   _daysLeft(deadlineISO) {
-    const deadline = new Date(deadlineISO);
-    if (Number.isNaN(deadline.getTime())) return null;
-
-    const now = new Date();
-    deadline.setHours(0, 0, 0, 0);
-    now.setHours(0, 0, 0, 0);
-
-    return Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+    // 'YYYY-MM-DD' é um dia local (new Date() o leria como UTC e erraria o dia no Brasil)
+    return daysUntilLocal(deadlineISO);
   }
 
   /**
@@ -94,6 +113,7 @@ class DeadlineNotifier {
 
       const projects = projectService.getAllProjects();
       const withDeadline = projects.filter((p) => p.deadline);
+      let dirty = false;
 
       for (const project of withDeadline) {
         const daysLeft = this._daysLeft(project.deadline);
@@ -104,19 +124,21 @@ class DeadlineNotifier {
         // Janela de deduplicação: um projeto só é lembrado uma vez por
         // combinação de janela + dia.
         const window = daysLeft < 0 ? 'late' : String(daysLeft);
-        const last = this._lastRemindedByProject.get(project.id);
+        const last = this._lastRemindedByProject.get(String(project.id)) || this._lastRemindedByProject.get(project.id);
         if (last && last.window === window && last.dayKey === dayKey) continue;
 
         notificationCenter.notifyProjectDeadline(project, daysLeft);
 
-        this._lastRemindedByProject.set(project.id, { window, dayKey });
+        this._lastRemindedByProject.set(String(project.id), { window, dayKey });
+        dirty = true;
       }
 
       // Limpa rastros de projetos que não têm mais deadline (evita crescimento)
-      const activeIds = new Set(withDeadline.map((p) => p.id));
+      const activeIds = new Set(withDeadline.map((p) => String(p.id)));
       for (const id of Array.from(this._lastRemindedByProject.keys())) {
-        if (!activeIds.has(id)) this._lastRemindedByProject.delete(id);
+        if (!activeIds.has(String(id))) { this._lastRemindedByProject.delete(id); dirty = true; }
       }
+      if (dirty) this._saveState();
     } catch (err) {
       logger.error('[DeadlineNotifier] Falha ao verificar prazos', { error: err.message });
     }

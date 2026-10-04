@@ -7,6 +7,27 @@ const logger = require('../../services/logService');
 const { isAudio } = require('../media/MediaTypes');
 
 const MAX_BATCH = 3; // teto do paralelismo (ffmpeg já é limitado pelo FfmpegLimiter; evita competir com a UI)
+const FAILURE_RETRY_MS = 7 * 24 * 60 * 60 * 1000; // falha registrada só é repetida depois deste intervalo
+const FAILURES_FILE = 'thumb-regen-failures.json'; // em dataDir (fora de Thumbnails: não entra na contagem de miniaturas)
+
+/** Memória persistente de falhas: { [uuid]: timestamp }. Evita repetir a mesma falha a cada startup. */
+function loadFailures(file) {
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  } catch (_) { return {}; }
+}
+
+function saveFailures(file, failures) {
+  try {
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(failures));
+    fs.renameSync(tmp, file);
+  } catch (_) { /* melhor esforço */ }
+}
+
+// Exclusão mútua: startup, regeneração manual e limpeza de cache chamam esta função; só uma roda por vez
+let running = null;
 
 /**
  * Regenera thumbnails ausentes — thumbnail registrada no DB, arquivo ausente no disco.
@@ -26,16 +47,25 @@ const MAX_BATCH = 3; // teto do paralelismo (ffmpeg já é limitado pelo FfmpegL
  * @param {number} [opts.batchSize=3]  limitado a 3 (valores maiores dos chamadores são reduzidos)
  * @param {number} [opts.limit]     Limita a quantidade processada (uso em testes/recuperação parcial)
  * @param {string} [opts.logPrefix='[RegenThumbs]']
+ * @param {boolean} [opts.retryFailed=false] também tenta de novo as mídias que falharam recentemente
  * @param {Function} [opts.onProgress]
  * @returns {Promise<{regenerated:number, failed:number, total:number}>}
  */
-async function regenerateMissingThumbnails({
+function regenerateMissingThumbnails(opts = {}) {
+  // Chamadas simultâneas compartilham a execução em andamento (três gatilhos sem exclusão mútua)
+  if (running) return running;
+  running = regenerateMissingThumbnailsImpl(opts).finally(() => { running = null; });
+  return running;
+}
+
+async function regenerateMissingThumbnailsImpl({
   paths,
   dbManager,
   window = null,
   batchSize = 3,
   limit = 0,
   logPrefix = '[RegenThumbs]',
+  retryFailed = false,
   onProgress = null,
 } = {}) {
   const ThumbnailGenerator = require('../media/ThumbnailGenerator');
@@ -87,10 +117,22 @@ async function regenerateMissingThumbnails({
       AND (missing = 0 OR missing IS NULL)
   `).all();
 
+  const failuresFile = path.join(paths.dataDir, FAILURES_FILE);
+  const failures = loadFailures(failuresFile);
+  const now = Date.now();
+  let skippedRecentFailures = 0;
+
   const missing = rows.filter((r) => {
-    if (!r.thumbnail) return !isAudio(r.filename || r.filepath || '');
-    return !present.has(r.thumbnail);
+    const needs = !r.thumbnail ? !isAudio(r.filename || r.filepath || '') : !present.has(r.thumbnail);
+    if (!needs) return false;
+    // Falha recente (ex.: arquivo corrompido): não repete a cada startup, só depois de FAILURE_RETRY_MS
+    const failedAt = failures[r.uuid];
+    if (!retryFailed && failedAt && now - failedAt < FAILURE_RETRY_MS) { skippedRecentFailures++; return false; }
+    return true;
   }).slice(0, limit > 0 ? limit : undefined);
+  if (skippedRecentFailures > 0) {
+    logger.info(`${logPrefix} ${skippedRecentFailures} miniaturas com falha recente ignoradas (nova tentativa em até 7 dias).`);
+  }
 
   if (missing.length === 0) {
     logger.info(`${logPrefix} Nenhuma thumbnail ausente encontrada.`);
@@ -128,14 +170,18 @@ async function regenerateMissingThumbnails({
           db.prepare('UPDATE media SET thumbnail = ? WHERE id = ?').run(`${row.uuid}.jpg`, row.id);
         }
         regenerated++;
+        delete failures[row.uuid];
       } catch (err) {
         logger.warn(`${logPrefix} Falha ao regenerar thumb id=${row.id}: ${err.message}`);
         failed++;
+        failures[row.uuid] = Date.now();
       }
     }));
     notify(i + batchLimit);
     await new Promise((r) => setTimeout(r, 20)); // cede o event loop entre lotes
   }
+
+  saveFailures(failuresFile, failures);
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   logger.info(`${logPrefix} Concluído (${elapsed}s): ${regenerated} regeneradas, ${failed} falhas de ${missing.length} total.`);

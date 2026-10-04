@@ -80,21 +80,21 @@ class ManifestClient {
       try {
         parsed = new URL(urlString);
       } catch (err) {
-        return reject(new Error(`URL de Update Server inválida: ${urlString}`));
+        return reject(new Error('O endereço do servidor de atualizações é inválido. Revise-o nas configurações.'));
       }
 
       const client = parsed.protocol === 'http:' ? http : https;
       const req = client.get(parsed, { headers: { 'User-Agent': 'BDS-UpdateClient' }, timeout: this.timeoutMs }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
-          if (redirects >= MAX_REDIRECTS) return reject(new Error('Redirecionamentos demais ao consultar o Update Server.'));
+          if (redirects >= MAX_REDIRECTS) return reject(new Error('O servidor de atualizações redirecionou demais. Tente novamente mais tarde.'));
           let hop;
           try { hop = nextHop(parsed, res.headers.location, {}); } catch (err) { return reject(err); }
           return this._requestJson(hop.url, redirects + 1).then(resolve, reject);
         }
         if (res.statusCode !== 200) {
           res.resume();
-          return reject(new Error(`Update Server respondeu com status ${res.statusCode} para ${urlString}`));
+          return reject(new Error(`O servidor de atualizações não respondeu corretamente (código ${res.statusCode}). Tente novamente mais tarde.`));
         }
 
         let raw = '';
@@ -104,15 +104,17 @@ class ManifestClient {
           try {
             resolve(JSON.parse(raw));
           } catch (err) {
-            reject(new Error(`Resposta inválida (não é JSON) do Update Server: ${err.message}`));
+            reject(new Error('O servidor de atualizações enviou uma resposta inválida. Tente novamente mais tarde.'));
           }
         });
       });
 
       req.on('timeout', () => {
-        req.destroy(new Error(`Timeout ao consultar Update Server (${this.timeoutMs}ms): ${urlString}`));
+        req.destroy(new Error('O servidor de atualizações demorou demais para responder. Verifique sua conexão e tente de novo.'));
       });
-      req.on('error', reject);
+      req.on('error', (err) => reject(/servidor de atualiza/i.test(err.message)
+        ? err
+        : new Error('Não foi possível conectar ao servidor de atualizações. Verifique a conexão e o endereço configurado.')));
     });
   }
 }

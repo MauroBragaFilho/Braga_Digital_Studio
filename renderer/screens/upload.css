@@ -73,3 +73,49 @@
 @media (prefers-reduced-motion: reduce) {
   .bds-upl-status-close { transition: none; }
 }
+
+/* Carregando / falha ao abrir a página */
+.bds-upl-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+.bds-upl-overlay.visible { display: flex; }
+.bds-upl-overlay.is-error { background: var(--bg); pointer-events: auto; }
+.bds-upl-overlay strong { color: var(--text); font-size: 15px; }
+.bds-upl-overlay-icon { font-size: 40px; color: var(--accent); }
+.bds-upl-retry {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.bds-upl-retry:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+:root[data-theme="light"] .bds-upl-status-bar { color: #1b6e1f; }
+@media (prefers-reduced-motion: no-preference) {
+  .bds-upl-overlay.visible:not(.is-error) .bds-upl-overlay-icon { animation: bds-upl-pulse 1.4s ease-in-out infinite; }
+}
+:root.reduce-motion .bds-upl-overlay-icon { animation: none !important; }
+@keyframes bds-upl-pulse { 50% { opacity: 0.4; } }
+
+.bds-upl-retry { background: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
+.bds-upl-overlay-icon { color: var(--accent-text, var(--accent)); }

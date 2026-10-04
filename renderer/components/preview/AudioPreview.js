@@ -6,8 +6,10 @@
 import { WaveformRenderer } from './WaveformRenderer.js';
 
 import { escapeHtml as _e } from '../../utils/escape.js';
+import { toFileUrl } from '../../utils/fileUrl.js';
+const _sz = b => b>=1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(b/1024))+' KB';
 const _t = s => { if(!s||isNaN(s))return'00:00'; return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0'); };
-const _f = fp => 'file:///'+String(fp).replace(/\\\\/g,'/');
+const _f = fp => toFileUrl(fp);
 const _u = (m,fp) => { if(m&&m.uuid)return m.uuid; let h=0; const s=String(fp||'').toLowerCase(); for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;} return 'a_'+Math.abs(h).toString(36); };
 
 export class AudioPreview {
@@ -82,7 +84,9 @@ export class AudioPreview {
     const ext=(fp.split('.').pop()||'').toUpperCase();
     this.dom.badge.textContent=ext||'AUDIO';
     this.dom.title.textContent=media.filename||media.name||fp.split(/[/\\]/).pop()||'Audio';
-    this.duration=0; this._infoFetched=false; this._infoData=null;
+    this.media=media; this.duration=0; this._infoFetched=false; this._infoData=null;
+    if(this.dom.infoGrid) this.dom.infoGrid.innerHTML='';
+    if(this.isInfoOpen) this._fetchInfo(); // painel já aberto: mostra os dados da nova mídia
     this.dom.curTime.textContent='00:00'; this.dom.dur.textContent='00:00';
     this.dom.tlFill.style.width='0%'; this.dom.tlHead.style.left='0%';
     this.dom.btnPlay.querySelector('.material-symbols-rounded').textContent='play_arrow';
@@ -104,6 +108,12 @@ export class AudioPreview {
     const audioEl=document.createElement('audio');
     audioEl.src=_f(fp); audioEl.preload='metadata';
     audioEl.addEventListener('loadedmetadata', ()=>{ this.duration=audioEl.duration||0; this.dom.dur.textContent=_t(this.duration); });
+    audioEl.addEventListener('error', ()=>{
+      // Arquivo ausente/corrompido/formato não suportado: avisa no título em vez de um player mudo
+      if(!audioEl.getAttribute('src')||this._masterAudio!==audioEl) return;
+      this.dom.title.textContent=(media.filename||media.name||fp.split(/[/\\]/).pop()||'Audio')+' — não foi possível carregar o áudio';
+      this.dom.dur.textContent='--:--';
+    });
     audioEl.addEventListener('timeupdate', ()=>this._onTimeUpdate());
     audioEl.addEventListener('play', ()=>this._onPlay());
     audioEl.addEventListener('pause', ()=>this._onPause());
@@ -187,19 +197,25 @@ export class AudioPreview {
     try{
       const data=await window.bds.probeMetadataFile(fp);
       this._infoData=data; this._infoFetched=true; this._renderInfo(data);
-    }catch(_){}
+    }catch(err){ console.error('[PREVIEW] Falha ao ler informações da mídia:',err); }
   }
 
-  _renderInfo(data) {
-    const grid=this.dom.infoGrid; if(!grid||!data)return;
+  _renderInfo(raw) {
+    const grid=this.dom.infoGrid; if(!grid||!raw)return;
     grid.innerHTML='';
+    // 'metadata:probe' devolve o JSON do ffprobe ({ streams, format }); aceita também um objeto já achatado.
+    const streams=Array.isArray(raw.streams)?raw.streams:[];
+    const as=streams.find(s=>s.codec_type==='audio')||{};
+    const fmt=raw.format||{};
+    const data=streams.length||raw.format?{...raw,audio_codec:as.codec_name,sample_rate:as.sample_rate,channels:as.channels,
+      duration:fmt.duration||as.duration,bit_rate:as.bit_rate||fmt.bit_rate,size:fmt.size}:raw;
     const fields=[
       ['Codec',data.audio_codec||data.codec_name||'-'],
       ['Taxa amostral',data.sample_rate?`${(parseInt(data.sample_rate)/1000).toFixed(1)} kHz`:'-'],
       ['Canais',data.channels||data.audio_channels||'-'],
       ['Bitrate',data.bit_rate?`${(parseInt(data.bit_rate)/1000).toFixed(0)} kbps`:'-'],
-      ['Duração',_t(data.duration||this.duration)],
-      ['Tamanho',data.size?`${(parseInt(data.size)/(1024*1024)).toFixed(1)} MB`:'-'],
+      ['Duração',_t(parseFloat(data.duration)||this.duration)],
+      ['Tamanho',data.size?_sz(parseInt(data.size)):'-'],
     ];
     fields.forEach(([label,value])=>{
       const item=document.createElement('div'); item.className='ap-info-item';

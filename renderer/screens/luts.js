@@ -1,3 +1,5 @@
+import { enhanceModalOverlay } from '../utils/modal.js';
+import { friendlyError } from '../utils/friendlyError.js';
 // Importação com tratamento de erro (embora geralmente deva funcionar se o caminho estiver certo)
 let escapeHtmlFunc;
 let appState = null; // estado global do app (state.settings.lutPreviewImage)
@@ -429,6 +431,8 @@ export async function initScreen() {
         domRefs.btnNoticeClose?.addEventListener('click', hideNotice);
         bindDragAndDrop();
         bindCardMenu();
+        // Foco preso, Esc e retorno do foco nos dois modais (abertos/fechados pela classe 'hidden')
+        for (const m of [domRefs.fsModal, domRefs.cubeRawModal]) enhanceModalOverlay(m, { isOpen: (el) => !el.classList.contains('hidden') });
         domRefs.btnRefresh?.addEventListener('click', () => {
           // Opcional: Dar feedback visual ao usuário (icone girando, por exemplo)
           const btn = domRefs.btnRefresh;
@@ -705,8 +709,7 @@ function dropLutCaches(path) {
 
 /** Mensagem legível de um erro vindo do IPC (remove o prefixo "Error invoking remote method"). */
 function errMsg(err) {
-    const raw = typeof err === 'string' ? err : (err && err.message) || 'Falha desconhecida.';
-    return raw.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
+    return friendlyError(err, 'Falha desconhecida.');
 }
 
 function applyFilters() {
@@ -1160,8 +1163,6 @@ function updateInspector() {
         document.getElementById('insName').textContent = 'Selecione um LUT';
         document.getElementById('insType').textContent = '--';
         document.getElementById('insSize').textContent = '--';
-        const insResEl = document.getElementById('insRes');
-        if (insResEl) insResEl.textContent = '--';
         document.getElementById('insDate').textContent = '--';
 
         // Esconder canvas de preview real e mostrar img padrão
@@ -1191,8 +1192,6 @@ function updateInspector() {
     if (insBadge) insBadge.textContent = selectedLut.type || '3D LUT';
     document.getElementById('insType').textContent = selectedLut.type || '3D LUT';
     document.getElementById('insSize').textContent = formatBytes(selectedLut.size);
-    const insResEl = document.getElementById('insRes');
-    if (insResEl) insResEl.textContent = selectedLut.resolution || '--';
     document.getElementById('insDate').textContent =
         dateObj.toLocaleDateString('pt-BR') + ' ' +
         dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

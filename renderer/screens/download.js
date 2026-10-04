@@ -32,8 +32,19 @@ function showMultipleLinksModal() {
 
   document.body.appendChild(overlay);
 
+  const modalBox = overlay.querySelector('.multiple-links-modal');
+  modalBox.setAttribute('role', 'dialog');
+  modalBox.setAttribute('aria-modal', 'true');
+  modalBox.setAttribute('aria-label', 'Adição de múltiplos links');
   const textarea = overlay.querySelector('#multipleLinksInput');
   textarea.focus();
+  // Esc fecha; Ctrl+Enter adiciona; clique fora fecha
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); overlay.remove(); }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); overlay.querySelector('#confirmLinks')?.click(); }
+  };
+  overlay.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) overlay.remove(); });
 
   overlay.querySelector('#cancelLinks').addEventListener('click', () => overlay.remove());
 
@@ -97,7 +108,7 @@ function showMultipleLinksModal() {
             analysisError = 'Não foi possível obter dados do link';
           }
         } catch (e) {
-          analysisError = e.message || 'Erro ao analisar o link';
+          analysisError = ipcMsg(e) || 'Erro ao analisar o link';
           console.warn('[DOWNLOAD] Falha ao obter metadados para:', url, e);
         }
       }
@@ -107,7 +118,7 @@ function showMultipleLinksModal() {
           url: url,
           format: isSpot ? 'MP3' : (els.formatSelect?.value || 'MP4'),
           quality: els.resolutionSelect?.value || 'best',
-          title: titleToUse || (analysisError ? `Link com erro: ${url}` : (isSpot ? 'Música Spotify' : 'Vídeo')),
+          title: titleToUse || (analysisError ? `Link com erro: ${url}` : (isSpot ? 'Música' : 'Vídeo')),
           thumbnail: thumbToUse,
           channel: channelToUse,
           platform: platformToUse,
@@ -133,9 +144,20 @@ function showMultipleLinksModal() {
   });
 }
 import { els, state, setStatus, escapeHtml } from '../app.js';
-import { maskEngineNames } from '../utils/engineNames.js';
+
+/** Mensagem de erro em português simples, sem prefixos técnicos nem nomes de motores. */
+function ipcMsg(err) {
+  return friendlyError(err, '');
+}
+import { friendlyError } from '../utils/friendlyError.js';
 
 let metadataTimer = null;
+let metadataSeq = 0;
+
+/** Metadados em cache só valem para a URL em que foram buscados (evita aplicar dados de outro link). */
+function metadataFor(url) {
+  return state.metadata && state.metadataUrl === url ? state.metadata : null;
+}
 
 export function initScreen() {
   console.log('[DOWNLOAD] Inicializando tela...');
@@ -146,6 +168,11 @@ export function initScreen() {
     els.urlInput.addEventListener('input', () => {
       clearTimeout(metadataTimer);
       metadataTimer = setTimeout(loadMetadata, 300);
+    });
+
+    // Enter adiciona o link à fila (menos um clique)
+    els.urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addToQueue(); }
     });
 
     els.urlInput.addEventListener('paste', () => {
@@ -182,27 +209,85 @@ export function initScreen() {
   if (btnQueueAllMp3) btnQueueAllMp3.addEventListener('click', () => convertAllQueueTo('MP3'));
   if (btnQueueAllMp4) btnQueueAllMp4.addEventListener('click', () => convertAllQueueTo('MP4'));
   if (btnMultipleLinks) btnMultipleLinks.addEventListener('click', showMultipleLinksModal);
+  // O menu "Mais ações" fecha ao escolher uma ação
+  document.querySelector('.queue-more')?.addEventListener('click', (e) => {
+    if (e.target.closest('.queue-btn-menu')) e.currentTarget.open = false;
+  });
 
   if (state.metadata) {
     renderMetadata(state.metadata);
   }
 
+  document.getElementById('btnSkipWait')?.addEventListener('click', () => {
+    window.bds.downloads.skipWait?.();
+  });
+  bindWaitEvents();
+  refreshSessionNote();
+  refreshWaitState();
+
   fetchQueue();
+}
+
+// ---- Sessão do YouTube e pausa entre downloads ----
+let waitTimer = null;
+let waitBound = false;
+
+function fmtClock(sec) {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Mostra a contagem da pausa entre downloads (until = instante final em ms; null esconde). */
+function showWait(until) {
+  const box = document.getElementById('downloadWaitNote');
+  const text = document.getElementById('downloadWaitText');
+  clearInterval(waitTimer);
+  waitTimer = null;
+  if (!box || !text) return;
+  if (!until) { box.classList.add('hidden'); return; }
+  const tick = () => {
+    const left = (until - Date.now()) / 1000;
+    if (left <= 0) { box.classList.add('hidden'); clearInterval(waitTimer); waitTimer = null; return; }
+    text.textContent = `Aguardando ${fmtClock(left)} antes do próximo download (evita bloqueio do YouTube).`;
+    box.classList.remove('hidden');
+  };
+  tick();
+  waitTimer = setInterval(tick, 1000);
+}
+
+function bindWaitEvents() {
+  if (waitBound || !window.bds.downloads.onWait) return;
+  waitBound = true;
+  window.bds.downloads.onWait((data) => showWait(data && data.until));
+}
+
+async function refreshWaitState() {
+  try {
+    const st = await window.bds.downloads.getWaitState?.();
+    showWait(st && st.until);
+  } catch (_) { /* sem pausa em andamento */ }
+}
+
+/** Linha discreta: há sessão do YouTube válida (downloads autenticados) ou não. */
+async function refreshSessionNote() {
+  const el = document.getElementById('downloadSessionNote');
+  if (!el) return;
+  try {
+    const st = await window.bds.downloads.cookiesStatus?.();
+    if (st && st.valid) {
+      const until = st.expiresAt ? ` (válida até ${new Date(st.expiresAt).toLocaleDateString('pt-BR')})` : '';
+      el.textContent = `Sessão do YouTube ativa${until}: os downloads usam a sua conta.`;
+      el.classList.add('active');
+    } else {
+      el.textContent = 'Sem sessão do YouTube. Entre na conta pela aba Envio para baixar vídeos que exigem login.';
+      el.classList.remove('active');
+    }
+  } catch (_) { el.textContent = ''; }
 }
 
 
 function getDownloadsApi() {
-  return window.bds && window.bds.downloads ? window.bds.downloads : {
-    getQueue: () => window.bds.downloadGetQueue ? window.bds.downloadGetQueue() : Promise.resolve([]),
-    add: (req) => window.bds.startDownload ? window.bds.startDownload(req) : Promise.resolve(),
-    start: () => Promise.resolve(),
-    pause: () => Promise.resolve(),
-    cancel: (id) => window.bds.downloadRemoveJob ? window.bds.downloadRemoveJob(id) : Promise.resolve(),
-    retry: () => Promise.resolve(),
-    remove: (id) => window.bds.downloadRemoveJob ? window.bds.downloadRemoveJob(id) : Promise.resolve(),
-    reorder: () => Promise.resolve(),
-    clearCompleted: () => window.bds.downloadClearQueue ? window.bds.downloadClearQueue() : Promise.resolve()
-  };
+  return window.bds.downloads; // o preload sempre expõe a API de downloads
 }
 
 async function fetchQueue() {
@@ -220,6 +305,8 @@ async function fetchQueue() {
 // que repassa para renderDownloadQueue / updateProgressVisuals exportados aqui.
 
 export function onLeave() {
+  clearInterval(waitTimer);
+  waitTimer = null;
   clearTimeout(metadataTimer);
   metadataTimer = null;
 }
@@ -227,6 +314,8 @@ export function onLeave() {
 export function onEnter() {
   // Atualiza a fila (pode ter mudado enquanto a tela estava oculta)
   fetchQueue();
+  refreshSessionNote();
+  refreshWaitState();
 }
 
 // ---- Renderização da fila: diff por item.id (apenas linhas alteradas são recriadas) ----
@@ -277,7 +366,7 @@ function buildRowHtml(item, dyn) {
     } else if (item.status === 'completed') {
       const isSkipped = item.error && item.error.includes('já existe');
       statusBadge = isSkipped
-        ? `<span class="status-badge status-badge-skipped" title="${escapeHtml(maskEngineNames(item.error))}">↷ Já existe</span>`
+        ? `<span class="status-badge status-badge-skipped" title="${escapeHtml(friendlyError(item.error, "Já existe na pasta de destino."))}">↷ Já existe</span>`
         : `<span class="status-badge status-badge-completed">✓ Concluído</span>`;
       actionsHtml = `
         ${item.outputPath ? `<button type="button" class="card-action-btn card-action-btn-info" data-action="open-path" data-path="${escapeAttr(item.outputPath)}" title="Abrir arquivo">
@@ -289,7 +378,7 @@ function buildRowHtml(item, dyn) {
       `;
     } else if (item.status === 'failed' || item.status === 'cancelled') {
       const isFailed = item.status === 'failed';
-      statusBadge = `<span class="status-badge ${isFailed ? 'status-badge-failed' : 'status-badge-cancelled'}" title="${escapeHtml(maskEngineNames(item.error || ''))}">${isFailed ? '✕ Falhou' : 'Cancelado'}</span>`;
+      statusBadge = `<span class="status-badge ${isFailed ? 'status-badge-failed' : 'status-badge-cancelled'}" title="${escapeHtml(friendlyError(item.error, "Não foi possível baixar. Confira o link e tente de novo."))}">${isFailed ? '✕ Falhou' : 'Cancelado'}</span>`;
       actionsHtml = `
         <button type="button" class="card-action-btn card-action-btn-warning" data-action="retry" data-id="${item.id}" title="Tentar novamente">
           <span class="material-symbols-rounded">replay</span>
@@ -325,7 +414,7 @@ function buildRowHtml(item, dyn) {
 
       formatAndQualitySelectors = `
         <div class="download-card-selectors">
-          <select class="download-card-select" data-action="toggle-format" data-id="${item.id}" ${isSpot ? 'disabled title="Links do Spotify são suportados apenas em MP3"' : ''}>
+          <select class="download-card-select" data-action="toggle-format" data-id="${item.id}" ${isSpot ? 'disabled title="Links de música são suportados apenas em MP3"' : ''}>
             <option value="MP4" ${!isMp3 ? 'selected' : ''}>MP4</option>
             <option value="MP3" ${isMp3 ? 'selected' : ''}>MP3</option>
           </select>
@@ -342,9 +431,10 @@ function buildRowHtml(item, dyn) {
       `;
     }
 
-    const channelText = item.channel ? escapeHtml(item.channel) : escapeHtml(item.platform || 'YouTube');
+    const channelText = item.channel ? escapeHtml(item.channel) : escapeHtml(friendlyPlatform(item.platform));
     const durationText = item.duration ? formatDuration(item.duration) : '';
-    const metaSubtitle = `${channelText} • ${escapeHtml(item.platform || 'YouTube')}${durationText ? ' • ' + durationText : ''}`;
+    const platformText = escapeHtml(friendlyPlatform(item.platform));
+    const metaSubtitle = `${channelText}${platformText === channelText ? '' : ' • ' + platformText}${durationText ? ' • ' + durationText : ''}`;
 
     return `
       <div class="${cardClass}" data-item-id="${item.id}">
@@ -436,6 +526,7 @@ export function renderDownloadQueue(queue) {
   const total = items.length;
   const activeCount = activeItem ? 1 : 0;
   const setText = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== String(v)) el.textContent = v; };
+  document.querySelector('.queue-metrics')?.classList.toggle('hidden', total === 0);
   setText('metricTotal', total);
   setText('metricQueued', queuedCount);
   setText('metricActive', activeCount);
@@ -451,7 +542,7 @@ export function renderDownloadQueue(queue) {
       ? `<img src="${escapeHtml(activeItem.thumbnail)}" class="active-download-thumb" />` 
       : `<div class="active-download-thumb-placeholder"><span class="material-symbols-rounded">movie</span></div>`;
 
-    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : escapeHtml(activeItem.platform || 'YouTube');
+    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : escapeHtml(friendlyPlatform(activeItem.platform));
 
     const activeKey = [activeItem.id, activeItem.thumbnail, activeItem.title, activeItem.channel, activeItem.platform, activeItem.duration, activeItem.format, activeItem.quality].join('|');
     if (activeRefs && activeRefs.key === activeKey && activeContent.contains(activeRefs.fill)) {
@@ -498,7 +589,7 @@ export function renderDownloadQueue(queue) {
 
   if (items.length === 0) {
     rowCache.clear();
-    container.innerHTML = `<div class="queue-empty-state">Nenhum download na fila.</div>`;
+    container.innerHTML = `<div class="queue-empty-state">Nenhum download na fila.<br>Cole um link de vídeo ou música no campo acima e pressione <strong>Enter</strong>.<br>Para vários links de uma vez, use <strong>Múltiplos Links</strong>.</div>`;
     queueEmptyShown = true;
     setBusy(false);
     return;
@@ -584,19 +675,28 @@ async function loadMetadata() {
   if (!els.urlInput) return;
   const url = els.urlInput.value.trim();
   if (!url) return;
+  if (!/^https?:\/\//i.test(url)) { state.metadata = null; setStatus('Isso não parece um link. Cole um endereço que comece com http:// ou https://'); return; }
+
+  // Token de requisição: só a resposta mais recente (e para a URL ainda digitada) é aplicada
+  const seq = ++metadataSeq;
+  const isStale = () => seq !== metadataSeq || !els.urlInput || els.urlInput.value.trim() !== url;
 
   try {
     setStatus('Buscando informações da mídia...');
     const metadata = await window.bds.getMetadata(url);
+    if (isStale()) return;
     state.metadata = metadata;
-    
+    state.metadataUrl = url;
+
     if (els.mediaTitle) {
       renderMetadata(metadata);
     }
     setStatus('Informações carregadas.');
   } catch (error) {
+    if (isStale()) return;
     state.metadata = null;
-    setStatus(error.message || 'Não foi possível carregar a miniatura.');
+    state.metadataUrl = null;
+    setStatus(ipcMsg(error) || 'Não foi possível carregar a miniatura.');
   }
 }
 
@@ -624,9 +724,10 @@ function renderMetadata(metadata) {
 async function addToQueue() {
   const url = els.urlInput.value.trim();
   if (!url) {
-    setStatus('Cole uma URL antes de adicionar.');
+    setStatus('Cole um link antes de adicionar.');
     return;
   }
+  if (!/^https?:\/\//i.test(url)) { setStatus('Isso não parece um link. Cole um endereço que comece com http:// ou https://'); return; }
 
   try {
     setStatus('Analisando URL...');
@@ -665,10 +766,10 @@ async function addToQueue() {
       }
     }
 
-    let titleToUse = state.metadata?.title || '';
-    let thumbToUse = state.metadata?.thumbnail || '';
-    let channelToUse = state.metadata?.channel || '';
-    let durationToUse = state.metadata?.duration || null;
+    let titleToUse = metadataFor(url)?.title || '';
+    let thumbToUse = metadataFor(url)?.thumbnail || '';
+    let channelToUse = metadataFor(url)?.channel || '';
+    let durationToUse = metadataFor(url)?.duration || null;
     let platformToUse = detectSource(url);
     const isSpot = isSpotify(url);
 
@@ -699,7 +800,7 @@ async function addToQueue() {
     setStatus('Item adicionado à fila com sucesso.');
     fetchQueue();
   } catch (error) {
-    setStatus(error.message || 'Erro ao adicionar à fila.');
+    setStatus(ipcMsg(error) || 'Erro ao adicionar à fila.');
   }
 }
 
@@ -748,10 +849,10 @@ async function startDownloadDirect(format) {
       }
     }
 
-    let titleToUse = state.metadata?.title || '';
-    let thumbToUse = state.metadata?.thumbnail || '';
-    let channelToUse = state.metadata?.channel || '';
-    let durationToUse = state.metadata?.duration || null;
+    let titleToUse = metadataFor(url)?.title || '';
+    let thumbToUse = metadataFor(url)?.thumbnail || '';
+    let channelToUse = metadataFor(url)?.channel || '';
+    let durationToUse = metadataFor(url)?.duration || null;
     let platformToUse = detectSource(url);
     const isSpot = isSpotify(url);
     const finalFormat = isSpot ? 'MP3' : format;
@@ -771,7 +872,7 @@ async function startDownloadDirect(format) {
     setStatus(`Item ${finalFormat} adicionado à fila.`);
     fetchQueue();
   } catch (error) {
-    setStatus(error.message || 'Erro ao adicionar.');
+    setStatus(ipcMsg(error) || 'Erro ao adicionar.');
   }
 }
 
@@ -781,7 +882,7 @@ async function startQueue() {
     const api = getDownloadsApi();
     await api.start();
   } catch (err) {
-    setStatus('Erro ao iniciar fila.');
+    setStatus('Não foi possível iniciar a fila. Tente novamente.');
   }
 }
 
@@ -791,7 +892,7 @@ async function pauseQueue() {
     const api = getDownloadsApi();
     await api.pause();
   } catch (err) {
-    setStatus('Erro ao pausar fila.');
+    setStatus('Não foi possível pausar a fila.');
   }
 }
 
@@ -857,7 +958,7 @@ async function convertAllQueueTo(targetFormat) {
     }
   }
 
-  setStatus(`Formato da fila alterado para ${targetFormat} (links do Spotify mantidos em MP3).`);
+  setStatus(`Formato da fila alterado para ${targetFormat} (links de música mantidos em MP3).`);
   fetchQueue();
 }
 
@@ -871,6 +972,11 @@ async function updateItemQuality(id, newQuality) {
 
 async function clearAllQueue() {
   try {
+    const total = document.querySelectorAll('#downloadQueueContainer .download-card').length;
+    if (total > 0 && window.bdsModal?.confirm) {
+      const ok = await window.bdsModal.confirm(`Remover todos os ${total} itens da fila? Downloads em andamento serão cancelados. Os arquivos já baixados não são apagados.`);
+      if (!ok) return;
+    }
     const api = getDownloadsApi();
     if (api.clearAll) {
       await api.clearAll();
@@ -881,6 +987,7 @@ async function clearAllQueue() {
     setStatus('Fila limpa por completo.');
   } catch (err) {
     console.error('[DOWNLOAD] Erro ao limpar fila:', err);
+    setStatus('Não foi possível limpar a fila. Tente novamente.');
   }
 }
 
@@ -892,7 +999,9 @@ function openPath(filePath) {
 
 function clearInputForm() {
   if (els.urlInput) els.urlInput.value = '';
+  metadataSeq++; // descarta qualquer busca de metadados ainda em andamento
   state.metadata = null;
+  state.metadataUrl = null;
   if (els.thumbnail) {
     els.thumbnail.removeAttribute('src');
     els.thumbnail.classList.add('hidden');
@@ -934,7 +1043,7 @@ function formatBytes(bytes) {
 }
 
 function detectSource(url) {
-  if (isSpotify(url)) return 'Spotify';
+  if (isSpotify(url)) return 'Música';
   try {
     return new URL(url).hostname.replace(/^www\./, '');
   } catch {
@@ -949,4 +1058,10 @@ function isSpotify(url) {
   } catch {
     return false;
   }
+}
+/** Rótulo de plataforma para a interface: marcas de música viram "Música" (o dado salvo não muda). */
+function friendlyPlatform(p) {
+  const s = String(p || '').trim();
+  if (!s) return 'YouTube';
+  return /spotify/i.test(s) ? 'Música' : s;
 }

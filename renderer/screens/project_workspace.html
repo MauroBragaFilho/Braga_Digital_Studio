@@ -16,7 +16,7 @@
       <h2 id="wsProjectName" class="ws-header-title">Projeto</h2>
       <select id="wsProjectStatus" class="ws-status-select" title="Status do projeto">
         <option value="Ativo">Ativo</option>
-        <option value="Em Pausa">Em Pausa</option>
+        <option value="Pausado">Pausado</option>
         <option value="Concluído">Concluído</option>
         <option value="Arquivado">Arquivado</option>
       </select>
@@ -106,7 +106,7 @@
         <span class="material-symbols-rounded">movie</span> Monitor de Origem
       </button>
       <button id="wsTabSync" class="ws-center-tab" type="button">
-        <span class="material-symbols-rounded">graphic_eq</span> Sync Groups
+        <span class="material-symbols-rounded">graphic_eq</span> Grupos de sincronia
       </button>
       <span id="wsSyncSelectionHint" class="ws-sync-hint"></span>
     </div>
@@ -139,7 +139,7 @@
         <!-- Lista de Sync Groups renderizada via JS -->
       </div>
       <div id="wsSyncGroupDetail" class="ws-sync-group-detail">
-        <div class="ws-empty-state">Selecione um Sync Group à esquerda, ou crie um pelo botão "Sincronizar por Áudio".</div>
+        <div class="ws-empty-state">Selecione um Grupo de sincronia à esquerda, ou crie um pelo botão "Sincronizar por Áudio".</div>
       </div>
     </div>
 
@@ -292,11 +292,11 @@
     <div class="ws-export-section">
         <h4 class="ws-section-title">Gerar Sequência</h4>
 
-        <button id="wsBtnExportSequencePremiere" class="ws-btn-export-premiere ws-btn-export-premiere--primary" type="button" title="Gera uma sequência com tracks/offsets a partir dos Sync Groups">
+        <button id="wsBtnExportSequencePremiere" class="ws-btn-export-premiere ws-btn-export-premiere--primary" type="button" title="Gera uma sequência com tracks/offsets a partir dos Grupos de sincronia">
             <img src="./assets/premiere-icon.svg" class="ws-export-icon" onerror="this.style.display='none'"/>
             Gerar Sequência para Premiere
         </button>
-        <p class="ws-export-desc">Usa os Sync Groups já calculados para montar tracks de vídeo/áudio posicionadas pelo offset e exportar em XML.</p>
+        <p class="ws-export-desc">Usa os Grupos de sincronia já calculados para montar tracks de vídeo/áudio posicionadas pelo offset e exportar em XML.</p>
 
         <button id="wsBtnExportPremiere" class="ws-btn-export-premiere" type="button" title="Exporta apenas a estrutura de Pastas e os arquivos, sem sequência/offsets">
             <span class="material-symbols-rounded">folder_zip</span>
@@ -314,7 +314,7 @@
     <div class="ws-modal-box">
       <div class="ws-modal-header">
         <h3>Importar da Biblioteca</h3>
-        <button id="wsBtnCloseImportModal" class="ws-icon-btn-plain" type="button">
+        <button id="wsBtnCloseImportModal" class="ws-icon-btn-plain" type="button" title="Fechar" aria-label="Fechar">
           <span class="material-symbols-rounded">close</span>
         </button>
       </div>
@@ -332,7 +332,7 @@
     <div class="ws-modal-box ws-relink-modal-box">
       <div class="ws-modal-header">
         <h3>Reconectar Arquivos</h3>
-        <button id="wsBtnCloseRelinkModal" class="ws-icon-btn-plain" type="button">
+        <button id="wsBtnCloseRelinkModal" class="ws-icon-btn-plain" type="button" title="Fechar" aria-label="Fechar">
           <span class="material-symbols-rounded">close</span>
         </button>
       </div>

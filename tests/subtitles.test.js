@@ -121,6 +121,6 @@ test('formatStamp e buildMarkdown: mesmo formato do transcrever.py', () => {
     segments: [{ start: 0.2, text: ' Bom dia, pessoal. ' }, { start: 61.7, text: '   ' }, { start: 62, text: 'Vamos começar.' }]
   });
   assert.equal(md,
-    '# aula 01\n\nTranscrição automática (Whisper large-v3-turbo). Duração: 00:02:05\n\n'
+    '# aula 01\n\nTranscrição automática (modelo large-v3-turbo). Duração: 00:02:05\n\n'
     + '**[00:00:00]** Bom dia, pessoal.\n\n**[00:01:02]** Vamos começar.\n\n');
 });

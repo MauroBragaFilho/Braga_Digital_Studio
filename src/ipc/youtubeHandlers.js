@@ -1,10 +1,7 @@
-const { ipcMain, BrowserWindow, shell } = require('electron');
-const path = require('node:path');
-const { assertUserFile, assertExternalUrl } = require('./validate');
+const { BrowserWindow, shell } = require('electron');
+const { handle } = require('./channelRegistry');
+const { assertExternalUrl } = require('./validate');
 
-const VIDEO_EXTS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v', '.wmv', '.flv', '.mpg', '.mpeg', '.3gp']);
-const MAX_TITLE = 100;          // limite do YouTube
-const MAX_DESCRIPTION = 5000;   // limite do YouTube
 
 /** Hosts permitidos para navegação dentro da janela de login do YouTube Studio. */
 function isAllowedLoginHost(hostname) {
@@ -18,7 +15,7 @@ module.exports = function registerYoutubeHandlers() {
   let authWin = null;
   let authPromise = null;
 
-  ipcMain.handle('youtube:login', async () => {
+  handle('youtube:login', async () => {
     if (authWin && !authWin.isDestroyed()) {
       if (authWin.isMinimized()) authWin.restore();
       authWin.focus();
@@ -68,34 +65,5 @@ module.exports = function registerYoutubeHandlers() {
     }
 
     return authPromise;
-  });
-
-  ipcMain.handle('youtube:upload', async (event, payload) => {
-    try {
-      const { filePath, title, description, isPublic } = payload || {};
-
-      // O YouTubeBot controla o Electron via Puppeteer na porta de depuração remota,
-      // que agora só existe quando o app é iniciado com a variável BDS_DEBUG_PORT.
-      if (!process.env.BDS_DEBUG_PORT) {
-        throw new Error('Upload automatizado indisponível: inicie o app com BDS_DEBUG_PORT=8315 para habilitá-lo.');
-      }
-
-      const safeFile = assertUserFile(filePath, 'Arquivo de vídeo');
-      if (!VIDEO_EXTS.has(path.extname(safeFile).toLowerCase())) {
-        throw new Error('Extensão de vídeo não suportada para upload.');
-      }
-      if (typeof title !== 'string' || !title.trim() || title.length > MAX_TITLE) {
-        throw new Error(`Título inválido (1 a ${MAX_TITLE} caracteres).`);
-      }
-      if (description != null && (typeof description !== 'string' || description.length > MAX_DESCRIPTION)) {
-        throw new Error(`Descrição inválida (máximo ${MAX_DESCRIPTION} caracteres).`);
-      }
-
-      const YouTubeBot = require('../core/youtube/YouTubeBot');
-      await YouTubeBot.uploadVideo(safeFile, title.trim(), description || '', isPublic !== false);
-      return { success: true };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
   });
 };

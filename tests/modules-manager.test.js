@@ -118,8 +118,34 @@ test('instalar de um .zip local (offline) e recusar um .zip sem o whisper-cli', 
   const { mgr: other, root: root2 } = manager();
   const bad = path.join(root2, 'errado.zip');
   fs.writeFileSync(bad, zipOf({ 'Release/outro.exe': 'x' }));
-  await assert.rejects(other.installEngine({ zipPath: bad }), (e) => e.code === 'BAD_ZIP');
+  // .zip fora do SHA-256 fixado só chega à checagem de conteúdo se o usuário confirmar a origem não oficial
+  await assert.rejects(other.installEngine({ zipPath: bad, confirmUnofficial: async () => true }), (e) => e.code === 'BAD_ZIP');
   await assert.rejects(other.installEngine({ zipPath: path.join(root2, 'nao-existe.zip') }), (e) => e.code === 'BAD_ZIP');
+});
+
+test('.zip local com SHA-256 diferente do fixado: recusa sem confirmação, instala com confirmação (RK-065)', async () => {
+  const { mgr, root, whisper } = manager();
+  const custom = path.join(root, 'motor-custom.zip');
+  fs.writeFileSync(custom, zipOf({ 'whisper-cli.exe': 'cli-custom', 'ggml.dll': 'dll' }));
+
+  await assert.rejects(mgr.installEngine({ zipPath: custom }), (e) => e.code === 'UNOFFICIAL_ZIP');
+  assert.ok(!exists(whisper, 'engine'), 'nada instalado sem confirmação');
+  await assert.rejects(mgr.installEngine({ zipPath: custom, confirmUnofficial: async () => false }), (e) => e.code === 'UNOFFICIAL_ZIP');
+
+  let asked = null;
+  const w = (await mgr.installEngine({ zipPath: custom, confirmUnofficial: async (info) => { asked = info; return true; } })).whisper;
+  assert.equal(w.engine.installed, true);
+  assert.equal(asked.sha256, sha(fs.readFileSync(custom)));
+  assert.equal(hits.length, 0, 'não deveria acessar a rede');
+});
+
+test('modelo sem hash LFS na API do Hugging Face: falha fechado e não instala (RK-066)', async () => {
+  const { mgr, whisper } = manager({ config: { downloadAttempts: 1 } });
+  const original = mgr.hf.getModelFile.bind(mgr.hf);
+  mgr.hf.getModelFile = async (...a) => { const r = await original(...a); r.file.sha256 = null; return r; };
+  await assert.rejects(mgr.installModel('base'), (e) => e.code === 'NO_CHECKSUM');
+  assert.ok(!exists(whisper, 'models', 'base'));
+  assert.ok(!hits.some((h) => h.includes('/resolve/')), 'nem chegou a baixar o arquivo');
 });
 
 test('aceleração NVIDIA: exige o motor e a licença; instala e remove', async () => {
@@ -150,7 +176,7 @@ test('pacote NVIDIA incompleto é recusado e não estraga a instalação anterio
     rootDir: path.join(root, 'data'), tempDir: path.join(root, 'tmp'),
     config: { githubBaseUrl: base, huggingFaceBaseUrl: base, platform: 'win32', release: release({ cuda: { name: 'whisper-cuda-broken.zip', size: CUDA_ZIP_BROKEN.length, sha256: sha(CUDA_ZIP_BROKEN) } }) }
   });
-  await assert.rejects(broken.installCuda({ acceptLicense: true }), (e) => e.code === 'BAD_ZIP' && /ggml-cuda\.dll/.test(e.message));
+  await assert.rejects(broken.installCuda({ acceptLicense: true }), (e) => e.code === 'BAD_ZIP' && /incompleto/.test(e.message));
   assert.ok(exists(whisper, 'cuda', 'marca.txt'), 'a instalação anterior foi mantida');
   assert.ok(!exists(`${path.join(whisper, 'cuda')}.old`));
 });
@@ -224,8 +250,11 @@ test('remover o motor; uma operação por vez; cancelar sem operação devolve f
   mgr._end();
 });
 
-test('fora do Windows nada é instalado', async () => {
-  const { mgr } = manager({ config: { platform: 'linux' } });
+test('em sistema sem motor oficial (macOS) nada é instalado e o motivo vem em português', async () => {
+  const { mgr } = manager({ config: { platform: 'darwin', arch: 'arm64', release: undefined } });
+  const st = await mgr.getStatus();
+  assert.equal(st.whisper.engine.available, false);
+  assert.match(st.whisper.engine.unavailableReason, /não publica o motor para macOS/);
   assert.equal((await mgr.getStatus()).platformSupported, false);
   await assert.rejects(mgr.installEngine(), (e) => e.code === 'PLATFORM');
   await assert.rejects(mgr.installCuda({ acceptLicense: true }), (e) => e.code === 'PLATFORM');

@@ -20,17 +20,30 @@ class CacheService {
    * @param {number} [options.maxSizeMB=500]
    * @param {boolean} [options.autoClean=false]
    * @param {number} [options.waveformsMaxMB=200] - Teto separado para waveforms/tracks m4a
+   * @param {number} [options.previewsMaxMB=300] - Teto separado para os previews de foto (RAW/TIFF) em cache/previews
    */
   constructor(appPaths, options = {}) {
     this.appPaths = appPaths;
     this.maxSizeMB = options.maxSizeMB || 500;
     this.autoClean = options.autoClean || false;
     this.waveformsMaxMB = typeof options.waveformsMaxMB === 'number' ? options.waveformsMaxMB : 200;
+    this.previewsMaxMB = typeof options.previewsMaxMB === 'number' ? options.previewsMaxMB : 300;
+    // Previews de foto (RK-047): mesma pasta usada pelo PhotoPreviewService (<dataDir>/cache/previews)
+    const previewsDir = appPaths.previewsDir || (appPaths.dataDir ? path.join(appPaths.dataDir, 'cache', 'previews') : null);
+    // data/Temp e data/temp são a mesma pasta no Windows: sem esta checagem o tamanho dos temporários era somado duas vezes.
+    const dirKey = (d) => {
+      let r;
+      try { r = fs.realpathSync.native(d); } catch (_) { r = path.resolve(d); }
+      return process.platform === 'win32' ? r.toLowerCase() : r;
+    };
+    const tempExtra = appPaths.dataDir ? [path.join(appPaths.dataDir, 'temp')] : [];
+    const tempExtraDirs = tempExtra.filter((d) => !appPaths.tempDir || dirKey(d) !== dirKey(appPaths.tempDir));
     this.categories = [
       { key: 'thumbnails', dir: appPaths.thumbnailsDir, label: 'Thumbnails' },
       { key: 'waveforms',  dir: appPaths.waveformsDir,  label: 'Waveforms' },
+      ...(previewsDir ? [{ key: 'previews', dir: previewsDir, label: 'Previews de Fotos' }] : []),
       { key: 'temp',       dir: appPaths.tempDir,       label: 'Arquivos Temporários',
-        extraDirs: appPaths.dataDir ? [path.join(appPaths.dataDir, 'temp')] : [] },
+        extraDirs: tempExtraDirs },
     ];
   }
 
@@ -140,14 +153,26 @@ class CacheService {
     try { const now = new Date(); fs.utimesSync(filePath, now, now); } catch (_) {}
   }
 
-  _trimWaveformsToCap() {
-    if (this.waveformsMaxMB <= 0) return { filesRemoved: 0, bytesFreed: 0 };
-    const cat = this.categories.find(c => c.key === 'waveforms');
+  /** Tetos próprios por categoria (waveforms e previews), além do limite global. */
+  _categoryCaps() {
+    return [
+      { key: 'waveforms', maxMB: this.waveformsMaxMB },
+      { key: 'previews', maxMB: this.previewsMaxMB },
+    ];
+  }
+
+  _trimCategoryToCap(key, maxMB) {
+    if (!(maxMB > 0)) return { filesRemoved: 0, bytesFreed: 0 };
+    const cat = this.categories.find(c => c.key === key);
     if (!cat) return { filesRemoved: 0, bytesFreed: 0 };
     const size = this._dirSize(cat.dir);
-    const cap = this.waveformsMaxMB * 1024 * 1024;
+    const cap = maxMB * 1024 * 1024;
     if (size <= cap) return { filesRemoved: 0, bytesFreed: 0 };
     return this._trimByOldest(cat.dir, size - cap);
+  }
+
+  _trimWaveformsToCap() {
+    return this._trimCategoryToCap('waveforms', this.waveformsMaxMB);
   }
 
   async _dirSizeAsync(dirPath) {
@@ -200,13 +225,14 @@ class CacheService {
     if (!this.autoClean) return { trimmed: false };
     let totalBytesFreed = 0;
     const details = [];
-    const wf = this.categories.find(c => c.key === 'waveforms');
-    if (wf && this.waveformsMaxMB > 0) {
-      const size = await this._dirSizeAsync(wf.dir);
-      const cap = this.waveformsMaxMB * 1024 * 1024;
+    for (const { key, maxMB } of this._categoryCaps()) {
+      const cat = this.categories.find(c => c.key === key);
+      if (!cat || !(maxMB > 0)) continue;
+      const size = await this._dirSizeAsync(cat.dir);
+      const cap = maxMB * 1024 * 1024;
       if (size > cap) {
-        const r = await this._trimByOldestAsync(wf.dir, size - cap);
-        details.push({ key: 'waveforms', ...r });
+        const r = await this._trimByOldestAsync(cat.dir, size - cap);
+        details.push({ key, ...r });
         totalBytesFreed += r.bytesFreed;
       }
     }
@@ -234,9 +260,14 @@ class CacheService {
 
   autoCleanIfNeeded() {
     if (!this.autoClean) return { trimmed: false };
-    const wfTrim = this._trimWaveformsToCap();
-    const wfResult = () => (wfTrim.filesRemoved > 0
-      ? { trimmed: true, details: [{ key: 'waveforms', ...wfTrim }], totalBytesFreed: wfTrim.bytesFreed, totalFormatted: this._formatBytes(wfTrim.bytesFreed) }
+    const capDetails = [];
+    let capFreed = 0;
+    for (const { key, maxMB } of this._categoryCaps()) {
+      const r = this._trimCategoryToCap(key, maxMB);
+      if (r.filesRemoved > 0) { capDetails.push({ key, ...r }); capFreed += r.bytesFreed; }
+    }
+    const wfResult = () => (capDetails.length > 0
+      ? { trimmed: true, details: capDetails, totalBytesFreed: capFreed, totalFormatted: this._formatBytes(capFreed) }
       : { trimmed: false });
     if (this.maxSizeMB <= 0) return wfResult();
     const info = this.getCacheInfo();
@@ -244,8 +275,8 @@ class CacheService {
     if (info.totalBytes <= maxBytes) return wfResult();
     const excess = info.totalBytes - maxBytes;
     logger.info(`[CacheService] Auto-limpeza: cache (${info.totalFormatted}) excede limite (${this.maxSizeMB} MB). Removendo ${this._formatBytes(excess)}...`);
-    const details = wfTrim.filesRemoved > 0 ? [{ key: 'waveforms', ...wfTrim }] : [];
-    let totalBytesFreed = wfTrim.bytesFreed;
+    const details = [...capDetails];
+    let totalBytesFreed = capFreed;
     for (const catInfo of info.categories) {
       if (catInfo.sizeBytes === 0) continue;
       // Descobre as pastas reais da categoria (inclui extras como o 'temp' minúsculo)
@@ -271,6 +302,7 @@ class CacheService {
     if (typeof opts.maxSizeMB === 'number' && opts.maxSizeMB >= 0) this.maxSizeMB = opts.maxSizeMB;
     if (typeof opts.autoClean === 'boolean') this.autoClean = opts.autoClean;
     if (typeof opts.waveformsMaxMB === 'number' && opts.waveformsMaxMB >= 0) this.waveformsMaxMB = opts.waveformsMaxMB;
+    if (typeof opts.previewsMaxMB === 'number' && opts.previewsMaxMB >= 0) this.previewsMaxMB = opts.previewsMaxMB;
   }
 
   /**

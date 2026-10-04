@@ -1,62 +1,144 @@
 /* ==========================================================================
+   0. FONTES EMPACOTADAS (offline, só arquivos locais; licença OFL em assets/fonts, origem em .docs/FONTES_ORIGEM.md)
+   Montserrat para títulos, Inter para texto e interface.
+   ========================================================================== */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Montserrat';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/Montserrat-Bold.woff2') format('woff2');
+}
+
+/* ==========================================================================
    1. TOKENS & VARIABLES
+   Linguagem: superfícies planas separadas por contraste e borda de 1px, cantos generosos,
+   botão primário em pílula preta/branca e a cor de destaque só como acento.
+   Os nomes antigos (--card, --line, --accent...) continuam valendo como aliases.
    ========================================================================== */
 
-/* Tema Escuro (padrão) */
+/* Geometria, tipografia e movimento (iguais nos dois temas) */
+:root {
+  --radius-sm: 8px;      /* itens pequenos: campos, ícones, chips quadrados */
+  --radius-md: 16px;     /* cartões */
+  --radius-lg: 24px;     /* cartões grandes e destaques */
+  --radius-pill: 999px;  /* botões e chips */
+  --font-title: 'Montserrat', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --fs-title: 26px;      /* título de tela */
+  --fs-section: 18px;    /* título de seção */
+  --fs-body: 14px;       /* texto */
+  --fs-label: 12px;      /* rótulos e legendas */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --focus-ring: 2px solid var(--accent);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Tema Escuro (padrão): fundo #000, superfícies #1c1c1c e #262626 */
 :root,
 [data-theme="dark"] {
-  --bg: #121212;
+  --bg: #000000;
   --card: #1c1c1c;
-  --card-2: #252525;
-  --accent: #e53935;
-  --accent-hover: #ef5350;
-  --accent-light: rgba(229, 57, 53, 0.15);
-  --text: #f5f5f5;
-  --text-rgb: 245, 245, 245;
-  --muted: #a0a0a0;
-  --line: #2a2a2a;
+  --card-2: #262626;
+  --text: #ffffff;
+  --text-rgb: 255, 255, 255;
+  --muted: #a1a1a1;
+  --line: #333333;
+  --border-color: #333333;
+  --shadow: rgba(0, 0, 0, 0.5);
+  /* Botão primário em pílula: branco com texto preto */
+  --btn-bg: #ffffff;
+  --btn-fg: #000000;
+  --btn-bg-hover: #e0e0e0;
+  /* Destaque (valores do Vermelho; applyTheme aplica o tom da cor escolhida) */
+  --accent: #ff0000;
+  --accent-hover: #ff5959;
+  --accent-light: rgba(255, 0, 0, 0.18);
+  --accent-solid: #eb0000;       /* fundo de botão colorido com texto branco (>= 4,5:1) */
+  --accent-solid-hover: #c80000;
+  --accent-text: #ff7373;        /* texto/ícone em destaque sobre as superfícies (>= 4,5:1) */
+  --on-accent: #ffffff;
+  /* Estados */
   --green: #2e7d32;
-  --danger: #e53935;
-  --danger-fg: #ff6b63;
-  --danger-bg: rgba(229, 57, 53, 0.12);
+  --danger: #ff5252;
+  --danger-fg: #ff8a80;
+  --danger-bg: rgba(255, 82, 82, 0.14);
+  --danger-solid: #c62828;
+  --danger-solid-hover: #a81f1f;
   --success: #4caf50;
   --warning: #f59e0b;
   --info: #2196f3;
-  --shadow: rgba(0, 0, 0, 0.4);
-  --border-color: #2a2a2a;
+  --status-warn: #ffb300;
+  --status-info: #64b5f6;
+  --status-ok: #66bb6a;
+  --status-bad: #ff6b6b;
+  --input-bg: #262626;
 }
 
-/* Tema Claro */
+/* Tema Claro: fundo #f4f4f4, cartões #ffffff */
 [data-theme="light"] {
-  --bg: #eeeeee;
+  --bg: #f4f4f4;
   --card: #ffffff;
-  --card-2: #f5f5f5;
-  --accent: #e53935;
-  --accent-hover: #c62828;
-  --accent-light: rgba(229, 57, 53, 0.12);
-  --text: #1a1a1a;
-  --text-rgb: 26, 26, 26;
-  --muted: #6b6b6b;
-  --line: #d8d8d8;
+  --card-2: #f0f0f0;
+  --text: #000000;
+  --text-rgb: 0, 0, 0;
+  --muted: #666666;
+  --line: #e0e0e0;
+  --border-color: #e0e0e0;
+  --shadow: rgba(0, 0, 0, 0.08);
+  /* Botão primário em pílula: preto com texto branco */
+  --btn-bg: #000000;
+  --btn-fg: #ffffff;
+  --btn-bg-hover: #333333;
+  --accent: #ff0000;
+  --accent-hover: #b80000;
+  --accent-light: rgba(255, 0, 0, 0.12);
+  --accent-solid: #eb0000;
+  --accent-solid-hover: #c80000;
+  --accent-text: #b80000;
+  --on-accent: #ffffff;
   --green: #2e7d32;
-  --danger: #e53935;
-  --danger-fg: #ff6b63;
-  --danger-bg: rgba(229, 57, 53, 0.12);
-  --success: #4caf50;
-  --warning: #f59e0b;
-  --info: #2196f3;
-  --shadow: rgba(0, 0, 0, 0.1);
-  --border-color: #d8d8d8;
-  --input-bg: rgba(0, 0, 0, 0.05);
+  --danger: #c20000;
+  --danger-fg: #b71c1c;
+  --danger-bg: rgba(194, 0, 0, 0.08);
+  --danger-solid: #c62828;
+  --danger-solid-hover: #a81f1f;
+  --success: #2a6f2e;
+  --warning: #9a5b00;
+  --info: #1565c0;
+  --status-warn: #8a5a00;
+  --status-info: #0b5cad;
+  --status-ok: #1b6e20;
+  --status-bad: #b00020;
+  --input-bg: #ffffff;
 }
 
-/* Light theme: inputs/selects com background escuro hardcoded precisam de override */
+/* Campos: superfície própria em cada tema (no claro, branco com borda) */
 [data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
 [data-theme="light"] select,
 [data-theme="light"] textarea {
-  background: var(--input-bg, rgba(0,0,0,0.05)) !important;
+  background: var(--input-bg) !important;
   color: var(--text) !important;
-  border-color: var(--line) !important;
+  border-color: #c9c9c9 !important;
 }
 
 
@@ -79,8 +161,17 @@ body {
   overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 14px;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Títulos em Montserrat 700; texto e interface em Inter */
+h1, h2, h3 {
+  font-family: var(--font-title);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 /* Scrollbars */
@@ -115,9 +206,26 @@ input[type=number] {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   font-size: 13px;
+}
+
+/* Anel de foco padrão: 2px na cor do acento */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Movimento reduzido (preferência do sistema): sem animações nem transições */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ==========================================================================
@@ -292,8 +400,9 @@ button:disabled {
 }
 .brand strong {
   display: block;
+  font-family: var(--font-title);
   font-size: 13px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 
 /* Sidebar Toggle Button */
@@ -452,7 +561,7 @@ button:disabled {
 
 /* Content & Views */
 .content {
-  padding: 24px;
+  padding: 24px 32px;
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
@@ -610,11 +719,11 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 10px 16px;
   background: transparent;
   color: var(--muted);
-  border-radius: 8px;
-  font-weight: 500;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
   font-size: 13px;
   text-align: left;
   border-left: 3px solid transparent;
@@ -631,30 +740,27 @@ button:disabled {
 .tab-button:hover {
   background: var(--card-2);
   color: var(--text);
-  transform: translateX(2px);
 }
 .tab-button:active {
   transform: scale(0.97);
   transition-duration: 0.08s;
 }
 .tab-button.active {
-  background: var(--card-2);
-  color: var(--accent);
-  border-left-color: var(--accent);
-  /* ── Sutil glow accent no active ── */
-  box-shadow: inset 0 0 0 1px var(--accent-light, rgba(229, 57, 53, 0.08));
+  background: var(--accent-light);
+  color: var(--accent-text);
+  border-left-color: transparent;
 }
 .tab-button.active .material-symbols-rounded {
-  filter: drop-shadow(0 0 4px var(--accent-light, rgba(229, 57, 53, 0.35)));
-  transition: filter 0.25s ease;
+  color: var(--accent);
 }
 /* ── Ícone: escala sutil no hover ── */
 .tab-button .material-symbols-rounded {
   transition: transform 0.2s ease, font-size 0.3s ease, filter 0.25s ease;
   flex-shrink: 0;
 }
-.tab-button:hover .material-symbols-rounded {
-  transform: scale(1.08);
+.tab-button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 .nav-update-badge {
   position: absolute;
@@ -685,7 +791,7 @@ button:disabled {
 .updates-list {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 .panel {
   padding: 20px;
@@ -714,7 +820,8 @@ button:disabled {
 .secondary,
 .icon-button {
   min-height: 40px;
-  border-radius: 6px;
+  padding: 0 24px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   font-weight: 600;
   display: inline-flex;
@@ -722,30 +829,33 @@ button:disabled {
   justify-content: center;
   gap: 8px;
 }
+/* Botão primário em pílula: preto no tema claro, branco no escuro (o vermelho fica só como acento) */
 .primary.red,
 .icon-button.red {
-  background: var(--accent);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
 }
 .primary.red:hover,
 .icon-button.red:hover {
-  background: var(--accent-hover);
+  background: var(--btn-bg-hover);
 }
 .primary.green {
   background: var(--green);
+  color: #ffffff;
 }
 .secondary {
   background: transparent;
-  border: 1px solid var(--line);
+  border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
 }
 .secondary:hover {
   background: var(--card-2);
 }
 .secondary.danger {
-  color: var(--accent);
-  border-color: var(--accent-light);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
 }
 .secondary.danger:hover {
-  background: var(--accent-light);
+  background: var(--danger-bg);
 }
 .button-grid {
   display: grid;
@@ -765,8 +875,8 @@ select {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
   color: var(--text);
   padding: 0 14px;
   outline: none;
@@ -866,6 +976,42 @@ dd {
   line-height: 1.45;
   word-break: break-word;
 }
+/* Linha de status da tela Downloads: só ocupa espaço quando há mensagem */
+#statusText.downloads-status-text {
+  margin: 8px 4px 0;
+  min-height: 0;
+  font-size: 13px;
+}
+#statusText.downloads-status-text:empty {
+  display: none;
+}
+/* Sessão do YouTube (aba Envio) e pausa entre downloads: linhas discretas */
+.downloads-session-note {
+  margin: 4px 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.downloads-session-note:empty { display: none; }
+.downloads-session-note.active { color: var(--success, #43a047); }
+.downloads-wait-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.downloads-wait-note.hidden { display: none; }
+.downloads-wait-skip {
+  background: none;
+  border: 1px solid var(--border);
+  color: inherit;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.downloads-wait-skip:hover { border-color: var(--text); }
 #progressDetails {
   color: var(--muted);
 }
@@ -1415,34 +1561,33 @@ dialog menu {
 }
 .bds-btn-secondary {
   background: transparent;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  padding: 8px 16px;
-  border-radius: 6px;
+  border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
+  color: var(--text);
+  padding: 8px 20px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: 0.2s;
 }
 .bds-btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--card-2);
   color: var(--text);
 }
+/* Botão primário em pílula: preto no tema claro, branco no escuro */
 .bds-btn-primary {
-  background: var(--accent);
-  color: var(--text);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
   border: none;
-  padding: 8px 20px;
-  border-radius: 6px;
+  padding: 9px 24px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: 0.2s;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: background 0.2s var(--ease);
 }
 .bds-btn-primary:hover {
-  filter: brightness(1.1);
-  transform: translateY(-1px);
+  background: var(--btn-bg-hover);
 }
 
 /* Storage Indicators */
@@ -1509,8 +1654,8 @@ select option {
 }
 
 .bds-btn-red {
-  background: #d32f2f;
-  color: var(--text);
+  background: var(--danger-solid);
+  color: #ffffff;
   border: none;
   padding: 6px 14px;
   border-radius: 6px;
@@ -1524,7 +1669,7 @@ select option {
 }
 
 .bds-btn-red:hover {
-  background: #e53935;
+  background: var(--danger-solid-hover);
 }
 
 .bds-upl-icon-group {
@@ -2148,8 +2293,8 @@ select option {
 }
 
 .bds-btn-red-submit {
-  background: #d32f2f;
-  color: var(--text);
+  background: var(--danger-solid);
+  color: #ffffff;
   border: none;
   padding: 10px;
   border-radius: 6px;
@@ -2165,7 +2310,7 @@ select option {
 }
 
 .bds-btn-red-submit:hover {
-  background: #e53935;
+  background: var(--danger-solid-hover);
 }
 
 /* Bottom Queue Panel */
@@ -2471,5 +2616,21 @@ select option {
 .converter-empty-content { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .converter-empty-icon { font-size: 36px; opacity: 0.4; }
 
+/* Estado vazio padrão (ícone + título + orientação + ação): reutilizável por todas as telas */
+.bds-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bds-empty-icon { font-size: 40px; color: var(--muted); opacity: .8; }
+.bds-empty-title { font-size: 15px; color: var(--text); }
+.bds-empty-text { max-width: 420px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.bds-empty-action { margin-top: 6px; min-height: 40px; padding: 0 24px; border: 0; border-radius: var(--radius-pill); background: var(--btn-bg); color: var(--btn-fg); font-weight: 700; cursor: pointer; }
+.bds-empty-action:hover { background: var(--btn-bg-hover); }
+.bds-empty-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Utilitários */
 .hidden { display: none !important; }
+/* Botão primário legível nos dois temas (texto branco sobre vermelho tonalizado) */
+
+/* Esqueleto de carregamento (discreto; parado com "Reduzir animações") */
+.bds-skeleton { position: relative; overflow: hidden; border-radius: 12px; background: color-mix(in srgb, var(--text) 7%, transparent); min-height: 16px; }
+.bds-skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 10%, transparent), transparent); animation: bds-skeleton-sweep 1.4s ease-in-out infinite; }
+@keyframes bds-skeleton-sweep { to { transform: translateX(100%); } }
+.proj-card.bds-skeleton { min-height: 220px; cursor: default; pointer-events: none; }

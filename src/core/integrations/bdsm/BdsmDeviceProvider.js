@@ -60,12 +60,10 @@ class BdsmDeviceProvider extends StorageProvider {
 
       const items = (mediaList || []).map(m => ({
         id: m.id,
-        name: m.filename || m.name,
+        name: m.name,
         isFolder: false,
-        size: m.size || m.filesize || 0,
-        duration: m.duration || 0,
-        thumbnailUrl: client.getMediaThumbnailUrl(m.id),
-        downloadUrl: client.getMediaDownloadUrl(m.id)
+        size: m.size,
+        duration: m.duration
       }));
 
       return { success: true, items };
@@ -99,11 +97,10 @@ class BdsmDeviceProvider extends StorageProvider {
       for (const rawItem of itemIds) {
         const itemId = typeof rawItem === 'object' ? String(rawItem.id || rawItem.name) : String(rawItem);
         const media = mediaMap.get(itemId);
-        const fileName = media ? (media.filename || media.name) : `bdsm_media_${itemId}.mp4`;
+        const fileName = media ? media.name : `bdsm_media_${itemId}.mp4`;
         const destFilePath = path.join(destFolder, fileName);
-        const downloadUrl = client.getMediaDownloadUrl(itemId);
 
-        await this._downloadStream(downloadUrl, destFilePath, fileName);
+        await this._downloadStream(client, itemId, destFilePath, fileName);
       }
 
       return true;
@@ -119,9 +116,8 @@ class BdsmDeviceProvider extends StorageProvider {
     return devices.find(d => d.id === deviceId || d.ip === deviceId);
   }
 
-  async _downloadStream(url, destPath, fileName) {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${fileName}`);
+  async _downloadStream(client, itemId, destPath, fileName) {
+    const response = await client.openMediaDownload(itemId); // com o token de pareamento; erro HTTP vira BdsmError
 
     const totalBytes = parseInt(response.headers.get('content-length') || '0', 10);
     const fileStream = fs.createWriteStream(destPath);
@@ -146,7 +142,7 @@ class BdsmDeviceProvider extends StorageProvider {
       });
     }
 
-    fileStream.end();
+    await new Promise((resolve, reject) => fileStream.end((err) => (err ? reject(err) : resolve())));
   }
 }
 

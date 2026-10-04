@@ -319,7 +319,9 @@ function readTranscriptFile(filePath) {
   const ext = path.extname(file).toLowerCase();
   if (!TRANSCRIPT_EXTENSIONS.has(ext)) throw new Error('Formato não suportado para análise (use .md, .srt, .vtt ou .txt).');
   let stat;
-  try { stat = fs.statSync(file); } catch (_) { throw new Error('Arquivo da transcrição não encontrado.'); }
+  // lstat: um link simbólico (que poderia apontar para fora das pastas de transcrição) é recusado
+  try { stat = fs.lstatSync(file); } catch (_) { throw new Error('Arquivo da transcrição não encontrado.'); }
+  if (stat.isSymbolicLink()) throw new Error('Link simbólico não é aceito como transcrição.');
   if (!stat.isFile()) throw new Error('Arquivo da transcrição não encontrado.');
   if (stat.size > MAX_FILE_BYTES) throw new Error('Transcrição grande demais para analisar (máximo 5 MB).');
   return { text: fs.readFileSync(file, 'utf8'), title: path.basename(file, ext) };

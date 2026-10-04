@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const initSqlJs = require('sql.js');
+const logger = require('./logService');
 
 class HistoryService {
   static async create(databaseDir) {
@@ -27,22 +28,10 @@ class HistoryService {
     // Garante que a pasta pai existe
     fs.mkdirSync(databaseDir, { recursive: true });
 
-    // Inicializa o banco de DOWNLOADS
-    if (fs.existsSync(this.downloadsDbPath)) {
-      const bytes = fs.readFileSync(this.downloadsDbPath);
-      this.downloadsDb = new SQL.Database(bytes);
-    } else {
-      this.downloadsDb = new SQL.Database();
-    }
+    // Inicializa os bancos de DOWNLOADS e de CONVERSÕES (arquivo corrompido não impede o app de abrir)
+    this.downloadsDb = this._loadOrQuarantine(this.downloadsDbPath);
     this.downloadsDb.run("PRAGMA encoding = 'UTF-8';");
-
-    // Inicializa o banco de CONVERSÕES
-    if (fs.existsSync(this.conversionsDbPath)) {
-      const bytes = fs.readFileSync(this.conversionsDbPath);
-      this.conversionsDb = new SQL.Database(bytes);
-    } else {
-      this.conversionsDb = new SQL.Database();
-    }
+    this.conversionsDb = this._loadOrQuarantine(this.conversionsDbPath);
     this.conversionsDb.run("PRAGMA encoding = 'UTF-8';");
 
     // Cria as tabelas em seus respectivos bancos
@@ -81,6 +70,30 @@ class HistoryService {
     // Salva os arquivos físicos caso tenham acabado de ser criados
     this.persistDownloads();
     this.persistConversions();
+  }
+
+  /**
+   * Abre o arquivo como banco; se estiver ausente devolve um banco vazio, e se estiver corrompido
+   * move-o para <arquivo>.corrupt-<ts> (quarentena) e devolve um banco vazio.
+   */
+  _loadOrQuarantine(file) {
+    if (!fs.existsSync(file)) return new this.SQL.Database();
+    try {
+      const db = new this.SQL.Database(fs.readFileSync(file));
+      db.exec('SELECT count(*) FROM sqlite_master'); // força a leitura do cabeçalho/esquema
+      return db;
+    } catch (err) {
+      logger.error('[History] Banco de histórico corrompido; usando banco vazio.', { file: path.basename(file), error: err.message });
+      try { fs.renameSync(file, `${file}.corrupt-${Date.now()}`); } catch (_) { /* melhor esforço */ }
+      return new this.SQL.Database();
+    }
+  }
+
+  /** Escrita atômica: grava em .tmp e renomeia sobre o destino (o arquivo antigo nunca fica pela metade). */
+  _writeAtomic(file, db) {
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, Buffer.from(db.export()));
+    fs.renameSync(tmp, file);
   }
 
   // ==========================================
@@ -147,8 +160,12 @@ class HistoryService {
   _persistDownloadsNow() {
     if (!this._downloadsDirty) return;
     this._downloadsDirty = false;
-    const data = this.downloadsDb.export();
-    fs.writeFileSync(this.downloadsDbPath, Buffer.from(data));
+    try {
+      this._writeAtomic(this.downloadsDbPath, this.downloadsDb);
+    } catch (err) {
+      this._downloadsDirty = true;
+      logger.warn('[History] Falha ao gravar downloads.db', { error: err.message });
+    }
   }
 
   // ==========================================
@@ -240,8 +257,22 @@ class HistoryService {
   _persistConversionsNow() {
     if (!this._conversionsDirty) return;
     this._conversionsDirty = false;
-    const data = this.conversionsDb.export();
-    fs.writeFileSync(this.conversionsDbPath, Buffer.from(data));
+    try {
+      this._writeAtomic(this.conversionsDbPath, this.conversionsDb);
+    } catch (err) {
+      this._conversionsDirty = true;
+      logger.warn('[History] Falha ao gravar conversions.db', { error: err.message });
+    }
+  }
+
+  /** Grava na hora o que estiver pendente (chamar no encerramento do app). */
+  flush() {
+    clearTimeout(this._downloadsSaveTimer);
+    clearTimeout(this._conversionsSaveTimer);
+    this._downloadsSaveTimer = null;
+    this._conversionsSaveTimer = null;
+    this._persistDownloadsNow();
+    this._persistConversionsNow();
   }
 
   persistDownloads() {

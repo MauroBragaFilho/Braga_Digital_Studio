@@ -1,6 +1,7 @@
 'use strict';
 
-const { ipcMain, dialog, BrowserWindow } = require('electron');
+const { dialog, BrowserWindow } = require('electron');
+const { handle } = require('./channelRegistry');
 const path = require('node:path');
 const fs = require('node:fs');
 const { assertUserFile, assertAbsolutePath } = require('./validate');
@@ -23,36 +24,36 @@ function validateRecoveryInput(input = {}) {
 }
 
 module.exports = function registerRecoveryHandlers(videoRecoveryService, paths, rawRecoveryService) {
-  ipcMain.handle('recovery:diagnose', async (_, payload) => {
+  handle('recovery:diagnose', async (_, payload) => {
     const { corruptPath, referencePath } = validateRecoveryInput(payload);
     return await videoRecoveryService.diagnose(corruptPath, referencePath);
   });
 
-  ipcMain.handle('recovery:start', async (_, options) => {
+  handle('recovery:start', async (_, options) => {
     return await videoRecoveryService.recoverVideo(validateRecoveryInput(options));
   });
 
-  ipcMain.handle('recovery:cancel', async () => {
+  handle('recovery:cancel', async () => {
     videoRecoveryService.cancel();
     return { success: true };
   });
 
   // --- Recuperação de RAW ---
-  ipcMain.handle('recovery:raw:diagnose', async (_, payload) => {
+  handle('recovery:raw:diagnose', async (_, payload) => {
     const { corruptPath, referencePath } = validateRecoveryInput(payload);
     return await rawRecoveryService.diagnose(corruptPath, referencePath);
   });
 
-  ipcMain.handle('recovery:raw:start', async (_, options) => {
+  handle('recovery:raw:start', async (_, options) => {
     return await rawRecoveryService.recoverRaw(validateRecoveryInput(options));
   });
 
-  ipcMain.handle('recovery:raw:cancel', async () => {
+  handle('recovery:raw:cancel', async () => {
     rawRecoveryService.cancel();
     return { success: true };
   });
 
-  ipcMain.handle('logs:export', async (event) => {
+  handle('logs:export', async (event) => {
     try {
       const logsDir = paths?.logsDir || process.env.BMD_LOGS_DIR || path.join(process.cwd(), 'logs');
       const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();

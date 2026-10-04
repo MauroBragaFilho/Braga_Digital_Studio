@@ -9,6 +9,7 @@ const probeCache = require('../core/ffmpeg/ProbeCache');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
+const { uniqueOutputPath, isSamePath } = require('./uniquePath');
 
 // Progresso/log para a UI no máximo a cada 250 ms; stderr guarda só o final (~8 KB)
 const EMIT_THROTTLE_MS = 250;
@@ -57,7 +58,8 @@ class SilenceService extends EventEmitter {
           return reject(new Error(`Falha ao interpretar os dados do arquivo: ${e.message}`));
         }
         const streams = data.streams || [];
-        const video = streams.find(s => s.codec_type === 'video');
+        // Capa de álbum (attached_pic) aparece como "vídeo" no ffprobe: o arquivo continua sendo só áudio
+        const video = streams.find(s => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
         const audioStreams = streams.filter(s => s.codec_type === 'audio').map((s, idx) => ({
           index: idx,
           streamIndex: s.index,
@@ -68,7 +70,8 @@ class SilenceService extends EventEmitter {
         }));
         const firstAudio = audioStreams[0];
         resolve({
-          duration: parseFloat(data.format?.duration || video?.duration || 0),
+          duration: parseFloat(data.format?.duration || video?.duration || 0) || 0,
+          hasAudio: audioStreams.length > 0,
           isVideo: !!video,
           codec: video ? video.codec_name : (firstAudio ? firstAudio.codec : 'unknown'),
           width: video?.width || 0,
@@ -85,14 +88,18 @@ class SilenceService extends EventEmitter {
    * inteiro era decodificado à toa: 8 s -> 0,2 s num vídeo 1080p de 3 min) e interpretando o stderr
    * linha a linha, sem acumular o texto completo.
    */
-  async analyzeSilence(filePath, threshold, minDuration) {
+  async analyzeSilence(filePath, threshold, minDuration, totalDuration = 0) {
     const ffmpeg = ffmpegTool.resolve();
     return new Promise((resolve, reject) => {
+      const th = Number(threshold);
+      const md = Number(minDuration);
+      if (!Number.isFinite(th) || th > 0 || th < -120) return reject(new Error('Sensibilidade inválida (use um valor entre -120 e 0 dB).'));
+      if (!Number.isFinite(md) || md < 0.01 || md > 3600) return reject(new Error('Duração mínima inválida.'));
       const args = [
         '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'info',
         '-i', filePath,
         '-vn', '-sn', '-dn', '-map', '0:a:0',
-        '-af', `silencedetect=noise=${threshold}dB:d=${minDuration}`,
+        '-af', `silencedetect=noise=${th}dB:d=${md}`,
         '-f', 'null', '-'
       ];
       const child = spawn(ffmpeg, args, { windowsHide: true });
@@ -106,14 +113,20 @@ class SilenceService extends EventEmitter {
       const parseLine = (line) => {
         if (line.indexOf('silence_') === -1) return;
         const startMatch = line.match(/silence_start:\s*(-?[\d.]+)/);
-        if (startMatch) currentStart = parseFloat(startMatch[1]);
+        if (startMatch) {
+          const v = parseFloat(startMatch[1]);
+          if (Number.isFinite(v)) currentStart = v;
+        }
 
         const endMatch = line.match(/silence_end:\s*(-?[\d.]+)/);
         if (endMatch && currentStart !== null) {
           const start = Math.max(0, currentStart);
           const end = parseFloat(endMatch[1]);
-          silences.push({ start, end, duration: end - start });
           currentStart = null;
+          // Números inválidos ou faixa invertida/vazia são descartados (não geram corte)
+          if (Number.isFinite(end) && end > start && (!(totalDuration > 0) || start < totalDuration + 1)) {
+            silences.push({ start, end: totalDuration > 0 ? Math.min(end, totalDuration) : end, duration: (totalDuration > 0 ? Math.min(end, totalDuration) : end) - start });
+          }
         }
       };
 
@@ -130,6 +143,11 @@ class SilenceService extends EventEmitter {
         if (this.currentProcess === child) this.currentProcess = null;
         if (remainder) parseLine(remainder);
         if (this.cancelRequested) return resolve(silences);
+        // Silêncio que vai até o fim do arquivo: o silencedetect emite só silence_start (sem silence_end)
+        if (code === 0 && currentStart !== null && totalDuration > 0) {
+          const start = Math.max(0, currentStart);
+          if (start < totalDuration) silences.push({ start, end: totalDuration, duration: totalDuration - start });
+        }
         if (code !== 0) {
           return reject(new Error(`Falha na análise de silêncio${tail ? `: ${tail.trim().slice(-300)}` : ''}`));
         }
@@ -163,7 +181,8 @@ class SilenceService extends EventEmitter {
         keepSegments.push({ start: currentTime, end: totalDuration });
     }
 
-    return keepSegments;
+    // Descarta trechos de poucos milissegundos (trim vazio quebraria o concat)
+    return keepSegments.filter(seg => seg.end - seg.start >= 0.01);
   }
 
   /**
@@ -270,65 +289,115 @@ class SilenceService extends EventEmitter {
     this.running = true;
     this.cancelRequested = false;
 
-    const ffmpeg = ffmpegTool.resolve();
     let processedCount = 0;
     let copiedCount = 0;
+    let detectedCount = 0;
+    let lastFile = null;
+    const skipped = [];
+    const failed = [];
+    const reservedOutputs = new Set();
 
     try {
-      const { files, threshold, minDuration, mode, outFolder } = config;
+      // Dentro do try: se o ffmpeg não for encontrado, o erro vira 'finished' e o serviço sai de "em andamento"
+      const ffmpeg = ffmpegTool.resolve();
+      const { files, mode, outFolder } = config;
+      const threshold = Number(config.threshold);
+      const minDuration = Number(config.minDuration);
+      if (!Array.isArray(files) || files.length === 0) throw new Error('Nenhum arquivo informado.');
+      if (!Number.isFinite(threshold) || threshold > 0 || threshold < -120) throw new Error('Sensibilidade inválida (use um valor entre -120 e 0 dB).');
+      if (!Number.isFinite(minDuration) || minDuration < 0.01 || minDuration > 3600) throw new Error('Duração mínima inválida.');
 
       for (let i = 0; i < files.length; i++) {
         if (this.cancelRequested) break;
 
         const filePath = files[i];
         const fileName = path.basename(filePath);
-        this.emit('progress', { index: i + 1, total: files.length, file: fileName, percent: 0, status: 'Analisando...' });
+        const reportItem = (status, extra = {}) => this.emit('progress', { index: i + 1, total: files.length, file: fileName, percent: 0, status, ...extra });
+        // Pula o arquivo com aviso (não derruba o lote)
+        const skipFile = (reason) => {
+          skipped.push({ file: filePath, reason });
+          this.emit('log', `\n[${fileName}] Ignorado: ${reason}\n`);
+          reportItem('Ignorado', { message: reason });
+        };
+        reportItem('Analisando...');
+
+        try {
+        if (!fs.existsSync(filePath)) { skipFile('arquivo não encontrado.'); continue; }
 
         // Step 1: Probe
         const info = await this.probeFile(filePath);
-        if (!info.duration) continue;
+        if (this.cancelRequested) break;
+        if (!info.duration) { skipFile('não foi possível obter a duração do arquivo.'); continue; }
+        if (info.hasAudio === false || (info.audioStreams && info.audioStreams.length === 0)) {
+          skipFile('o arquivo não tem faixa de áudio (nada a analisar).');
+          continue;
+        }
 
         // Step 2: Analyze Silence
-        const silences = await this.analyzeSilence(filePath, threshold, minDuration);
+        const silences = await this.analyzeSilence(filePath, threshold, minDuration, info.duration);
         if (this.cancelRequested) break;
 
         // Mode detectOnly just continues
+        const silenceSeconds = silences.reduce((acc, s) => acc + Math.max(0, s.duration || 0), 0);
         if (mode === 'detectOnly') {
+            detectedCount++;
             this.emit('log', `\n[${fileName}] Encontrados ${silences.length} trechos silenciosos.\n`);
+            reportItem('Analisado', { percent: 100, silenceSeconds });
             continue;
         }
 
-        let currentOutFolder = outFolder || path.join(path.dirname(filePath), 'EXPORTADO');
+        const currentOutFolder = outFolder || path.join(path.dirname(filePath), 'EXPORTADO');
         if (!fs.existsSync(currentOutFolder)) {
           fs.mkdirSync(currentOutFolder, { recursive: true });
         }
 
         const ext = path.extname(filePath);
+        const extLower = ext.toLowerCase();
+        // Contêiner da saída compatível com o codec: vídeo sempre H.264/AAC (.webm e afins viram .mp4);
+        // áudio mantém a extensão quando há encoder correspondente, senão vira .m4a (AAC)
+        const AUDIO_CODECS = {
+          '.mp3': ['libmp3lame', '-b:a', '192k'],
+          '.wav': ['pcm_s16le'],
+          '.flac': ['flac'],
+          '.m4a': ['aac', '-b:a', '192k'],
+          '.aac': ['aac', '-b:a', '192k'],
+          '.ogg': ['libopus', '-b:a', '128k'],
+          '.opus': ['libopus', '-b:a', '128k'],
+          '.webm': ['libopus', '-b:a', '128k']
+        };
+        const outExt = info.isVideo
+          ? (['.mp4', '.mkv', '.mov'].includes(extLower) ? ext : '.mp4')
+          : (AUDIO_CODECS[extLower] ? ext : '.m4a');
         const base = path.basename(filePath, ext);
-        let finalFileName = `${base}_semsilencio${ext}`;
+        let stem = `${base}_semsilencio`;
         if (config.outFileName) {
-          if (files.length === 1) {
-            finalFileName = config.outFileName;
-            if (!path.extname(finalFileName)) finalFileName += ext;
-          } else {
-            const customExt = path.extname(config.outFileName) || ext;
-            const customBase = path.basename(config.outFileName, customExt);
-            finalFileName = `${customBase}_${i + 1}${customExt}`;
-          }
+          const customExt = path.extname(config.outFileName);
+          const customBase = customExt ? path.basename(config.outFileName, customExt) : config.outFileName;
+          stem = files.length === 1 ? customBase : `${customBase}_${i + 1}`;
         }
-        const outPath = path.join(currentOutFolder, finalFileName);
+        // Nunca sobrescreve: nome já existente (ou arquivo de origem do lote) vira "nome (2).ext"
+        const pickOutput = (extension) => uniqueOutputPath(currentOutFolder, `${stem}${extension}`, { avoid: files, reserved: reservedOutputs });
 
         if (silences.length === 0) {
+            const copyPath = pickOutput(ext);
+            if (isSamePath(copyPath, filePath)) throw new Error('O destino é o próprio arquivo de origem.');
             this.emit('log', `\n[${fileName}] Nenhum silêncio detectado sob o limiar de ${threshold}dB. Exportando arquivo original para pasta de destino...\n`);
-            fs.copyFileSync(filePath, outPath);
+            fs.copyFileSync(filePath, copyPath, fs.constants.COPYFILE_EXCL);
             copiedCount++;
-            this.emit('progress', { index: i + 1, total: files.length, file: fileName, percent: 100, status: 'Exportado (sem silêncio)' });
+            lastFile = path.basename(copyPath);
+            reportItem('Exportado (sem silêncio)', { percent: 100, silenceSeconds: 0, newDuration: info.duration });
             continue;
         }
 
         // Step 3: Calculate Segments to Keep
         const keepSegments = this.calculateKeepSegments(info.duration, silences, mode);
         const estimatedNewDuration = keepSegments.reduce((acc, seg) => acc + (seg.end - seg.start), 0);
+        if (keepSegments.length === 0 || estimatedNewDuration < 0.05) {
+          skipFile('o arquivo é inteiramente silencioso sob o limiar escolhido (nada restaria).');
+          continue;
+        }
+        const outPath = pickOutput(outExt);
+        reportItem('Processando...', { percent: 0, silenceSeconds, newDuration: estimatedNewDuration });
 
         // Aplica preferências atuais do usuário para detecção de hardware
         if (typeof this.getSettings === 'function') {
@@ -345,16 +414,7 @@ class SilenceService extends EventEmitter {
             outArgs.push('-c:v', targetEncoder, ...qualityArgs, '-c:a', 'aac');
         } else {
             outArgs.push('-map', '[afinal]');
-            const extLower = ext.toLowerCase();
-            if (extLower === '.mp3') {
-                outArgs.push('-c:a', 'libmp3lame', '-b:a', '192k');
-            } else if (extLower === '.wav') {
-                outArgs.push('-c:a', 'pcm_s16le');
-            } else if (extLower === '.flac') {
-                outArgs.push('-c:a', 'flac');
-            } else {
-                outArgs.push('-c:a', 'aac', '-b:a', '192k');
-            }
+            outArgs.push('-c:a', ...(AUDIO_CODECS[extLower] || ['aac', '-b:a', '192k']));
         }
 
         const baseArgs = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'warning'];
@@ -368,8 +428,9 @@ class SilenceService extends EventEmitter {
 
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bds-silence-'));
         const cleanupTmp = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {} };
-        const removeEmptyOutput = () => {
-            try { if (fs.existsSync(outPath) && fs.statSync(outPath).size === 0) fs.unlinkSync(outPath); } catch (e) {}
+        let outputOk = false;
+        const removePartialOutput = () => {
+            try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (e) {}
         };
 
         try {
@@ -378,7 +439,7 @@ class SilenceService extends EventEmitter {
             // Muitos trechos: processa em blocos e une com concat (-c copy). Se falhar, cai no grafo único.
             if (keepSegments.length > CHUNK_THRESHOLD) {
                 result = await this._cutInChunks({
-                    ffmpeg, filePath, keepSegments, info, ext, outPath, baseArgs, outArgs, tailArgs, tmpDir, emitProgress
+                    ffmpeg, filePath, keepSegments, info, ext: outExt, outPath, baseArgs, outArgs, tailArgs, tmpDir, emitProgress
                 });
                 if (this.cancelRequested) break;
                 if (result.code !== 0) {
@@ -405,23 +466,39 @@ class SilenceService extends EventEmitter {
             if (result.code === 0) {
                 if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) {
                     processedCount++;
+                    outputOk = true;
+                    lastFile = path.basename(outPath);
+                    reportItem('Concluído', { percent: 100 });
                     continue;
                 }
-                removeEmptyOutput();
                 throw new Error(`O motor de mídia gerou um arquivo de 0 bytes. Log: ${result.stderr.slice(-300)}`);
             }
 
-            removeEmptyOutput();
             throw new Error(`Falha no motor de mídia (código ${result.code}): ${result.stderr.slice(-300)}`);
         } finally {
+            // Cancelamento/falha: apaga a saída parcial (o nome é sempre novo, nunca um arquivo do usuário)
+            if (!outputOk) removePartialOutput();
             cleanupTmp();
+        }
+        } catch (fileErr) {
+          // Erro em um arquivo não derruba o lote: registra e segue para o próximo
+          if (this.cancelRequested) break;
+          const message = String(fileErr.message || fileErr).split(/\r?\n/).filter(Boolean).slice(-3).join(' ').slice(0, 300);
+          failed.push({ file: filePath, error: message });
+          logger.error('silence:file:error', { file: filePath, error: message });
+          this.emit('log', `\n[${fileName}] Erro: ${message}\n`);
+          reportItem('Erro', { message });
         }
       }
 
+      const summary = { processedCount, copiedCount, detectedCount, lastFile, skipped, failed };
       if (this.cancelRequested) {
-        this.emit('finished', { status: 'canceled', processedCount, copiedCount });
+        this.emit('finished', { status: 'canceled', ...summary });
+      } else if (processedCount + copiedCount + detectedCount === 0 && (failed.length || skipped.length)) {
+        const first = failed[0]?.error || skipped[0]?.reason;
+        this.emit('finished', { status: 'error', error: failed.length ? `Nenhum arquivo foi processado. ${first}` : `Nenhum arquivo foi processado: ${first}`, ...summary });
       } else {
-        this.emit('finished', { status: 'success', processedCount, copiedCount });
+        this.emit('finished', { status: failed.length || skipped.length ? 'partial' : 'success', ...summary });
       }
 
     } catch (err) {

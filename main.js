@@ -1,11 +1,17 @@
 'use strict';
 
+// [PERF] Diagnóstico de inicialização (no-op sem BDS_PERF=1). Primeiro require: mede tudo que vem depois.
+const perf = require('./src/infrastructure/diagnostics/startupPerf');
+
 const { app, BrowserWindow, nativeImage, protocol, net, screen, session, shell, dialog } = require('electron');
 const path = require('node:path');
+
+
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { resolveThumbRequest } = require('./src/ipc/thumbProtocol');
 const { assertExternalUrl } = require('./src/ipc/validate');
+perf.mark('main:electron-and-ipc-required');
 
 // Identifica o app para o Windows — necessário para que notificações nativas
 // (new Notification()) apareçam, especialmente em modo desenvolvimento (npm start),
@@ -16,11 +22,18 @@ app.setAppUserModelId('com.bragadev.digitalstudio');
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
 // [FASE 1.1] Debug remoto: opt-in explícito e SOMENTE em desenvolvimento (nunca empacotado).
-// Uso: BDS_DEBUG_PORT=8315 npm start   (escuta apenas em 127.0.0.1; o YouTubeBot espera a porta 8315)
+// Uso: BDS_DEBUG_PORT=8315 npm start   (escuta apenas em 127.0.0.1)
 const debugPort = process.env.BDS_DEBUG_PORT;
 if (!app.isPackaged && debugPort && /^\d{2,5}$/.test(debugPort) && Number(debugPort) <= 65535) {
   app.commandLine.appendSwitch('remote-debugging-port', debugPort);
   app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+}
+
+// Instância única: duas instâncias carregariam o banco inteiro em memória e a última a gravar venceria.
+// A segunda instância apenas foca a janela da primeira e sai antes de tocar em qualquer dado.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.exit(0);
 }
 
 const { appPaths } = require('./src/infrastructure/filesystem/AppPaths');
@@ -33,17 +46,54 @@ const writableRoot = isPackaged ? app.getPath('userData') : __dirname;
 appPaths.init(writableRoot, appRoot);
 appPaths.ensureDirectories();
 process.env.BMD_LOGS_DIR = appPaths.logsDir;
+perf.setOutputDir(appPaths.logsDir);
+perf.mark('main:paths-ready');
 
-const { externalTools } = require('./src/infrastructure/external-tools/ExternalToolsManager');
-externalTools.init(appPaths.dataDir);
-
-const Bootstrap = require('./src/bootstrap');
-const bootstrap = new Bootstrap(appPaths);
+// [PERF] O núcleo do app (Bootstrap, serviços, logger, telemetria) só é carregado DEPOIS de a janela existir:
+// o Chromium sobe o renderer em paralelo com esse carregamento (ver whenReady e o portão em renderer/boot-gate.js).
+let bootstrap = null;
 let mainWindow = null;
 
-// [FASE 2.1] Tratamento de erros globais no processo principal
-const logger = require('./src/services/logService');
-const { errorReporter } = require('./src/infrastructure/telemetry/ErrorReporter');
+/** Cede o processo principal ao Chromium (navegação do renderer, IPC) entre dois trechos síncronos. */
+const yieldToChromium = () => new Promise((resolve) => setImmediate(resolve));
+
+/**
+ * Carrega o núcleo do app (uma única vez). Chamado em whenReady, logo depois de criar a janela.
+ * Os require() pesados são feitos em etapas, cedendo o processo principal ao Chromium entre elas: um único
+ * trecho síncrono longo congelava a navegação do renderer (que sobe em paralelo) e atrasava a Home.
+ */
+async function initBootstrap() {
+  if (bootstrap) return bootstrap;
+  const { externalTools } = require('./src/infrastructure/external-tools/ExternalToolsManager');
+  externalTools.init(appPaths.dataDir);
+  await yieldToChromium();
+  for (const mod of [
+    './src/services/logService',                // fachada leve: o winston só carrega depois da Home (ver logService)
+    './src/core/settings/SettingsManager',
+    './src/bootstrap/services',                 // serviços de mídia, projetos, biblioteca
+    './src/bootstrap/events',
+    './src/ipc'                                 // registro dos handlers (os módulos de cada domínio carregam em registerIpcHandlers)
+  ]) {
+    require(mod);
+    await yieldToChromium();
+  }
+  const Bootstrap = require('./src/bootstrap');
+  bootstrap = new Bootstrap(appPaths);
+  perf.mark('main:bootstrap-required');
+  return bootstrap;
+}
+
+// [FASE 2.1] Tratamento de erros globais no processo principal.
+// logger e errorReporter são carregados na primeira vez que são usados (winston e a telemetria
+// não entram no caminho até a primeira janela).
+const logger = {
+  info: (...args) => require('./src/services/logService').info(...args),
+  warn: (...args) => require('./src/services/logService').warn(...args),
+  error: (...args) => require('./src/services/logService').error(...args)
+};
+const errorReporter = {
+  report: (...args) => require('./src/infrastructure/telemetry/ErrorReporter').errorReporter.report(...args)
+};
 
 // Erros benignos de rede/IO que não justificam alarmar o usuário com um diálogo.
 const BENIGN_ERROR_CODES = new Set(['EPIPE', 'ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ABORT_ERR']);
@@ -74,17 +124,73 @@ function notifyUncaught(err) {
   } catch (_) { /* nunca lançar de dentro do handler de erros */ }
 }
 
+// Limite de taxa: uma tempestade de exceções (ex.: laço de EPIPE) não pode gerar milhares de linhas
+// de log/relatórios por segundo. Até ERROR_BURST_LIMIT por janela de 10 s; o resto é só contado.
+const ERROR_WINDOW_MS = 10000;
+const ERROR_BURST_LIMIT = 5;
+let errorWindowStart = 0;
+let errorWindowCount = 0;
+let errorSuppressed = 0;
+
+/** @returns {boolean} true se este erro deve ser registrado/relatado agora */
+function allowErrorLogging() {
+  const now = Date.now();
+  if (now - errorWindowStart > ERROR_WINDOW_MS) {
+    if (errorSuppressed > 0) {
+      logger.warn('[Main] Erros globais suprimidos pelo limite de taxa', { suppressed: errorSuppressed });
+    }
+    errorWindowStart = now;
+    errorWindowCount = 0;
+    errorSuppressed = 0;
+  }
+  errorWindowCount++;
+  if (errorWindowCount > ERROR_BURST_LIMIT) {
+    errorSuppressed++;
+    return false;
+  }
+  return true;
+}
+
 process.on('uncaughtException', (err) => {
-  logger.error('[Main] Exceção não capturada:', { message: err.message, stack: err.stack });
-  errorReporter.report(err, { source: 'main-process-uncaughtException' }).catch(() => {});
+  if (allowErrorLogging()) {
+    logger.error('[Main] Exceção não capturada:', { message: err && err.message, stack: err && err.stack });
+    errorReporter.report(err, { source: 'main-process-uncaughtException' }).catch(() => {});
+  }
   notifyUncaught(err);
 });
 
 process.on('unhandledRejection', (reason) => {
+  if (!allowErrorLogging()) return;
   const message = reason instanceof Error ? reason.message : String(reason);
   logger.error('[Main] Rejeição não tratada:', { message });
   errorReporter.report(reason instanceof Error ? reason : new Error(message), { source: 'main-process-unhandledRejection' }).catch(() => {});
 });
+
+/**
+ * Guarda global (RK-059): TODO webContents criado (janelas de login, webviews, janelas futuras) nasce
+ * com navegação restrita e sem poder abrir janelas novas. Os handlers específicos (janela principal,
+ * webview do YouTube Studio, login do YouTube) são registrados depois e só restringem mais.
+ */
+{
+  const rendererDirUrl = pathToFileURL(path.join(__dirname, 'renderer') + path.sep).toString();
+  app.on('web-contents-created', (_event, contents) => {
+    // Qualquer window.open/target=_blank: nunca cria janela; só links https/mailto vão ao navegador padrão.
+    contents.setWindowOpenHandler(({ url }) => {
+      openExternalSafe(url);
+      return { action: 'deny' };
+    });
+    const guard = (event, url) => {
+      let parsed;
+      try { parsed = new URL(url); } catch (_) { event.preventDefault(); return; }
+      if (parsed.protocol === 'https:') return; // hosts permitidos são decididos pelo guarda específico de cada janela
+      if (parsed.protocol === 'file:' && String(url).startsWith(rendererDirUrl)) return;
+      if (url === 'about:blank') return;
+      event.preventDefault(); // http:, data:, javascript:, ftp:, file: fora do renderer...
+    };
+    contents.on('will-navigate', guard);
+    contents.on('will-redirect', guard);
+  });
+}
 
 /** Abre uma URL externa no navegador padrão, somente https:/mailto: (qualquer outra é ignorada). */
 function openExternalSafe(url) {
@@ -122,7 +228,9 @@ function hardenSession(ses) {
  */
 function loadSavedWindowBounds() {
   try {
-    const settings = bootstrap.settingsManager.load();
+    // Leitura direta do settings.json: só estes dois campos importam antes de a janela existir
+    // (arquivo ausente/ilegível = padrão: sem posição salva).
+    const settings = JSON.parse(fs.readFileSync(path.join(appPaths.configDir, 'settings.json'), 'utf8'));
     const b = settings.rememberWindowBounds ? settings.windowBounds : null;
     if (!b) return null;
     const visible = screen.getAllDisplays().some((d) => {
@@ -146,7 +254,7 @@ function trackWindowBounds(win) {
   let timer = null;
   const persist = (immediate = false) => {
     try {
-      if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+      if (!bootstrap || win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
       if (!bootstrap.settingsManager.load().rememberWindowBounds) return;
       const r = win.getNormalBounds();
       bootstrap.settingsManager.save(
@@ -161,9 +269,48 @@ function trackWindowBounds(win) {
 }
 
 /**
+ * Portão de inicialização do renderer. A interface (HTML/CSS/módulos) é carregada JUNTO com a abertura do
+ * banco e o registro dos handlers IPC, mas o app.js só começa a executar (e a chamar IPC) quando o portão
+ * abre — ver renderer/boot-gate.js. Reaplica a liberação a cada navegação (Ctrl+R em desenvolvimento,
+ * recarga após queda do renderer), pois a nova página nasce com o portão fechado.
+ */
+const rendererGate = {
+  ready: false,
+  _timer: null,
+  watch(win) {
+    const wc = win.webContents;
+    wc.on('did-start-navigation', (details) => {
+      if (details && details.isMainFrame && !details.isSameDocument && this.ready) this._release(win);
+    });
+    wc.on('dom-ready', () => { if (this.ready) this._release(win); });
+  },
+  open(win) {
+    this.ready = true;
+    this._release(win);
+  },
+  /** Tenta abrir o portão da página atual; repete a cada 25 ms até a página criá-lo (no máximo 30 s). */
+  _release(win) {
+    clearInterval(this._timer);
+    const started = Date.now();
+    let busy = false;
+    const attempt = async () => {
+      if (!win || win.isDestroyed() || Date.now() - started > 30000) { clearInterval(this._timer); return; }
+      if (busy) return;
+      busy = true;
+      try {
+        const opened = await win.webContents.executeJavaScript('Boolean(window.__bdsGate && window.__bdsGate.go())');
+        if (opened) { clearInterval(this._timer); perf.mark('renderer:gate-opened'); }
+      } catch (_) { /* página ainda carregando: tenta de novo */ }
+      busy = false;
+    };
+    this._timer = setInterval(attempt, 25);
+    attempt();
+  }
+};
+
+/**
  * @param {Object} [opts]
- * @param {boolean} [opts.load=true] false = só cria a janela (o renderer sobe em paralelo à
- *   abertura do banco); o chamador deve chamar loadMainWindow() quando os handlers IPC existirem.
+ * @param {boolean} [opts.load=true] false = só cria a janela; o chamador chama loadMainWindow() depois.
  */
 function createWindow({ load = true } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -283,13 +430,35 @@ function createWindow({ load = true } = {}) {
   if (savedBounds && savedBounds.maximized) mainWindow.maximize();
   trackWindowBounds(mainWindow);
 
-  bootstrap.setMainWindow(mainWindow);
+  // Queda/travamento do renderer e desligamento forçado do Windows
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logger.error('[Main] Renderer encerrou inesperadamente:', { reason: details && details.reason, exitCode: details && details.exitCode });
+    if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+    if (details && details.reason === 'clean-exit') return;
+    dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Braga Digital Studio',
+      message: 'A interface do aplicativo parou de responder e será recarregada.',
+      detail: 'Seus dados estão salvos. Operações em andamento podem precisar ser reiniciadas.'
+    }).catch(() => {}).finally(() => {
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload(); } catch (_) {}
+    });
+  });
+  mainWindow.on('unresponsive', () => logger.warn('[Main] Janela sem resposta.'));
+  mainWindow.on('responsive', () => logger.info('[Main] Janela voltou a responder.'));
+  mainWindow.on('session-end', () => flushPersistenceSync('session-end'));
+
+  perf.attachWindow(mainWindow);
+  perf.mark('window:created');
+  if (bootstrap) bootstrap.setMainWindow(mainWindow);
+  rendererGate.watch(mainWindow);
   if (load) loadMainWindow();
 }
 
 /** Carrega a interface na janela principal (os handlers IPC já devem estar registrados). */
 function loadMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  perf.mark('window:loadFile-called');
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -306,11 +475,35 @@ protocol.registerSchemesAsPrivileged([
 let quitting = false;
 let shutdownComplete = false;
 
+/** Grava de forma síncrona tudo que estiver pendente (usado quando o Windows força o encerramento). */
+function flushPersistenceSync(reason) {
+  try {
+    logger.warn(`[Main] Gravação de emergência (${reason}).`);
+    try { bootstrap.settingsManager.flush(); } catch (_) {}
+    try { bootstrap.services && bootstrap.services.historyService && bootstrap.services.historyService.flush(); } catch (_) {}
+    const dbManager = require('./src/core/database/database');
+    if (typeof dbManager.persistSync === 'function') dbManager.persistSync();
+  } catch (_) { /* nunca lançar durante o encerramento */ }
+}
+
+// Segunda instância: foca a janela da primeira.
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return; // outra instância já está aberta
+  perf.mark('app:ready');
+  perf.expect(['watchers', 'reconcile', 'regen', 'discovery', 'deadline', 'cache', 'deps']);
   // Permissões negadas por padrão em toda sessão (a padrão e as de partições persist:*).
   hardenSession(session.defaultSession);
+  perf.mark('main:default-session-hardened');
   hardenSession(session.fromPartition('persist:youtube_studio'));
   hardenSession(session.fromPartition('persist:youtube'));
+  perf.mark('main:partitions-hardened');
   app.on('session-created', hardenSession);
 
   // [THUMB] Intercepta bds-thumb://<caminho-absoluto> e serve SOMENTE imagens dos diretórios do app
@@ -336,23 +529,32 @@ app.whenReady().then(async () => {
   // [PERF] A janela (e o processo do renderer) é criada ANTES da inicialização pesada (banco,
   // serviços, handlers IPC), para que o Chromium suba em paralelo. A interface só é carregada
   // (loadFile) depois do init(), pois o renderer chama IPC logo ao abrir.
-  createWindow({ load: false });
+  perf.mark('main:before-createWindow');
+  createWindow({ load: true });
 
   try {
-    await bootstrap.init();
+    await yieldToChromium(); // deixa o Chromium iniciar a navegação do renderer antes do trabalho pesado
+    await initBootstrap();
+    bootstrap.setMainWindow(mainWindow);
+    await perf.timeAsync('bootstrap:init', () => bootstrap.init());
   } catch (err) {
     logger.error('[Main] Falha na inicialização:', { message: err.message, stack: err.stack });
     dialog.showErrorBox('Braga Digital Studio', `Não foi possível iniciar o aplicativo.\n\n${err.message}\n\nDetalhes foram gravados no log.`);
     app.exit(1);
     return;
   }
-  loadMainWindow();
+  rendererGate.open(mainWindow);
+  // [PERF] O winston só é carregado agora (depois da Home liberada); as linhas de log da abertura estão na fila.
+  try { require('./src/services/logService').flushSoon(1200); } catch (_) { /* log é opcional na abertura */ }
 
-  // Inicia serviços de background (watchers, discovery) após a interface estar montada
-  setTimeout(() => { if (!quitting) bootstrap.startBackgroundServices(); }, 500);
+  // Serviços de segundo plano (watchers, descoberta de dispositivos, prazos, limpeza de cache): começam
+  // logo DEPOIS de a Home ser liberada e pintada, uma etapa por vez (ver src/bootstrap/startup.js).
+  setTimeout(() => {
+    if (!quitting) bootstrap.startBackgroundServices().catch((err) => logger.error('[Main] Serviços em segundo plano:', { message: err && err.message }));
+  }, 400);
 
-  // Verificação em background de ferramentas/atualizações
-  setTimeout(() => { if (!quitting) bootstrap.checkInitialDependencies(); }, 2000);
+  // Verificação em background de ferramentas/atualizações (sem rede no caminho crítico da abertura)
+  setTimeout(() => { if (!quitting) bootstrap.checkInitialDependencies(); }, 1000);
 
   // Registrado uma única vez (whenReady roda uma vez); createWindow() reaproveita janela existente.
   app.on('activate', () => {
@@ -371,6 +573,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (quitting) return;         // já encerrando: ignora chamadas repetidas
   quitting = true;
+  perf.flushSync();
 
   const finish = () => {
     if (shutdownComplete) return;
@@ -381,16 +584,12 @@ app.on('before-quit', (event) => {
   // Rede de segurança: mesmo que algo trave, a saída acontece em até 6,5s.
   const hardTimer = setTimeout(() => {
     logger.warn('[Main] Encerramento excedeu o prazo; forçando saída.');
-    try {
-      const dbManager = require('./src/core/database/database');
-      if (typeof dbManager.persistSync === 'function') dbManager.persistSync();
-      else if (typeof dbManager.persist === 'function') dbManager.persist();
-    } catch (_) {}
+    flushPersistenceSync('shutdown-timeout');
     finish();
   }, 6500);
 
   Promise.resolve()
-    .then(() => bootstrap.shutdown({ timeoutMs: 5000 }))
+    .then(() => (bootstrap ? bootstrap.shutdown({ timeoutMs: 5000 }) : undefined))
     .catch((err) => logger.error('[Main] Erro no encerramento:', { message: err && err.message }))
     .finally(() => { clearTimeout(hardTimer); finish(); });
 });

@@ -1,6 +1,11 @@
 import { escapeHtml, escapeAttr } from '../utils/escape.js';
 import { enhanceModals } from '../utils/modal.js';
+import { friendlyError } from '../utils/friendlyError.js';
+import { bdsmErrorInfo, pairingStateMessage } from '../utils/bdsmError.js';
 import { setAppStatus } from '../app.js';
+
+/** Mensagem legível de um erro vindo do IPC (remove o prefixo "Error invoking remote method"). */
+const errMsg = (err) => friendlyError(err, 'Algo deu errado ao falar com o dispositivo. Tente de novo.');
 
 /* ==========================================================================
    TELA DE DISPOSITIVOS
@@ -119,22 +124,30 @@ function normalizeDevice(raw, index) {
   if (type === 'bdsm') {
     const viaUsb = raw.connection === 'usb' || raw.ip === '127.0.0.1';
     const battery = num(raw.battery);
+    // 'needed' = o celular exige pareamento e este computador ainda não foi aprovado; 'paired' = aprovado
+    const pairing = raw.paired ? 'paired' : (raw.authRequired ? 'needed' : null);
     return {
-      ...base, id: `bdsm_${raw.id}`, kind: 'bdsm', kindLabel: KINDS.bdsm.label,
-      connection: viaUsb ? 'Conectado via cabo USB (ADB)' : `Conectado via Wi-Fi (${raw.ip})`,
+      ...base, id: `bdsm_${raw.id}`, kind: 'bdsm', kindLabel: KINDS.bdsm.label, pairing,
+      status: pairing === 'needed' ? 'Pareamento necessário' : (pairing === 'paired' ? 'Pareado' : base.status),
+      connection: viaUsb ? 'Conectado por cabo USB' : `Conectado via Wi-Fi (${raw.ip})`,
       image: getDeviceImage('bdsm', name), ip: viaUsb ? 'USB (127.0.0.1)' : raw.ip, battery,
       storage: buildStorage(raw.storage_total, raw.storage_free),
       details: [
         ['Tipo', 'Celular com BDS Mobile', 'smartphone'],
         ['Modelo', raw.model || name, 'memory'],
-        ['Conexão', viaUsb ? `USB (ADB, porta ${raw.port || 8080})` : `Wi-Fi (${raw.ip}:${raw.port || 8080})`, 'wifi'],
+        ['Conexão', viaUsb ? 'Cabo USB' : `Wi-Fi (${raw.ip})`, 'wifi'],
         ['Bateria', battery != null ? `${battery}%` : null, 'battery_full'],
-        ['Aplicativo', raw.app_version ? `BDS Mobile v${raw.app_version}` : 'BDS Mobile', 'apps']
+        ['Aplicativo', raw.app_version ? `BDS Mobile v${raw.app_version}` : 'BDS Mobile', 'apps'],
+        ['Pareamento', pairing === 'paired' ? 'Este computador está pareado' : (pairing === 'needed' ? 'Necessário: confirme o código no celular' : null), pairing === 'paired' ? 'verified_user' : 'lock']
       ],
       actions: [
         { id: 'bdsm-import', label: 'Importar mídia', icon: 'download', primary: true },
         { id: 'bdsm-luts', label: 'Sincronizar LUTs', icon: 'palette' }
-      ]
+      ],
+      // só no painel de detalhes (mantém o cartão com poucos botões)
+      inspectorActions: pairing === 'paired'
+        ? [{ id: 'bdsm-forget', label: 'Esquecer este celular', icon: 'link_off' }]
+        : (pairing === 'needed' ? [{ id: 'bdsm-pair', label: 'Parear este celular', icon: 'link' }] : [])
     };
   }
 
@@ -146,7 +159,7 @@ function normalizeDevice(raw, index) {
       connection: `Conectado via Wi-Fi Direct (${ip})`, image: getDeviceImage('sony', name), ip, battery,
       storage: null,
       details: [
-        ['Tipo', 'Câmera Sony (Camera Remote API)', 'photo_camera'],
+        ['Tipo', 'Câmera Sony', 'photo_camera'],
         ['Modelo', raw.model || name, 'memory'],
         ['Conexão', `Wi-Fi Direct (${ip})`, 'wifi'],
         ['Bateria', battery != null ? `${battery}%` : null, 'battery_full']
@@ -159,13 +172,13 @@ function normalizeDevice(raw, index) {
   const battery = num(raw.BatteryLevel);
   return {
     ...base, id: `mtp_${index}`, kind: 'mtp', kindLabel: mtpKindLabel(raw.Type),
-    connection: 'Conectado via USB (MTP)', image: getDeviceImage('mtp', `${raw.Type || ''} ${name}`), battery,
+    connection: 'Conectado por cabo USB', image: getDeviceImage('mtp', `${raw.Type || ''} ${name}`), battery,
     storage: st ? buildStorage(st.TotalSize, st.FreeSpace) : null,
     details: [
       ['Tipo', raw.Type || KINDS.mtp.label, 'devices'],
       ['Fabricante', raw.Manufacturer, 'domain'],
       ['Modelo', name, 'memory'],
-      ['Conexão', 'USB (MTP — dispositivo portátil)', 'usb'],
+      ['Conexão', 'Cabo USB (dispositivo portátil)', 'usb'],
       ['Bateria', battery != null ? `${battery}%` : null, 'battery_full']
     ],
     actions: [{ id: 'explore', label: 'Explorar arquivos', icon: 'folder_open', primary: true }]
@@ -206,6 +219,7 @@ export function onEnter() {
 }
 
 export function onLeave() {
+  if (pair.dev) cancelPairingDialog();
   cleanups.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
   cleanups = [];
   clearTimeout(refreshTimer);
@@ -279,7 +293,7 @@ async function refresh({ force = false, silent = false } = {}) {
   } catch (e) {
     if (seq !== refreshSeq) return;
     console.error('[DEVICES] Falha ao procurar dispositivos:', e);
-    state.error = (e && e.message) || 'Falha ao procurar dispositivos.';
+    state.error = errMsg(e) || 'Falha ao procurar dispositivos.';
   } finally {
     if (seq === refreshSeq) { state.loading = false; renderAll(); }
   }
@@ -417,6 +431,7 @@ function cardHtml(dev) {
           <h3 class="dev-card-title" title="${escapeAttr(dev.title)}">${escapeHtml(dev.title)}</h3>
           <div class="dev-card-category tone-${kind.tone}">${escapeHtml(dev.kindLabel)}</div>
           <div class="dev-card-status"><span class="dev-card-status-dot online"></span><span>${escapeHtml(dev.connection)}</span></div>
+          ${dev.pairing ? `<div class="dev-card-pair ${dev.pairing}"><span class="material-symbols-rounded" aria-hidden="true">${dev.pairing === 'paired' ? 'verified_user' : 'lock'}</span>${dev.pairing === 'paired' ? 'Pareado' : 'Pareamento necessário'}</div>` : ''}
         </div>
       </div>
       ${cardMiddleHtml(dev)}
@@ -449,7 +464,9 @@ function inspectorContent(dev) {
   if (state.tab === 'armazenamento') {
     const st = dev.storage;
     if (!st) {
-      return '<p class="inspector-note">Este dispositivo não informou o espaço de armazenamento.</p>';
+      return dev.pairing === 'needed'
+        ? '<p class="inspector-note">Pareie o celular para ver bateria e espaço de armazenamento.</p>'
+        : '<p class="inspector-note">Este dispositivo não informou o espaço de armazenamento.</p>';
     }
     return `
       <div>
@@ -505,6 +522,10 @@ function renderInspector() {
     <div class="inspector-footer">
       ${dev.actions.map((a) => `
         <button class="inspector-footer-btn${a.primary ? ' primary' : ' secondary'}" data-action="${escapeAttr(a.id)}" data-devid="${escapeAttr(dev.id)}" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">${a.icon}</span>${escapeHtml(a.label)}
+        </button>`).join('')}
+      ${(dev.inspectorActions || []).map((a) => `
+        <button class="inspector-footer-btn secondary" data-action="${escapeAttr(a.id)}" data-devid="${escapeAttr(dev.id)}" type="button">
           <span class="material-symbols-rounded" aria-hidden="true">${a.icon}</span>${escapeHtml(a.label)}
         </button>`).join('')}
       <button class="inspector-footer-btn secondary" data-action="hide" data-devid="${escapeAttr(dev.id)}" type="button">
@@ -570,6 +591,10 @@ function bindStatic() {
   });
   bindExplorerList($('mtpExplorerList'));
   $('btnBdsmImportAction')?.addEventListener('click', onBdsmImportClick);
+  // Diálogo de pareamento (Esc e o X também cancelam)
+  $('btnBdsmPairClose')?.addEventListener('click', cancelPairingDialog);
+  $('btnBdsmPairCancel')?.addEventListener('click', cancelPairingDialog);
+  $('btnBdsmPairRetry')?.addEventListener('click', startPairingDialog);
 }
 
 function handleAction(action, devId) {
@@ -586,6 +611,8 @@ function handleAction(action, devId) {
     case 'open-os': openInWindows(dev); break;
     case 'bdsm-import': openBdsmImport(dev); break;
     case 'bdsm-luts': syncBdsmLuts(dev); break;
+    case 'bdsm-pair': pairDevice(dev).then((ok) => { if (ok) refresh({ silent: true }); }); break;
+    case 'bdsm-forget': forgetBdsm(dev); break;
     case 'sony-import': openSonyImport(dev); break;
     default: break;
   }
@@ -595,7 +622,7 @@ async function openInWindows(dev) {
   const target = dev.rawDevice?.storage?.[0]?.path;
   if (!target || !window.bds?.openLocalPath) return;
   const res = await window.bds.openLocalPath(target);
-  if (res && res.success === false) window.bdsModal.alert(`Não foi possível abrir a unidade: ${res.error || 'erro desconhecido'}`);
+  if (res && res.success === false) window.bdsModal.alert(`Não foi possível abrir a unidade: ${friendlyError(res.error, 'motivo desconhecido')}`);
 }
 
 /* ---------- ocultar / gerenciar ---------- */
@@ -988,16 +1015,208 @@ async function onExplorerImport() {
   } catch (err) {
     console.error('[DEVICES] Falha na importação:', err);
     finish();
-    window.bdsModal.alert(`Erro ao importar: ${err.message || err}`);
+    window.bdsModal.alert(`Erro ao importar: ${errMsg(err)}`);
   }
 }
 
 /* ==========================================================================
-   CELULAR (BDS MOBILE): importação e sincronização de LUTs
+   CELULAR (BDS MOBILE): pareamento, importação e sincronização de LUTs
+   O celular só entrega gravações e LUTs a um computador PAREADO: o operador confere um código de 4 dígitos e
+   aprova no próprio celular. O acesso (token) fica guardado só no processo principal; aqui só chegam estado e código.
    ========================================================================== */
+
+const PAIR_TOTAL_SECONDS = 90;
+const pair = { dev: null, resolve: null, unsub: null, tick: null, expiresAt: 0, phase: 'idle', code: '', seq: 0 };
+
+const needsPairing = (dev) => dev.pairing === 'needed';
+
+/**
+ * Executa `run`; se o celular pedir pareamento (antes ou no meio da ação), abre o diálogo "Conectar ao celular" e,
+ * aprovado, repete a ação sozinho. Devolve undefined se o usuário cancelou o pareamento.
+ */
+async function withPairing(dev, run) {
+  if (needsPairing(dev) && !(await pairDevice(dev))) return undefined;
+  try {
+    return await run();
+  } catch (e) {
+    if (bdsmErrorInfo(e).code !== 'PAIRING_REQUIRED') throw e;
+    if (!(await pairDevice(dev))) return undefined;
+    return run();
+  }
+}
+
+/* ---------- diálogo de pareamento ---------- */
+
+/** Abre o diálogo "Conectar ao celular". Resolve true quando o celular aprova (ou já estava pareado). */
+export function pairDevice(dev) {
+  if (!dev || dev.kind !== 'bdsm') return Promise.resolve(false);
+  if (pair.dev) cancelPairingDialog();
+  return new Promise((resolve) => {
+    pair.dev = dev;
+    pair.resolve = resolve;
+    pair.phase = 'loading';
+    pair.code = '';
+    pair.unsub = (typeof window.bds?.onBdsmPairing === 'function' && window.bds.onBdsmPairing(onPairingEvent)) || null;
+    const name = $('bdsmPairDevice');
+    if (name) name.textContent = dev.title;
+    showModal('bdsmPairModal');
+    startPairingDialog();
+  });
+}
+
+function pairMatches(p) {
+  const raw = pair.dev && pair.dev.rawDevice;
+  return !!(raw && p && String(p.ip) === String(raw.ip) && Number(p.port || 8080) === Number(raw.port || 8080));
+}
+
+function setHidden(id, hidden) {
+  const el = $(id);
+  if (el) el.classList.toggle('hidden', hidden);
+}
+
+function renderPair(phase, data = {}) {
+  pair.phase = phase;
+  setHidden('bdsmPairWait', phase !== 'loading');
+  setHidden('bdsmPairCodeBox', phase !== 'code');
+  setHidden('bdsmPairResult', phase !== 'result');
+  setHidden('btnBdsmPairRetry', phase !== 'result');
+  const cancel = $('btnBdsmPairCancel');
+  if (cancel) cancel.textContent = phase === 'result' ? 'Fechar' : 'Cancelar';
+
+  if (phase === 'code') {
+    pair.code = String(data.code || '');
+    const box = $('bdsmPairCode');
+    if (box) {
+      box.innerHTML = [...pair.code].map((d) => `<span class="bdsm-pair-digit" aria-hidden="true">${escapeHtml(d)}</span>`).join('');
+      box.setAttribute('aria-label', `Código de pareamento: ${[...pair.code].join(' ')}`);
+    }
+    startPairCountdown(Number.isFinite(Number(data.seconds)) ? Number(data.seconds) : PAIR_TOTAL_SECONDS);
+  } else {
+    clearInterval(pair.tick);
+    pair.tick = null;
+  }
+  if (phase === 'result') {
+    const res = $('bdsmPairResult');
+    if (res) {
+      res.innerHTML = `
+        <span class="material-symbols-rounded bds-empty-icon" aria-hidden="true">${escapeHtml(data.icon || 'link_off')}</span>
+        <strong class="bds-empty-title">${escapeHtml(data.title || 'Não foi possível parear')}</strong>
+        <span class="bds-empty-text">${escapeHtml(data.text || '')}</span>`;
+    }
+  }
+}
+
+function startPairCountdown(seconds) {
+  clearInterval(pair.tick);
+  pair.expiresAt = Date.now() + Math.max(0, seconds) * 1000;
+  updatePairTimer();
+  pair.tick = setInterval(updatePairTimer, 500);
+}
+
+function updatePairTimer() {
+  const left = Math.max(0, Math.ceil((pair.expiresAt - Date.now()) / 1000));
+  const text = $('bdsmPairTimer');
+  if (text) text.textContent = left > 0 ? `Expira em ${left} s` : 'Finalizando…';
+  const bar = $('bdsmPairBar');
+  if (bar) bar.style.width = `${Math.min(100, (left / PAIR_TOTAL_SECONDS) * 100)}%`;
+}
+
+async function startPairingDialog() {
+  const dev = pair.dev;
+  if (!dev) return;
+  const seq = ++pair.seq;
+  renderPair('loading');
+  try {
+    const res = await window.bds.startBdsmPairing(dev.rawDevice.ip, dev.rawDevice.port);
+    if (seq !== pair.seq || !pair.dev) return;
+    if (res && res.alreadyPaired) { finishPairing(true); return; }
+    if (pair.phase !== 'code') renderPair('code', { code: res && res.code, seconds: res && res.secondsLeft });
+  } catch (e) {
+    if (seq !== pair.seq || !pair.dev) return;
+    const info = bdsmErrorInfo(e);
+    const busy = info.code === 'DEVICE_BUSY';
+    renderPair('result', {
+      icon: busy ? 'hourglass_top' : 'wifi_off',
+      title: busy ? 'O celular está ocupado' : 'Não foi possível conectar',
+      text: info.message
+    });
+  }
+}
+
+/** Andamento enviado pelo processo principal ('bdsm:pairing'). */
+function onPairingEvent(p) {
+  if (!pair.dev || !pairMatches(p)) return;
+  switch (p.state) {
+    case 'PENDING':
+      if (pair.phase !== 'code' || p.code !== pair.code) renderPair('code', { code: p.code, seconds: p.secondsLeft });
+      else if (Number.isFinite(Number(p.secondsLeft))) { pair.expiresAt = Date.now() + Number(p.secondsLeft) * 1000; updatePairTimer(); }
+      break;
+    case 'APPROVED':
+      finishPairing(true);
+      break;
+    case 'DENIED':
+      renderPair('result', { icon: 'block', title: 'Pareamento recusado', text: pairingStateMessage('DENIED') });
+      break;
+    case 'EXPIRED':
+      renderPair('result', { icon: 'timer_off', title: 'Tempo esgotado', text: pairingStateMessage('EXPIRED') });
+      break;
+    case 'ERROR':
+      renderPair('result', { icon: 'wifi_off', title: 'Não foi possível parear', text: pairingStateMessage('ERROR', p.message) });
+      break;
+    default: break; // CANCELED: já tratado em cancelPairingDialog
+  }
+}
+
+function finishPairing(ok) {
+  clearInterval(pair.tick);
+  try { if (typeof pair.unsub === 'function') pair.unsub(); } catch (_) { /* noop */ }
+  const resolve = pair.resolve;
+  Object.assign(pair, { dev: null, resolve: null, unsub: null, tick: null, phase: 'idle', code: '' });
+  pair.seq++;
+  hideModal('bdsmPairModal');
+  if (ok) {
+    window.bdsToast?.('Celular pareado. Agora você pode importar mídia e sincronizar LUTs.', { type: 'success' });
+    refresh({ silent: true });
+  }
+  if (resolve) resolve(ok);
+}
+
+/** Cancelar / Fechar / Esc: para de acompanhar o pedido e devolve false a quem estava esperando. */
+function cancelPairingDialog() {
+  const dev = pair.dev;
+  if (!dev) return;
+  try { Promise.resolve(window.bds?.cancelBdsmPairing?.(dev.rawDevice.ip, dev.rawDevice.port)).catch(() => {}); } catch (_) { /* noop */ }
+  finishPairing(false);
+}
+
+async function forgetBdsm(dev) {
+  if (!dev || dev.kind !== 'bdsm') return;
+  const ok = await window.bdsModal.confirm('Esquecer este celular?\n\nNa próxima vez será preciso parear de novo e aprovar no celular.');
+  if (!ok) return;
+  try {
+    await window.bds.forgetBdsmPairing(dev.rawDevice.ip, dev.rawDevice.port);
+    window.bdsToast?.('Pareamento removido deste computador.', { type: 'success' });
+    await refresh({ silent: true });
+  } catch (e) {
+    console.error('[DEVICES] Falha ao esquecer o pareamento:', e);
+    window.bdsModal.alert(`Não foi possível esquecer o pareamento: ${bdsmErrorInfo(e).message}`);
+  }
+}
+
+/* ---------- importação de mídia ---------- */
 
 async function openBdsmImport(dev) {
   if (!dev || dev.kind !== 'bdsm') return;
+  try {
+    await withPairing(dev, () => loadBdsmImport(dev));
+  } catch (e) {
+    console.error('[DEVICES] Erro ao listar mídias do celular:', e);
+    window.bdsModal.alert(`Não foi possível ler as mídias do celular: ${bdsmErrorInfo(e).message}`);
+  }
+}
+
+/** Abre o modal e carrega a lista; em erro fecha o modal e relança (quem chamou decide: parear ou avisar). */
+async function loadBdsmImport(dev) {
   bdsmDevice = dev;
   bdsmItems = [];
   showModal('bdsmImportModal');
@@ -1017,10 +1236,9 @@ async function openBdsmImport(dev) {
     if (loading) loading.style.display = 'none';
     if (content) { content.classList.remove('hidden'); content.style.display = 'flex'; }
   } catch (e) {
-    console.error('[DEVICES] Erro ao listar mídias do celular:', e);
     if (loading) loading.style.display = 'none';
     closeBdsmImport();
-    window.bdsModal.alert(`Não foi possível ler as mídias do celular: ${e.message || e}`);
+    throw e;
   }
 }
 
@@ -1069,48 +1287,72 @@ async function onBdsmImportClick() {
     if (stats) stats.textContent = `Importando ${data.completed}/${data.total}: ${data.current}`;
   });
   try {
-    await window.bds.importBdsmMedia({
+    const imported = await withPairing(dev, () => window.bds.importBdsmMedia({
       ip: dev.rawDevice.ip, port: dev.rawDevice.port, deviceId: dev.rawDevice.id,
       items, destFolder: importRoot(), projectId
-    });
+    }));
+    if (imported === undefined) { renderBdsmList(); return; } // pareamento cancelado
     closeBdsmImport();
-    window.bdsModal.alert('Importação concluída com sucesso!');
+    const n = Number(imported);
+    window.bdsModal.alert(Number.isFinite(n) && n < items.length
+      ? `${n} de ${items.length} vídeo(s) importado(s). Os demais falharam: confira a conexão e o espaço no computador e tente de novo.`
+      : 'Importação concluída com sucesso!');
   } catch (e) {
     console.error('[DEVICES] Falha ao importar do celular:', e);
-    window.bdsModal.alert(`Erro ao importar: ${e.message || e}`);
+    window.bdsModal.alert(`Não foi possível importar: ${bdsmErrorInfo(e).message}`);
     renderBdsmList();
   } finally {
     if (typeof unsub === 'function') unsub();
   }
 }
 
+/* ---------- sincronização de LUTs ---------- */
+
 async function syncBdsmLuts(dev) {
   if (!dev || dev.kind !== 'bdsm') return;
-  setAppStatus('Calculando diferenças entre as LUTs do computador e do celular...', 'info');
   try {
-    const plan = await window.bds.analyzeBdsmLutSync(dev.rawDevice.ip, dev.rawDevice.port);
-    const up = plan.upload.length, down = plan.download.length, conflicts = plan.conflict.length;
-    if (!up && !down && !conflicts) { setAppStatus('LUTs já sincronizadas.', 'success'); window.bdsModal.alert('Tudo já está sincronizado!'); return; }
-
-    const ok = await window.bdsModal.confirm(
-      `Plano de sincronização:\n\n- Enviar para o celular: ${up} LUT(s)\n- Baixar do celular: ${down} LUT(s)\n- Conflitos (mesmo nome, arquivos diferentes): ${conflicts} (serão mantidas as duas versões)\n\nDeseja prosseguir?`
-    );
-    if (!ok) { setAppStatus('Sincronização de LUTs cancelada.', 'info'); return; }
-    plan.conflict.forEach((c) => { c.resolution = 'keep_both'; });
-
-    const unsub = window.bds.onBdsmLutSyncProgress?.((data) => {
-      setAppStatus(`Sincronizando LUTs: ${data.current} (${data.completed}/${data.total})`, 'info');
-    });
-    try {
-      await window.bds.executeBdsmLutSync({ ip: dev.rawDevice.ip, port: dev.rawDevice.port, plan });
-    } finally {
-      if (typeof unsub === 'function') unsub();
-    }
-    setAppStatus('LUTs sincronizadas.', 'success');
-    window.bdsModal.alert('Sincronização de LUTs concluída com sucesso!');
+    await withPairing(dev, () => runBdsmLutSync(dev));
   } catch (e) {
     console.error('[DEVICES] Erro na sincronização de LUTs:', e);
     setAppStatus('Falha ao sincronizar LUTs.', 'error');
-    window.bdsModal.alert(`Erro na sincronização de LUTs: ${e.message || e}`);
+    window.bdsModal.alert(`Não foi possível sincronizar as LUTs: ${bdsmErrorInfo(e).message}`);
   }
+}
+
+/** O celular só recebe LUTs (não há download): envia as que faltam e deixa conflitos como estão. */
+async function runBdsmLutSync(dev) {
+  setAppStatus('Calculando diferenças entre as LUTs do computador e do celular...', 'info');
+  const plan = await window.bds.analyzeBdsmLutSync(dev.rawDevice.ip, dev.rawDevice.port);
+  const up = plan.upload.length;
+  const onlyPhone = (plan.remoteOnly || []).length;
+  const conflicts = plan.conflict.length;
+  if (!up) {
+    setAppStatus('LUTs já sincronizadas.', 'success');
+    const notes = [];
+    if (onlyPhone) notes.push(`O celular tem ${onlyPhone} LUT(s) que não estão no computador (o celular não permite baixá-las).`);
+    if (conflicts) notes.push(`${conflicts} LUT(s) têm o mesmo nome, mas conteúdo diferente (nada foi alterado).`);
+    window.bdsModal.alert(notes.length ? `Nenhuma LUT nova para enviar.\n\n${notes.join('\n')}` : 'Tudo já está sincronizado!');
+    return true;
+  }
+
+  const ok = await window.bdsModal.confirm(
+    `Plano de sincronização:\n\n- Enviar para o celular: ${up} LUT(s)\n- Só no celular: ${onlyPhone} LUT(s) (continuam lá)\n- Mesmo nome, conteúdo diferente: ${conflicts} (nada será alterado)\n\nDeseja prosseguir?`
+  );
+  if (!ok) { setAppStatus('Sincronização de LUTs cancelada.', 'info'); return true; }
+
+  const unsub = window.bds.onBdsmLutSyncProgress?.((data) => {
+    setAppStatus(`Sincronizando LUTs: ${data.current} (${data.completed}/${data.total})`, 'info');
+  });
+  let result;
+  try {
+    result = await window.bds.executeBdsmLutSync({ ip: dev.rawDevice.ip, port: dev.rawDevice.port, plan });
+  } finally {
+    if (typeof unsub === 'function') unsub();
+  }
+  const failed = result && Number(result.failed) > 0;
+  setAppStatus(failed ? 'LUTs sincronizadas com falhas.' : 'LUTs sincronizadas.', failed ? 'error' : 'success');
+  window.bdsModal.alert(failed
+    ? `${result.completed} LUT(s) enviada(s); ${result.failed} não puderam ser enviadas. Tente de novo.`
+    : 'Sincronização de LUTs concluída com sucesso!');
+  return true;
 }

@@ -40,8 +40,9 @@ on:
       - '.docs/**'
       - 'LICENSE'
 
+# Mínimo por padrão; só o job `release` (publica a Release e dá push da versão) recebe contents: write.
 permissions:
-  contents: write
+  contents: read
 
 # Um release por vez: pushes seguidos entram em fila, para não disputar a mesma versão.
 concurrency:
@@ -64,7 +65,7 @@ jobs:
       bumped: ${{ steps.get_version.outputs.bumped }}
     steps:
       - name: Checkout do repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Escolher a versão da Release (próxima livre a partir do package.json)
         id: get_version
@@ -94,16 +95,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout do repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Configurar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Cache do electron-builder/Electron (evita re-downloads entre runs)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ${{ github.workspace }}/.cache/electron-builder
@@ -186,7 +187,7 @@ jobs:
           $hash.Hash | Out-File -Encoding ascii "${{ steps.find_installer.outputs.installer_path }}.sha256"
 
       - name: Publicar artefato do build Windows
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: BDS-windows-installer
           path: |
@@ -203,16 +204,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Configurar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Cache do electron-builder/Electron (evita re-downloads entre runs)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ${{ github.workspace }}/.cache/electron-builder
@@ -322,7 +323,7 @@ jobs:
           fi
 
       - name: Publicar artefatos do build Linux
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: BDS-linux-packages
           path: |
@@ -341,15 +342,17 @@ jobs:
   release:
     needs: [determine-version, build-windows, build-linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # criar tag/Release e push do package.json
     steps:
       - name: Baixar artefato Windows
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: BDS-windows-installer
           path: release-files
 
       - name: Baixar artefatos Linux
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: BDS-linux-packages
           path: release-files
@@ -358,7 +361,7 @@ jobs:
         run: ls -la release-files/
 
       - name: Publicar Release unificada (Windows + Linux)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.determine-version.outputs.tag }}
           name: BDS ${{ needs.determine-version.outputs.tag }}
@@ -372,7 +375,7 @@ jobs:
       # run simplesmente escolhe de novo a próxima versão livre.
       - name: Checkout de main para registrar a versão
         if: ${{ needs.determine-version.outputs.bumped == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: main
 

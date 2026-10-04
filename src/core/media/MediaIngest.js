@@ -3,7 +3,8 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+// [PERF] crypto.randomUUID() gera o mesmo UUID v4 do pacote 'uuid', sem o custo de carregar o pacote inteiro (~20 ms).
+const { randomUUID: uuidv4 } = require('node:crypto');
 const logger = require('../../services/logService');
 const EventBus = require('../EventBus');
 const HashGenerator = require('./HashGenerator');
@@ -67,18 +68,49 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
     const filename = path.basename(filePath);
     if (!isSupported(filename)) return null;
 
-    const existsByPath = db.prepare('SELECT id, status, filesize, uuid FROM media WHERE filepath = ?').get(filePath);
+    const existsByPath = db.prepare('SELECT id, status, filesize, uuid, missing, hash FROM media WHERE filepath = ?').get(filePath);
     const stats = await fsp.stat(filePath);
 
     if (existsByPath && existsByPath.status === 'READY') {
         const changed = event === 'CHANGE' && existsByPath.filesize != null && existsByPath.filesize !== stats.size;
-        if (!changed) return { id: existsByPath.id, created: false, status: 'READY' };
+        if (!changed) {
+            // O arquivo voltou a existir: zera o flag `missing` na mesma sessão (RK-085) e avisa a interface
+            if (existsByPath.missing === 1) {
+                db.prepare('UPDATE media SET missing = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(existsByPath.id);
+                EventBus.emit('MEDIA_UPDATED', db.prepare('SELECT * FROM media WHERE id = ?').get(existsByPath.id));
+            }
+            return { id: existsByPath.id, created: false, status: 'READY' };
+        }
         logFile(`[MediaIngest] Arquivo alterado (tamanho ${existsByPath.filesize} -> ${stats.size}), reprocessando: ${filename}`);
     }
 
-    const hash = await HashGenerator.generate(filePath);
-    const existingHash = db.prepare('SELECT id, filepath, status, filesize FROM media WHERE hash = ?').get(hash);
+    let hash = await HashGenerator.generate(filePath);
     let mediaId = existsByPath ? existsByPath.id : null;
+    // Identidade já desambiguada numa ingestão anterior ("<hash>:<impressão estendida>"): mantém
+    if (existsByPath && typeof existsByPath.hash === 'string' && existsByPath.hash.startsWith(`${hash}:`)) hash = existsByPath.hash;
+    let existingHash = db.prepare('SELECT id, filepath, status, filesize FROM media WHERE hash = ?').get(hash);
+
+    // O hash de arquivos grandes é amostrado e o hash é UNIQUE: arquivos distintos (mesmo tamanho, mesmas
+    // amostras) virariam "duplicata" e o segundo nunca seria indexado (RK-083). Quando os dois existem no
+    // disco, compara uma impressão digital bem mais densa e, se diferirem, indexa com hash desambiguado.
+    if (existingHash && existingHash.id !== mediaId && existingHash.filepath && existingHash.filepath !== filePath
+        && stats.size > HashGenerator.FULL_HASH_LIMIT
+        && (existingHash.filesize == null || existingHash.filesize === stats.size)
+        && fs.existsSync(existingHash.filepath)) {
+        try {
+            const [mine, other] = await Promise.all([
+                HashGenerator.extendedFingerprint(filePath),
+                HashGenerator.extendedFingerprint(existingHash.filepath),
+            ]);
+            if (mine !== other) {
+                const sameSampleId = existingHash.id;
+                hash = `${hash}:${mine.slice(0, 24)}`;
+                existingHash = db.prepare('SELECT id, filepath, status, filesize FROM media WHERE hash = ?').get(hash);
+                logFile(`[MediaIngest] Hash amostrado igual, conteúdo diferente: ${filename} indexado como arquivo distinto de #${sameSampleId}`);
+            }
+        } catch (_) { /* sem como comparar: mantém o comportamento anterior (duplicata) */ }
+    }
+
     let created = !existsByPath;
     const origin = resolveOrigin(library, filePath);
     const album = resolveAlbum(filePath);

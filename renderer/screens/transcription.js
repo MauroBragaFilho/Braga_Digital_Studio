@@ -8,13 +8,15 @@
  *   done    → resumo (arquivos gerados) com Abrir pasta / Nova transcrição
  *
  * "Análise com IA" (opcional, desligada por padrão): depois de transcrever, cada transcrição é enviada ao
- * servidor de IA configurado em Configurações → Transcrição e gera um <nome>.analise.md. A fase de
+ * servidor de IA configurado em Configurações → Inteligência Artificial e gera um <nome>.analise.md. A fase de
  * análise fica dentro do modo "running" (phase = 'analyze') e uma falha nela nunca apaga a transcrição.
  *
  * A instalação do módulo (motor, modelos, GPU) fica em Configurações → Transcrição; aqui só se usa
  * o que já está instalado. A lógica pesada roda no processo principal (src/core/modules); esta tela
  * pede ações via window.bds.modules* e mostra o andamento. Textos entram sempre por textContent.
  */
+
+import { friendlyError, cleanText } from '../utils/friendlyError.js';
 
 const SUPPORTED_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'm4a', 'wav', 'mp3', 'flac', 'ogg'];
 const VIDEO_EXTS = new Set(['mp4', 'mkv', 'mov', 'avi', 'webm']);
@@ -40,7 +42,11 @@ let phase = 'transcribe';  // 'transcribe' | 'analyze' (dentro do modo running)
 let analysisCancelled = false;
 let analysis = null;       // { item, path, done, total } enquanto uma análise roda
 
-const opts = { srt: true, md: true, analyze: false, maxWords: 0, lines: 2, forceCpu: false, outMode: 'side', outDir: '' };
+const opts = { srt: true, md: true, txt: false, analyze: false, skipSilence: true, maxWords: 0, lines: 2, forceCpu: false, outMode: 'side', outDir: '' };
+// Limiares do filtro de silêncio (mesmos padrões e faixas do processo principal: silenceTrim.js).
+const SILENCE_DEFAULTS = { noiseDb: -35, minSilence: 1.5, pad: 0.3 };
+const SILENCE_LIMITS = { noiseDb: [-60, -15], minSilence: [0.5, 5], pad: [0, 1] };
+opts.silence = { ...SILENCE_DEFAULTS };
 const running = () => mode === 'running';
 
 // ------------------------------------------------------------------ utilitários
@@ -93,10 +99,18 @@ function loadPrefs() {
     const s = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
     if (typeof s.srt === 'boolean') opts.srt = s.srt;
     if (typeof s.md === 'boolean') opts.md = s.md;
+    if (typeof s.txt === 'boolean') opts.txt = s.txt;
     if (typeof s.analyze === 'boolean') opts.analyze = s.analyze;
+    if (typeof s.skipSilence === 'boolean') opts.skipSilence = s.skipSilence;
     if (Number.isInteger(s.maxWords) && s.maxWords >= 0 && s.maxWords <= 40) opts.maxWords = s.maxWords;
     if (s.lines === 1 || s.lines === 2) opts.lines = s.lines;
     if (typeof s.forceCpu === 'boolean') opts.forceCpu = s.forceCpu;
+    if (s.silence && typeof s.silence === 'object') {
+      for (const k of Object.keys(SILENCE_DEFAULTS)) {
+        const v = Number(s.silence[k]);
+        if (Number.isFinite(v) && v >= SILENCE_LIMITS[k][0] && v <= SILENCE_LIMITS[k][1]) opts.silence[k] = v;
+      }
+    }
     if (s.outMode === 'side' || s.outMode === 'dir') opts.outMode = s.outMode;
     if (typeof s.outDir === 'string') opts.outDir = s.outDir;
     if (opts.outMode === 'dir' && !opts.outDir) opts.outMode = 'side';
@@ -115,7 +129,7 @@ function showNotice(text, tone = 'info') {
   const icons = { info: 'info', success: 'check_circle', warning: 'warning', danger: 'error' };
   box.className = `tr-notice tone-${tone}`;
   $('trNoticeIcon').textContent = icons[tone] || 'info';
-  $('trNoticeText').textContent = text;
+  $('trNoticeText').textContent = cleanText(text);
 }
 
 /** Menu flutuante simples: entries = [{ icon, label, sub?, selected?, disabled?, run }] ou { separator: true }. */
@@ -142,12 +156,12 @@ function showMenu(anchor, entries) {
 }
 function hideMenu() { $('trMenu')?.classList.add('hidden'); }
 
-/** Leva para Configurações → Transcrição, onde se instala o módulo. */
-function goToTranscriptionSettings() {
+/** Leva para uma aba das Configurações (padrão: Transcrição, onde se instala o motor; a da IA é settingsAiView). */
+function goToTranscriptionSettings(tabId = 'settingsTranscriptionView') {
   document.querySelector('.sidebar .tab-button[data-view="settings"]')?.click();
   let tries = 0;
   const timer = setInterval(() => {
-    const tab = document.querySelector('.settings-tab[data-tab="settingsTranscriptionView"]');
+    const tab = document.querySelector(`.settings-tab[data-tab="${tabId}"]`);
     if (tab || ++tries > 30) { clearInterval(timer); tab?.click(); }
   }, 100);
 }
@@ -159,7 +173,7 @@ async function refreshStatus() {
     status = await call(window.bds?.modulesGetStatus);
   } catch (err) {
     status = null;
-    showNotice(`Não foi possível verificar o módulo de transcrição: ${err.message}`, 'danger');
+    showNotice(`Não foi possível verificar o módulo de transcrição: ${friendlyError(err)}`, 'danger');
   }
   await refreshAi();
   renderEngine();
@@ -187,7 +201,7 @@ function renderAiStatus() {
     box.classList.add('warn');
     box.append(icon('warning'), h('span', {}, [
       aiConfig && aiConfig.model ? 'Falta a chave de API. ' : 'Falta configurar o servidor de IA. ',
-      h('button', { type: 'button', onclick: goToTranscriptionSettings }, 'Configurar')
+      h('button', { type: 'button', onclick: () => goToTranscriptionSettings('settingsAiView') }, 'Configurar IA')
     ]));
   } else if (aiConfig.isLocal) {
     box.append(icon('lock'), h('span', { text: `Servidor local (${aiConfig.model}): o texto não sai do computador.` }));
@@ -205,8 +219,8 @@ function blockedReason() {
   if (!status.platformSupported) return 'Disponível apenas no Windows.';
   if (!status.whisper.engine.installed) return 'Instale o módulo em Configurações → Transcrição.';
   if (!status.whisper.activeModelId) return 'Baixe um modelo em Configurações → Transcrição.';
-  if (!opts.srt && !opts.md) return 'Marque ao menos um formato.';
-  if (opts.analyze && !aiReady()) return 'Configure a IA em Configurações → Transcrição, ou desligue a análise.';
+  if (!opts.srt && !opts.md && !opts.txt) return 'Marque ao menos um formato.';
+  if (opts.analyze && !aiReady()) return 'Configure a IA em Configurações → Inteligência Artificial, ou desligue a análise.';
   if (opts.outMode === 'dir' && !opts.outDir) return 'Escolha a pasta de destino.';
   return '';
 }
@@ -221,7 +235,7 @@ function softHint() {
   const onCpu = !w.cuda.installed || opts.forceCpu;
   const model = w.models.find((m) => m.active);
   if (!onCpu || !model || !SLOW_ON_CPU.has(model.id)) return '';
-  return `Sem a aceleração NVIDIA, o modelo ${model.label} é muito lento. Prefira o Small ou instale a aceleração em Configurações.`;
+  return `Sem a aceleração NVIDIA, o modelo ${model.label} é muito lento. Prefira o modelo Small ou instale a aceleração em Configurações.`;
 }
 
 function renderEngine() {
@@ -241,10 +255,9 @@ function renderEngine() {
 }
 
 function renderDeviceControl() {
-  // Sem CUDA instalado só há CPU: o seletor de processamento (e o bloco "Avançado") some.
+  // Sem CUDA instalado só há CPU: o seletor de processamento some (o bloco "Avançado" fica, com as demais opções).
   const gpu = Boolean(status && status.whisper.cuda.installed);
   $('trDeviceField').classList.toggle('hidden', !gpu);
-  $('trAdvanced').classList.toggle('hidden', !gpu);
 }
 
 /** Abre a lista de modelos instalados no próprio botão de status (troca o modelo em uso). */
@@ -271,7 +284,7 @@ async function selectModel(id) {
     renderEngine();
     updatePanel();
   } catch (err) {
-    showNotice(err.message, 'danger');
+    showNotice(friendlyError(err), 'danger');
     await refreshStatus();
   }
 }
@@ -367,7 +380,7 @@ async function pickFiles() {
     const list = Array.isArray(picked) ? picked : (picked?.filePaths || []);
     if (list.length) await addFiles(list);
   } catch (err) {
-    showNotice(`Não foi possível abrir o seletor: ${err.message}`, 'danger');
+    showNotice(`Não foi possível abrir o seletor: ${friendlyError(err)}`, 'danger');
   }
 }
 
@@ -380,7 +393,7 @@ async function pickFolder() {
     if (!media.length) { showNotice('Nenhum vídeo ou áudio suportado nessa pasta.', 'warning'); return; }
     await addFiles(media);
   } catch (err) {
-    showNotice(`Erro ao ler a pasta: ${err.message}`, 'danger');
+    showNotice(`Erro ao ler a pasta: ${friendlyError(err)}`, 'danger');
   }
 }
 
@@ -461,7 +474,7 @@ function paintRow(item) {
       pending: waiting ? 'Aguardando' : 'Pronto para processar',
       running: `Transcrevendo… ${pct}%`,
       done: 'Concluído',
-      error: item.error || 'Falhou',
+      error: friendlyError(item.error, 'Falhou'),
       cancelled: 'Cancelado'
     }[item.status];
   el.sub.append(h('span', { class: `tr-state ${analyzing ? 'running' : item.status}`, text: label }));
@@ -475,7 +488,7 @@ function paintRow(item) {
     // A transcrição está pronta; só a análise (opcional) não saiu.
     if (item.ai && (item.ai.state === 'error' || item.ai.state === 'cancelled')) {
       el.sub.append(h('span', {
-        class: 'tr-state-note', title: item.ai.message || '',
+        class: 'tr-state-note', title: cleanText(item.ai.message || ''),
         text: item.ai.state === 'cancelled' ? 'análise cancelada' : 'análise não feita'
       }));
     }
@@ -494,7 +507,7 @@ function setRun(percent, message) {
   batchPercent = Math.max(0, Math.min(100, percent ?? batchPercent));
   $('trRunFill').style.width = `${batchPercent}%`;
   $('trRunBar').setAttribute('aria-valuenow', String(Math.round(batchPercent)));
-  if (message !== undefined) { lastMessage = message; $('trRunMsg').textContent = message; }
+  if (message !== undefined) { lastMessage = message; $('trRunMsg').textContent = cleanText(message); }
   if (phase === 'analyze' && analysis) {
     $('trRunTitle').textContent = `${Math.min(analysis.total, analysis.done + 1)} de ${analysis.total}`;
     return;
@@ -514,7 +527,7 @@ function onProgress(p) {
       if (p.file.state === 'start') { item.status = 'running'; item.progress = 0; item.error = null; }
       else if (p.file.state === 'progress') { item.status = 'running'; item.progress = p.file.percent ?? item.progress; }
       else if (p.file.state === 'done') { item.status = 'done'; item.progress = 100; }
-      else if (p.file.state === 'error') { item.status = 'error'; item.error = p.file.message || 'Falha ao transcrever.'; }
+      else if (p.file.state === 'error') { item.status = 'error'; item.error = friendlyError(p.file.message, 'Falha ao transcrever.'); }
       paintRow(item);
       setRun(batchPercent);
     }
@@ -562,9 +575,11 @@ async function startTranscription() {
   try {
     result = await call(window.bds.modulesTranscribe, {
       files: items.map((i) => i.path),
-      srt: opts.srt, md: opts.md, maxWords: opts.maxWords, lines: opts.lines,
+      srt: opts.srt, md: opts.md, txt: opts.txt, maxWords: opts.maxWords, lines: opts.lines,
       outDir: opts.outMode === 'dir' ? opts.outDir : null,
-      forceCpu: opts.forceCpu
+      forceCpu: opts.forceCpu,
+      skipSilence: opts.skipSilence,
+      silence: { ...opts.silence }
     });
   } catch (err) {
     failure = err;
@@ -580,14 +595,14 @@ async function startTranscription() {
     showNotice('Transcrição cancelada. O que já estava pronto foi mantido.', 'info');
     finish(null, true);
   } else if (failure) {
-    items.forEach((i) => { if (i.status === 'error' && !i.error) i.error = failure.message; });
-    showNotice(`A transcrição falhou: ${failure.message}`, 'danger');
+    items.forEach((i) => { if (i.status === 'error' && !i.error) i.error = friendlyError(failure); });
+    showNotice(`A transcrição falhou: ${friendlyError(failure)}`, 'danger');
     finish(null);
   } else {
     finish(result);
     const failedAi = items.filter((i) => i.ai && i.ai.state === 'error');
     if (analysisCancelled) showNotice('Análise cancelada. As transcrições foram mantidas.', 'info');
-    else if (failedAi.length) showNotice(`A análise com IA falhou em ${plural(failedAi.length, 'arquivo', 'arquivos')}: ${failedAi[0].ai.message}`, 'warning');
+    else if (failedAi.length) showNotice(`A análise com IA falhou em ${plural(failedAi.length, 'arquivo', 'arquivos')}: ${friendlyError(failedAi[0].ai.message)}`, 'warning');
   }
   await refreshStatus();
 }
@@ -606,7 +621,7 @@ async function runAnalysis() {
 
   let failuresInRow = 0;
   for (const item of targets) {
-    const src = item.outputs.find((o) => o.kind === 'md') || item.outputs.find((o) => o.kind === 'srt');
+    const src = item.outputs.find((o) => o.kind === 'md') || item.outputs.find((o) => o.kind === 'txt') || item.outputs.find((o) => o.kind === 'srt');
     if (analysisCancelled) { item.ai = { state: 'cancelled', progress: 0, message: '' }; paintRow(item); continue; }
     if (failuresInRow >= 2) {
       item.ai = { state: 'error', progress: 0, message: 'Não tentada: as análises anteriores falharam.' };
@@ -624,7 +639,7 @@ async function runAnalysis() {
       failuresInRow = 0;
     } catch (err) {
       const stopped = err.code === 'CANCELLED';
-      item.ai = { state: stopped ? 'cancelled' : 'error', progress: 0, message: err.message };
+      item.ai = { state: stopped ? 'cancelled' : 'error', progress: 0, message: friendlyError(err) };
       failuresInRow = stopped ? 0 : failuresInRow + 1;
       if (stopped) analysisCancelled = true;
     }
@@ -656,7 +671,7 @@ function reconcile(result) {
       .map((o) => ({ kind: o.kind, path: o.path }));
     const errLine = (result.errors || []).find((e) => e.startsWith(`${item.name}:`));
     if (item.outputs.length && !errLine) { item.status = 'done'; item.progress = 100; item.error = null; }
-    else if (errLine || item.status === 'error') { item.status = 'error'; item.error = errLine ? errLine.slice(item.name.length + 1).trim() : (item.error || 'Falha ao transcrever.'); }
+    else if (errLine || item.status === 'error') { item.status = 'error'; item.error = friendlyError(errLine ? errLine.slice(item.name.length + 1).trim() : (item.error || ''), 'Falha ao transcrever.'); }
     else if (item.status !== 'done') { item.status = 'error'; item.error = 'Nenhum resultado foi gerado.'; }
   }
 }
@@ -673,6 +688,7 @@ function finish(result, cancelled = false) {
   }
   const srt = generated.filter((o) => o.kind === 'srt').length;
   const md = generated.filter((o) => o.kind === 'md').length;
+  const txt = generated.filter((o) => o.kind === 'txt').length;
   const analises = generated.filter((o) => o.kind === 'analise').length;
   const analyzed = items.filter((i) => i.ai);
   const aiProblem = analyzed.some((i) => i.ai.state !== 'done');
@@ -684,7 +700,7 @@ function finish(result, cancelled = false) {
       : aiProblem ? 'Concluído com avisos' : 'Transcrição concluída';
   const parts = [`${plural(ok.length, 'arquivo transcrito', 'arquivos transcritos')}`];
   if (failed) parts.push(plural(failed, 'com falha', 'com falha'));
-  const kinds = [srt ? `SRT ${srt}` : null, md ? `MD ${md}` : null, analises ? `Análise ${analises}` : null].filter(Boolean).join(' · ');
+  const kinds = [srt ? `SRT ${srt}` : null, md ? `MD ${md}` : null, txt ? `TXT ${txt}` : null, analises ? `Análise ${analises}` : null].filter(Boolean).join(' · ');
   const aiLine = analyzed.length ? `\nAnálise com IA: ${analises} de ${analyzed.length}` : '';
   $('trDoneSub').textContent = `${parts.join(', ')}\n${plural(generated.length, 'arquivo gerado', 'arquivos gerados')} (${kinds})${aiLine}${result && result.device ? `\n${result.device}` : ''}`;
   $('trDoneSub').style.whiteSpace = 'pre-line';
@@ -717,7 +733,7 @@ function openResultFolder() {
 // ------------------------------------------------------------------ ajustes
 
 function syncOptionsUi() {
-  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md'], ['btnFmtAi', 'analyze']]) {
+  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md'], ['btnFmtTxt', 'txt'], ['btnFmtAi', 'analyze'], ['btnSkipSilence', 'skipSilence']]) {
     $(id).classList.toggle('active', opts[key]);
     $(id).setAttribute('aria-pressed', String(opts[key]));
   }
@@ -731,6 +747,15 @@ function syncOptionsUi() {
     b.classList.toggle('active', on);
     b.setAttribute('aria-pressed', String(on));
   });
+  const fmtNum = (n) => String(n).replace('.', ',');
+  $('rangeTrNoise').value = String(opts.silence.noiseDb);
+  $('trNoiseValue').textContent = `${opts.silence.noiseDb} dB`;
+  $('rangeTrMinSil').value = String(opts.silence.minSilence);
+  $('trMinSilValue').textContent = `${fmtNum(opts.silence.minSilence)} s`;
+  $('rangeTrPad').value = String(opts.silence.pad);
+  $('trPadValue').textContent = `${fmtNum(opts.silence.pad)} s`;
+  $('trSilenceFields').classList.toggle('off', !opts.skipSilence);
+  $('btnTrSilenceReset').hidden = Object.keys(SILENCE_DEFAULTS).every((k) => opts.silence[k] === SILENCE_DEFAULTS[k]);
   mark('trLinesSeg', 'lines', opts.lines);
   mark('trDeviceSeg', 'cpu', opts.forceCpu ? 1 : 0);
 
@@ -744,7 +769,7 @@ async function chooseDestFolder() {
   try {
     const dir = await window.bds.selectFolder(opts.outDir || '');
     if (dir) { opts.outMode = 'dir'; opts.outDir = dir; savePrefs(); syncOptionsUi(); }
-  } catch (err) { showNotice(`Não foi possível escolher a pasta: ${err.message}`, 'danger'); }
+  } catch (err) { showNotice(`Não foi possível escolher a pasta: ${friendlyError(err)}`, 'danger'); }
 }
 
 function bindOnce() {
@@ -780,10 +805,18 @@ function bindOnce() {
     if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) hideMenu();
   }, true);
 
-  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md'], ['btnFmtAi', 'analyze']]) {
+  for (const [id, key] of [['btnFmtSrt', 'srt'], ['btnFmtMd', 'md'], ['btnFmtTxt', 'txt'], ['btnFmtAi', 'analyze'], ['btnSkipSilence', 'skipSilence']]) {
     $(id).addEventListener('click', () => { opts[key] = !opts[key]; savePrefs(); syncOptionsUi(); });
   }
   $('rangeTrWords').addEventListener('input', (e) => { opts.maxWords = Number(e.target.value) || 0; savePrefs(); syncOptionsUi(); });
+  for (const [id, key] of [['rangeTrNoise', 'noiseDb'], ['rangeTrMinSil', 'minSilence'], ['rangeTrPad', 'pad']]) {
+    $(id).addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v)) opts.silence[key] = Math.round(v * 10) / 10;
+      savePrefs(); syncOptionsUi();
+    });
+  }
+  $('btnTrSilenceReset').addEventListener('click', () => { opts.silence = { ...SILENCE_DEFAULTS }; savePrefs(); syncOptionsUi(); });
   $('trLinesSeg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-lines]');
     if (!b) return;
