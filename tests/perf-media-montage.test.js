@@ -28,6 +28,8 @@ test.after(() => {
 function capture(svc, config, { stderr = '', code = 0 } = {}) {
   ffmpegTool.resolve = () => 'ffmpeg-fake';
   hardwareDetection.detectEncoder = async () => 'libx264';
+  // Arquivos de teste são falsos: o ffprobe é simulado (duração conhecida, com áudio)
+  svc.probeFile = async () => ({ duration: 100, hasAudio: true });
   let captured = null;
   let child;
   processRunner.spawn = (exe, args) => {
@@ -91,6 +93,7 @@ test('erro do ffmpeg traz o final do stderr e o stderr é limitado', async () =>
 test('log da UI é agrupado (throttle) em vez de uma emissão por chunk', async () => {
   const svc = new MontageService({ paths: {}, getSettings: () => ({}) });
   const logs = [];
+  svc.probeFile = async () => ({ duration: 100, hasAudio: true });
   svc.on('log', (l) => logs.push(l));
   ffmpegTool.resolve = () => 'ffmpeg-fake';
   hardwareDetection.detectEncoder = async () => 'libx264';

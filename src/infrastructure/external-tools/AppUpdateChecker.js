@@ -77,13 +77,17 @@ class AppUpdateChecker {
         latestVersion,
         releaseUrl: release.html_url || null,
         releaseNotes: release.body || null,
-        installerUrl: this._findInstallerUrl(release) || null,
-        installerDigest: this._findInstallerDigest(release) || null,
+        // Instalação silenciosa só no Windows (.exe do NSIS). Em outros sistemas o instalador NÃO é oferecido:
+        // `platformAsset` informa o arquivo certo (deb/AppImage) para o usuário baixar pela página da release.
+        installerUrl: process.platform === 'win32' ? (this._findInstallerUrl(release) || null) : null,
+        installerDigest: process.platform === 'win32' ? (this._findInstallerDigest(release) || null) : null,
+        platformAsset: this._findPlatformAsset(release, process.platform),
         release
       };
     } catch (error) {
       logger.error('AppUpdateChecker:check_failed', { error: error.message });
-      return this._noUpdateResult(currentVersion);
+      // Falha de rede/limite da API: não é "já está atualizado" (RK-069)
+      return { ...this._noUpdateResult(currentVersion), checkFailed: true, error: error.message };
     }
   }
 
@@ -105,6 +109,31 @@ class AppUpdateChecker {
     const setup = exeAssets.find((a) => /^BragaDigitalStudioSetup\.exe$/i.test(a.name || ''));
     const chosen = setup || exeAssets[0];
     return chosen.browser_download_url || chosen.url || null;
+  }
+
+  /**
+   * Escolhe o asset da release para o sistema operacional atual, SÓ para informar (RK-076):
+   *  - win32: instalador .exe (kind 'installer'; é o único que o app baixa e executa, com digest obrigatório);
+   *  - linux: .AppImage (se o app roda como AppImage) ou .deb (kind 'manual': nada é baixado nem instalado em silêncio);
+   *  - demais (macOS): nenhum asset (a release não publica pacote para esse sistema).
+   * @returns {{kind:'installer'|'manual', name:string, url:string|null, digest:string|null}|null}
+   */
+  _findPlatformAsset(release, platform = process.platform) {
+    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
+    const pick = (re) => assets.find((a) => re.test(a.name || ''));
+    let asset = null;
+    let kind = 'manual';
+    if (platform === 'win32') {
+      asset = pick(/^BragaDigitalStudioSetup.exe$/i) || pick(/.exe$/i);
+      kind = 'installer';
+    } else if (platform === 'linux') {
+      const preferAppImage = Boolean(process.env.APPIMAGE);
+      const appImage = pick(/.AppImage$/i);
+      const deb = pick(/.deb$/i);
+      asset = preferAppImage ? (appImage || deb) : (deb || appImage);
+    }
+    if (!asset) return null;
+    return { kind, name: asset.name, url: asset.browser_download_url || asset.url || null, digest: asset.digest || null };
   }
 
   /**
@@ -162,6 +191,10 @@ class AppUpdateChecker {
    * @returns {Promise<{path: string, size: number, sha256: string}>}
    */
   async downloadLatestInstaller(destPath, onProgress, expectedDigest = null, installerUrl = null) {
+    // Nunca baixa um instalador de outro sistema (RK-076): o único empacotado para instalação automática é o .exe.
+    if (process.platform !== 'win32') {
+      throw new Error('A atualização automática do aplicativo está disponível só no Windows. Baixe o pacote do seu sistema (.deb ou .AppImage) pela página de releases.');
+    }
     let url = installerUrl || null;
     let digest = expectedDigest || null;
 
@@ -182,20 +215,20 @@ class AppUpdateChecker {
         try { fs.rmSync(result.path, { force: true }); } catch (_) { /* noop */ }
         if (check.invalid) {
           throw new Error(
-            'Integridade do instalador não pôde ser verificada: o digest publicado na release está em formato ou algoritmo não suportado. ' +
+            'Integridade do instalador não pôde ser verificada: o código de verificação publicado na release não é de um tipo compatível. ' +
             'O arquivo foi removido por segurança. Baixe o instalador manualmente pela página da release.'
           );
         }
         throw new Error(
-          'Integridade do instalador verificada com falha: o SHA-256 do arquivo baixado ' +
-          `(${String(check.actual).slice(0, 12)}…) é diferente do publicado na release (${String(check.expected).slice(0, 12)}…). ` +
+          'A verificação de integridade do instalador falhou: o arquivo baixado é diferente do publicado na release. ' +
           'O arquivo foi removido por segurança. Tente novamente; se persistir, baixe o instalador manualmente pela página da release.'
         );
       }
       result.verified = true;
     } else {
-      // Política existente: release sem digest (anterior ao suporte da GitHub API) ainda pode ser
-      // instalada, mas o chamador é informado via `verified:false` (updateService expõe digestVerified).
+      // Decisão do responsável: enquanto o instalador não tem assinatura (Authenticode), uma release sem digest
+      // ainda pode ser instalada. O chamador é avisado via `verified:false` (updateService expõe digestVerified).
+      // Quando a release publica o SHA-256, ele continua sendo conferido (bloco acima).
       result.verified = false;
       logger.warn('AppUpdateChecker:download:no_digest', { url: safeUrl(url) });
     }

@@ -7,7 +7,7 @@ class SearchQueryParser {
   static parse(rawQuery = '') {
     const text = rawQuery.trim().toLowerCase();
     if (!text) {
-      return { query: '', types: [], synonyms: [] };
+      return { query: '', cleanQuery: '', types: [], synonyms: [], termGroups: [] };
     }
 
     const detectedTypes = new Set();
@@ -63,11 +63,21 @@ class SearchQueryParser {
       });
     }
 
+    // Um grupo por palavra restante: (palavra OR sinônimos OR variante sem acento); os grupos são combinados com AND.
+    // Sem palavras restantes (ex.: "vídeos", "fotos"), não há filtro de texto: só o de tipo (RK-045).
+    const stripAccents = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const termGroups = filteredWords.map((w) => {
+      const group = new Set([w, stripAccents(w)]);
+      (synonymMap[w] || []).forEach((s) => group.add(s));
+      return Array.from(group);
+    });
+
     return {
       rawQuery,
-      cleanQuery: baseTerm || text,
+      cleanQuery: baseTerm,
       types: Array.from(detectedTypes),
-      synonyms: Array.from(synonyms)
+      synonyms: Array.from(synonyms),
+      termGroups
     };
   }
 }

@@ -35,18 +35,23 @@ const BDS_COMPONENTS = {
     title: 'Motor de Áudio',
     description: 'Recuperação e sincronização de faixas de áudio.',
     canonicalTool: 'spotdl',
+    onDemand: true,
   },
   jsRuntime: {
     id: 'jsRuntime',
     title: 'Ambiente de Execução',
     description: 'Runtime interno para execução de scripts e rotinas do sistema.',
     canonicalTool: 'deno',
+    onDemand: true,
   },
   recoveryEngine: {
     id: 'recoveryEngine',
     title: 'Motor de Recuperação',
     description: 'Recuperação e reconstrução de vídeos corrompidos ou incompletos.',
     canonicalTool: 'untrunc',
+    // Sob demanda: ligado ao módulo 'recovery'. Só é baixado quando o usuário confirma na ativação do módulo.
+    onDemand: true,
+    module: 'recovery',
   },
   rawEngine: {
     id: 'rawEngine',
@@ -92,6 +97,15 @@ class DependencyManager {
     if (!updateServerUrl) {
       this._manifestClient = null;
       logger.info('DependencyManager:configureUpdateServer:disabled');
+      return;
+    }
+    // O manifesto decide o que será baixado e executado: só https (http apenas para a própria máquina, em testes)
+    let parsed = null;
+    try { parsed = new URL(updateServerUrl); } catch (_) { /* inválida */ }
+    const local = parsed && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    if (!parsed || (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local))) {
+      this._manifestClient = null;
+      logger.warn('DependencyManager:configureUpdateServer:rejected', { reason: 'o Update Server precisa usar https' });
       return;
     }
     this._manifestClient = new ManifestClient(updateServerUrl);
@@ -141,6 +155,25 @@ class DependencyManager {
   async getComponentsStatus() {
     const results = [];
     for (const [key, comp] of Object.entries(BDS_COMPONENTS)) {
+      // 0. Componente sob demanda ainda não instalado: não consulta a rede, não conta como
+      //    atualização pendente e não entra em "Atualizar tudo" (RK-070). Instala-se pelo recurso que o usa.
+      if (comp.onDemand && !this.isAvailable(comp.canonicalTool)) {
+        results.push({
+          id: comp.id,
+          title: comp.title,
+          description: comp.description,
+          canonicalTool: comp.canonicalTool,
+          isInstalled: false,
+          installedVersion: null,
+          latestVersion: null,
+          needsUpdate: false,
+          onDemand: true,
+          module: comp.module || null,
+          error: null,
+        });
+        continue;
+      }
+
       // 1. Se há um Update Server configurado, ele tem prioridade: componentes listados no
       //    manifest.json remoto são verificados por lá (checksum sempre obrigatório), mesmo
       //    componentes hoje marcados como manualInstallOnly (ex: rawEngine).
@@ -204,6 +237,10 @@ class DependencyManager {
           needsUpdate: Boolean(checkResult.needsUpdate),
           hasBackup: Boolean(checkResult.hasBackup),
           source: 'github',
+          checkFailed: Boolean(checkResult.checkFailed),
+          // Sem fonte oficial para este sistema: não é "atualização pendente" nem entra em "Atualizar tudo".
+          unavailable: Boolean(checkResult.unavailable),
+          unavailableReason: checkResult.unavailableReason || null,
           error: checkResult.error || null,
         });
       } catch (err) {
@@ -229,10 +266,17 @@ class DependencyManager {
    */
   async checkSystemUpdates() {
     const statuses = await this.getComponentsStatus();
-    const needingUpdate = statuses.filter(s => s.needsUpdate || !s.isInstalled);
+    // Componente de instalação manual ausente não é "atualização disponível": o BDS não tem como baixá-lo
+    // Componente sob demanda ausente também não conta (só é atualizado se o usuário já o instalou)
+    const needingUpdate = statuses.filter(s => !s.unavailable && !(s.onDemand && !s.isInstalled)
+      && (s.needsUpdate || (!s.isInstalled && !s.manualInstallOnly)));
     return {
       hasUpdates: needingUpdate.length > 0,
       totalNeedingUpdate: needingUpdate.length,
+      // Componentes cuja verificação remota falhou (rede/limite da API): a interface deve mostrar
+      // "não foi possível verificar" em vez de "tudo atualizado".
+      checkFailed: statuses.some(s => s.checkFailed),
+      checkFailedCount: statuses.filter(s => s.checkFailed).length,
       components: statuses,
     };
   }
@@ -249,7 +293,8 @@ class DependencyManager {
     const statuses = await this.getComponentsStatus();
     // Um componente entra na fila de atualização se: (a) não é estritamente manual (ou seja,
     // tem uma fonte real de atualização — GitHub ou Update Server) e (b) precisa atualizar.
-    const toUpdate = statuses.filter(s => (s.source || !s.manualInstallOnly) && (s.needsUpdate || !s.isInstalled));
+    const toUpdate = statuses.filter(s => !s.unavailable && !(s.onDemand && !s.isInstalled)
+      && (s.source || !s.manualInstallOnly) && (s.needsUpdate || !s.isInstalled));
 
     if (toUpdate.length === 0) {
       if (onProgress) onProgress(100, 'Todos os componentes já estão atualizados.');
@@ -281,7 +326,7 @@ class DependencyManager {
 
         const result = await this.updateComponent(comp.canonicalTool, stepProgress, opts);
         if (result && result.needsConfirmation) {
-          needsConfirmation.push({ id: comp.id, tool: result.tool, version: result.version, reason: result.reason, message: result.message });
+          needsConfirmation.push({ id: comp.id, title: comp.title, tool: result.tool, version: result.version, reason: result.reason, message: result.message });
           continue;
         }
         // So conta como atualizacao efetiva se o short-circuit nao tiver pulado o componente

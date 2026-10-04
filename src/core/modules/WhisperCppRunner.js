@@ -5,6 +5,7 @@
  *
  * Para cada arquivo:
  *   1. o ffmpeg do BDS converte o vídeo/áudio em WAV mono 16 kHz (numa pasta de trabalho temporária);
+ *      (opcional, `skipSilence`: os trechos sem fala saem do WAV antes do whisper e os tempos voltam ao original no fim);
  *   2. o `whisper-cli` transcreve e grava um JSON completo (trechos e tokens com tempo);
  *   3. o BDS agrupa os tokens em palavras (whisperCppOutput.js) e gera a legenda .srt e a transcrição .md
  *      (subtitles.js), sempre em nome livre ("aula (2).srt"), sem sobrescrever nada.
@@ -25,18 +26,22 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { processRunner } = require('../../infrastructure/external-tools/ProcessRunner');
 const { parseWhisperCppJson } = require('../transcription/whisperCppOutput');
-const { buildSrt, buildMarkdown, DEFAULT_MAX_CHARS } = require('../transcription/subtitles');
+const { buildSrt, buildMarkdown, buildText, DEFAULT_MAX_CHARS } = require('../transcription/subtitles');
 const { writeUnique } = require('../transcription/writeUnique');
+const { detectSpeechRanges, buildTrimmedWav, remapResult, sanitizeSilenceOptions } = require('../transcription/silenceTrim');
 const { getModel } = require('./WhisperCatalog');
 
 const SUPPORTED_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4a', '.wav', '.mp3', '.flac', '.ogg']);
-const CLI_NAME = 'whisper-cli.exe';
+const CLI_NAME = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
 const MAX_FILES = 200;
 const SAMPLE_RATE = 16000;
 const WAV_HEADER_BYTES = 44;
 const DECODE_SHARE = 2; // % do andamento de um arquivo usado pela leitura do áudio
+// Filtro de silêncio: só vale a pena se tirar uma parte relevante do áudio (senão usa o WAV original).
+const TRIM_MIN_FRACTION = 0.1;
+const TRIM_MIN_SECONDS = 20;
 
 class RunnerError extends Error {
   constructor(message, code, detail = null) { super(message); this.name = 'RunnerError'; this.code = code; this.detail = detail; }
@@ -64,7 +69,8 @@ function normalizeOptions(options = {}) {
 
   const srt = options.srt !== false;
   const md = options.md === true;
-  if (!srt && !md) throw new RunnerError('Marque ao menos uma saída: legenda (.srt) ou transcrição (.md).', 'NO_OUTPUT');
+  const txt = options.txt === true;
+  if (!srt && !md && !txt) throw new RunnerError('Marque ao menos uma saída: legenda (.srt), transcrição (.md) ou texto (.txt).', 'NO_OUTPUT');
 
   // Linhas por legenda: 1 ou 2
   const lines = options.lines === undefined || options.lines === null ? 2 : Number(options.lines);
@@ -83,15 +89,12 @@ function normalizeOptions(options = {}) {
     outDir = String(options.outDir);
     if (!path.isAbsolute(outDir)) throw new RunnerError('A pasta de saída deve ser um caminho completo.', 'BAD_PATH');
   }
-  return { files, srt, md, maxWords, lines, language, outDir, forceCpu: options.forceCpu === true };
+  return { files, srt, md, maxWords, lines, language, outDir, forceCpu: options.forceCpu === true, skipSilence: options.skipSilence !== false, silence: sanitizeSilenceOptions(options.silence) };
 }
 
-/** Encerra um processo e seus filhos. */
+/** Encerra um processo e seus filhos (via ProcessRunner: taskkill no Windows, grupo em POSIX). */
 function killTree(child) {
-  try {
-    if (process.platform === 'win32') spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
-    else child.kill('SIGKILL');
-  } catch (_) { /* noop */ }
+  try { processRunner.cancel(child).catch(() => {}); } catch (_) { /* noop */ }
 }
 
 /**
@@ -103,9 +106,9 @@ function runProcess({ command, args, cwd, env, signal = null, onLine = () => {} 
     if (signal && signal.aborted) return reject(cancelledError());
     let child;
     try {
-      child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = processRunner.spawn(command, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (err) {
-      return reject(new RunnerError(`Não foi possível iniciar ${path.basename(command)}: ${err.message}`, 'SPAWN'));
+      return reject(new RunnerError('Não foi possível iniciar a transcrição. Reinstale o recurso em Configurações > Módulos.', 'SPAWN'));
     }
 
     let tail = '';
@@ -129,7 +132,7 @@ function runProcess({ command, args, cwd, env, signal = null, onLine = () => {} 
     child.on('error', (err) => {
       done();
       const missing = err.code === 'ENOENT';
-      reject(new RunnerError(missing ? `Programa não encontrado: ${path.basename(command)}` : `Falha ao executar ${path.basename(command)}: ${err.message}`, missing ? 'NO_PROGRAM' : 'SPAWN'));
+      reject(new RunnerError(missing ? 'O recurso de transcrição não foi encontrado. Reinstale-o em Configurações > Módulos.' : 'A transcrição não pôde ser executada. Tente novamente.', missing ? 'NO_PROGRAM' : 'SPAWN'));
     });
     child.on('close', (code) => {
       done();
@@ -137,6 +140,15 @@ function runProcess({ command, args, cwd, env, signal = null, onLine = () => {} 
       resolve({ code, tail });
     });
   });
+}
+
+/** 83 -> "1:23"; 3725 -> "1:02:05". */
+function formatSeconds(total) {
+  const t = Math.max(0, Math.round(total));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
 const lastLine = (text) => String(text).trim().split('\n').filter(Boolean).pop() || '';
@@ -174,7 +186,7 @@ class WhisperCppRunner {
   }
 
   /**
-   * @param {object} options  { files, srt, md, maxWords, lines, language, outDir, forceCpu }
+   * @param {object} options  { files, srt, md, maxWords, lines, language, outDir, forceCpu, skipSilence, silence:{noiseDb,minSilence,pad} }
    * @param {{modelDir:string, modelId?:string, modelName?:string, dtwPreset?:string|null, signal?:AbortSignal, onEvent?:(e:object)=>void}} ctx
    * @returns {Promise<{ok:number, failed:number, device:string, outputs:Array<{source:string,kind:string,path:string}>, errors:string[]}>}
    */
@@ -186,7 +198,7 @@ class WhisperCppRunner {
     }
     const engines = this._engines();
     if (!this.cliCommand && !engines.cuda && !engines.cpu) throw new RunnerError('O motor de transcrição não está instalado.', 'NO_ENGINE');
-    if (!this.ffmpegPath && !this.ffmpegBaseArgs.length) throw new RunnerError('O ffmpeg não foi encontrado. Ele é necessário para ler vídeos e áudios.', 'NO_FFMPEG');
+    if (!this.ffmpegPath && !this.ffmpegBaseArgs.length) throw new RunnerError('O componente de mídia não foi encontrado. Ele é necessário para ler vídeos e áudios; instale-o em Configurações > Módulos.', 'NO_FFMPEG');
     if (opts.outDir) fs.mkdirSync(opts.outDir, { recursive: true });
     if (signal && signal.aborted) throw cancelledError();
 
@@ -226,6 +238,25 @@ class WhisperCppRunner {
           overall(pct / 100);
         };
         fileProgress(0);
+
+        // Filtro de silêncio: o whisper recebe só os trechos com fala; os tempos voltam ao original no fim.
+        let audioName = 'audio.wav';
+        let timeMap = null;
+        if (opts.skipSilence) {
+          onEvent({ type: 'status', text: 'Removendo silêncios…' });
+          try {
+            const trim = await this._trimSilence({ wav, work, seconds, signal, silence: opts.silence });
+            if (trim) {
+              audioName = trim.audioName;
+              timeMap = trim.timeMap;
+              onEvent({ type: 'line', text: `Trechos sem fala ignorados: ${formatSeconds(seconds - trim.duration)} de ${formatSeconds(seconds)}.` });
+            }
+          } catch (err) {
+            if (err instanceof RunnerError && err.code === 'CANCELLED') throw err;
+            if (signal && signal.aborted) throw cancelledError();
+            onEvent({ type: 'status', text: 'Não foi possível ignorar os silêncios; transcrevendo o áudio inteiro.' });
+          }
+        }
         onEvent({ type: 'status', text: `Carregando o modelo (${name})` }); // pode levar de poucos segundos a mais de 1 minuto
         const onLoaded = () => onEvent({ type: 'status', text: `Transcrevendo ${name}` });
 
@@ -233,7 +264,7 @@ class WhisperCppRunner {
         let run;
         for (;;) {
           try {
-            run = await this._runCli({ work, modelFile, useGpu, language: opts.language, dtw, engines, signal, onProgress: fileProgress, onLoaded });
+            run = await this._runCli({ work, modelFile, useGpu, language: opts.language, dtw, engines, signal, audioName, onProgress: fileProgress, onLoaded });
             break;
           } catch (err) {
             if (!(err instanceof RunnerError) || err.code !== 'ENGINE_FAILED' || !useGpu) throw err;
@@ -247,7 +278,8 @@ class WhisperCppRunner {
         }
         if (run.device !== device) { device = run.device; onEvent({ type: 'device', text: device }); }
 
-        const parsed = parseWhisperCppJson(fs.readFileSync(path.join(work, 'out.json')), { preferDtw: Boolean(dtw) });
+        let parsed = parseWhisperCppJson(fs.readFileSync(path.join(work, 'out.json')), { preferDtw: Boolean(dtw) });
+        if (timeMap) parsed = remapResult(parsed, timeMap);
         if (!parsed.segments.length) throw new RunnerError('Nenhuma fala foi detectada no arquivo.', 'NO_SPEECH');
 
         const dir = opts.outDir || path.dirname(source);
@@ -262,6 +294,11 @@ class WhisperCppRunner {
           const text = buildMarkdown({ title: stem, model: label, duration: seconds, segments: parsed.segments });
           made.push({ source, kind: 'md', path: writeUnique(path.join(dir, `${stem}.md`), text) });
           onEvent({ type: 'line', text: `Transcrição criada: ${path.basename(made[made.length - 1].path)}` });
+        }
+        if (opts.txt) {
+          const text = buildText({ segments: parsed.segments });
+          made.push({ source, kind: 'txt', path: writeUnique(path.join(dir, `${stem}.txt`), text) });
+          onEvent({ type: 'line', text: `Texto criado: ${path.basename(made[made.length - 1].path)}` });
         }
         outputs.push(...made);
         ok++;
@@ -292,11 +329,35 @@ class WhisperCppRunner {
     });
     if (code === 0 && fs.existsSync(wav)) return;
     if (/does not contain any stream|no audio|Output file is empty/i.test(tail)) throw new RunnerError('O arquivo não tem faixa de áudio.', 'NO_AUDIO');
-    throw new RunnerError(`O ffmpeg não conseguiu ler o arquivo: ${lastLine(tail) || `código ${code}`}`, 'DECODE');
+    throw new RunnerError('Não foi possível ler o áudio deste arquivo. Verifique se o arquivo abre normalmente e tente de novo.', 'DECODE');
+  }
+
+  /**
+   * Detecta os trechos com fala e grava <work>/audio_fala.wav só com eles. Devolve null quando não compensa
+   * (pouco silêncio, ou áudio todo "silencioso" — nesse caso o limiar pode estar errado e vale o original).
+   * Qualquer outra falha propaga: quem chama cai no áudio inteiro.
+   */
+  async _trimSilence({ wav, work, seconds, signal, silence }) {
+    const ranges = await detectSpeechRanges(wav, {
+      ffmpegPath: this.ffmpegPath || process.execPath, ffmpegBaseArgs: this.ffmpegBaseArgs, duration: seconds, signal, ...silence
+    }).catch((err) => { throw err && err.code === 'CANCELLED' ? cancelledError() : err; });
+    if (!ranges.length) return null;
+    const kept = ranges.reduce((n, r) => n + (r.end - r.start), 0);
+    const removable = seconds - kept;
+    if (removable < TRIM_MIN_FRACTION * seconds && removable < TRIM_MIN_SECONDS) return null;
+    const out = path.join(work, 'audio_fala.wav');
+    try {
+      const built = await buildTrimmedWav(wav, ranges, out, { signal });
+      if (built.duration < 0.2) { fs.rmSync(out, { force: true }); return null; }
+      return { audioName: 'audio_fala.wav', timeMap: built.timeMap, duration: built.duration };
+    } catch (err) {
+      if (err && err.code === 'CANCELLED') throw cancelledError();
+      throw err;
+    }
   }
 
   /** whisper-cli: grava <work>/out.json. Devolve onde rodou ("GPU (CUDA)" ou "CPU"). */
-  async _runCli({ work, modelFile, useGpu, language, dtw, engines, signal, onProgress, onLoaded = () => {} }) {
+  async _runCli({ work, modelFile, useGpu, language, dtw, engines, signal, audioName = 'audio.wav', onProgress, onLoaded = () => {} }) {
     const engineDir = this.cliCommand ? (this.cudaDir || this.engineDir || work) : (useGpu ? engines.cuda : (engines.cpu || engines.cuda));
     const command = this.cliCommand || path.join(engineDir, this.cliName);
     const noGpuFlag = !useGpu && (Boolean(this.cliCommand) || !engines.cpu); // só o motor NVIDIA instalado: força a CPU com -ng
@@ -314,7 +375,7 @@ class WhisperCppRunner {
     // Metade dos núcleos lógicos (≈ os físicos): o whisper.cpp espera ocupado entre as etapas, e usar quase todos os
     // núcleos com outros programas abertos derrubou o desempenho a quase zero nos testes.
     const threads = Math.max(2, Math.min(8, Math.floor(os.cpus().length / 2)));
-    const args = [...this.cliBaseArgs, '-m', model, '-f', 'audio.wav', '-l', language, '-ojf', '-of', 'out', '-pp',
+    const args = [...this.cliBaseArgs, '-m', model, '-f', audioName, '-l', language, '-ojf', '-of', 'out', '-pp',
       '-bs', '1', '-bo', '1', '-mc', '0', '-t', String(threads)];
     if (dtw) args.push('-dtw', dtw, '-nfa'); // o alinhamento por DTW exige a flash attention desligada
     if (noGpuFlag) args.push('-ng');
@@ -338,9 +399,9 @@ class WhisperCppRunner {
 
     if (code !== 0 || !fs.existsSync(path.join(work, 'out.json'))) {
       const reason = sawCudaError ? 'erro da placa de vídeo' : (lastLine(tail) || `código ${code}`);
-      throw new RunnerError(`A transcrição falhou: ${reason}`, 'ENGINE_FAILED', reason);
+      throw new RunnerError(`A transcrição falhou${sawCudaError ? ' (erro na placa de vídeo; tente desligar a aceleração NVIDIA)' : ''}. Tente novamente.`, 'ENGINE_FAILED', reason);
     }
-    return { device: useGpu && sawGpu ? 'GPU (CUDA)' : 'CPU' };
+    return { device: useGpu && sawGpu ? 'Placa de vídeo (aceleração NVIDIA)' : 'CPU' };
   }
 }
 

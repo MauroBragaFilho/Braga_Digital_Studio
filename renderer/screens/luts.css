@@ -1046,3 +1046,14 @@ details.inspector-section:not([open]) > summary { margin-bottom: 0; }
   .lut-select { min-width: 110px; }
   .luts-footer-hint { display: none; }
 }
+
+/* Alvo de clique >= 32 px (auditoria de UX) */
+.lut-icon-btn.lut-icon-btn-small { width: 32px; height: 32px; }
+
+/* Contraste WCAG AA (medido) */
+.lut-btn-primary { background: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
+.lut-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-solid, var(--accent)) 86%, #000); }
+.luts-tab.active, .luts-footer-highlight, .lut-badge, .lut-badge-3d { color: var(--accent-text, var(--accent)); }
+.lut-slider-label { color: #fff; }
+.luts-empty-icon { opacity: 0.75; }
+.luts-empty-hint, .luts-footer-hint { opacity: 1; }

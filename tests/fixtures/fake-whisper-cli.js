@@ -15,7 +15,7 @@ const val = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1
 const noGpu = args.includes('-ng');
 
 if (process.env.FAKE_RECORD) {
-  fs.appendFileSync(process.env.FAKE_RECORD, `${JSON.stringify({ args, cwd: process.cwd(), noGpu })}\n`);
+  fs.appendFileSync(process.env.FAKE_RECORD, `${JSON.stringify({ args, cwd: process.cwd(), noGpu, audioBytes: (() => { try { return fs.statSync(path.resolve(process.cwd(), val('-f'))).size; } catch (_) { return -1; } })() })}\n`);
 }
 
 const wantsGpu = process.env.FAKE_GPU === '1' && !noGpu;

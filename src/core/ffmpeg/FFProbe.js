@@ -28,7 +28,7 @@ class FFProbe {
 
         try {
             // maxBuffer de 10MB e timeout de 30 segundos
-            const { stdout } = await execFilePromise(this.ffprobePath, args, { maxBuffer: 1024 * 1024 * 10, timeout: 30000 });
+            const { stdout } = await execFilePromise(this.ffprobePath, args, { maxBuffer: 1024 * 1024 * 10, timeout: 30000, windowsHide: true });
             const data = JSON.parse(stdout);
 
             let duration = data.format?.duration ? parseFloat(data.format.duration) : 0;

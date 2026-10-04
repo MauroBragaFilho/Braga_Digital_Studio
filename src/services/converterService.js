@@ -8,6 +8,7 @@ const { ffmpegTool } = require('../infrastructure/external-tools/adapters/Ffmpeg
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const probeCache = require('../core/ffmpeg/ProbeCache');
+const { uniqueOutputPath, isSamePath } = require('./uniquePath');
 
 // Progresso por arquivo no máximo a cada 300 ms; stderr do ffmpeg guarda só o final (~8 KB)
 const PROGRESS_EMIT_MS = 300;
@@ -67,15 +68,57 @@ class ConverterService extends EventEmitter {
     };
   }
 
-  removeFile(index) {
+  /**
+   * Remove um item da fila. Aceita o `id` do item (preferido: a lista da tela pode estar ordenada de
+   * forma diferente da fila) ou, por compatibilidade, o índice numérico.
+   */
+  removeFile(idOrIndex) {
     if (this.running) {
       throw new Error('Não é possível remover itens durante uma conversão.');
     }
+    let index = -1;
+    if (typeof idOrIndex === 'string' || (typeof idOrIndex === 'number' && !Number.isInteger(idOrIndex))) {
+      index = this.queue.findIndex((it) => String(it.id) === String(idOrIndex));
+    } else if (idOrIndex && typeof idOrIndex === 'object') {
+      index = this.queue.findIndex((it) => String(it.id) === String(idOrIndex.id));
+    } else if (Number.isInteger(idOrIndex)) {
+      index = this.queue.findIndex((it) => it.id === idOrIndex);
+      if (index < 0) index = idOrIndex;
+    }
+    let removed = 0;
     if (index >= 0 && index < this.queue.length) {
       this.queue.splice(index, 1);
+      removed = 1;
       this.emit('queue', this.queue);
     }
-    return { ok: true };
+    return { ok: true, removed };
+  }
+
+  /**
+   * Alinha a fila do backend com a lista da tela: usa a ordem recebida (`ids`) e descarta itens que a
+   * tela não mostra mais. Ids desconhecidos são ignorados.
+   */
+  _syncOrder(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    const byId = new Map(this.queue.map((it) => [String(it.id), it]));
+    const ordered = [];
+    for (const id of ids) {
+      const it = byId.get(String(id));
+      if (it && !ordered.includes(it)) ordered.push(it);
+    }
+    if (ordered.length) this.queue = ordered;
+  }
+
+  /** Duração de todos os itens da fila (necessária ao progresso geral e ao ETA do lote). */
+  async _ensureDurations() {
+    for (const item of this.queue) {
+      if (item.duration > 0) continue;
+      if (item.knownDuration > 0) { item.duration = item.knownDuration; continue; }
+      try {
+        const d = await this.getVideoDuration(item.file);
+        if (d > 0) item.duration = d;
+      } catch (_) { /* a conversão do item reporta o erro */ }
+    }
   }
 
   addFiles(files = []) {
@@ -163,6 +206,17 @@ class ConverterService extends EventEmitter {
     this.running = true;
     this.cancelRequested = false;
     this.currentConfig = config;
+    this._reservedOutputs = new Set();
+    this._syncOrder(config.order);
+    // Nova rodada: o que não está concluído volta a "Pendente" (ETA do lote conta só os pendentes)
+    for (const item of this.queue) {
+      if (item.status !== 'Concluído') {
+        item.status = 'Pendente';
+        item.progress = 0;
+        delete item.error;
+        delete item._errorSaved;
+      }
+    }
 
     // Reinicia as estatísticas do lote a cada nova conversão
     this._batchStats = {
@@ -182,13 +236,21 @@ class ConverterService extends EventEmitter {
 
     try {
 
-      await this.processQueue();
+      await this._ensureDurations();
+      const summary = await this.processQueue();
+      const failed = summary.failed;
+      const status = this.cancelRequested ? 'cancelled' : (failed.length ? (summary.done ? 'partial' : 'error') : 'success');
 
       this.emit(
         'finished',
         {
-          status: this.cancelRequested ? 'cancelled' : 'success',
-          message: this.cancelRequested ? 'Conversão cancelada.' : 'Fila concluída.'
+          status,
+          done: summary.done,
+          failed: failed.length,
+          errors: failed,
+          message: this.cancelRequested
+            ? 'Conversão cancelada.'
+            : (failed.length ? `${failed.length} arquivo(s) com erro.` : 'Fila concluída.')
         }
       );
 
@@ -260,6 +322,7 @@ class ConverterService extends EventEmitter {
       }
     );
 
+    const summary = { done: 0, failed: [] };
     for (const item of this.queue) {
       if (this.cancelRequested) {
         break;
@@ -270,9 +333,22 @@ class ConverterService extends EventEmitter {
         continue;
       }
 
-      await this.convertItem(
-        item
-      );
+      // Erro em um arquivo não derruba o restante da fila: registra e segue para o próximo
+      try {
+        await this.convertItem(
+          item
+        );
+      } catch (error) {
+        item.status = 'Erro';
+        item.error = String(error.message || error).split(/\r?\n/).filter(Boolean).slice(-3).join(' ').slice(0, 300);
+        logger.error('converter:file:error', { file: item.file, error: item.error });
+        if (!item._errorSaved) { try { this.saveConversion(item); } catch (_) { /* histórico é best effort */ } }
+        this.emit('fileFinished', { id: item.id, status: 'Erro', error: item.error });
+        this.emit('queue', this.queue);
+        summary.failed.push({ id: item.id, file: item.file, error: item.error });
+        continue;
+      }
+      if (item.status === 'Concluído') summary.done++;
 
       // Acumula estatísticas do lote apenas com itens concluídos e com duração conhecida
       if (
@@ -285,6 +361,7 @@ class ConverterService extends EventEmitter {
           (Date.now() - item.startedAt) / 1000;
       }
     }
+    return summary;
   }
 
   async convertItem(item) {
@@ -307,11 +384,15 @@ class ConverterService extends EventEmitter {
     const sourceDir = path.dirname(item.file);
     const outputDir = this.currentConfig?.outFolder || sourceDir;
 
-    item.output = path.join(outputDir, `${path.parse(item.file).name}${outExt}`);
-    // Saída igual à origem (ex.: x.mp4 -> x.mp4 na mesma pasta): o ffmpeg recusaria e qualquer limpeza
-    // de parcial apagaria o ORIGINAL. Usa um nome distinto.
-    if (path.resolve(item.output).toLowerCase() === path.resolve(item.file).toLowerCase()) {
-      item.output = path.join(outputDir, `${path.parse(item.file).name}_convertido${outExt}`);
+    // Nunca sobrescreve: nome já existente na pasta, saída de outro item do lote ou QUALQUER arquivo de
+    // origem da fila (inclusive a própria origem: x.mp4 -> x.mp4) vira "nome (2).ext". Assim a limpeza
+    // de parciais nunca apaga um arquivo do usuário.
+    item.output = uniqueOutputPath(outputDir, `${path.parse(item.file).name}${outExt}`, {
+      avoid: this.queue.map((it) => it.file),
+      reserved: this._reservedOutputs
+    });
+    if (isSamePath(item.output, item.file)) {
+      throw new Error('O arquivo de saída coincide com o arquivo de origem.');
     }
     item.outputType = outFormat;
 
@@ -393,10 +474,11 @@ class ConverterService extends EventEmitter {
       item._remainingSeconds = null;
       this._lastProgressEmit = 0;
 
+      // Repetição totalmente por software: sem -hwaccel (o decoder por hardware também pode ser a causa)
       result = await this._runEncode(
         item,
         ffmpeg,
-        this._buildArgs(item, config, plan.encoder),
+        this._buildArgs(item, config, plan.encoder, { noHwaccel: true }),
         duration
       );
     }
@@ -458,9 +540,15 @@ class ConverterService extends EventEmitter {
     item.status =
       'Erro';
 
+    // Remove a saída parcial deste item (o nome é sempre novo: nunca é um arquivo do usuário)
+    try {
+      if (item.output && fs.existsSync(item.output) && !isSamePath(item.output, item.file)) fs.unlinkSync(item.output);
+    } catch (_) { /* best effort */ }
+
     this.saveConversion(
       item
     );
+    item._errorSaved = true;
 
     this.emit(
       'queue',
@@ -469,7 +557,7 @@ class ConverterService extends EventEmitter {
 
     throw new Error(
       result.stderr ||
-      `FFmpeg retornou ${result.code}`
+      'A conversão não pôde ser concluída. Verifique o arquivo de origem e as opções escolhidas e tente de novo.'
     );
   }
 
@@ -502,7 +590,7 @@ class ConverterService extends EventEmitter {
   }
 
   /** Monta os argumentos do ffmpeg para o item usando o encoder indicado. */
-  _buildArgs(item, config, videoEncoder) {
+  _buildArgs(item, config, videoEncoder, { noHwaccel = false } = {}) {
     const args = [
       '-y',
       '-nostdin',
@@ -510,7 +598,7 @@ class ConverterService extends EventEmitter {
       '-loglevel', 'error'
     ];
     // Decodificação acelerada por hardware (apenas quando ativo nas Configurações)
-    if (this.hwEnabled) args.push('-hwaccel', 'auto');
+    if (this.hwEnabled && !noHwaccel) args.push('-hwaccel', 'auto');
     args.push('-i', item.file);
 
     const audioBitrate = config.audioBitrate || '192k';
@@ -545,6 +633,8 @@ class ConverterService extends EventEmitter {
       const crf = userCrf || (isHevc ? '28' : '23');
 
       args.push('-c:v', videoEncoder);
+      // H.265 em MP4: tag hvc1 (sem ela o QuickTime/Apple e vários players não reproduzem)
+      if (isHevc) args.push('-tag:v', 'hvc1');
       let quality = hardwareDetection.getEncoderQualityArgs(videoEncoder, crf, userPreset);
       if (hasBitrate) {
         // Com bitrate fixo o parâmetro de qualidade constante (crf/cq/...) não se aplica: mantém só o preset.
@@ -846,7 +936,8 @@ class ConverterService extends EventEmitter {
     for (const item of this.queue) {
       if (item.duration > 0) {
         totalDuration += item.duration;
-        if (item.status === 'Concluído') {
+        if (item.status === 'Concluído' || item.status === 'Erro' || item.status === 'Cancelado') {
+          // Itens encerrados (inclusive com erro) não podem travar o geral abaixo de 100%
           processedDuration += item.duration;
         } else if (item === this.currentItem) {
           processedDuration +=
@@ -886,8 +977,11 @@ class ConverterService extends EventEmitter {
 
         // Para filas com múltiplos arquivos, estima o tempo dos
         // próximos itens usando a velocidade média do item atual.
-        const futureVideoDuration =
-          totalDuration - cur.duration;
+        // Só os itens ainda pendentes (os já concluídos não entram no que falta converter)
+        let futureVideoDuration = 0;
+        for (const it of this.queue) {
+          if (it !== cur && it.status === 'Pendente' && it.duration > 0) futureVideoDuration += it.duration;
+        }
         if (futureVideoDuration > 0) {
           const curSpeed =
             (cur.duration * cur.progress / 100) / elapsed;

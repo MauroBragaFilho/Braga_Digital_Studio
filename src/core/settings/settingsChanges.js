@@ -26,9 +26,9 @@ function anyKeyChanged(prev, next, keys) {
 }
 
 // Chaves que afetam os lembretes de prazo (reavaliados imediatamente ao salvar).
-const NOTIFICATION_KEY_PATTERN = /^(notify|deadline|telegram|notificationsEnabled)/;
+const NOTIFICATION_KEY_PATTERN = /^(notify|deadline|notificationsEnabled)/;
 
-/** true se alguma chave de notificação/prazo/Telegram mudou. */
+/** true se alguma chave de notificação/prazo mudou. */
 function notificationSettingsChanged(prev, next) {
   const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
   return anyKeyChanged(prev, next, [...keys].filter((k) => NOTIFICATION_KEY_PATTERN.test(k)));

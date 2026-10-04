@@ -1,11 +1,45 @@
 ﻿'use strict';
 
 const EventEmitter = require('node:events');
+const path = require('node:path');
 const { cachedAsync } = require('./cachedAsync');
 
 // Enumerar MTP/USB custa um PowerShell cada: o resultado é reaproveitado por este tempo
 // (sidebar de armazenamento, tela Dispositivos) e chamadas simultâneas são deduplicadas.
 const DEVICE_LIST_TTL_MS = 25000;
+
+/**
+ * Valida a lista de segmentos de caminho/nomes vindos do renderer: só nomes simples
+ * (sem separadores, '..', ':' ou bytes nulos). Segmentos vazios são descartados.
+ * @returns {string[]}
+ */
+function cleanSegments(list, label = 'Caminho') {
+  if (list == null) return [];
+  if (!Array.isArray(list) || list.length > 5000) throw new Error(`${label} inválido.`);
+  const out = [];
+  for (const seg of list) {
+    if (seg == null || seg === '') continue;
+    if (typeof seg !== 'string' || seg.length > 255 || /[\\/:\0]/.test(seg) || seg === '.' || seg === '..') {
+      throw new Error(`${label} inválido: segmento não permitido.`);
+    }
+    out.push(seg);
+  }
+  return out;
+}
+
+/** Pasta de destino: caminho absoluto, sem bytes nulos e que não seja a raiz de um drive. */
+function assertDestFolder(dest) {
+  if (!dest || typeof dest !== 'string' || dest.includes('\0') || dest.length > 4096 || !path.isAbsolute(dest)) {
+    throw new Error('Pasta de destino inválida.');
+  }
+  const resolved = path.resolve(dest);
+  if (path.parse(resolved).root === resolved || path.parse(resolved).root === resolved + path.sep) {
+    throw new Error('A pasta de destino não pode ser a raiz de um drive.');
+  }
+  return resolved;
+}
+
+const normBase = (p) => path.resolve(String(p)).replace(/[\\/]+$/, '').toLowerCase();
 
 /**
  * DeviceManager — Facade multiplataforma para acesso a dispositivos de hardware.
@@ -77,7 +111,7 @@ class DeviceManager extends EventEmitter {
    */
   listMtpFolder(deviceName, pathArray) {
     this._ensureInit();
-    return this._mtpProvider.listFolder(deviceName, pathArray);
+    return this._mtpProvider.listFolder(deviceName, cleanSegments(pathArray));
   }
 
   /**
@@ -89,7 +123,9 @@ class DeviceManager extends EventEmitter {
    */
   importMtpItems(deviceName, pathArray, itemNames, destFolder) {
     this._ensureInit();
-    return this._mtpProvider.importItems(deviceName, pathArray, itemNames, destFolder);
+    return this._mtpProvider.importItems(
+      deviceName, cleanSegments(pathArray), cleanSegments(itemNames, 'Nome de arquivo'), assertDestFolder(destFolder)
+    );
   }
 
   // ─── Storage / USB ────────────────────────────────────────────────────────
@@ -110,9 +146,31 @@ class DeviceManager extends EventEmitter {
    * @param {string[]} pathArray
    * @returns {Promise<{success: boolean, items: Array}>}
    */
-  listStorageFolder(basePath, pathArray) {
+  async listStorageFolder(basePath, pathArray) {
     this._ensureInit();
-    return this._storageProvider.listFolder(basePath, pathArray);
+    const segments = cleanSegments(pathArray);
+    const base = await this._assertListedStorage(basePath);
+    return this._storageProvider.listFolder(base, segments);
+  }
+
+  /** basePath precisa ser exatamente uma unidade/ponto de montagem listado pelo provider. */
+  async _assertListedStorage(basePath) {
+    if (!basePath || typeof basePath !== 'string' || basePath.includes('\0') || !path.isAbsolute(basePath)) {
+      throw new Error('Unidade inválida.');
+    }
+    const wanted = normBase(basePath);
+    const find = (devices) => {
+      for (const d of devices || []) {
+        for (const s of d.storage || []) {
+          if (s && s.path && normBase(s.path) === wanted) return s.path;
+        }
+      }
+      return null;
+    };
+    let found = find(await this.getStorageDevices());
+    if (!found) found = find(await this.getStorageDevices({ force: true })); // unidade recém-conectada
+    if (!found) throw new Error('A unidade informada não está entre os dispositivos conectados.');
+    return found;
   }
 
   /**
@@ -122,12 +180,16 @@ class DeviceManager extends EventEmitter {
    * @param {string} destFolder
    * @returns {Promise<boolean>}
    */
-  importStorageItems(basePath, pathArray, itemNames, destFolder) {
+  async importStorageItems(basePath, pathArray, itemNames, destFolder) {
     this._ensureInit();
-    return this._storageProvider.importItems(basePath, pathArray, itemNames, destFolder);
+    const segments = cleanSegments(pathArray);
+    const names = cleanSegments(itemNames, 'Nome de arquivo');
+    const dest = assertDestFolder(destFolder);
+    const base = await this._assertListedStorage(basePath);
+    return this._storageProvider.importItems(base, segments, names, dest);
   }
 }
 
 // Singleton
 const deviceManager = new DeviceManager();
-module.exports = { DeviceManager, deviceManager };
+module.exports = { DeviceManager, deviceManager, cleanSegments, assertDestFolder };

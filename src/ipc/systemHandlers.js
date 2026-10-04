@@ -1,4 +1,5 @@
-const { ipcMain, app, shell } = require('electron');
+const { app, shell } = require('electron');
+const { handle } = require('./channelRegistry');
 const fs = require('node:fs');
 const path = require('node:path');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
@@ -31,25 +32,93 @@ function assertOpenablePath(itemPath) {
   return resolved;
 }
 
-module.exports = function registerSystemHandlers(paths, settingsManager) {
+/**
+ * Apaga o conteúdo de `dir` em lotes, cedendo ao event loop entre eles (a versão síncrona congelava
+ * o processo principal: ~2,4 s com 5.000 arquivos).
+ * @returns {Promise<{filesRemoved:number, bytesFreed:number}>}
+ */
+async function clearDirectoryAsync(dir, batchSize = 100) {
+  const fsp = fs.promises;
+  let filesRemoved = 0;
+  let bytesFreed = 0;
+  let sinceYield = 0;
+  const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
+  const walk = async (current) => {
+    let entries;
+    try { entries = await fsp.readdir(current, { withFileTypes: true }); } catch (_) { return; }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full);
+        try { await fsp.rmdir(full); } catch (_) { /* não vazia ou em uso */ }
+      } else {
+        try {
+          const st = await fsp.stat(full);
+          await fsp.unlink(full);
+          filesRemoved++;
+          bytesFreed += st.size;
+        } catch (_) { /* em uso */ }
+        if (++sinceYield >= batchSize) { sinceYield = 0; await yieldLoop(); }
+      }
+    }
+  };
+  await walk(dir);
+  return { filesRemoved, bytesFreed };
+}
+
+/**
+ * Equivalente assíncrono de CacheService.clearCache: mesmas categorias e formato de resultado,
+ * mas em lotes e sem somar duas vezes um diretório repetido (no Windows o Temp podia ser contado
+ * em dobro quando tempDir e dataDir/temp coincidem).
+ */
+async function clearCacheAsync(svc, categoryKey, { skipTemp = false } = {}) {
+  const logger = require('../services/logService');
+  const targets = (categoryKey ? svc.categories.filter((c) => c.key === categoryKey) : svc.categories)
+    .filter((c) => !(skipTemp && c.key === 'temp'));
+  const seen = new Set();
+  const norm = (d) => path.resolve(String(d)).toLowerCase();
+  const cleared = [];
+  let totalBytesFreed = 0;
+  for (const cat of targets) {
+    const total = { filesRemoved: 0, bytesFreed: 0 };
+    for (const dir of [cat.dir, ...(cat.extraDirs || [])]) {
+      if (!dir) continue;
+      const key = norm(dir);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const r = await clearDirectoryAsync(dir);
+      total.filesRemoved += r.filesRemoved;
+      total.bytesFreed += r.bytesFreed;
+    }
+    cleared.push({ key: cat.key, ...total });
+    totalBytesFreed += total.bytesFreed;
+    logger.info(`[CacheService] Limpou ${cat.label}: ${total.filesRemoved} arquivos, ${svc._formatBytes(total.bytesFreed)}`);
+  }
+  return { cleared, totalBytesFreed, totalFormatted: svc._formatBytes(totalBytesFreed) };
+}
+
+/**
+ * @param {object} paths
+ * @param {object} settingsManager
+ * @param {{isBusy?: () => boolean}} [deps] isBusy: true quando há tarefas ativas (downloads, conversões...)
+ */
+module.exports = function registerSystemHandlers(paths, settingsManager, { isBusy = null } = {}) {
   const getSettings = () => {
     if (settingsManager && typeof settingsManager.load === 'function') return settingsManager.load();
     const SettingsClass = require('../core/settings/SettingsManager');
     return new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
   };
 
-  ipcMain.handle('system:exportCookies', async (event, domain, outputPath) => {
+  handle('system:exportCookies', async (event, domain, outputPath) => {
     const CookiesService = require('../core/CookiesService');
-    if (typeof domain !== 'string' || !/^\.?[a-z0-9.-]{1,253}$/i.test(domain)) {
-      throw new Error('Domínio inválido.');
-    }
+    // (domínio já validado pelo esquema do canal)
     // Cookies são sensíveis: só podem ser gravados dentro da pasta de dados do app.
     const baseDir = (paths && paths.dataDir) || appPaths.dataDir;
     const safeOut = assertSafePath(baseDir, outputPath);
     return await CookiesService.exportNetscapeCookies(domain, safeOut);
   });
 
-  ipcMain.handle('system:openPath', async (_, itemPath) => {
+  handle('system:openPath', async (_, itemPath) => {
     // Falhas viram { success:false, error } (o renderer legado não espera rejeição neste canal).
     try {
       const safe = assertOpenablePath(itemPath);
@@ -62,30 +131,30 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
   });
 
   // Abre links externos no navegador padrão (preload não pode usar `shell` com sandbox).
-  ipcMain.handle('shell:openExternal', async (_, url) => {
+  handle('shell:openExternal', async (_, url) => {
     const safeUrl = assertExternalUrl(url);
     await shell.openExternal(safeUrl);
     return true;
   });
 
-  ipcMain.handle('system:isPackaged', () => {
+  handle('system:isPackaged', () => {
     return app.isPackaged;
   });
 
-  ipcMain.handle('system:getToolsPath', () => {
+  handle('system:getToolsPath', () => {
     const toolsDir = (paths && paths.dataDir) ? paths.dataDir : (appPaths.dataDir || null);
     return toolsDir || null;
   });
 
-  ipcMain.handle('system:getVideosPath', () => {
+  handle('system:getVideosPath', () => {
     return appPaths.videosDir;
   });
 
-  ipcMain.handle('system:getDownloadsPath', () => {
+  handle('system:getDownloadsPath', () => {
     return appPaths.downloadsDir;
   });
 
-  ipcMain.handle('system:getCacheInfo', async () => {
+  handle('system:getCacheInfo', async () => {
     const CacheService = require('../core/CacheService');
     const settings = getSettings();
     const svc = new CacheService(appPaths, {
@@ -96,14 +165,20 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
     return svc.getCacheInfoAsync();
   });
 
-  ipcMain.handle('system:clearCache', (_, categoryKey) => {
+  handle('system:clearCache', async (_, categoryKey) => {
     const CacheService = require('../core/CacheService');
     const settings = getSettings();
     const svc = new CacheService(appPaths, {
       maxSizeMB: settings.cacheMaxSizeMB || 500,
       autoClean: !!settings.cacheAutoClean,
     });
-    const result = svc.clearCache(categoryKey || null);
+    // Arquivos temporários podem estar em uso por downloads/conversões/montagens em andamento:
+    // com tarefa ativa, a categoria 'temp' não é limpa (as demais seguem normalmente).
+    const busy = typeof isBusy === 'function' ? !!isBusy() : false;
+    if (busy && categoryKey === 'temp') {
+      throw new Error('Há tarefas em andamento; aguarde terminarem para limpar os arquivos temporários.');
+    }
+    const result = await clearCacheAsync(svc, categoryKey || null, { skipTemp: busy });
 
     // [FIX] Após limpar thumbnails, regenera em background IMEDIATAMENTE (sem reiniciar).
     // Antes, a biblioteca ficava preta até o próximo startup — e o regen de startup
@@ -208,5 +283,5 @@ module.exports = function registerSystemHandlers(paths, settingsManager) {
     }
   };
   const storageInfoCache = cachedAsync(computeStorageInfo, 20000);
-  ipcMain.handle('system:getStorageInfo', () => storageInfoCache.get());
+  handle('system:getStorageInfo', () => storageInfoCache.get());
 };

@@ -1,8 +1,27 @@
 import { escapeHtml, escapeAttr } from '../utils/escape.js';
 import { enhanceModals } from '../utils/modal.js';
+import { originLabel } from '../utils/originLabel.js';
+import { friendlyError } from '../utils/friendlyError.js';
 import { t } from '../strings.js';
+import { toFileUrl, joinFileUrl } from '../utils/fileUrl.js';
+import {
+  computeColumns, groupConsecutive, buildRows, rowTops, rowAt, visibleRange, itemPosition,
+  scrollToReveal, navigateIndex, rangeBetween, diffById, scrollTopForAnchor
+} from '../utils/virtualWindow.js';
 
 const PAGE_SIZE = 300;
+
+// --- Janela virtual: só as linhas visíveis (mais uma margem) existem no DOM; o resto é espaçador ---
+const GRID_MIN_COL = 220;       // igual ao minmax(220px, 1fr) da grade original
+const GRID_GAP = 16;
+const CARD_H = 210;             // altura fixa do card (miniatura 124 + informações); o CSS usa a mesma
+const GRID_ROW_H = CARD_H + GRID_GAP;
+const LIST_ROW_H = 52;          // altura fixa da linha da lista
+const LIST_HEAD_H = 40;         // cabeçalho (colunas) fixo da lista
+const GROUP_HEADER_H = 56;      // cabeçalho de grupo (data / faixa de tamanho)
+const OVERSCAN_PX = 600;        // margem desenhada acima e abaixo da área visível
+const LOAD_AHEAD_PX = 1200;     // pede a próxima página quando faltar isso para o fim
+const THUMB_DEBOUNCE_MS = 80;   // miniaturas só carregam quando a rolagem assenta
 let viewMode = 'grid'; // 'grid' | 'list'
 let mediaItems = [];
 let thumbsDir = '';
@@ -38,7 +57,24 @@ let cleanups = [];          // listeners globais/IPC/observers ativos
 let awayUnsubs = [];        // marcadores leves enquanto a tela está oculta
 let thumbsRegenTimer = null;
 let importDebounceTimer = null;
+let importCooldownTimer = null;   // janela de agrupamento dos eventos de importação (watcher)
+let importPending = false;        // chegou evento durante a janela: refaz uma vez ao fim dela
+const IMPORT_REFRESH_WINDOW_MS = 2000;
 let loadMoreObserver = null;
+
+// --- Estado da janela virtual ---
+let lastQuerySig = null;          // consulta (busca/filtros/ordem) da lista carregada: mudou = lista nova (rolagem volta ao topo)
+let vRoot = null;                 // contêiner da janela virtual dentro de #libContentArea
+let vSpacer = null;               // espaçador com a altura total; as linhas ficam posicionadas dentro dele
+let vLayout = null;               // { mode, cols, groups, rows, rowOfItem, tops, rowH, total }
+let vRowEls = new Map();          // índice da linha -> elemento
+let vCardEls = new Map();         // id -> elemento do card/linha (reaproveitado enquanto não muda)
+let vIdIndex = new Map();         // id -> índice em mediaItems
+let vRange = { first: 0, last: -1 };
+let vLayoutTimer = null;
+let thumbTimer = null;
+let lastScrollTop = 0;
+const waveformCache = new Map();  // uuid -> picos (evita pedir de novo ao rolar de volta)
 
 export async function initScreen() {
   console.log('[LIBRARY] Inicializando tela...');
@@ -46,7 +82,7 @@ export async function initScreen() {
   if (window.bds && window.bds.getThumbDir) {
     try {
       thumbsDir = await window.bds.getThumbDir();
-      thumbsDir = 'file:///' + thumbsDir.replace(/\\/g, '/');
+      thumbsDir = toFileUrl(thumbsDir);
     } catch (e) {
       console.warn('[LIBRARY] Não foi possível obter thumbsDir:', e);
     }
@@ -106,6 +142,18 @@ export async function initScreen() {
     }
   });
 
+  // Ações do estado vazio (delegação: o conteúdo é recriado a cada consulta)
+  document.getElementById('libContentArea')?.addEventListener('click', (e) => {
+    const act = e.target.closest?.('[data-empty-action]')?.dataset.emptyAction;
+    if (act === 'clear-filters') {
+      const gs = document.getElementById('globalSearch');
+      if (gs && gs.value) { gs.value = ''; gs.dispatchEvent(new Event('input', { bubbles: true })); }
+      document.getElementById('btnLimparFiltros')?.click();
+    } else if (act === 'add-source') {
+      document.getElementById('btnAddCustomSourceBtn')?.click();
+    }
+  });
+
   // Limpar Filtros
   const btnLimpar = document.getElementById('btnLimparFiltros');
   if (btnLimpar) {
@@ -124,30 +172,49 @@ export async function initScreen() {
   setupCustomSourceModal();
   setupAddToProjectModal();
   setupDelegatedMediaClicks();
+  setupVirtualScroll();
   await loadFilterOptions();
   fetchMedia();
   bindInspectorEvents();
 }
 
-/** ESC fecha o inspector da biblioteca (roteado pelo despachante central do app.js). */
+/** ESC fecha o inspector da biblioteca (e, sem inspector aberto, limpa a seleção) (roteado pelo despachante central do app.js). */
 export function onKeyDown(e) {
-  if (e.key !== 'Escape') return;
+  const isSelectAll = (e.ctrlKey || e.metaKey) && !e.altKey && String(e.key).toLowerCase() === 'a';
+  if (e.key !== 'Escape' && !isSelectAll) return;
   const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea') return;
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
   if (document.querySelector('.lib-modal-overlay.active')) return;
+  if (isSelectAll) {
+    if (!mediaItems.length) return;
+    e.preventDefault();
+    selectAllLoaded();
+    return;
+  }
   const inspector = document.getElementById('libraryInspector');
-  if (inspector && inspector.classList.contains('active')) closeInspector();
+  if (inspector && inspector.classList.contains('active')) { e.preventDefault(); closeInspector(); return; }
+  if (selectedIds.size > 0) { e.preventDefault(); selectedIds.clear(); updateSelectionVisuals(); }
 }
 
 /** Listeners globais (document / IPC / observers): registrados aqui e removidos em onLeave. */
 function bindGlobalListeners() {
   if (window.bds && window.bds.onMediaImported) {
-    const unsub = window.bds.onMediaImported(() => {
-      clearTimeout(importDebounceTimer);
+    // Agrupa os eventos: o 1º atualiza quase na hora e os seguintes (importação em massa, 1 evento por
+    // arquivo) viram uma única atualização ao fim da janela, em vez de recarregar a lista a cada arquivo.
+    const refreshAfterImport = () => {
       importDebounceTimer = setTimeout(() => {
+        importDebounceTimer = null;
         loadFilterOptions();
-        fetchMedia();
+        loadMedia(false, { keepLoaded: true });
+        importCooldownTimer = setTimeout(() => {
+          importCooldownTimer = null;
+          if (importPending) { importPending = false; refreshAfterImport(); }
+        }, IMPORT_REFRESH_WINDOW_MS);
       }, 50);
+    };
+    const unsub = window.bds.onMediaImported(() => {
+      if (importDebounceTimer || importCooldownTimer) { importPending = true; return; }
+      refreshAfterImport();
     });
     if (typeof unsub === 'function') cleanups.push(unsub);
   }
@@ -162,11 +229,24 @@ function bindGlobalListeners() {
     if (typeof unsub === 'function') cleanups.push(unsub);
   }
 
+  // Redimensionamento da janela / do painel: recalcula as colunas e a janela visível
+  const content = document.getElementById('libContentArea');
+  const onResize = () => scheduleLayout();
+  window.addEventListener('resize', onResize);
+  cleanups.push(() => window.removeEventListener('resize', onResize));
+  if (content && typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(onResize);
+    ro.observe(content);
+    cleanups.push(() => ro.disconnect());
+  }
+
   cleanups.push(() => {
     clearTimeout(importDebounceTimer); importDebounceTimer = null;
+    clearTimeout(importCooldownTimer); importCooldownTimer = null; importPending = false;
     clearTimeout(thumbsRegenTimer); thumbsRegenTimer = null;
+    clearTimeout(thumbTimer); thumbTimer = null;
+    clearTimeout(vLayoutTimer); vLayoutTimer = null;
     if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
-    if (libWaveformObserver) { libWaveformObserver.disconnect(); libWaveformObserver = null; }
   });
 }
 
@@ -196,8 +276,11 @@ export function onEnter() {
     libraryDirty = false;
     fetchMedia();
   } else {
+    // A tela voltou a ficar visível: remede (a largura pode ter mudado) e restaura a rolagem
+    const content = document.getElementById('libContentArea');
+    if (content && lastScrollTop && content.scrollTop !== lastScrollTop) content.scrollTop = lastScrollTop;
+    relayout({ keepAnchor: true });
     attachLoadMoreObserver();
-    loadVisibleAudioWaveforms(document.getElementById('libContentArea') || document);
   }
 }
 
@@ -302,18 +385,31 @@ function setupCustomSourceModal() {
         } catch (err) {
           btnConfirm.disabled = false;
           btnConfirm.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Cadastrar & Importar Mídias';
-          window.bdsModal.alert('Erro ao cadastrar fonte personalizada: ' + err.message);
+          window.bdsModal.alert('Não foi possível cadastrar a pasta: ' + friendlyError(err));
         }
       }
     });
   }
 }
 
+/**
+ * Resultado de ação em lote (RK-089): se houve falhas, informa "N concluídos, M falharam" com os motivos
+ * e deixa selecionados só os itens que falharam. Retorna true quando houve falha.
+ */
+function reportBatchResult(result, doneCount) {
+  const failed = result && Array.isArray(result.failed) ? result.failed : [];
+  if (failed.length === 0) return false;
+  const reasons = Array.from(new Set(failed.map((f) => f && f.error).filter(Boolean))).slice(0, 3).join('; ');
+  selectedIds = new Set(failed.map((f) => f.id).filter((id) => id != null));
+  window.bdsModal.alert(`${doneCount || 0} concluído(s), ${failed.length} falharam.${reasons ? ' Motivos: ' + reasons : ''}`);
+  return true;
+}
+
 function setViewMode(mode) {
   viewMode = mode;
   document.getElementById('btnViewGrid')?.classList.toggle('active', mode === 'grid');
   document.getElementById('btnViewList')?.classList.toggle('active', mode === 'list');
-  renderMedia();
+  relayout({ keepAnchor: true });
 }
 
 function updateFilters() {
@@ -381,7 +477,7 @@ async function refreshThumbnails() {
       old.thumbnail = fresh.thumbnail;
       const el = container?.querySelector(`.media-clickable[data-id="${CSS.escape(String(old.id))}"]`);
       if (!el) return;
-      const url = fresh.thumbnail ? `${thumbsDir}/${fresh.thumbnail}` : '';
+      const url = fresh.thumbnail ? joinFileUrl(thumbsDir, fresh.thumbnail) : '';
       const holder = el.querySelector('.lib-card-thumb');
       if (holder) {
         let img = holder.querySelector('.lib-card-img');
@@ -394,10 +490,18 @@ async function refreshThumbnails() {
           holder.classList.remove('audio-placeholder');
           holder.querySelector('.lib-card-waveform')?.remove();
         }
+        img.removeAttribute('data-src');
         img.src = url;
+        const ce = vCardEls.get(old.id);
+        if (ce) ce.__sig = cardSig(old);
       } else {
         const lt = el.querySelector('.lib-list-thumb');
-        if (lt) lt.style.backgroundImage = url ? `url('${url}')` : '';
+        if (lt) {
+          lt.removeAttribute('data-thumb');
+          lt.style.backgroundImage = url ? `url('${url}')` : '';
+          const ce = vCardEls.get(old.id);
+          if (ce) ce.__sig = cardSig(old);
+        }
       }
     });
   } catch (err) {
@@ -405,21 +509,31 @@ async function refreshThumbnails() {
   }
 }
 
-async function loadMedia(append) {
+/**
+ * @param {boolean} append  carrega a próxima página (true) ou recarrega a lista (false)
+ * @param {{keepLoaded?: boolean}} [opts]  keepLoaded: no recarregamento, busca tantos itens quanto já estavam
+ *   carregados (até um teto), para a atualização por importação não "encolher" a lista rolada pelo usuário
+ */
+async function loadMedia(append, opts = {}) {
   if (!window.bds || !window.bds.searchLibrary) return;
   if (append && (isLoading || !hasMore)) return;
 
   const seq = ++fetchSeq;
   let appendFresh = null;
+  let pendingItems = mediaItems;
   isLoading = true;
   loadError = null;
   const container = document.getElementById('libContentArea');
+  // Mesma consulta da lista já carregada (recarga após importação, favorito em lote, renomear...): a lista é
+  // atualizada de forma incremental, com o mesmo tamanho carregado e sem mexer na rolagem.
+  const querySig = JSON.stringify(buildSearchOptions(0, 0));
+  const sameQuery = !append && everLoaded && querySig === lastQuerySig && mediaItems.length > 0;
   if (!append) {
     hasMore = false;
     if (container) {
       container.setAttribute('aria-busy', 'true');
       if (mediaItems.length === 0) {
-        renderState = null;
+        unmountVirtual();
         container.innerHTML = `<div class="lib-loading" role="status"><span class="material-symbols-rounded lib-loading-spin">progress_activity</span> ${t('library.loading')}</div>`;
       }
     }
@@ -427,7 +541,9 @@ async function loadMedia(append) {
     updateLoadMoreSentinel();
   }
 
-  const options = buildSearchOptions(PAGE_SIZE, append ? mediaItems.length : 0);
+  const keepSize = !append && (opts.keepLoaded || sameQuery);
+  const refreshSize = keepSize ? Math.min(Math.max(PAGE_SIZE, mediaItems.length), 3000) : PAGE_SIZE;
+  const options = buildSearchOptions(refreshSize, append ? mediaItems.length : 0);
 
 
   try {
@@ -441,21 +557,21 @@ async function loadMedia(append) {
       // Compatível com backend sem suporte a offset: ignora itens repetidos
       const known = new Set(mediaItems.map(m => m.id));
       const fresh = items.filter(m => !known.has(m.id));
-      mediaItems = mediaItems.concat(fresh);
       appendFresh = fresh;
+      pendingItems = mediaItems.concat(fresh);
       hasMore = fresh.length > 0 && items.length >= PAGE_SIZE;
     } else {
-      mediaItems = items;
-      hasMore = items.length >= PAGE_SIZE;
+      pendingItems = items;
+      hasMore = items.length >= refreshSize;
     }
     totalCount = total;
     if (typeof searchResult.hasMore === 'boolean') hasMore = searchResult.hasMore;
-    else if (total !== null) hasMore = hasMore && mediaItems.length < total;
+    else if (total !== null) hasMore = hasMore && pendingItems.length < total;
     everLoaded = true;
   } catch (err) {
     if (seq !== fetchSeq) return;
     console.error('[LIBRARY] Falha ao buscar mídias:', err);
-    loadError = err && err.message ? err.message : 'Falha desconhecida';
+    loadError = friendlyError(err, 'Falha desconhecida');
     hasMore = false;
   } finally {
     if (seq === fetchSeq) {
@@ -465,14 +581,69 @@ async function loadMedia(append) {
   }
   if (seq !== fetchSeq) return;
 
-  updateMediaCount();
   if (loadError && !append) {
-    renderState = null;
+    updateMediaCount();
+    unmountVirtual();
     renderLoadError(container);
     return;
   }
-  if (append && !loadError && appendFresh && appendMediaIncremental(appendFresh)) return;
-  renderMedia();
+  if (loadError) { // falha ao carregar mais: mantém a lista e mostra "tentar de novo" no fim
+    updateMediaCount();
+    updateLoadMoreSentinel();
+    return;
+  }
+  lastQuerySig = querySig;
+  applyItems(pendingItems, { reset: !append && !sameQuery });
+  updateMediaCount();
+  if (!append || (appendFresh && appendFresh.length)) attachLoadMoreObserver();
+}
+
+/** Estado vazio com orientação: com filtro/busca ativos oferece limpar; sem nada, adicionar uma pasta. */
+function buildEmptyStateHtml() {
+  const filtering = !!currentSearch || document.querySelectorAll('.lib-filter-chk:checked').length > 0;
+  if (filtering) {
+    return '<div class="lib-empty-state bds-empty" role="status"><span class="material-symbols-rounded bds-empty-icon" aria-hidden="true">search_off</span>'
+      + '<strong class="bds-empty-title">Nenhuma mídia corresponde à busca ou aos filtros</strong>'
+      + '<span class="bds-empty-text">Tente outro termo ou remova alguns filtros.</span>'
+      + '<button type="button" class="bds-empty-action" data-empty-action="clear-filters">Limpar filtros</button></div>';
+  }
+  return '<div class="lib-empty-state bds-empty" role="status"><span class="material-symbols-rounded bds-empty-icon" aria-hidden="true">video_library</span>'
+    + '<strong class="bds-empty-title">Sua biblioteca ainda está vazia</strong>'
+    + '<span class="bds-empty-text">Adicione uma pasta do computador para o BDS organizar seus vídeos, áudios e fotos. Você também pode baixar ou importar de um dispositivo.</span>'
+    + '<button type="button" class="bds-empty-action" data-empty-action="add-source">Adicionar pasta</button></div>';
+}
+
+/**
+ * Aplica a nova lista carregada. reset: consulta nova (rolagem volta ao topo e os cards são refeitos).
+ * Sem reset a atualização é INCREMENTAL: cards que não mudaram são mantidos e a rolagem fica ancorada no item
+ * que estava no topo da janela, mesmo que itens novos entrem acima dele.
+ */
+function applyItems(items, { reset = false } = {}) {
+  const container = document.getElementById('libContentArea');
+  if (!container) { mediaItems = items; return; }
+  if (items.length === 0) {
+    mediaItems = items;
+    unmountVirtual();
+    if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
+    container.innerHTML = buildEmptyStateHtml();
+    return;
+  }
+  if (reset || !vRoot || !vLayout) {
+    mediaItems = items;
+    if (reset) { container.scrollTop = 0; lastScrollTop = 0; }
+    relayout({ resetCards: reset, keepAnchor: false });
+    return;
+  }
+  const anchor = captureAnchor();
+  const diff = diffById(mediaItems, items);
+  mediaItems = items;
+  if (diff.unchanged) {
+    // Mesma lista: só atualiza os cards cujos dados mudaram (e os dados usados nos cliques)
+    rebuildIndex();
+    syncVisibleCards();
+    return;
+  }
+  relayout({ anchor });
 }
 
 function updateMediaCount() {
@@ -527,7 +698,7 @@ function attachLoadMoreObserver() {
   loadMoreObserver.observe(sentinel);
 }
 
-// --- Agrupamento (usado na renderização completa e na incremental) ---
+// --- Agrupamento (cabeçalhos de data / faixa de tamanho entre os itens) ---
 function makeGroupCtx() {
   const today = new Date();
   const yesterday = new Date(today);
@@ -538,145 +709,316 @@ function makeGroupCtx() {
   return { todayStr: today.toDateString(), yesterdayStr: yesterday.toDateString(), limits };
 }
 
+const pad2 = (n) => (n < 10 ? '0' : '') + n;
+
 function getGroupInfo(media, ctx) {
   if (currentSort === 'filesize') {
     const GB = 1024 * 1024 * 1024;
     const sizeGB = (media.filesize || 0) / GB;
     const limits = ctx.limits;
     for (let i = 0; i < limits.length; i++) {
-      if (sizeGB <= limits[i]) return { key: 'Até ' + limits[i] + ' GB', ord: i, unknown: false };
+      if (sizeGB <= limits[i]) return { key: 'Até ' + limits[i] + ' GB' };
     }
-    return { key: 'Mais de ' + limits[limits.length - 1] + ' GB', ord: limits.length, unknown: false };
+    return { key: 'Mais de ' + limits[limits.length - 1] + ' GB' };
   }
-  const rawDate = media[currentSort] || media.imported_at || '';
+  const rawDate = String(media[currentSort] || media.imported_at || '');
   const cleanDate = rawDate.replace(' ', 'T') + (rawDate.endsWith('Z') ? '' : 'Z');
   const dateObj = new Date(cleanDate);
-  if (isNaN(dateObj)) return { key: 'Data Desconhecida', ord: 0, unknown: true };
-  let key = dateObj.toLocaleDateString('pt-BR');
+  if (isNaN(dateObj)) return { key: 'Data Desconhecida' };
   const ds = dateObj.toDateString();
-  if (ds === ctx.todayStr) key = 'Hoje';
-  else if (ds === ctx.yesterdayStr) key = 'Ontem';
-  return { key, ord: dateObj.getTime(), unknown: false };
+  if (ds === ctx.todayStr) return { key: 'Hoje' };
+  if (ds === ctx.yesterdayStr) return { key: 'Ontem' };
+  // mesmo formato de toLocaleDateString('pt-BR'), sem o custo do Intl a cada item
+  return { key: `${pad2(dateObj.getDate())}/${pad2(dateObj.getMonth() + 1)}/${dateObj.getFullYear()}` };
 }
 
-// Estado do que está desenhado, para permitir acrescentar páginas sem refazer a grade
-let renderState = null;
+// =====================================================================================
+// Janela virtual
+//   - A lista inteira (mediaItems) fica em memória; o DOM só tem as LINHAS visíveis + margem.
+//   - Linhas têm altura previsível: cabeçalho de grupo, linha da grade (cols cards) ou linha da lista.
+//   - Cards são reaproveitados por id enquanto seus dados não mudam (atualização incremental).
+// =====================================================================================
+
+/** Largura/altura úteis da área de rolagem (com valores padrão quando o ambiente não mede, como nos testes). */
+function measureViewport(container) {
+  const w = (vRoot && vRoot.clientWidth) || (container.clientWidth ? container.clientWidth - 48 : 0) || 1000;
+  const h = container.clientHeight || 800;
+  return { w, h };
+}
+
+function unmountVirtual() {
+  clearTimeout(thumbTimer); thumbTimer = null;
+  for (const el of vCardEls.values()) releaseCard(el);
+  vCardEls.clear();
+  vRowEls.clear();
+  vRange = { first: 0, last: -1 };
+  vLayout = null;
+  vSpacer = null;
+  vRoot = null;
+  vIdIndex = new Map();
+}
+
+function ensureVirtualRoot(container, grid) {
+  if (!vRoot || vRoot.parentNode !== container) {
+    unmountVirtual();
+    container.innerHTML = '';
+    vRoot = document.createElement('div');
+    container.insertBefore(vRoot, container.firstChild);
+  }
+  const mode = grid ? 'grid' : 'list';
+  if (vRoot.getAttribute('data-mode') === mode && vSpacer && vSpacer.parentNode === vRoot) return;
+  // (re)monta o esqueleto do modo: a lista tem cabeçalho de colunas fixo; a grade só o espaçador
+  vRowEls.clear();
+  vRoot.setAttribute('data-mode', mode);
+  vRoot.className = grid ? 'lib-vroot lib-vgrid' : 'lib-vroot lib-vlist';
+  vRoot.style.setProperty('--lib-card-h', CARD_H + 'px');
+  vRoot.style.setProperty('--lib-list-row-h', LIST_ROW_H + 'px');
+  vRoot.style.setProperty('--lib-grid-gap', GRID_GAP + 'px');
+  vRoot.innerHTML = grid
+    ? '<div class="lib-vspacer" role="presentation"></div>'
+    : `<div class="lib-vhead" role="row"><div role="columnheader">Mídia</div><div role="columnheader">Origem</div><div role="columnheader">Resolução</div><div role="columnheader">FPS</div><div role="columnheader">Tamanho</div></div><div class="lib-vspacer" role="rowgroup"></div>`;
+  if (grid) { vRoot.removeAttribute('role'); vRoot.removeAttribute('aria-multiselectable'); }
+  else { vRoot.setAttribute('role', 'grid'); vRoot.setAttribute('aria-multiselectable', 'true'); }
+  vSpacer = vRoot.querySelector('.lib-vspacer');
+}
+
+function rebuildIndex() {
+  vIdIndex = new Map();
+  for (let i = 0; i < mediaItems.length; i++) vIdIndex.set(mediaItems[i].id, i);
+  if (vRoot && vRoot.getAttribute('data-mode') === 'list') vRoot.setAttribute('aria-rowcount', String(mediaItems.length + 1));
+}
+
+function mediaAtId(id) {
+  const i = vIdIndex.get(id);
+  return i === undefined ? undefined : mediaItems[i];
+}
+
+/** Item que está no topo da janela e a posição da linha dele em relação ao topo (para manter a posição quando o layout muda). */
+function captureAnchor() {
+  const container = document.getElementById('libContentArea');
+  if (!container || !vLayout || !mediaItems.length) return null;
+  const st = container.scrollTop || 0;
+  if (st <= 0) return null; // no topo: itens novos aparecem normalmente
+  const y = Math.max(0, st - vLayout.originY);
+  let r = rowAt(vLayout.tops, y);
+  while (r >= 0 && r < vLayout.rows.length && vLayout.rows[r].kind !== 'items') r++;
+  if (r < 0 || r >= vLayout.rows.length) return null;
+  const m = mediaItems[vLayout.rows[r].start];
+  return m ? { id: m.id, offset: vLayout.tops[r] - y } : null; // posição da linha em relação ao topo da janela
+}
 
 /**
- * Acrescenta apenas os itens novos ao DOM existente. Retorna false se não for seguro
- * (ordem de grupos inesperada, modo diferente...) e o chamador deve renderizar tudo.
+ * Recalcula colunas/linhas/posições e redesenha a janela. Chamada quando a lista, o modo ou a largura mudam.
+ * @param {{anchor?: {id:any, offset:number}|null, keepAnchor?: boolean, resetCards?: boolean}} [opts]
  */
-function appendMediaIncremental(fresh) {
+function relayout({ anchor, keepAnchor = false, resetCards = false } = {}) {
   const container = document.getElementById('libContentArea');
-  const st = renderState;
-  if (!container || !st || st.mode !== viewMode || st.sort !== currentSort || st.order !== currentSortOrder) return false;
-  if (st.count !== mediaItems.length - fresh.length || !fresh.length) return false;
+  if (!container || !mediaItems.length) return;
+  if (vLayout && container.clientWidth === 0 && container.clientHeight === 0) return; // tela oculta: remede ao voltar
+  if (anchor === undefined) anchor = keepAnchor ? captureAnchor() : null;
+  const focusedId = container.contains(document.activeElement) ? document.activeElement.getAttribute('data-id') : null;
 
+  const grid = viewMode === 'grid';
+  const modeChanged = !!vLayout && vLayout.mode !== viewMode;
+  if (resetCards || modeChanged) {
+    for (const el of vCardEls.values()) releaseCard(el);
+    vCardEls.clear();
+  }
+  ensureVirtualRoot(container, grid);
+  for (const el of vRowEls.values()) el.remove();
+  vRowEls.clear();
+
+  const { w } = measureViewport(container);
+  const cols = grid ? computeColumns(w, GRID_MIN_COL, GRID_GAP) : 1;
   const ctx = makeGroupCtx();
-  const blocks = []; // { key, ord, unknown, items }
-  let last = { key: st.lastKey, ord: st.lastOrd, unknown: st.lastUnknown };
-  const seen = new Set(st.keys);
-  let cur = null;
-  for (const media of fresh) {
-    const g = getGroupInfo(media, ctx);
-    if (g.key === last.key) {
-      if (!cur) { cur = { ...g, items: [], existing: true }; blocks.push(cur); }
-      cur.items.push(media);
-      continue;
-    }
-    if (seen.has(g.key)) return false;
-    if (last.unknown && !g.unknown) return false;
-    if (!g.unknown && !last.unknown) {
-      const okOrder = currentSortOrder === 'ASC' ? g.ord > last.ord : g.ord < last.ord;
-      if (!okOrder) return false;
-    }
-    seen.add(g.key);
-    cur = { ...g, items: [media], existing: false };
-    blocks.push(cur);
-    last = g;
-  }
+  const groups = groupConsecutive(mediaItems, (m) => getGroupInfo(m, ctx));
+  const { rows, rowOfItem } = buildRows(groups, cols, mediaItems.length);
+  const rowH = grid ? GRID_ROW_H : LIST_ROW_H;
+  const tops = rowTops(rows, GROUP_HEADER_H, rowH);
+  vSpacer.style.height = tops[rows.length] + 'px';
+  const originY = typeof vSpacer.offsetTop === 'number' && vSpacer.offsetTop > 0 ? vSpacer.offsetTop : (24 + (grid ? 0 : LIST_HEAD_H));
+  vLayout = { mode: viewMode, cols, groups, rows, rowOfItem, tops, rowH, total: mediaItems.length, originY, headH: grid ? 0 : LIST_HEAD_H };
+  vRange = { first: 0, last: -1 };
+  rebuildIndex();
 
-  const sentinel = container.querySelector('#libLoadMore');
-  const card = viewMode === 'grid' ? renderGridCard : renderListRow;
-  const lastBody = viewMode === 'grid'
-    ? Array.from(container.querySelectorAll('.lib-grid')).pop()
-    : container.querySelector('.lib-list-table tbody');
-  if (!lastBody) return false;
-  for (const b of blocks) {
-    const rows = b.items.map(card).join('');
-    if (b.existing) {
-      lastBody.insertAdjacentHTML('beforeend', rows);
-    } else if (viewMode === 'grid') {
-      const html = `<div class="lib-date-header">${escapeHtml(b.key)}</div><div class="lib-grid">${rows}</div>`;
-      if (sentinel) sentinel.insertAdjacentHTML('beforebegin', html); else container.insertAdjacentHTML('beforeend', html);
-      // o último grid passa a ser o recém-criado
-    } else {
-      lastBody.insertAdjacentHTML('beforeend', `<tr><td colspan="5" class="lib-date-header">${escapeHtml(b.key)}</td></tr>${rows}`);
+  if (anchor) {
+    const idx = vIdIndex.get(anchor.id);
+    if (idx !== undefined) {
+      const st = scrollTopForAnchor({ index: idx, offset: anchor.offset }, rowOfItem, tops);
+      if (st !== null) container.scrollTop = st + originY;
     }
   }
-  st.count = mediaItems.length;
-  st.lastKey = last.key; st.lastOrd = last.ord; st.lastUnknown = last.unknown;
-  st.keys = seen;
-  if (viewMode === 'grid') loadVisibleAudioWaveforms(container, true);
-  attachLoadMoreObserver();
-  return true;
+  renderWindow(true);
+  if (focusedId) vCardEls.get(mediaAtId(parseInt(focusedId, 10))?.id)?.focus();
 }
 
-function renderMedia() {
+/** Redimensionamento: refaz o layout só se as colunas mudaram; senão apenas completa a janela. */
+function scheduleLayout() {
+  if (vLayoutTimer) return;
+  vLayoutTimer = setTimeout(() => {
+    vLayoutTimer = null;
+    const container = document.getElementById('libContentArea');
+    if (!container || !vLayout) return;
+    if (container.clientWidth === 0 && container.clientHeight === 0) return;
+    const grid = viewMode === 'grid';
+    const cols = grid ? computeColumns(measureViewport(container).w, GRID_MIN_COL, GRID_GAP) : 1;
+    if (cols !== vLayout.cols || vLayout.mode !== viewMode) relayout({ keepAnchor: true });
+    else renderWindow(true);
+  }, 30);
+}
+
+function setupVirtualScroll() {
+  const container = document.getElementById('libContentArea');
+  if (!container || container.dataset.hasVirtualScroll) return;
+  container.dataset.hasVirtualScroll = 'true';
+  container.addEventListener('scroll', () => {
+    lastScrollTop = container.scrollTop || 0;
+    renderWindow(); // o navegador já dispara 'scroll' no máximo uma vez por quadro; sem custo quando o intervalo não muda
+  }, { passive: true });
+}
+
+/** Desenha as linhas do intervalo visível (+ margem) e remove as que saíram. */
+function renderWindow(force = false) {
+  const container = document.getElementById('libContentArea');
+  const L = vLayout;
+  if (!container || !L || !vSpacer) return;
+  const viewH = container.clientHeight || 800;
+  const y = (container.scrollTop || 0) - L.originY;
+  const range = visibleRange(L.tops, y, viewH, OVERSCAN_PX);
+  if (!force && range.first === vRange.first && range.last === vRange.last) { maybeLoadMore(); return; }
+  vRange = range;
+
+  for (const [r, el] of vRowEls) {
+    if (r < range.first || r > range.last) { el.remove(); vRowEls.delete(r); }
+  }
+  const used = new Set();
+  for (let r = range.first; r <= range.last; r++) {
+    const row = L.rows[r];
+    let el = vRowEls.get(r);
+    if (!el) {
+      el = buildRowEl(r);
+      // mantém a ordem do DOM = ordem da lista (tabulação e leitores de tela)
+      let before = null;
+      for (const [k, other] of vRowEls) if (k > r && (!before || k < before.k)) before = { k, el: other };
+      vSpacer.insertBefore(el, before ? before.el : null);
+      vRowEls.set(r, el);
+    }
+    if (row.kind === 'items') {
+      for (let k = 0; k < row.count; k++) used.add(mediaItems[row.start + k].id);
+    }
+  }
+  // Cards que saíram da janela: cancela a miniatura em andamento e descarta
+  for (const [id, el] of vCardEls) {
+    if (!used.has(id)) { releaseCard(el); vCardEls.delete(id); }
+  }
+  scheduleThumbs();
+  maybeLoadMore();
+}
+
+function buildRowEl(r) {
+  const L = vLayout;
+  const row = L.rows[r];
+  const el = document.createElement('div');
+  el.className = 'lib-vrow';
+  el.setAttribute('data-row', String(r));
+  el.style.top = L.tops[r] + 'px';
+  el.style.height = (L.tops[r + 1] - L.tops[r]) + 'px';
+  if (row.kind === 'header') {
+    el.classList.add('lib-vrow-header');
+    if (L.mode === 'list') {
+      el.setAttribute('role', 'row');
+      el.innerHTML = `<div class="lib-date-header" role="rowheader">${escapeHtml(row.key)}</div>`;
+    } else {
+      el.innerHTML = `<div class="lib-date-header">${escapeHtml(row.key)}</div>`;
+    }
+    return el;
+  }
+  el.classList.add('lib-vrow-items');
+  if (L.mode === 'grid') el.style.gridTemplateColumns = `repeat(${L.cols}, minmax(0, 1fr))`;
+  fillRow(el, row);
+  return el;
+}
+
+/** Garante que a linha contém exatamente os cards dos seus itens, na ordem (sem recriar os que não mudaram). */
+function fillRow(rowEl, row) {
+  const desired = [];
+  for (let k = 0; k < row.count; k++) desired.push(getCardEl(row.start + k));
+  for (let i = 0; i < desired.length; i++) {
+    if (rowEl.children[i] !== desired[i]) rowEl.insertBefore(desired[i], rowEl.children[i] || null);
+  }
+  while (rowEl.children.length > desired.length) rowEl.removeChild(rowEl.lastElementChild);
+}
+
+/** Dados que mudam o desenho do card (a seleção é aplicada à parte, sem recriar). */
+function cardSig(m) {
+  return [m.filename, m.thumbnail, m.favorite ? 1 : 0, m.origin, m.height, m.fps, m.filesize, m.duration, m.video_codec, m.recorded_at, m.imported_at, m.uuid, m.filepath, viewMode].join('|');
+}
+
+function getCardEl(index) {
+  const m = mediaItems[index];
+  const sig = cardSig(m);
+  let el = vCardEls.get(m.id);
+  if (el && el.__sig === sig) return el;
+  if (el) releaseCard(el);
+  const tpl = document.createElement('div');
+  tpl.innerHTML = viewMode === 'grid' ? renderGridCard(m) : renderListRow(m);
+  el = tpl.firstElementChild;
+  tpl.removeChild(el);
+  el.__sig = sig;
+  vCardEls.set(m.id, el);
+  return el;
+}
+
+/** Descarta um card: cancela a miniatura que ainda estiver carregando. */
+function releaseCard(el) {
+  try {
+    el.querySelectorAll('img').forEach((img) => { img.removeAttribute('src'); img.removeAttribute('data-src'); });
+  } catch (_) { /* noop */ }
+}
+
+/** Mesma lista, dados novos: atualiza só os cards cujos dados mudaram. */
+function syncVisibleCards() {
+  if (!vLayout) return;
+  for (const [r, el] of vRowEls) {
+    const row = vLayout.rows[r];
+    if (row && row.kind === 'items') fillRow(el, row);
+  }
+  scheduleThumbs();
+}
+
+// --- Miniaturas e waveforms: só depois que a rolagem assenta, e só dos cards que continuam na janela ---
+function scheduleThumbs() {
+  if (thumbTimer) return;
+  thumbTimer = setTimeout(() => { thumbTimer = null; flushThumbs(); }, THUMB_DEBOUNCE_MS);
+}
+
+function flushThumbs() {
+  for (const el of vRowEls.values()) {
+    el.querySelectorAll('img[data-src]').forEach((img) => {
+      img.src = img.getAttribute('data-src');
+      img.removeAttribute('data-src');
+    });
+    el.querySelectorAll('.lib-list-thumb[data-thumb]').forEach((d) => {
+      d.style.backgroundImage = `url('${d.getAttribute('data-thumb')}')`;
+      d.removeAttribute('data-thumb');
+    });
+    el.querySelectorAll('.lib-card-waveform:not([data-loaded])').forEach(loadWaveform);
+  }
+}
+
+/** Pede mais uma página quando a janela chega perto do fim do que já foi carregado. */
+function maybeLoadMore() {
+  if (!hasMore || isLoading || loadError || !vLayout) return;
   const container = document.getElementById('libContentArea');
   if (!container) return;
-  
-  // Preserva o foco do teclado em um card durante re-renderizações (ex.: paginação)
-  const focusedId = container.contains(document.activeElement) ? document.activeElement.getAttribute('data-id') : null;
-  if (mediaItems.length === 0) {
-    if (loadMoreObserver) { loadMoreObserver.disconnect(); loadMoreObserver = null; }
-    container.innerHTML = '<div class="lib-empty-state">Nenhuma mídia encontrada.</div>';
-    renderState = null;
-    return;
-  }
+  const total = vLayout.originY + vLayout.tops[vLayout.rows.length];
+  if ((container.scrollTop || 0) + (container.clientHeight || 800) >= total - LOAD_AHEAD_PX) loadMedia(true);
+}
 
-  const ctx = makeGroupCtx();
-  const grouped = {};
-  for (const media of mediaItems) {
-    const g = getGroupInfo(media, ctx);
-    if (!grouped[g.key]) grouped[g.key] = { ord: g.ord, unknown: g.unknown, items: [] };
-    grouped[g.key].items.push(media);
-  }
-  const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
-    if (grouped[a].unknown) return 1;
-    if (grouped[b].unknown) return -1;
-    return currentSortOrder === 'ASC' ? grouped[a].ord - grouped[b].ord : grouped[b].ord - grouped[a].ord;
-  });
-
-  let html = '';
-  if (viewMode === 'grid') {
-    for (const key of sortedGroupKeys) {
-      html += `<div class="lib-date-header">${escapeHtml(key)}</div>`;
-      html += `<div class="lib-grid">${grouped[key].items.map(m => renderGridCard(m)).join('')}</div>`;
-    }
-    container.innerHTML = html;
-    loadVisibleAudioWaveforms(container);
-  } else {
-    html = `<table class="lib-list-table">
-      <thead><tr>
-        <th>Mídia</th><th>Origem</th><th>Resolução</th><th>FPS</th><th>Tamanho</th>
-      </tr></thead><tbody>`;
-    for (const key of sortedGroupKeys) {
-      html += `<tr><td colspan="5" class="lib-date-header">${escapeHtml(key)}</td></tr>`;
-      html += grouped[key].items.map(m => renderListRow(m)).join('');
-    }
-    html += `</tbody></table>`;
-    container.innerHTML = html;
-  }
-
-  const lastKey = sortedGroupKeys[sortedGroupKeys.length - 1];
-  const lastG = grouped[lastKey];
-  renderState = {
-    mode: viewMode, sort: currentSort, order: currentSortOrder, count: mediaItems.length,
-    lastKey, lastOrd: lastG ? lastG.ord : 0, lastUnknown: !!(lastG && lastG.unknown), keys: new Set(sortedGroupKeys)
-  };
-  if (focusedId) container.querySelector(`.media-clickable[data-id="${CSS.escape(focusedId)}"]`)?.focus();
-  attachLoadMoreObserver();
+function selectAllLoaded() {
+  selectedIds = new Set(mediaItems.map((m) => m.id));
+  lastSelectedId = mediaItems.length ? mediaItems[mediaItems.length - 1].id : null;
+  updateSelectionVisuals();
 }
 
 function setupDelegatedMediaClicks() {
@@ -696,9 +1038,7 @@ function setupDelegatedMediaClicks() {
     if (!item) return;
 
     const id = parseInt(item.getAttribute('data-id'));
-    
-    if (e.target.closest('.lib-card-menu')) return; 
-    
+
     const favBadge = e.target.closest('.lib-card-badge-fav');
     if (favBadge) {
       toggleFavoriteLocal(id, !favBadge.classList.contains('active'));
@@ -712,65 +1052,46 @@ function setupDelegatedMediaClicks() {
     }
 
     const isCheckbox = e.target.closest('.lib-card-checkbox');
-    
+
+    if (e.shiftKey && !isCheckbox && lastSelectedId != null) {
+      // Seleção de intervalo: do último item clicado até este (ctrl+shift soma à seleção atual)
+      const range = rangeBetween(mediaItems.map((m) => m.id), lastSelectedId, id);
+      if (range) {
+        if (!(e.ctrlKey || e.metaKey)) selectedIds = new Set();
+        for (let i = range[0]; i <= range[1]; i++) selectedIds.add(mediaItems[i].id);
+        updateSelectionVisuals();
+        return;
+      }
+    }
+
     if (isCheckbox || e.ctrlKey || e.metaKey) {
       if (selectedIds.has(id)) selectedIds.delete(id);
       else selectedIds.add(id);
+      lastSelectedId = id;
       updateSelectionVisuals(id);
     } else {
-      const media = mediaItems.find(m => m.id === id);
+      lastSelectedId = id;
+      const media = mediaAtId(id);
       if (media) openInspector(media);
     }
   });
 
-  // Teclado: Enter abre o inspetor, Espaço alterna seleção, setas navegam entre os cards
+  // Teclado: Enter abre o inspetor, Espaço alterna seleção, setas navegam entre os itens (índice, não DOM)
   container.addEventListener('keydown', (e) => {
     const item = e.target.closest && e.target.closest('.media-clickable');
     if (!item || e.target !== item) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: e.key === ' ' || e.ctrlKey, metaKey: e.metaKey }));
+      item.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: e.key === ' ' || e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey }));
       return;
     }
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
-    const all = Array.from(container.querySelectorAll('.media-clickable'));
-    const idx = all.indexOf(item);
-    let next = null;
-    if (e.key === 'ArrowRight' || (e.key === 'ArrowDown' && viewMode === 'list')) next = all[idx + 1];
-    else if (e.key === 'ArrowLeft' || (e.key === 'ArrowUp' && viewMode === 'list')) next = all[idx - 1];
-    else if (e.key === 'Home') next = all[0];
-    else if (e.key === 'End') next = all[all.length - 1];
-    else {
-      // Grade: colunas vindas do CSS; pula idx +/- cols dentro do grupo (sem getBoundingClientRect)
-      const grid = item.parentElement;
-      const cols = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length);
-      const siblings = grid.children;
-      const i = Array.prototype.indexOf.call(siblings, item);
-      const col = i % cols;
-      const sibGrid = (el, step) => {
-        let n = el[step];
-        while (n && !n.classList.contains('lib-grid')) n = n[step];
-        return n;
-      };
-      if (e.key === 'ArrowDown') {
-        next = siblings[i + cols];
-        if (!next) {
-          const g2 = sibGrid(grid, 'nextElementSibling');
-          if (g2 && g2.children.length) next = g2.children[Math.min(col, g2.children.length - 1)];
-          else if (i + 1 < siblings.length) next = siblings[siblings.length - 1]; // última linha parcial
-        }
-      } else {
-        next = siblings[i - cols];
-        if (!next) {
-          const g2 = sibGrid(grid, 'previousElementSibling');
-          if (g2 && g2.children.length) {
-            const n = g2.children.length;
-            next = g2.children[Math.min(Math.floor((n - 1) / cols) * cols + col, n - 1)];
-          }
-        }
-      }
-    }
-    if (next) { e.preventDefault(); next.focus(); next.scrollIntoView({ block: 'nearest' }); }
+    if (!vLayout) return;
+    const idx = vIdIndex.get(parseInt(item.getAttribute('data-id')));
+    if (idx === undefined) return;
+    const target = navigateIndex(e.key, idx, vLayout.rows, vLayout.rowOfItem, vLayout.total);
+    if (target >= 0 && target !== idx) { e.preventDefault(); focusItemIndex(target); }
+    else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault();
   });
 
   // Duplo clique abre o Preview diretamente com a coleção
@@ -780,16 +1101,35 @@ function setupDelegatedMediaClicks() {
     if (e.target.closest('.lib-card-checkbox') || e.target.closest('.lib-card-badge-fav') || e.target.closest('.lib-list-fav-btn')) return;
 
     const id = parseInt(item.getAttribute('data-id'));
-    const media = mediaItems.find(m => m.id === id);
+    const media = mediaAtId(id);
     if (media && window.openPreview) {
       window.openPreview(media, mediaItems);
     }
   });
 }
 
+/** Rola (se preciso) até o item, desenha a janela e foca o card: o alvo pode estar fora do DOM. */
+function focusItemIndex(index) {
+  const container = document.getElementById('libContentArea');
+  const L = vLayout;
+  if (!container || !L || index < 0 || index >= mediaItems.length) return;
+  const pos = itemPosition(index, L.rowOfItem, L.tops);
+  if (!pos) return;
+  // se é a 1ª linha do grupo, revela também o cabeçalho do grupo; a lista tem cabeçalho de colunas fixo no topo
+  const hasHeader = pos.row > 0 && L.rows[pos.row - 1].kind === 'header';
+  const top = hasHeader ? L.tops[pos.row - 1] : pos.top;
+  const height = pos.top + pos.height - top;
+  let st = scrollToReveal(top + L.originY - L.headH, height + L.headH, container.scrollTop || 0, container.clientHeight || 800, 8);
+  if (st !== null && pos.row <= 1) st = 0; // primeiro item: volta ao topo absoluto
+  if (st !== null) { container.scrollTop = st; lastScrollTop = st; }
+  renderWindow(true);
+  const el = vCardEls.get(mediaItems[index].id);
+  if (el) el.focus();
+}
+
 /** Alterna favorito no card/linha/inspetor sem refazer a lista. */
 function applyFavoriteDom(id, isFav) {
-  const m = mediaItems.find(x => x.id === id);
+  const m = mediaAtId(id);
   if (m) m.favorite = isFav ? 1 : 0;
   if (currentInspectorMedia && currentInspectorMedia.id === id) currentInspectorMedia.favorite = isFav ? 1 : 0;
   const container = document.getElementById('libContentArea');
@@ -799,6 +1139,8 @@ function applyFavoriteDom(id, isFav) {
     b.textContent = isFav ? 'star' : 'star_border';
     b.setAttribute('aria-label', isFav ? 'Remover dos favoritos' : 'Favoritar');
   });
+  const cardEl = vCardEls.get(id);
+  if (cardEl && m) cardEl.__sig = cardSig(m); // o DOM já está atualizado: não precisa recriar o card
   const favStar = document.getElementById('inspectorFavStar');
   if (favStar && currentInspectorMedia && currentInspectorMedia.id === id) {
     favStar.classList.toggle('active', isFav);
@@ -856,41 +1198,40 @@ function updateSelectionVisuals(onlyId) {
 }
 
 // --- Waveforms de áudio na Biblioteca (reaproveita o cache do WaveformService) ---
-let libWaveformObserver = null;
+const waveformPending = new Map(); // uuid -> Promise (evita pedido duplicado ao rolar de volta)
 
-function loadVisibleAudioWaveforms(container, onlyNew = false) {
-  const canvases = container.querySelectorAll(onlyNew ? '.lib-card-waveform:not([data-loaded])' : '.lib-card-waveform');
-  if (!canvases.length || !window.bds?.getMediaWaveform) return;
-
-  if (onlyNew && libWaveformObserver) {
-    canvases.forEach(c => libWaveformObserver.observe(c));
-    return;
+function loadWaveform(canvas) {
+  if (!canvas || canvas.dataset.loaded) return;
+  const uuid = canvas.dataset.uuid;
+  const filePath = canvas.dataset.path;
+  if (!uuid || !filePath || !window.bds?.getMediaWaveform) return;
+  canvas.dataset.loaded = '1';
+  const cached = waveformCache.get(uuid);
+  if (cached) { drawLibWaveform(canvas, cached); return; }
+  let p = waveformPending.get(uuid);
+  if (!p) {
+    p = Promise.resolve(window.bds.getMediaWaveform({ uuid, filePath, peaksPerSecond: 50, streamIndex: 0 }))
+      .then((wf) => {
+        if (wf && wf.peaks) {
+          if (waveformCache.size >= 300) waveformCache.delete(waveformCache.keys().next().value);
+          waveformCache.set(uuid, wf.peaks);
+          return wf.peaks;
+        }
+        return null;
+      })
+      .catch(() => null /* mídia sem waveform disponível, mantém card em branco */)
+      .finally(() => { waveformPending.delete(uuid); });
+    waveformPending.set(uuid, p);
   }
-  if (libWaveformObserver) libWaveformObserver.disconnect();
-
-  libWaveformObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      const canvas = entry.target;
-      libWaveformObserver.unobserve(canvas);
-      const uuid = canvas.dataset.uuid;
-      const filePath = canvas.dataset.path;
-      if (!uuid || !filePath || canvas.dataset.loaded) return;
-      canvas.dataset.loaded = '1';
-
-      window.bds.getMediaWaveform({ uuid, filePath, peaksPerSecond: 50, streamIndex: 0 })
-        .then(wf => {
-          if (wf && wf.peaks) drawLibWaveform(canvas, wf.peaks);
-        })
-        .catch(() => { /* mídia sem waveform disponível, mantém card em branco */ });
-    });
-  }, { root: null, rootMargin: '200px' });
-
-  canvases.forEach(c => libWaveformObserver.observe(c));
+  p.then((peaks) => {
+    // o card pode ter saído da janela enquanto o pedido corria: ignora o desenho
+    if (peaks && canvas.parentNode) drawLibWaveform(canvas, peaks);
+  });
 }
 
 function drawLibWaveform(canvas, peaks) {
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return;
   const w = canvas.width = canvas.clientWidth || 200;
   const h = canvas.height = canvas.clientHeight || 60;
   ctx.clearRect(0, 0, w, h);
@@ -911,7 +1252,7 @@ function drawLibWaveform(canvas, peaks) {
 }
 
 function renderGridCard(media) {
-  const thumbUrl = media.thumbnail ? `${thumbsDir}/${media.thumbnail}` : '';
+  const thumbUrl = media.thumbnail ? joinFileUrl(thumbsDir, media.thumbnail) : '';
   const rawDate = media.recorded_at || media.imported_at;
   const cleanDate = rawDate ? rawDate.replace(' ', 'T') + (rawDate.endsWith('Z') ? '' : 'Z') : '';
   const dateObj = new Date(cleanDate);
@@ -921,13 +1262,14 @@ function renderGridCard(media) {
   const isPhoto = media.filename && !!media.filename.match(/\.(jpg|jpeg|png|webp|gif|bmp|arw|cr2|cr3|nef|dng|raf|rw2|orf)$/i);
   const isAudio = media.filename && !!media.filename.match(/\.(mp3|wav|ogg|flac|m4a|aac)$/i);
 
-  let originText = media.origin || 'Computador / Local';
+  const originText = originLabel(media.origin);
 
   const favClass = media.favorite ? 'active' : '';
   const favIcon = media.favorite ? 'star' : 'star_border';
 
   const thumbClass = isAudio && !thumbUrl ? 'lib-card-thumb audio-placeholder' : 'lib-card-thumb';
-  const thumbImg = thumbUrl ? `<img class="lib-card-img" src="${escapeAttr(thumbUrl)}" alt="" loading="lazy" decoding="async" draggable="false">` : '';
+  // data-src: o src só é atribuído quando a rolagem assenta (flushThumbs), para não baixar o que passa voando
+  const thumbImg = thumbUrl ? `<img class="lib-card-img" data-src="${escapeAttr(thumbUrl)}" alt="" loading="lazy" decoding="async" draggable="false">` : '';
   const audioWaveform = isAudio && !thumbUrl
     ? `<canvas class="lib-card-waveform" data-uuid="${escapeAttr(media.uuid || '')}" data-path="${escapeAttr(media.filepath || '')}" width="200" height="60"></canvas>`
     : '';
@@ -952,40 +1294,40 @@ function renderGridCard(media) {
           <span>${(!isPhoto && !isAudio && media.fps) ? media.fps+'fps' : ''}</span>
         </div>
         <div class="lib-card-origin">${escapeHtml(originText)}</div>
-        <span class="material-symbols-rounded lib-card-menu">more_vert</span>
       </div>
     </div>
   `;
 }
 
 function renderListRow(media) {
-  const thumbUrl = media.thumbnail ? `${thumbsDir}/${media.thumbnail}` : '';
+  const thumbUrl = media.thumbnail ? joinFileUrl(thumbsDir, media.thumbnail) : '';
   const icon = (media.origin && media.origin.includes('BDSM')) ? 'smartphone' : 'computer';
   const isSelected = selectedIds.has(media.id);
   const favClass = media.favorite ? 'active' : '';
   const favIcon = media.favorite ? 'star' : 'star_border';
-  const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}');` : '';
+  // data-thumb: o background só é aplicado quando a rolagem assenta (flushThumbs)
+  const thumbAttr = thumbUrl ? ` data-thumb="${escapeAttr(thumbUrl)}"` : '';
 
   return `
-    <tr class="media-clickable ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(media.id)}" tabindex="0" aria-selected="${isSelected}">
-      <td>
+    <div class="media-clickable lib-list-row ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(media.id)}" tabindex="0" role="row" aria-selected="${isSelected}" aria-label="${escapeAttr(media.filename)}">
+      <div class="lib-list-cell" role="gridcell">
         <div class="lib-list-cell-content">
           <input type="checkbox" class="lib-card-checkbox" aria-label="Selecionar" ${isSelected ? 'checked' : ''}>
-          <div class="lib-list-thumb" style="${escapeAttr(thumbStyle)}"></div>
+          <div class="lib-list-thumb"${thumbAttr}></div>
           <span class="material-symbols-rounded lib-list-fav-btn ${favClass}" role="button" aria-label="${media.favorite ? 'Remover dos favoritos' : 'Favoritar'}">${favIcon}</span>
           <span class="lib-list-filename" title="${escapeAttr(media.filename)}">${escapeHtml(media.filename)}</span>
         </div>
-      </td>
-      <td>
+      </div>
+      <div class="lib-list-cell" role="gridcell">
         <div class="lib-list-origin-cell">
           <span class="material-symbols-rounded">${icon}</span>
-          ${escapeHtml(media.origin || 'Computador / Local')}
+          <span class="lib-list-origin-text">${escapeHtml(originLabel(media.origin))}</span>
         </div>
-      </td>
-      <td>${media.height ? media.height + 'p' : '-'}</td>
-      <td>${media.fps || '-'}</td>
-      <td>${formatBytes(media.filesize)}</td>
-    </tr>
+      </div>
+      <div class="lib-list-cell" role="gridcell">${media.height ? media.height + 'p' : '-'}</div>
+      <div class="lib-list-cell" role="gridcell">${media.fps || '-'}</div>
+      <div class="lib-list-cell" role="gridcell">${formatBytes(media.filesize)}</div>
+    </div>
   `;
 }
 
@@ -994,7 +1336,7 @@ function openInspector(media) {
   const inspector = document.getElementById('libraryInspector');
   if (!inspector) return;
   
-  const thumbUrl = media.thumbnail ? `${thumbsDir}/${media.thumbnail}` : '';
+  const thumbUrl = media.thumbnail ? joinFileUrl(thumbsDir, media.thumbnail) : '';
   const thumbEl = document.getElementById('inspectorThumbnail');
   if (thumbEl) thumbEl.style.backgroundImage = `url('${thumbUrl}')`;
   
@@ -1038,7 +1380,7 @@ function openInspector(media) {
   setEl('inspectorVCodec', media.video_codec || '-');
   setEl('inspectorACodec', media.audio_codec || '-');
   setEl('inspectorFps', media.fps || '-');
-  setEl('inspectorOrigin', media.origin || 'Computador / Local');
+  setEl('inspectorOrigin', originLabel(media.origin));
   
   const parseDBDate = (dateStr) => {
     if (!dateStr) return null;
@@ -1092,7 +1434,7 @@ function openInspector(media) {
   toggleRow('rowFps', !isPhoto && !isAudio);
   toggleRow('rowVCodec', !isPhoto && !isAudio);
   toggleRow('rowVBitrate', !isPhoto && !isAudio);
-  toggleRow('rowRes', !isPhoto && !isAudio);
+  toggleRow('rowRes', !isAudio);
   toggleRow('rowACodec', !isPhoto);
   toggleRow('rowABitrate', !isPhoto);
 
@@ -1171,9 +1513,16 @@ function bindInspectorEvents() {
       if (e.key === 'Enter') {
         const newName = titleEdit.value.trim();
         if (newName && currentInspectorMedia) {
+          // Renomeia o arquivo no disco (extensão preservada); erros vindos do backend são mostrados (RK-082)
+          const previous = titleText.textContent;
           titleText.textContent = newName;
           if (window.bds && window.bds.renameMedia) {
-            await window.bds.renameMedia(currentInspectorMedia.id, newName);
+            try {
+              await window.bds.renameMedia(currentInspectorMedia.id, newName);
+            } catch (err) {
+              titleText.textContent = previous;
+              window.bdsModal.alert('Não foi possível renomear: ' + friendlyError(err));
+            }
           }
           fetchMedia();
         }
@@ -1196,23 +1545,30 @@ function bindInspectorEvents() {
   if (favStar) {
     favStar.addEventListener('click', async () => {
       if (!currentInspectorMedia) return;
-      const isFav = currentInspectorMedia.favorite !== 1;
-      currentInspectorMedia.favorite = isFav ? 1 : 0;
-      
-      if (isFav) {
-        favStar.classList.add('active');
-        favStar.textContent = 'star';
-      } else {
-        favStar.classList.remove('active');
-        favStar.textContent = 'star_border';
-      }
-      
-      if (window.bds && window.bds.toggleFavorite) {
-        await window.bds.toggleFavorite(currentInspectorMedia.id, isFav);
-      }
-      applyFavoriteDom(currentInspectorMedia.id, isFav);
-      if (currentFilters.favorites) fetchMedia();
+      // Mesmo caminho da estrela do card: atualiza o DOM, grava, reverte se falhar e refaz os contadores dos filtros
+      await toggleFavoriteLocal(currentInspectorMedia.id, currentInspectorMedia.favorite !== 1);
     });
+  }
+
+  // Copiar caminho do arquivo
+  const copyPathBtn = document.querySelector('.inspector-copy-btn');
+  if (copyPathBtn) {
+    copyPathBtn.setAttribute('role', 'button');
+    copyPathBtn.setAttribute('tabindex', '0');
+    const copyPath = async () => {
+      const text = currentInspectorMedia?.filepath || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        copyPathBtn.textContent = 'check';
+        setTimeout(() => { copyPathBtn.textContent = 'content_copy'; }, 1200);
+      } catch (err) {
+        console.error('[LIBRARY] Falha ao copiar caminho:', err);
+        window.bdsModal.alert('Não foi possível copiar o caminho.');
+      }
+    };
+    copyPathBtn.addEventListener('click', copyPath);
+    copyPathBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyPath(); } });
   }
 
   const btnAddTag = document.getElementById('btnAddTag');
@@ -1261,10 +1617,17 @@ function bindInspectorEvents() {
     btnDeleteBulk.addEventListener('click', async () => {
       if (selectedIds.size === 0) return;
       const ids = Array.from(selectedIds);
-      const conf = await window.bdsModal.confirm(`Tem certeza que deseja excluir ${ids.length} arquivo(s)? Esta ação apagará o arquivo do disco também.`);
+      // Informa os vínculos de projeto que serão apagados junto (RK-015)
+      let linkInfo = '';
+      try {
+        const impact = window.bds && window.bds.getMediaProjectLinks ? await window.bds.getMediaProjectLinks(ids) : null;
+        if (impact && impact.links > 0) linkInfo = `\n\nAtenção: isto também remove ${impact.text} (mídia, grupos de sincronização e timeline).`;
+      } catch (_) { /* sem a contagem, segue só com o aviso padrão */ }
+      const conf = await window.bdsModal.confirm(`Tem certeza que deseja excluir ${ids.length} arquivo(s)? Os arquivos vão para a Lixeira.${linkInfo}`);
       if (conf && window.bds && window.bds.deleteMediaBulk) {
-        await window.bds.deleteMediaBulk(ids);
+        const res = await window.bds.deleteMediaBulk(ids);
         selectedIds.clear();
+        reportBatchResult(res, res && res.deleted);
         updateSelectionVisuals();
         fetchMedia();
         loadFilterOptions();
@@ -1284,6 +1647,20 @@ function bindInspectorEvents() {
       if (window.bds && window.bds.toggleFavoriteBulk) {
         await window.bds.toggleFavoriteBulk(ids, isFav);
         fetchMedia();
+        loadFilterOptions();
+        window.bdsToast?.(`${ids.length} ${ids.length === 1 ? 'item' : 'itens'} ${isFav ? 'adicionado(s) aos favoritos' : 'removido(s) dos favoritos'}.`, {
+          type: 'success',
+          actionLabel: 'Desfazer',
+          onAction: async () => {
+            // Restaura o estado exato de antes (parte dos itens já podia ser favorita)
+            const eram = selectedMedia.filter((m) => m.favorite === 1).map((m) => m.id);
+            const nao = ids.filter((id) => !eram.includes(id));
+            if (eram.length) await window.bds.toggleFavoriteBulk(eram, true);
+            if (nao.length) await window.bds.toggleFavoriteBulk(nao, false);
+            fetchMedia();
+            loadFilterOptions();
+          }
+        });
       }
     });
   }
@@ -1295,7 +1672,9 @@ function bindInspectorEvents() {
       const ids = Array.from(selectedIds);
       const baseName = await window.bdsModal.prompt(`Renomear ${ids.length} arquivo(s) em lote.\nInforme o novo nome base:`);
       if (baseName && baseName.trim() && window.bds && window.bds.renameMediaBulk) {
-        await window.bds.renameMediaBulk(ids, baseName.trim());
+        const res = await window.bds.renameMediaBulk(ids, baseName.trim());
+        reportBatchResult(res, res && res.renamed);
+        updateSelectionVisuals();
         fetchMedia();
       }
     });
@@ -1324,8 +1703,9 @@ function bindInspectorEvents() {
       if (folder && window.bds && window.bds.moveMediaBulk) {
         const conf = await window.bdsModal.confirm(`Mover ${ids.length} arquivo(s) para a pasta:\n${folder}?`);
         if (conf) {
-          await window.bds.moveMediaBulk(ids, folder);
+          const res = await window.bds.moveMediaBulk(ids, folder);
           selectedIds.clear();
+          reportBatchResult(res, res && res.moved);
           updateSelectionVisuals();
           fetchMedia();
         }
@@ -1556,7 +1936,7 @@ async function loadFilterOptions() {
   };
 
   // Origins
-  const originsHtml = createGroup('Origem', options.origins, 'origin', 'origin', 'origin', 'count', o => o === 'LOCAL' ? 'Computador' : o);
+  const originsHtml = createGroup('Origem', options.origins, 'origin', 'origin', 'origin', 'count', o => originLabel(o));
   const originsContainer = document.getElementById('filterOriginsContainer');
   if (originsContainer) {
     originsContainer.innerHTML = originsHtml;

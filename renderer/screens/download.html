@@ -3,7 +3,7 @@
   <!-- CABEÇALHO -->
   <header class="downloads-header">
     <p class="downloads-description">
-      Baixe vídeos e áudios com suporte nativo a YouTube, Spotify, Vimeo, TikTok e centenas de sites.
+      Baixe vídeos e áudios com suporte nativo a YouTube, músicas, Vimeo, TikTok e centenas de sites.
     </p>
   </header>
 
@@ -25,13 +25,21 @@
     </button>
   </section>
 
+  <!-- MENSAGENS DE STATUS (preenchida por setStatus do app.js) -->
+  <p id="statusText" class="downloads-status-text" role="status" aria-live="polite"></p>
+  <p id="downloadSessionNote" class="downloads-session-note" role="status"></p>
+  <p id="downloadWaitNote" class="downloads-wait-note hidden" role="status" aria-live="polite">
+    <span id="downloadWaitText"></span>
+    <button id="btnSkipWait" class="downloads-wait-skip" type="button">Pular espera</button>
+  </p>
+
   <!-- FILA DE DOWNLOAD -->
   <section class="downloads-queue-section" aria-label="Fila de download">
 
     <div class="queue-header">
       <div class="queue-title-group">
         <span class="material-symbols-rounded queue-title-icon">queue_music</span>
-        <span class="queue-title">FILA DE DOWNLOAD</span>
+        <h2 class="queue-title">Fila de download</h2>
       </div>
 
       <div class="queue-controls">
@@ -40,35 +48,43 @@
           Iniciar fila
         </button>
 
-        <button id="btnMultipleLinks" type="button" class="queue-btn queue-btn-info">
-          <span class="material-symbols-rounded">list_alt</span>
-          Múltiplos Links
-        </button>
-
-        <button id="btnQueueAllMp3" type="button" class="queue-btn queue-btn-info">
-          <span class="material-symbols-rounded">audiotrack</span>
-          Toda Fila MP3
-        </button>
-
-        <button id="btnQueueAllMp4" type="button" class="queue-btn queue-btn-info">
-          <span class="material-symbols-rounded">movie</span>
-          Toda Fila MP4
-        </button>
-
         <button id="btnPauseQueue" type="button" class="queue-btn queue-btn-pause">
           <span class="material-symbols-rounded">pause</span>
           Pausar
         </button>
 
-        <button id="btnClearCompleted" type="button" class="queue-btn queue-btn-secondary">
-          <span class="material-symbols-rounded">cleaning_services</span>
-          Limpar concluídos
-        </button>
+        <details class="queue-more">
+          <summary class="queue-btn queue-btn-secondary" title="Mais ações da fila" aria-label="Mais ações da fila">
+            <span class="material-symbols-rounded">more_horiz</span>
+            Mais ações
+          </summary>
+          <div class="queue-more-menu">
+            <button id="btnMultipleLinks" type="button" class="queue-btn queue-btn-menu">
+              <span class="material-symbols-rounded">list_alt</span>
+              Múltiplos Links
+            </button>
 
-        <button id="btnClearAll" type="button" class="queue-btn queue-btn-danger">
-          <span class="material-symbols-rounded">delete_forever</span>
-          Limpar Fila
-        </button>
+            <button id="btnQueueAllMp3" type="button" class="queue-btn queue-btn-menu">
+              <span class="material-symbols-rounded">audiotrack</span>
+              Toda a fila em MP3
+            </button>
+
+            <button id="btnQueueAllMp4" type="button" class="queue-btn queue-btn-menu">
+              <span class="material-symbols-rounded">movie</span>
+              Toda a fila em MP4
+            </button>
+
+            <button id="btnClearCompleted" type="button" class="queue-btn queue-btn-menu">
+              <span class="material-symbols-rounded">cleaning_services</span>
+              Limpar concluídos
+            </button>
+
+            <button id="btnClearAll" type="button" class="queue-btn queue-btn-menu queue-btn-danger">
+              <span class="material-symbols-rounded">delete_forever</span>
+              Limpar fila
+            </button>
+          </div>
+        </details>
       </div>
     </div>
 

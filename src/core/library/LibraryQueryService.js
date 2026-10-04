@@ -14,12 +14,23 @@ const STATS_TTL_MS = 3000;        // cache curto de getStats
 const COUNT_TTL_MS = 30000;       // cache do COUNT por filtro (válido só enquanto o banco não recebe escritas)
 const COUNT_CACHE_MAX = 50;
 const INVALIDATE_WINDOW_MS = 1500; // janela de agrupamento da invalidação durante importação em massa
+const FRESH_WINDOW_MS = 1500;      // dentro desta janela o cache vale mesmo que o banco tenha recebido escritas
 
 let filterCache = null;
 let statsCache = null;
 const countCache = new Map(); // chave de filtro -> { at, seq, total }
 
 const invalidateFilterCache = () => { filterCache = null; statsCache = null; };
+
+// Cache de contadores/filtros: válido enquanto o banco não recebeu escritas (writeSeq) e dentro do TTL; escritas
+// vindas de ações do usuário (favoritar, tags, excluir, renomear...) não emitem evento, então a mudança de
+// writeSeq invalida o cache — exceto na janela curta FRESH_WINDOW_MS, que protege contra importações em massa.
+const cacheValid = (c, ttl) => {
+    if (!c) return false;
+    const age = Date.now() - c.at;
+    if (age < FRESH_WINDOW_MS) return true;
+    return c.seq === dbManager.writeSeq && age < ttl;
+};
 
 // Invalidação com debounce (leading + trailing): o primeiro evento invalida na hora e abre uma janela;
 // eventos dentro da janela só marcam "pendente" e a janela fecha invalidando uma vez. Evita recalcular os
@@ -46,7 +57,7 @@ class LibraryQueryService {
      * Retorna estatísticas gerais da biblioteca
      */
     static getStats() {
-        if (statsCache && Date.now() - statsCache.at < STATS_TTL_MS) return statsCache.value;
+        if (cacheValid(statsCache, STATS_TTL_MS)) return statsCache.value;
         const db = dbManager.get();
 
         // Uma única varredura: totais e contagens por tipo (RAW também conta como foto)
@@ -70,7 +81,7 @@ class LibraryQueryService {
             rawCount: t ? (t.raws || 0) : 0,
             lastSyncDate: lastSync ? lastSync.last : null
         };
-        statsCache = { at: Date.now(), value };
+        statsCache = { at: Date.now(), seq: dbManager.writeSeq, value };
         return value;
     }
 
@@ -82,7 +93,7 @@ class LibraryQueryService {
         const db = dbManager.get();
         const SearchQueryParser = require('./SearchQueryParser');
 
-        const parsed = query ? SearchQueryParser.parse(query) : { cleanQuery: '', types: [], synonyms: [] };
+        const parsed = query ? SearchQueryParser.parse(query) : { cleanQuery: '', types: [], synonyms: [], termGroups: [] };
 
         // Tipos detectados em linguagem natural + filtros manuais
         const finalTypes = new Set([...(types || [])]);
@@ -114,14 +125,18 @@ class LibraryQueryService {
         }
 
         // Busca Semântica + multi-campo
-        if (query) {
-            const searchTerms = parsed.synonyms && parsed.synonyms.length > 0 ? parsed.synonyms : [query];
-            const termConditions = searchTerms.map(term => {
-                const q = `%${term}%`;
-                filterParams.push(q, q, q, q, q, q);
-                return `(m.filename LIKE ? OR m.notes LIKE ? OR m.origin LIKE ? OR p.name LIKE ? OR l.name LIKE ? OR EXISTS (SELECT 1 FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = m.id AND t.name LIKE ?))`;
+        // Cada palavra restante vira um grupo (OR entre sinônimos); grupos combinados com AND.
+        // Se a busca tinha só palavras de tipo ("vídeos"), não há filtro de texto (RK-045).
+        if (query && parsed.termGroups && parsed.termGroups.length > 0) {
+            const groupConditions = parsed.termGroups.map(group => {
+                const termConditions = group.map(term => {
+                    const q = `%${term}%`;
+                    filterParams.push(q, q, q, q, q, q);
+                    return `(m.filename LIKE ? OR m.notes LIKE ? OR m.origin LIKE ? OR p.name LIKE ? OR l.name LIKE ? OR EXISTS (SELECT 1 FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = m.id AND t.name LIKE ?))`;
+                });
+                return '(' + termConditions.join(' OR ') + ')';
             });
-            filterSql += ' AND (' + termConditions.join(' OR ') + ')';
+            filterSql += ' AND ' + groupConditions.join(' AND ');
         }
 
         if (origins && origins.length > 0) {
@@ -210,7 +225,7 @@ class LibraryQueryService {
      * Retorna as opções e contagens dinâmicas para os filtros
      */
     static getFilterOptions() {
-        if (filterCache && Date.now() - filterCache.at < CACHE_TTL_MS) return filterCache.value;
+        if (cacheValid(filterCache, CACHE_TTL_MS)) return filterCache.value;
         const db = dbManager.get();
         
         const typeCounts = db.prepare(`
@@ -251,7 +266,7 @@ class LibraryQueryService {
             albums,
             dates
         };
-        filterCache = { at: Date.now(), value };
+        filterCache = { at: Date.now(), seq: dbManager.writeSeq, value };
         return value;
     }
 

@@ -1,4 +1,6 @@
+import { normalizeAccentHex } from '../utils/accent-palette.js';
 import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences, getVisibleSidebarTabs, getDefaultTabOrder, tabShortcutLabel } from '../app.js';
+import { friendlyError } from '../utils/friendlyError.js';
 
 let customSources = [];
 
@@ -16,8 +18,14 @@ export function initScreen() {
   setupSaveBar();
   setupSettingsExtras();
   setupSidebarOrder();
-  loadAiSummary();
-  hideDevOnlySettings();
+  setupModuleDependentUi();
+  setupFieldDefaults();
+  setupValidation();
+  setupFieldKeyboard();
+  setupLeaveGuard();
+  setupAdvancedBlocks();
+  rebaseline();
+  updateSaveBar();
   applyPendingUpdateCheck();
   loadCrashReports();
   loadCacheInfo();
@@ -59,19 +67,26 @@ function setupTabs() {
   const tabs = document.querySelectorAll('.settings-tab');
   const views = document.querySelectorAll('.settings-view');
   if (tabs.length === 0 || views.length === 0) return;
+  document.querySelector('.settings-tab.active')?.setAttribute('aria-current', 'page');
 
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
       clearSettingsSearch();
       const targetId = tab.dataset.tab;
-      tabs.forEach(t => t.classList.remove('active'));
+      tabs.forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
       views.forEach(v => v.classList.add('hidden'));
       tab.classList.add('active');
+      tab.setAttribute('aria-current', 'page');
       const targetView = document.getElementById(targetId);
       if (targetView) targetView.classList.remove('hidden');
       // O painel do módulo de transcrição só existe enquanto a aba está aberta
+      if (targetId === 'settingsModulesView') loadModulesList();
       if (targetId === 'settingsTranscriptionView') mountTranscriptionPanel();
       else unmountTranscriptionPanel();
+      // O servidor de IA (seção Inteligência Artificial) também só é montado com a aba aberta
+      if (targetId === 'settingsAiView') mountAiPanel();
+      else unmountAiPanel();
+      if (targetId === 'settingsAboutView') loadLicensesPage();
       // Recarrega a lista de crash reports ao abrir a aba Sistema
       if (targetId === 'settingsSystemView') {
         loadCrashReports();
@@ -80,6 +95,135 @@ function setupTabs() {
       }
     });
   });
+}
+
+/* ==========================================================================
+   MÓDULOS (ligar/desligar recursos)
+   ========================================================================== */
+let modulesCache = [];
+
+async function loadModulesList() {
+  const host = document.getElementById('modulesList');
+  if (!host) return;
+  let list = [];
+  try {
+    const r = await window.bds.modulesList();
+    if (r && r.ok) list = r.data;
+  } catch (_) { /* lista vazia */ }
+  modulesCache = list;
+  applyModuleDependentUi(list);
+  host.innerHTML = list.map((m) => {
+    const needsEngine = m.enabled && m.hasEngine && !m.installed;
+    const status = needsEngine
+      ? `<button type="button" class="st-module-link" data-module-install="${escapeHtml(m.id)}">Falta instalar um componente — instalar</button>`
+      : (m.available === false ? '<span class="st-row-hint st-module-warn">Indisponível neste sistema</span>' : '');
+    return `<label class="st-row st-row-toggle">
+      <div class="st-row-text">
+        <span class="st-row-label">${escapeHtml(m.title)}</span>
+        <span class="st-row-hint">${escapeHtml(m.description)}</span>
+        ${status}
+      </div>
+      <input type="checkbox" class="st-switch" data-module-id="${escapeHtml(m.id)}" ${m.enabled ? 'checked' : ''} ${m.available === false ? 'disabled' : ''} />
+    </label>`;
+  }).join('') || '<p class="st-card-desc">Nenhum módulo disponível.</p>';
+
+  host.querySelectorAll('input[data-module-id]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const want = input.checked;
+      const id = input.dataset.moduleId;
+      input.disabled = true;
+      let changed = false;
+      try {
+        const r = await window.bds.modulesSetEnabled(id, want);
+        if (!r || !r.ok) throw new Error(r?.error || 'O recurso não respondeu.');
+        changed = true;
+      } catch (err) {
+        input.checked = !want;
+        setStatus(`Não foi possível ${want ? 'ativar' : 'desativar'} este recurso. ${friendlyError(err, 'Tente novamente.')}`);
+      } finally {
+        input.disabled = false;
+      }
+      if (!changed) return;
+      await loadModulesList();
+      // Ao ligar um módulo com motor ainda não instalado, oferece a instalação (nada é baixado sem confirmar)
+      const m = modulesCache.find((x) => x.id === id);
+      if (want && m && m.hasEngine && !m.installed) offerEngineInstall(m);
+    });
+  });
+  host.querySelectorAll('[data-module-install]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const m = modulesCache.find((x) => x.id === btn.dataset.moduleInstall);
+      if (m) offerEngineInstall(m);
+    });
+  });
+}
+
+/**
+ * Oferece instalar o motor de um módulo. Transcrição leva ao painel de instalação existente (escolha de
+ * motor e modelo); componentes sob demanda ('tool:<nome>') são baixados daqui, só depois de o usuário confirmar.
+ */
+async function offerEngineInstall(m) {
+  const engine = m.engine || '';
+  if (!engine.startsWith('tool:')) {
+    const go = await window.bdsModal.confirm(`O módulo "${m.title}" precisa de um componente que ainda não está instalado. Abrir a instalação agora?`);
+    if (go) document.querySelector('.settings-tab[data-tab="settingsTranscriptionView"]')?.click();
+    return;
+  }
+  const go = await window.bdsModal.confirm(`O módulo "${m.title}" precisa baixar um componente para recuperar vídeos danificados (download da fonte oficial). Baixar agora?`);
+  if (!go) return;
+  setStatus('Baixando o componente de recuperação de vídeo...');
+  try {
+    const tool = engine.slice(5);
+    const result = await window.bds.updateTool(tool, { allowUnverified: false });
+    if (result && result.needsConfirmation) {
+      const again = await window.bdsModal.confirm('A fonte deste componente não publica dados de verificação de integridade, então não é possível conferir o download. Instalar mesmo assim?');
+      if (!again) { setStatus('Instalação cancelada.'); return; }
+      await window.bds.updateTool(tool, { allowUnverified: true });
+    }
+    setStatus('Componente de recuperação de vídeo instalado.');
+  } catch (err) {
+    setStatus(`Não foi possível instalar o componente. ${friendlyError(err, 'Verifique a conexão e tente de novo.')}`);
+  }
+  await loadModulesList();
+}
+
+/**
+ * Itens das Configurações que dependem dos módulos ligados: a seção Inteligência Artificial (módulo
+ * Transcrição OU Assistente de IA), o cartão do Assistente e as telas oferecidas como "Tela inicial".
+ */
+function applyModuleDependentUi(list) {
+  if (!Array.isArray(list)) return;
+  const on = (id) => list.some((m) => m.id === id && m.enabled === true);
+  const showAi = on('transcription') || on('ai');
+  const tab = document.querySelector('.settings-tab[data-tab="settingsAiView"]');
+  tab?.classList.toggle('st-devhidden', !showAi);
+  document.getElementById('settingsAiView')?.classList.toggle('st-devhidden', !showAi);
+  document.getElementById('settingsAssistantCard')?.classList.toggle('hidden', !on('ai'));
+  if (!showAi && tab?.classList.contains('active')) {
+    document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
+  }
+
+  // Tela inicial: só telas de módulos ligados (telas de desenvolvimento ausentes da lista ficam ocultas)
+  const select = document.getElementById('defaultStartScreenInput');
+  if (!select) return;
+  const managed = new Map();
+  list.forEach((m) => (m.screens || []).forEach((sc) => managed.set(sc, m.enabled === true)));
+  const devScreens = ['montage', 'recovery'];
+  [...select.options].forEach((opt) => {
+    const allowed = managed.has(opt.value) ? managed.get(opt.value) : !devScreens.includes(opt.value);
+    opt.hidden = !allowed;
+    opt.disabled = !allowed;
+  });
+  if (select.selectedOptions[0]?.disabled) select.value = 'home';
+}
+
+/** Lê os módulos e aplica o que depende deles (seção de IA, tela inicial). */
+async function refreshModuleDependentUi() {
+  try {
+    const r = await window.bds.modulesList();
+    if (r && r.ok) { modulesCache = r.data; applyModuleDependentUi(r.data); }
+  } catch (_) { /* mantém o estado atual */ }
 }
 
 /* ==========================================================================
@@ -98,20 +242,26 @@ async function mountTranscriptionPanel() {
     console.error('[SETTINGS] Falha ao carregar o painel de transcrição:', err);
     host.textContent = 'Não foi possível carregar o painel de transcrição.';
   }
-  // Servidor de IA da análise de transcrições (opcional): um erro aqui não derruba o painel acima
+}
+
+/** Servidor de IA (seção Inteligência Artificial): um erro aqui não afeta o resto das Configurações. */
+async function mountAiPanel() {
   const aiHost = document.getElementById('settingsAnalysisPanel');
   if (!aiHost) return;
   try {
     analysisPanel = analysisPanel || await import('../components/analysis-panel.js');
     await analysisPanel.mountAnalysisPanel(aiHost);
   } catch (err) {
-    console.error('[SETTINGS] Falha ao carregar o painel de análise com IA:', err);
-    aiHost.textContent = 'Não foi possível carregar a configuração da análise com IA.';
+    console.error('[SETTINGS] Falha ao carregar o painel do servidor de IA:', err);
+    aiHost.textContent = 'Não foi possível carregar a configuração da IA.';
   }
 }
 
 function unmountTranscriptionPanel() {
   try { modulesPanel?.unmountModulesPanel(); } catch (_) { /* noop */ }
+}
+
+function unmountAiPanel() {
   try { analysisPanel?.unmountAnalysisPanel(); } catch (_) { /* noop */ }
 }
 
@@ -131,17 +281,12 @@ function renderSettings() {
     if (el) el.checked = Boolean(value);
   };
 
-  setChk('useDefaultFolderInput', s.useDefaultFolder);
   setVal('mp3FolderInput', s.mp3Folder);
   setVal('mp4FolderInput', s.mp4Folder);
   setVal('obsFolderInput', s.obsFolder);
   setVal('shadowplayFolderInput', s.shadowplayFolder);
   setVal('deviceFolderInput', s.deviceFolder);
-  setChk('autoUpdateInput', s.autoUpdateDeps);
-  setChk('autoUpdateGithub', s.autoUpdateGithub !== false);
   setChk('checkUpdatesOnStartInput', s.checkUpdatesOnStart);
-
-  // BDS Update Server (URL base opcional para componentes)
   setVal('updateServerUrlInput', s.updateServerUrl);
 
   // Upload para YouTube (pasta do scanner de mídias)
@@ -149,7 +294,6 @@ function renderSettings() {
 
   // Relatório de erros / telemetria
   setChk('errorReportingEnabledInput', s.errorReportingEnabled !== false);
-  setVal('developerEmailInput', s.developerEmail);
   setChk('notificationsEnabledInput', s.notificationsEnabled !== false);
   setChk('notifyDownloadsInput', s.notifyDownloads !== false);
   setChk('notifyConverterInput', s.notifyConverter !== false);
@@ -157,10 +301,11 @@ function renderSettings() {
   setChk('notifySilenceInput', s.notifySilence !== false);
   setChk('notifyDeadlinesInput', s.notifyDeadlines !== false);
 
-  // Telegram
-  setChk('telegramNotificationsEnabledInput', s.telegramNotificationsEnabled);
-  setVal('telegramBotTokenInput', s.telegramBotToken);
-  setVal('telegramChatIdInput', s.telegramChatId);
+  // Pausa entre downloads da lista
+  setChk('downloadPauseEnabledInput', s.downloadPauseEnabled !== false);
+  setVal('downloadPauseMinInput', s.downloadPauseMinSec ?? 10);
+  setVal('downloadPauseMaxInput', s.downloadPauseMaxSec ?? 180);
+  syncDownloadPauseRange();
 
   // Antecedência e horário do lembrete de prazo
   const leadSelect = document.getElementById('deadlineNotifyLeadDaysInput');
@@ -173,7 +318,7 @@ function renderSettings() {
   if (themeSelect) themeSelect.value = s.theme || 'dark';
 
   const accentInput = document.getElementById('accentColorInput');
-  if (accentInput) accentInput.value = s.accentColor || '#e53935';
+  if (accentInput) accentInput.value = normalizeAccentHex(s.accentColor);
 
   // Armazenamento (cache)
   setChk('cacheAutoCleanInput', s.cacheAutoClean);
@@ -212,22 +357,27 @@ function renderSettings() {
   const vBitrate = document.getElementById('converterDefaultVideoBitrateInput');
   if (vBitrate) vBitrate.value = s.converterDefaultVideoBitrate || 10;
 
-  toggleFolderInputs();
   syncNotifyModules();
   syncAccentSwatches();
-}
-
-function toggleFolderInputs() {
-  const useDefault = document.getElementById('useDefaultFolderInput')?.checked;
-  const group = document.getElementById('customFoldersGroup');
-  if (group) group.classList.toggle('disabled-group', Boolean(useDefault));
 }
 
 /* ==========================================================================
    EVENTOS
    ========================================================================== */
+/** Esmaece os campos de tempo quando a pausa entre downloads está desligada. */
+function syncDownloadPauseRange() {
+  const on = document.getElementById('downloadPauseEnabledInput')?.checked !== false;
+  const box = document.getElementById('downloadPauseRange');
+  if (box) box.style.opacity = on ? '' : '0.5';
+  for (const id of ['downloadPauseMinInput', 'downloadPauseMaxInput']) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  }
+}
+
 function bindEvents() {
   document.getElementById('saveSettingsButton')?.addEventListener('click', saveSettings);
+  document.getElementById('downloadPauseEnabledInput')?.addEventListener('change', syncDownloadPauseRange);
 
   // Exibe/oculta os ajustes de lembrete de prazo conforme o checkbox ativo
   const deadlineChk = document.getElementById('notifyDeadlinesInput');
@@ -242,29 +392,6 @@ function bindEvents() {
     deadlineChk.addEventListener('change', syncDeadlineGroup);
     syncDeadlineGroup();
   }
-
-  // Botão de teste do Telegram
-  document.getElementById('testTelegramButton')?.addEventListener('click', async () => {
-    const btn = document.getElementById('testTelegramButton');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-rounded">hourglass_top</span> Enviando...'; }
-    try {
-      const result = await window.bds.sendTelegramTest({
-        botToken: document.getElementById('telegramBotTokenInput')?.value,
-        chatId: document.getElementById('telegramChatIdInput')?.value
-      });
-      if (result?.success) {
-        window.bdsModal.alert('Sucesso! A mensagem de teste foi enviada para o seu Telegram.');
-      } else {
-        window.bdsModal.alert('Falha ao enviar: ' + (result?.error || 'Verifique o token e o Chat ID.'));
-      }
-    } catch (err) {
-      window.bdsModal.alert('Falha ao enviar: ' + (err.message || err));
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-rounded">send</span> Testar envio no Telegram'; }
-    }
-  });
-
-  document.getElementById('useDefaultFolderInput')?.addEventListener('change', toggleFolderInputs);
 
   document.getElementById('mp3FolderButton')?.addEventListener('click', () => chooseFolder('mp3FolderInput'));
   document.getElementById('mp4FolderButton')?.addEventListener('click', () => chooseFolder('mp4FolderInput'));
@@ -291,7 +418,7 @@ function bindEvents() {
   document.getElementById('clearCrashReportsButton')?.addEventListener('click', async () => {
     if (typeof window.bds?.clearCrashReports !== 'function') return;
     const confirmed = await window.bdsModal.confirm(
-      'Tem certeza que deseja limpar todos os relatórios guardados? Esta ação não pode ser desfeita.'
+      'Apagar os relatórios de erro guardados neste computador?\n\nEles deixam de poder ser enviados ao desenvolvedor. Esta ação não pode ser desfeita.'
     );
     if (!confirmed) return;
     try {
@@ -302,7 +429,7 @@ function bindEvents() {
         : 'Não havia relatórios para limpar.');
     } catch (err) {
       console.error('[SETTINGS] Erro ao limpar relatórios:', err);
-      window.bdsModal.alert('Ocorreu um erro ao tentar limpar os relatórios.');
+      window.bdsModal.alert('Não foi possível limpar os relatórios. Tente novamente.');
     }
   });
 
@@ -335,13 +462,8 @@ function bindEvents() {
 
   // Tema — aplica preview imediato ao trocar
   document.getElementById('themeSelect')?.addEventListener('change', (e) => {
-    const accentColor = document.getElementById('accentColorInput')?.value || state.settings?.accentColor || '#e53935';
+    const accentColor = document.getElementById('accentColorInput')?.value || state.settings?.accentColor || '#ff0000';
     applyTheme(e.target.value, accentColor);
-  });
-
-  // Cor de destaque — preview em tempo real enquanto o usuário arrasta
-  document.getElementById('accentColorInput')?.addEventListener('input', (e) => {
-    applyAccentColor(e.target.value);
   });
 
   // Atualizações
@@ -360,35 +482,41 @@ function bindEvents() {
   // Exportar Logs de Diagnóstico
   document.getElementById('exportLogsButton')?.addEventListener('click', async () => {
     try {
-      setStatus('Exportando logs de diagnóstico...');
+      setStatus('Exportando registros de diagnóstico...');
       const res = await window.bds.exportDiagnosticLogs();
       if (res && res.success) {
-        setStatus('Logs exportados com sucesso.');
-        window.bdsModal.alert(`Logs de diagnóstico exportados com sucesso para:\n${res.exportPath}`);
+        setStatus('Registros exportados com sucesso.');
+        window.bdsModal.alert(`Registros exportados com sucesso para:\n${res.exportPath}`);
       } else if (!res?.cancelled) {
-        window.bdsModal.alert('Não foi possível exportar os logs.');
+        window.bdsModal.alert('Não foi possível exportar os registros. Tente de novo em outra pasta.');
       }
     } catch (e) {
       console.error('[SETTINGS] Erro ao exportar logs:', e);
-      window.bdsModal.alert('Erro ao exportar logs: ' + e.message);
+      window.bdsModal.alert(`Não foi possível exportar os registros. ${friendlyError(e)}`);
     }
   });
 
   // Limpar Banco de Dados
   document.getElementById('clearDbButton')?.addEventListener('click', async () => {
-    const confirm = await window.bdsModal.confirm(
-      'TEM CERTEZA ABSOLUTA? Esta ação irá limpar todo o banco de dados interno da biblioteca.\n' +
-      'Os arquivos não serão apagados do disco, mas todo o histórico, tags e favoritos serão perdidos para sempre!'
+    const ok = await window.bdsModal.confirm(
+      'Limpar o catálogo da biblioteca?\n\n' +
+      'O que será apagado: favoritos, tags e a lista de mídias já lidas. As pastas serão lidas de novo do zero, o que pode demorar em bibliotecas grandes.\n\n' +
+      'O que NÃO será apagado: seus vídeos, áudios e fotos no disco.\n\n' +
+      'O BDS guarda um backup antes de limpar. Esta ação não pode ser desfeita pelo aplicativo.'
     );
-    if (!confirm) return;
+    if (!ok) return;
+    const restore = setButtonBusy(document.getElementById('clearDbButton'), 'Limpando…');
     try {
-      setStatus('Limpando banco de dados...');
+      setStatus('Limpando o catálogo da biblioteca...');
       await window.bds.clearLibraryDatabase();
-      setStatus('Banco de dados limpo com sucesso.');
-      window.bdsModal.alert('O banco de dados foi limpo. As pastas voltarão a ser escaneadas do zero.');
+      setStatus('Catálogo da biblioteca limpo.');
+      window.bdsModal.alert('Pronto. O catálogo foi limpo e as pastas serão lidas de novo do zero. Seus arquivos continuam no disco.');
     } catch (e) {
-      setStatus('Erro ao limpar banco: ' + e.message);
-      window.bdsModal.alert('Erro ao limpar banco de dados: ' + e.message);
+      if (/cancelad/i.test(e?.message || '')) { setStatus('Limpeza cancelada. Nada foi apagado.'); return; }
+      setStatus('Não foi possível limpar o catálogo.');
+      window.bdsModal.alert(`Não foi possível limpar o catálogo da biblioteca. ${friendlyError(e)}`);
+    } finally {
+      restore();
     }
   });
 
@@ -397,22 +525,13 @@ function bindEvents() {
 
   // Armazenamento — Limpar tudo
   document.getElementById('clearCacheButton')?.addEventListener('click', async () => {
-    const confirm = await window.bdsModal.confirm(
-      'Tem certeza que deseja limpar TODO o armazenamento temporário?\n' +
-      'Isso removerá thumbnails, waveforms e arquivos temporários.\n' +
-      'As conversões e projetos não serão afetados, mas os arquivos poderão ser regenerados na próxima vez que forem necessários.'
+    const ok = await window.bdsModal.confirm(
+      'Limpar todo o armazenamento temporário?\n\n' +
+      'Serão removidos: miniaturas, ondas de áudio e arquivos de rascunho que o BDS criou para ficar mais rápido.\n\n' +
+      'Não serão afetados: seus vídeos, projetos e arquivos convertidos. O BDS recria o que precisar, e a primeira abertura de pastas grandes pode ficar um pouco mais lenta.'
     );
-    if (!confirm) return;
-    try {
-      setStatus('Limpando armazenamento...');
-      const result = await window.bds.clearCache(null);
-      setStatus('Armazenamento limpo com sucesso.');
-      window.bdsModal.alert(`Armazenamento limpo! ${result.totalFormatted} liberados.`);
-      loadCacheInfo();
-    } catch (e) {
-      setStatus('Erro ao limpar armazenamento: ' + e.message);
-      window.bdsModal.alert('Erro ao limpar armazenamento: ' + e.message);
-    }
+    if (!ok) return;
+    await runCacheClear(null, 'o armazenamento temporário', document.getElementById('clearCacheButton'));
   });
 
   // Armazenamento — Limpar categoria individual (delegação de eventos)
@@ -423,20 +542,38 @@ function bindEvents() {
       if (!btn) return;
       const key = btn.dataset.clearCache;
       const label = btn.dataset.label;
-      const ok = await window.bdsModal.confirm(`Limpar o armazenamento de "${label}"? Os arquivos serão regenerados quando necessários.`);
+      const ok = await window.bdsModal.confirm(`Limpar "${label}"?\n\nSeus vídeos e projetos não são afetados. O BDS recria esses arquivos quando precisar deles.`);
       if (!ok) return;
-      try {
-        setStatus(`Limpando ${label}...`);
-        const result = await window.bds.clearCache(key);
-        setStatus(`${label} limpos com sucesso.`);
-        window.bdsModal.alert(`${label} limpos! ${result.totalFormatted} liberados.`);
-        loadCacheInfo();
-      } catch (err) {
-        window.bdsModal.alert('Erro ao limpar: ' + err.message);
-      }
+      await runCacheClear(key, `"${label}"`, btn);
     });
   }
 
+}
+
+/** Limpa o armazenamento (tudo ou uma categoria) com botão ocupado, resultado na tela e erro em linguagem simples. */
+async function runCacheClear(key, what, button) {
+  const all = ['clearCacheButton', 'refreshCacheButton'].map((id) => document.getElementById(id));
+  const others = [...document.querySelectorAll('button[data-clear-cache]')].filter((b) => b !== button);
+  [...all, ...others].forEach((b) => { if (b && b !== button) b.disabled = true; });
+  const restore = setButtonBusy(button, 'Limpando…');
+  const result = document.getElementById('cacheResult');
+  if (result) result.textContent = `Limpando ${what}…`;
+  try {
+    setStatus(`Limpando ${what}...`);
+    const r = await window.bds.clearCache(key);
+    const msg = `Concluído: ${r.totalFormatted} liberados.`;
+    setStatus(`Armazenamento limpo. ${msg}`);
+    if (result) result.textContent = `${msg} (${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`;
+    window.bdsModal.alert(`Pronto! ${r.totalFormatted} liberados.`);
+  } catch (e) {
+    setStatus('Não foi possível limpar o armazenamento.');
+    if (result) result.textContent = 'Não foi possível limpar.';
+    window.bdsModal.alert(`Não foi possível limpar ${what}. ${friendlyError(e, 'Feche tarefas em andamento (downloads, conversões) e tente de novo.')}`);
+  } finally {
+    restore();
+    [...all, ...others].forEach((b) => { if (b) b.disabled = false; });
+    loadCacheInfo();
+  }
 }
 
 async function chooseFolder(inputId) {
@@ -451,36 +588,36 @@ async function chooseFolder(inputId) {
 }
 
 async function saveSettings() {
+  if (!validateAllFields()) {
+    setStatus('Corrija os campos destacados antes de salvar.');
+    return;
+  }
   try {
     setStatus('Salvando configurações...');
     const updatedSettings = await window.bds.saveSettings({
-      useDefaultFolder: document.getElementById('useDefaultFolderInput')?.checked,
       mp3Folder: document.getElementById('mp3FolderInput')?.value,
       mp4Folder: document.getElementById('mp4FolderInput')?.value,
       obsFolder: document.getElementById('obsFolderInput')?.value,
       shadowplayFolder: document.getElementById('shadowplayFolderInput')?.value,
       deviceFolder: document.getElementById('deviceFolderInput')?.value,
       uploadsFolder: document.getElementById('uploadsFolderInput')?.value,
-      autoUpdateDeps: document.getElementById('autoUpdateInput')?.checked,
-      autoUpdateGithub: document.getElementById('autoUpdateGithub')?.checked,
       checkUpdatesOnStart: document.getElementById('checkUpdatesOnStartInput')?.checked,
-      updateServerUrl: document.getElementById('updateServerUrlInput')?.value?.trim() || '',
+      ...(document.getElementById('updateServerUrlInput') ? { updateServerUrl: document.getElementById('updateServerUrlInput').value.trim() } : {}),
       notificationsEnabled: document.getElementById('notificationsEnabledInput')?.checked,
       notifyDownloads: document.getElementById('notifyDownloadsInput')?.checked,
       notifyConverter: document.getElementById('notifyConverterInput')?.checked,
       notifyCopy: document.getElementById('notifyCopyInput')?.checked,
       notifySilence: document.getElementById('notifySilenceInput')?.checked,
+      downloadPauseEnabled: document.getElementById('downloadPauseEnabledInput')?.checked !== false,
+      downloadPauseMinSec: Number(document.getElementById('downloadPauseMinInput')?.value),
+      downloadPauseMaxSec: Number(document.getElementById('downloadPauseMaxInput')?.value),
       notifyDeadlines: document.getElementById('notifyDeadlinesInput')?.checked,
       deadlineNotifyLeadDays: Number(document.getElementById('deadlineNotifyLeadDaysInput')?.value) || 5,
       deadlineNotifyTime: document.getElementById('deadlineNotifyTimeInput')?.value || '09:00',
-      telegramNotificationsEnabled: document.getElementById('telegramNotificationsEnabledInput')?.checked,
-      telegramBotToken: document.getElementById('telegramBotTokenInput')?.value || '',
-      telegramChatId: document.getElementById('telegramChatIdInput')?.value || '',
       theme: document.getElementById('themeSelect')?.value || 'dark',
-      accentColor: document.getElementById('accentColorInput')?.value || '#e53935',
+      accentColor: normalizeAccentHex(document.getElementById('accentColorInput')?.value),
       lutPreviewImage: document.getElementById('lutPreviewImageInput')?.value || '',
       errorReportingEnabled: document.getElementById('errorReportingEnabledInput')?.checked,
-      developerEmail: document.getElementById('developerEmailInput')?.value?.trim() || '',
       useHardwareAcceleration: document.getElementById('useHardwareAccelerationInput')?.checked !== false,
       preferredGpuVendor: document.getElementById('preferredGpuVendorInput')?.value || 'auto',
       cacheAutoClean: document.getElementById('cacheAutoCleanInput')?.checked === true,
@@ -504,7 +641,7 @@ async function saveSettings() {
     markSettingsSaved();
   } catch (error) {
     setStatus('Erro ao salvar as configurações.');
-    window.bdsModal.alert('Erro ao salvar configurações: ' + error.message);
+    window.bdsModal.alert(`Não foi possível salvar as configurações. ${friendlyError(error, 'Tente novamente.')}`);
   }
 }
 
@@ -641,9 +778,9 @@ function setupSidebarOrder() {
 async function confirmUnverifiedUpdates(deps) {
   const pending = deps?.needsConfirmation || [];
   if (!pending.length || !window.bds?.updateTool) return 0;
-  const names = pending.map(p => `• ${p.tool || p.id}${p.version ? ` ${p.version}` : ''}`).join('\n');
+  const names = pending.map(p => `• ${p.title || 'Componente'}${p.version ? ` ${p.version}` : ''}`).join('\n');
   const ok = await window.bdsModal.confirm(
-    `A fonte destes componentes não publica checksum (SHA-256), então a integridade do download não pode ser verificada:\n\n${names}\n\nInstalar mesmo assim?`
+    `A fonte destes componentes não publica dados de verificação de integridade, então não é possível conferir o download:\n\n${names}\n\nInstalar mesmo assim?`
   );
   if (!ok) return 0;
   let installed = 0;
@@ -658,34 +795,69 @@ async function confirmUnverifiedUpdates(deps) {
   return installed;
 }
 
-/** Marca a cor de destaque atual entre as cores sugeridas. */
+/** Marca, no grupo de bolinhas, a cor de destaque atual (sempre uma opção da paleta fixa). */
 function syncAccentSwatches() {
-  const current = (document.getElementById('accentColorInput')?.value || '').toLowerCase();
-  document.querySelectorAll('.st-swatch').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.color.toLowerCase() === current);
+  const current = normalizeAccentHex(document.getElementById('accentColorInput')?.value);
+  document.querySelectorAll('.st-accent-radio').forEach((radio) => {
+    radio.checked = radio.value.toLowerCase() === current;
   });
 }
 
+/* ==========================================================================
+   ALTERAÇÕES NÃO SALVAS: o estado "sujo" compara os campos com a foto tirada ao abrir/salvar/descartar,
+   então desfazer uma mudança à mão também esconde a barra.
+   ========================================================================== */
+let baselineSnapshot = '';
+let leaveHandler = null;
+let leaveBypass = false;
+let saveShortcutHandler = null;
+
+const isTrackedField = (el) => el.id
+  && el.id !== 'settingsSearch'
+  && !el.closest('#modulesList, #settingsAnalysisPanel, #settingsAssistantCard, #settingsTranscriptionPanel, #settingsAboutView');
+
+function takeSnapshot() {
+  const parts = [];
+  document.querySelectorAll('.settings-content input, .settings-content select, .settings-content textarea').forEach((el) => {
+    if (!isTrackedField(el)) return;
+    parts.push(`${el.id}=${el.type === 'checkbox' ? el.checked : el.value}`);
+  });
+  parts.push(`order=${(collectSidebarOrder() || []).join(',')}`);
+  return parts.join('|');
+}
+
+function rebaseline() { baselineSnapshot = takeSnapshot(); }
+
 function updateSaveBar() {
   const bar = document.getElementById('settingsSaveBar');
+  const headerBtn = document.getElementById('saveSettingsButton');
+  if (headerBtn) {
+    headerBtn.disabled = !settingsDirty;
+    headerBtn.title = settingsDirty ? 'Salvar as alterações (Ctrl+S)' : 'Nenhuma alteração para salvar';
+  }
   if (!bar) return;
   clearTimeout(savedBarTimer);
   bar.classList.toggle('hidden', !settingsDirty);
   bar.classList.remove('is-saved');
   const text = document.getElementById('settingsSaveBarText');
-  if (text) text.textContent = 'Você tem alterações não salvas.';
+  if (text) text.textContent = 'Você tem alterações não salvas. Ctrl+S salva.';
 }
 
 function markSettingsDirty() {
-  settingsDirty = true;
+  settingsDirty = takeSnapshot() !== baselineSnapshot;
   updateSaveBar();
+  refreshResetButtons();
 }
 
 /** Depois de salvar: some a barra de alterações e mostra uma confirmação rápida. */
 function markSettingsSaved() {
   settingsDirty = false;
+  rebaseline();
+  refreshResetButtons();
   const bar = document.getElementById('settingsSaveBar');
   const text = document.getElementById('settingsSaveBarText');
+  const headerBtn = document.getElementById('saveSettingsButton');
+  if (headerBtn) { headerBtn.disabled = true; headerBtn.title = 'Nenhuma alteração para salvar'; }
   if (!bar) return;
   clearTimeout(savedBarTimer);
   bar.classList.remove('hidden');
@@ -700,7 +872,10 @@ function discardSettingsChanges() {
   const s = state.settings || {};
   applyTheme(s.theme, s.accentColor);
   applyUiPreferences(s);
+  clearAllFieldErrors();
   settingsDirty = false;
+  rebaseline();
+  refreshResetButtons();
   updateSaveBar();
 }
 
@@ -708,18 +883,22 @@ function setupSaveBar() {
   settingsDirty = false;
   const content = document.querySelector('.settings-content');
   const track = (e) => {
-    if (e.target?.id === 'settingsSearch') return;
+    if (e.target?.closest?.('#sidebarOrderList')) { markSettingsDirty(); return; }
+    if (!isTrackedField(e.target)) return;
     markSettingsDirty();
   };
   content?.addEventListener('input', track);
   content?.addEventListener('change', track);
   document.getElementById('settingsSaveBarSave')?.addEventListener('click', saveSettings);
   document.getElementById('settingsSaveBarDiscard')?.addEventListener('click', discardSettingsChanges);
+  rebaseline();
+  updateSaveBar();
 }
 
 /** Ao sair da tela com alterações não salvas, desfaz as prévias para não deixar o app "meio mudado". */
 export function onLeave() {
   unmountTranscriptionPanel();
+  unmountAiPanel();
   if (settingsDirty) {
     const s = state.settings || {};
     applyTheme(s.theme, s.accentColor);
@@ -728,20 +907,325 @@ export function onLeave() {
   renderSidebarOrderList(); // descarta uma ordem não salva e reflete o menu real ao voltar
   settingsDirty = false;
   clearTimeout(savedBarTimer);
+  if (leaveHandler) { document.removeEventListener('click', leaveHandler, true); leaveHandler = null; }
+  if (saveShortcutHandler) { document.removeEventListener('keydown', saveShortcutHandler, true); saveShortcutHandler = null; }
+}
+
+/** Ao voltar para a tela (ela fica no DOM): recarrega os campos, refaz os atalhos e reabre os painéis da aba atual. */
+export function onEnter() {
+  renderSettings();
+  clearAllFieldErrors();
+  setupLeaveGuard();
+  setupAdvancedBlocks();
+  settingsDirty = false;
+  rebaseline();
+  updateSaveBar();
+  refreshResetButtons();
+  document.querySelector('.settings-tab.active')?.click();
+}
+
+/* --- Aviso ao sair com alterações não salvas (cliques no menu lateral e atalhos Ctrl+número) --- */
+function askLeaveChoice() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('modalSettingsLeave');
+    if (!modal) { resolve('discard'); return; }
+    const stay = document.getElementById('modalSettingsLeaveStay');
+    const discard = document.getElementById('modalSettingsLeaveDiscard');
+    const save = document.getElementById('modalSettingsLeaveSave');
+    const done = (choice) => {
+      stay.removeEventListener('click', onStay);
+      discard.removeEventListener('click', onDiscard);
+      save.removeEventListener('click', onSave);
+      modal.removeEventListener('keydown', onKey);
+      closeSettingsModal('modalSettingsLeave');
+      resolve(choice);
+    };
+    const onStay = () => done('stay');
+    const onDiscard = () => done('discard');
+    const onSave = () => done('save');
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); done('stay'); }
+      if (e.key === 'Tab') { // mantém o foco dentro do diálogo
+        const items = [stay, discard, save];
+        const i = items.indexOf(document.activeElement);
+        const next = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i === items.length - 1 ? 0 : i + 1);
+        e.preventDefault();
+        items[next].focus();
+      }
+    };
+    stay.addEventListener('click', onStay);
+    discard.addEventListener('click', onDiscard);
+    save.addEventListener('click', onSave);
+    modal.addEventListener('keydown', onKey);
+    openSettingsModal('modalSettingsLeave');
+    stay.focus();
+  });
+}
+
+function setupLeaveGuard() {
+  if (leaveHandler) document.removeEventListener('click', leaveHandler, true);
+  leaveHandler = async (e) => {
+    if (!settingsDirty || leaveBypass) return;
+    const btn = e.target.closest?.('.tab-button');
+    if (!btn || btn.dataset.view === 'settings') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const choice = await askLeaveChoice();
+    if (choice === 'stay') return;
+    if (choice === 'save') {
+      await saveSettings();
+      if (settingsDirty) return; // não salvou (campo inválido ou erro): fica na tela
+    } else {
+      discardSettingsChanges();
+    }
+    leaveBypass = true;
+    try { btn.click(); } finally { leaveBypass = false; }
+  };
+  document.addEventListener('click', leaveHandler, true);
+
+  if (saveShortcutHandler) document.removeEventListener('keydown', saveShortcutHandler, true);
+  saveShortcutHandler = (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 's' && document.getElementById('settingsGeneralView')) {
+      e.preventDefault();
+      if (settingsDirty) saveSettings();
+    }
+  };
+  document.addEventListener('keydown', saveShortcutHandler, true);
+}
+
+/* ==========================================================================
+   VALIDAÇÃO INLINE
+   ========================================================================== */
+const FOLDER_INPUTS = ['mp3FolderInput', 'mp4FolderInput', 'converterFolderInput', 'obsFolderInput', 'shadowplayFolderInput', 'deviceFolderInput', 'uploadsFolderInput'];
+const NUMBER_RULES = {
+  downloadPauseMinInput: { min: 0, max: 600, label: 'a pausa mínima' },
+  downloadPauseMaxInput: { min: 0, max: 600, label: 'a pausa máxima' },
+  converterDefaultVideoBitrateInput: { min: 1, max: 100, label: 'o bitrate de vídeo' },
+  cacheMaxSizeInput: { min: 50, max: 10000, label: 'o limite de armazenamento' }
+};
+
+/** Texto de erro do campo, ou '' se estiver válido. */
+function validateField(el) {
+  if (!el || el.disabled) return '';
+  const id = el.id;
+  const value = String(el.value || '').trim();
+  if (NUMBER_RULES[id]) {
+    const r = NUMBER_RULES[id];
+    if (value === '' || !/^-?\d+$/.test(value)) return `Informe um número inteiro para ${r.label}.`;
+    const n = Number(value);
+    if (n < r.min || n > r.max) return `Use um valor entre ${r.min} e ${r.max}.`;
+    if (id === 'downloadPauseMaxInput') {
+      const min = Number(document.getElementById('downloadPauseMinInput')?.value);
+      if (Number.isFinite(min) && n < min) return 'O máximo precisa ser igual ou maior que o mínimo.';
+    }
+    return '';
+  }
+  if (id === 'deadlineNotifyTimeInput' && !value) return 'Informe o horário do lembrete.';
+  if (FOLDER_INPUTS.includes(id) && value && !/^([a-zA-Z]:[\\/]|\\\\|\/)/.test(value)) {
+    return 'Informe o caminho completo da pasta (por exemplo, C:\\Vídeos) ou use o botão Alterar.';
+  }
+  if (id === 'updateServerUrlInput' && value) {
+    let u = null;
+    try { u = new URL(value); } catch (_) { /* inválida */ }
+    if (!u || u.protocol !== 'https:') return 'Use um endereço seguro, que comece com https://.';
+  }
+  return '';
+}
+
+function showFieldError(el, message) {
+  const row = el.closest('.st-row, .settings-form-group') || el.parentElement;
+  let box = row.querySelector(`.st-field-error[data-for="${el.id}"]`);
+  if (!message) {
+    box?.remove();
+    el.removeAttribute('aria-invalid');
+    el.removeAttribute('aria-describedby');
+    return;
+  }
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'st-field-error';
+    box.dataset.for = el.id;
+    box.id = `err-${el.id}`;
+    box.setAttribute('role', 'alert');
+    row.appendChild(box);
+  }
+  box.textContent = message;
+  el.setAttribute('aria-invalid', 'true');
+  el.setAttribute('aria-describedby', box.id);
+}
+
+function validatedFields() {
+  return [...Object.keys(NUMBER_RULES), 'deadlineNotifyTimeInput', 'updateServerUrlInput', ...FOLDER_INPUTS]
+    .map((id) => document.getElementById(id)).filter(Boolean);
+}
+
+function clearAllFieldErrors() {
+  document.querySelectorAll('.st-field-error').forEach((n) => n.remove());
+  document.querySelectorAll('[aria-invalid="true"]').forEach((n) => { n.removeAttribute('aria-invalid'); n.removeAttribute('aria-describedby'); });
+}
+
+/** Valida todos os campos; mostra os erros e leva o foco ao primeiro inválido (abrindo a aba e o bloco avançado). */
+function validateAllFields() {
+  let first = null;
+  for (const el of validatedFields()) {
+    const msg = validateField(el);
+    showFieldError(el, msg);
+    if (msg && !first) first = el;
+  }
+  if (first) {
+    const view = first.closest('.settings-view');
+    if (view && view.classList.contains('hidden')) document.querySelector(`.settings-tab[data-tab="${view.id}"]`)?.click();
+    const adv = first.closest('details');
+    if (adv) adv.open = true;
+    first.focus();
+    first.scrollIntoView({ block: 'center' });
+  }
+  return !first;
+}
+
+function setupValidation() {
+  const content = document.querySelector('.settings-content');
+  content?.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!validatedFields().includes(el)) return;
+    showFieldError(el, validateField(el));
+    // a pausa máxima depende da mínima
+    if (el.id === 'downloadPauseMinInput') {
+      const max = document.getElementById('downloadPauseMaxInput');
+      if (max && max.dataset.touched) showFieldError(max, validateField(max));
+    }
+    if (el.id === 'downloadPauseMaxInput') el.dataset.touched = '1';
+  });
+}
+
+/** Blocos "Ajustes avançados" ficam recolhidos; abrem sozinhos quando a busca acha algo dentro deles. */
+function setupAdvancedBlocks() {
+  document.querySelectorAll('details.st-advanced').forEach((d) => { d.open = false; });
+}
+
+/* ==========================================================================
+   "RESTAURAR PADRÃO" POR CAMPO
+   ========================================================================== */
+const FIELD_DEFAULTS = {
+  themeSelect: 'dark',
+  defaultStartScreenInput: 'home',
+  deadlineNotifyLeadDaysInput: '5',
+  deadlineNotifyTimeInput: '09:00',
+  preferredGpuVendorInput: 'auto',
+  converterDefaultFormatInput: 'mp4',
+  converterDefaultCodecInput: 'libx264',
+  converterDefaultResolutionInput: 'original',
+  converterDefaultVideoBitrateInput: '10',
+  converterDefaultAudioBitrateInput: '192k',
+  cacheMaxSizeInput: '500'
+};
+// A pausa entre downloads tem dois campos e um botão só.
+const PAUSE_DEFAULTS = { downloadPauseMinInput: '10', downloadPauseMaxInput: '180' };
+
+function defaultLabel(el, value) {
+  if (el.tagName === 'SELECT') return [...el.options].find((o) => o.value === value)?.textContent.trim() || value;
+  if (el.type === 'color') return value.toUpperCase();
+  return value;
+}
+
+function makeResetButton(label, title, targets) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'st-reset-field hidden';
+  btn.setAttribute('aria-label', `Restaurar o padrão de ${label}`);
+  btn.title = title;
+  btn.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">restart_alt</span> Restaurar padrão';
+  btn.addEventListener('click', () => {
+    for (const [id, value] of targets) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    refreshResetButtons();
+    setStatus(`Padrão de ${label} restaurado. Salve para manter.`);
+  });
+  btn.dataset.targets = JSON.stringify(targets);
+  return btn;
+}
+
+function setupFieldDefaults() {
+  document.querySelectorAll('.st-reset-field').forEach((n) => n.remove());
+  const attach = (el, btn) => {
+    const host = el.closest('.st-row-control') || el.parentElement;
+    host.appendChild(btn);
+  };
+  for (const [id, def] of Object.entries(FIELD_DEFAULTS)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const label = (document.querySelector(`label[for="${id}"]`)?.textContent || id).trim().toLowerCase();
+    attach(el, makeResetButton(label, `Voltar para o padrão: ${defaultLabel(el, def)}`, [[id, def]]));
+  }
+  const maxEl = document.getElementById('downloadPauseMaxInput');
+  if (maxEl) attach(maxEl, makeResetButton('tempo da pausa', 'Voltar para o padrão: 10 a 180 segundos', Object.entries(PAUSE_DEFAULTS)));
+  refreshResetButtons();
+}
+
+function refreshResetButtons() {
+  document.querySelectorAll('.st-reset-field').forEach((btn) => {
+    let targets = [];
+    try { targets = JSON.parse(btn.dataset.targets || '[]'); } catch (_) { /* ignora */ }
+    const differs = targets.some(([id, def]) => {
+      const el = document.getElementById(id);
+      return el && String(el.value).toLowerCase() !== String(def).toLowerCase();
+    });
+    btn.classList.toggle('hidden', !differs);
+  });
+}
+
+/* ==========================================================================
+   TECLADO: Enter salva, Esc desfaz o campo, Ctrl+S salva tudo
+   ========================================================================== */
+function setupFieldKeyboard() {
+  const content = document.querySelector('.settings-content');
+  if (!content) return;
+  const SKIP = ':not([type=checkbox]):not([type=search]):not([type=color]):not([type=range])';
+  content.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (el.matches?.(`input${SKIP}, select`)) el.dataset.focusValue = el.value;
+  });
+  content.addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (!el.matches?.(`input${SKIP}`) || !isTrackedField(el)) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (settingsDirty) saveSettings();
+    } else if (e.key === 'Escape' && el.dataset.focusValue !== undefined && el.value !== el.dataset.focusValue) {
+      e.preventDefault();
+      e.stopPropagation();
+      el.value = el.dataset.focusValue;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      setStatus('Alteração do campo desfeita.');
+    }
+  });
+}
+
+/** Deixa um botão "ocupado" (texto de progresso, ícone girando, sem cliques duplicados) e devolve a função que restaura. */
+function setButtonBusy(btn, busyLabel) {
+  if (!btn) return () => {};
+  const html = btn.innerHTML;
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+  btn.innerHTML = `<span class="material-symbols-rounded st-spin" aria-hidden="true">progress_activity</span> ${busyLabel}`;
+  return () => { btn.disabled = false; btn.removeAttribute('aria-busy'); btn.innerHTML = html; };
 }
 
 function setupSettingsExtras() {
-  // Cores sugeridas
-  document.getElementById('accentSwatches')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('.st-swatch');
-    if (!btn) return;
+  // Cor de destaque: paleta fixa em grupo de bolinhas (radio); a prévia é imediata e só vale ao salvar
+  document.getElementById('accentSwatches')?.addEventListener('change', (e) => {
+    const radio = e.target.closest('.st-accent-radio');
+    if (!radio || !radio.checked) return;
     const input = document.getElementById('accentColorInput');
-    if (input) input.value = btn.dataset.color;
-    applyAccentColor(btn.dataset.color);
-    syncAccentSwatches();
+    if (input) input.value = radio.value;
+    applyAccentColor(radio.value);
     markSettingsDirty();
   });
-  document.getElementById('accentColorInput')?.addEventListener('input', syncAccentSwatches);
 
   // Prévia imediata de "reduzir animações"
   document.getElementById('reduceMotionInput')?.addEventListener('change', (e) => {
@@ -751,45 +1235,143 @@ function setupSettingsExtras() {
   // Interruptor geral de notificações
   document.getElementById('notificationsEnabledInput')?.addEventListener('change', syncNotifyModules);
 
-  // Atalho para a tela do Assistente
-  document.getElementById('settingsOpenAiButton')?.addEventListener('click', () => {
-    document.querySelector('.sidebar .tab-button[data-view="ai"]')?.click();
-  });
+  setupAssistantCard();
 }
 
 /**
- * O Assistente de IA só existe em builds de desenvolvimento (app não empacotado).
- * No app final, esconde a categoria dele nas Configurações e a opção de tela inicial.
+ * Cartão "Assistente de IA": interruptor "Ativar assistente" e instruções personalizadas. Ficam na configuração
+ * da IA (não nas configurações gerais), então valem na hora e não entram na barra "Salvar". Ao mudar o interruptor
+ * o botão flutuante aparece/some imediatamente (evento bds:ai-assistant-changed).
  */
-async function hideDevOnlySettings() {
-  let packaged = true; // fail-safe: na dúvida, esconde
+async function setupAssistantCard() {
+  const sw = document.getElementById('aiAssistantEnabledInput');
+  const text = document.getElementById('aiAssistantInstructionsInput');
+  const saveBtn = document.getElementById('aiAssistantInstructionsSave');
+  const status = document.getElementById('aiAssistantStatus');
+  if (!sw || typeof window.bds?.aiGetConfig !== 'function') return;
+  const say = (msg) => { if (status) status.textContent = msg || ''; };
+  const save = async (patch) => {
+    const r = await window.bds.aiSaveConfig(patch);
+    if (!r || !r.ok) throw new Error(r?.error || 'O assistente não respondeu.');
+    return r.data;
+  };
   try {
-    if (typeof window.bds?.isPackaged === 'function') packaged = Boolean(await window.bds.isPackaged());
-  } catch (_) { /* mantém o padrão */ }
-  if (!packaged) return;
-  document.querySelector('.settings-tab[data-tab="settingsAiView"]')?.classList.add('st-devhidden');
-  document.getElementById('settingsAiView')?.classList.add('st-devhidden');
-  document.querySelector('#defaultStartScreenInput option[value="ai"]')?.classList.add('st-devhidden');
-  document.querySelector('#defaultStartScreenInput option[value="ai"]')?.setAttribute('hidden', '');
+    const r = await window.bds.aiGetConfig();
+    if (r && r.ok) {
+      sw.checked = r.data.assistantEnabled !== false;
+      if (text) text.value = r.data.customInstructions || '';
+    }
+  } catch (_) { /* mantém os padrões da tela */ }
+
+  sw.addEventListener('change', async () => {
+    const want = sw.checked;
+    sw.disabled = true;
+    try {
+      await save({ assistantEnabled: want });
+      say(want ? 'Assistente ativado.' : 'Assistente desativado.');
+      window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
+    } catch (err) {
+      sw.checked = !want;
+      say(`Não foi possível alterar. ${friendlyError(err, 'Tente novamente.')}`);
+    } finally {
+      sw.disabled = false;
+    }
+  });
+  saveBtn?.addEventListener('click', async () => {
+    try {
+      await save({ customInstructions: text ? text.value : '' });
+      say('Instruções salvas.');
+    } catch (err) {
+      say(`Não foi possível salvar. ${friendlyError(err, 'Tente novamente.')}`);
+    }
+  });
 }
 
-/** Resumo (somente leitura) da configuração da IA. */
-async function loadAiSummary() {
-  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+let modulesListenerBound = false;
+
+/**
+ * A seção Inteligência Artificial e as telas da "Tela inicial" seguem os módulos ligados (o Assistente
+ * de IA só existe em desenvolvimento e já vem fora da lista no app final). Reaplica quando o main avisa.
+ */
+function setupModuleDependentUi() {
+  refreshModuleDependentUi();
+  if (modulesListenerBound) return;
+  modulesListenerBound = true;
+  window.addEventListener('bds:modules-changed', () => {
+    if (document.getElementById('settingsAiView')) refreshModuleDependentUi();
+  });
+}
+
+/* ==========================================================================
+   SOBRE E LICENÇAS (único lugar da interface com nomes de componentes: atribuição exigida pelas licenças)
+   ========================================================================== */
+let licensesLoaded = false;
+
+function renderLicenseGroup(title, items) {
+  const rows = items.map((i) => `<details class="st-license" data-license-id="${escapeHtml(i.id)}" data-search="${escapeHtml(`${i.name} ${i.license} ${i.note || ''}`.toLowerCase())}">
+      <summary><strong>${escapeHtml(i.name)}</strong> <span class="st-license-meta">${escapeHtml(i.version)} · ${escapeHtml(i.license)}</span></summary>
+      <div class="st-license-body">
+        ${i.note ? `<p class="st-card-desc">${escapeHtml(i.note)}</p>` : ''}
+        <button type="button" class="settings-btn-outline" data-license-link="${escapeHtml(i.url)}" aria-label="Abrir página do projeto ${escapeHtml(i.name)}">Abrir página do projeto</button>
+        ${i.sourceUrl ? `<button type="button" class="settings-btn-outline" data-license-link="${escapeHtml(i.sourceUrl)}" aria-label="Abrir código-fonte de ${escapeHtml(i.name)}">Código-fonte</button>` : ''}
+        <pre class="st-license-text" tabindex="0">Abra para carregar…</pre>
+      </div>
+    </details>`).join('');
+  return `<h5 class="st-license-group">${escapeHtml(title)} (${items.length})</h5>${rows}`;
+}
+
+async function loadLicensesPage() {
   try {
-    const res = await window.bds?.aiGetConfig?.();
-    if (!res?.ok) throw new Error(res?.error || 'indisponível');
-    const c = res.data;
-    let host = c.baseUrl;
-    try { host = new URL(c.baseUrl).host; } catch (_) { /* mantém a URL crua */ }
-    set('settingsAiServer', host);
-    set('settingsAiModel', c.model || 'não definido');
-    set('settingsAiKey', c.hasKey ? 'Guardada (criptografada)' : (c.isOfficialOpenAI ? 'Não configurada' : 'Não necessária'));
-  } catch (_) {
-    set('settingsAiServer', 'indisponível');
-    set('settingsAiModel', '—');
-    set('settingsAiKey', '—');
-  }
+    const v = document.getElementById('aboutVersion');
+    if (v && window.bds?.getVersion) window.bds.getVersion().then((x) => { v.textContent = `v${x}`; }).catch(() => {});
+  } catch (_) { /* versão opcional */ }
+  const host = document.getElementById('licensesList');
+  if (!host || licensesLoaded) return;
+  licensesLoaded = true;
+  const toggle = document.getElementById('licensesToggle');
+  const panel = document.getElementById('licensesPanel');
+  let data = null;
+  let rendered = false;
+
+  // A lista começa recolhida: só carrega e desenha quando o usuário abre
+  const render = async () => {
+    if (rendered) return;
+    try {
+      data = data || await window.bds.getLicenses();
+      host.innerHTML = renderLicenseGroup('Incluídos no aplicativo', [...data.bundled])
+        + renderLicenseGroup('Baixados quando você ativa um recurso', [...data.runtime]);
+      rendered = true;
+    } catch (_) {
+      host.innerHTML = '<p class="st-card-desc">Não foi possível carregar a lista de licenças. Reinicie o aplicativo e tente de novo.</p>';
+    }
+  };
+  toggle?.addEventListener('click', async () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.classList.toggle('open', open);
+    document.getElementById('licensesToggleText').textContent = open ? 'Ocultar lista de componentes' : 'Ver lista de componentes';
+    if (panel) panel.hidden = !open;
+    if (open) await render();
+  });
+
+  host.addEventListener('toggle', async (e) => {
+    const det = e.target;
+    if (!det.open || !det.matches?.('details.st-license')) return;
+    const pre = det.querySelector('.st-license-text');
+    if (!pre || pre.dataset.loaded) return;
+    try {
+      pre.textContent = await window.bds.getLicenseText(det.dataset.licenseId);
+      pre.dataset.loaded = '1';
+    } catch (_) { pre.textContent = 'Texto da licença indisponível.'; }
+  }, true);
+  host.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('[data-license-link]');
+    if (btn) window.bds.openExternal(btn.dataset.licenseLink).catch(() => setStatus('Não foi possível abrir o link.'));
+  });
+  document.getElementById('licensesSearch')?.addEventListener('input', (e) => {
+    const q = normalizeText(e.target.value).trim();
+    host.querySelectorAll('details.st-license').forEach((d) => { d.hidden = q && !normalizeText(d.dataset.search).includes(q); });
+  });
 }
 
 /* --- Busca --- */
@@ -798,6 +1380,12 @@ function clearSettingsSearch() {
   if (!input || !input.value) return;
   input.value = '';
   applySettingsSearch('');
+}
+
+let searchMounted = false;
+
+function closeSearchOpenedBlocks() {
+  document.querySelectorAll('details.st-advanced[data-search-opened]').forEach((d) => { d.open = false; delete d.dataset.searchOpened; });
 }
 
 function applySettingsSearch(raw) {
@@ -813,13 +1401,20 @@ function applySettingsSearch(raw) {
     container?.classList.remove('st-searching');
     views.forEach(v => v.classList.toggle('hidden', v.id !== activeTabId));
     noResults?.classList.add('hidden');
+    closeSearchOpenedBlocks();
+    searchMounted = false;
     return;
   }
 
   container?.classList.add('st-searching');
+  closeSearchOpenedBlocks();
   views.forEach(view => {
     let hits = 0;
-    view.querySelectorAll('.st-card').forEach(card => {
+    // Palavras-chave da seção: acham seções cujo conteúdo só aparece depois de abertas (Módulos, Transcrição)
+    const kwMatch = normalizeText(view.dataset.searchKeywords).includes(query)
+      || normalizeText(view.querySelector('.settings-section-title')?.textContent).includes(query);
+    const cards = [...view.querySelectorAll('.st-card')];
+    cards.forEach(card => {
       if (card.classList.contains('hidden')) { card.classList.add('st-filtered'); return; }
       const titleMatch = normalizeText(card.querySelector('.st-card-title')?.textContent).includes(query);
       const rows = [...card.querySelectorAll('.st-row')];
@@ -827,19 +1422,34 @@ function applySettingsSearch(raw) {
       if (rows.length) {
         let rowHits = 0;
         rows.forEach(row => {
-          const match = titleMatch || normalizeText(row.textContent).includes(query);
+          const match = titleMatch || kwMatch || normalizeText(row.textContent).includes(query);
           row.classList.toggle('st-filtered', !match);
-          if (match) rowHits++;
+          if (match) {
+            rowHits++;
+            const adv = row.closest('details.st-advanced');
+            if (adv && !adv.open) { adv.open = true; adv.dataset.searchOpened = '1'; }
+          }
         });
         visible = rowHits > 0;
       } else {
-        visible = titleMatch || normalizeText(card.textContent).includes(query);
+        visible = kwMatch || titleMatch || normalizeText(card.textContent).includes(query);
       }
       card.classList.toggle('st-filtered', !visible);
       if (visible) hits++;
     });
+    if (!cards.length && (kwMatch || normalizeText(view.textContent).includes(query))) hits++;
+    if (!hits && kwMatch) hits++;
     view.classList.toggle('hidden', hits === 0);
   });
+
+  // Seções de carregamento tardio: monta o conteúdo uma vez por busca para os resultados não ficarem vazios
+  if (!searchMounted) {
+    searchMounted = true;
+    const shown = (id) => !document.getElementById(id)?.classList.contains('hidden');
+    if (shown('settingsModulesView')) loadModulesList();
+    if (shown('settingsTranscriptionView')) mountTranscriptionPanel();
+    if (shown('settingsAboutView')) loadLicensesPage();
+  }
 
   noResults?.classList.toggle('hidden', views.some(v => !v.classList.contains('hidden')));
 }
@@ -860,13 +1470,7 @@ async function fetchAppVersion() {
   try {
     const version = await window.bds.getVersion();
     const sysVersion = document.getElementById('sysVersion');
-    const updatesVersion = document.getElementById('updatesVersionDisplay');
-    const sysFolders = document.getElementById('sysFolders');
     if (sysVersion) sysVersion.textContent = `v${version}`;
-    if (updatesVersion) updatesVersion.textContent = `v${version}`;
-    if (sysFolders && state.settings) {
-      sysFolders.textContent = state.settings.mp4Folder || 'Padrão do Sistema';
-    }
   } catch (err) {
     console.error('[SETTINGS] Erro ao buscar versão:', err);
   }
@@ -885,7 +1489,7 @@ async function loadCacheInfo() {
   if (totalEl) totalEl.textContent = 'Calculando...';
 
   if (!window.bds?.getCacheInfo) {
-    if (listEl) listEl.innerHTML = '<div class="settings-crash-empty">IPC getCacheInfo não encontrado. Reinicie o aplicativo.</div>';
+    if (listEl) listEl.innerHTML = '<div class="settings-crash-empty">Não foi possível ler o armazenamento. Reinicie o aplicativo.</div>';
     return;
   }
 
@@ -906,7 +1510,7 @@ async function loadCacheInfo() {
           <span>${escapeHtml(cat.sizeFormatted)}</span>
         </div>
         <button class="settings-btn-outline settings-cache-clear-btn" type="button"
-                data-clear-cache="${cat.key}" data-label="${cat.label}">
+                data-clear-cache="${escapeHtml(cat.key)}" data-label="${escapeHtml(cat.label)}" aria-label="Limpar ${escapeHtml(cat.label)}">
           <span class="material-symbols-rounded">delete</span> Limpar
         </button>
       </div>
@@ -917,7 +1521,7 @@ async function loadCacheInfo() {
     if (maxInput && !maxInput.value) maxInput.value = info.maxSizeMB || 500;
   } catch (err) {
     console.error('[SETTINGS] Erro ao carregar informações de cache:', err);
-    if (listEl) listEl.innerHTML = `<div class="settings-crash-empty">Erro ao carregar armazenamento: ${escapeHtml(err.message || err)}</div>`;
+    if (listEl) listEl.innerHTML = `<div class="settings-crash-empty">Não foi possível ler o armazenamento. ${escapeHtml(friendlyError(err))}</div>`;
   }
 }
 
@@ -978,10 +1582,22 @@ async function checkAppUpdate() {
   const statusText = document.getElementById('appUpdateStatusText');
   const progressContainer = document.getElementById('appUpdateProgress');
 
-  if (button) { button.disabled = true; button.textContent = 'Verificando...'; }
+  if (button) {
+    button.dataset.html = button.dataset.html || button.innerHTML;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<span class="material-symbols-rounded st-spin" aria-hidden="true">progress_activity</span> Verificando…';
+  }
+  if (statusText) statusText.textContent = 'Consultando a página oficial do BDS…';
 
   try {
     const result = await window.bds.checkForAppUpdate();
+
+    if (!result.hasUpdate && (result.checkFailed || result.error)) {
+      if (statusText) statusText.textContent = 'Não foi possível verificar agora (sem conexão ou serviço indisponível). Tente novamente mais tarde.';
+      window.bdsModal?.alert?.('Não foi possível verificar se há uma nova versão do BDS. Confira sua conexão com a internet e tente de novo.');
+      return;
+    }
 
     if (result.hasUpdate) {
       if (statusText) {
@@ -1007,7 +1623,7 @@ async function checkAppUpdate() {
         return;
       }
       const abrirRelease = result.releaseUrl
-        ? await window.bdsModal.confirm('Deseja abrir a página da release no GitHub para baixar manualmente?')
+        ? await window.bdsModal.confirm('Deseja abrir a página oficial do BDS para baixar manualmente?')
         : false;
       if (abrirRelease) window.bds.openExternal?.(result.releaseUrl);
     } else {
@@ -1016,17 +1632,17 @@ async function checkAppUpdate() {
     }
   } catch (err) {
     console.error('[SETTINGS] Erro ao checar atualização do BDS:', err);
-    if (statusText) statusText.textContent = 'Não foi possível checar atualizações agora.';
-    window.bdsModal?.alert?.('Não foi possível checar atualizações do BDS agora. Tente novamente mais tarde.');
+    if (statusText) statusText.textContent = 'Não foi possível verificar agora (sem conexão ou serviço indisponível).';
+    window.bdsModal?.alert?.('Não foi possível verificar se há uma nova versão do BDS. Confira sua conexão com a internet e tente de novo.');
   } finally {
-    if (button) { button.disabled = false; button.textContent = 'Verificar Atualização do BDS'; }
+    if (button) { button.disabled = false; button.removeAttribute('aria-busy'); button.innerHTML = button.dataset.html || button.innerHTML; }
   }
 }
 
 // Realiza download + instalação silenciosa do app, mostrando progresso e oferecendo restart.
 async function runAppAutoInstall({ statusText, button, progressContainer, releaseUrl }) {
   if (statusText) statusText.textContent = 'Baixando e instalando a nova versão do BDS...';
-  if (button) { button.disabled = true; button.textContent = 'Atualizando...'; }
+  if (button) { button.dataset.html = button.dataset.html || button.innerHTML; button.disabled = true; button.innerHTML = '<span class="material-symbols-rounded st-spin" aria-hidden="true">progress_activity</span> Atualizando…'; }
   if (progressContainer) progressContainer.classList.remove('hidden');
 
   const fill = document.getElementById('appUpdateProgressFill');
@@ -1070,9 +1686,9 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
     }
 
     if (appUpdate && appUpdate.error) {
-      if (statusText) statusText.textContent = `Falha ao atualizar automaticamente (${appUpdate.error}).`;
+      if (statusText) statusText.textContent = `Não foi possível atualizar automaticamente. ${friendlyError(appUpdate.error)}`;
       const openRelease = await window.bdsModal.confirm(
-        `Não foi possível instalar automaticamente (${appUpdate.error}).\n\nDeseja abrir a release no GitHub?`
+        `Não foi possível instalar automaticamente.\n${friendlyError(appUpdate.error)}\n\nDeseja abrir a página oficial do BDS para baixar manualmente?`
       );
       if (openRelease && releaseUrl) window.bds.openExternal?.(releaseUrl);
       return;
@@ -1084,12 +1700,12 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
     console.error('[SETTINGS] Erro na instalação automática do app:', err);
     if (statusText) statusText.textContent = 'Falha durante a instalação automática.';
     const openRelease = await window.bdsModal.confirm(
-      'Ocorreu um erro durante a instalação automática.\n\nDeseja abrir a release no GitHub para baixar manualmente?'
+      'Ocorreu um erro durante a instalação automática.\n\nDeseja abrir a página oficial do BDS para baixar manualmente?'
     );
     if (openRelease && releaseUrl) window.bds.openExternal?.(releaseUrl);
   } finally {
     if (progressContainer) progressContainer.classList.add('hidden');
-    if (button) { button.disabled = false; button.textContent = 'Verificar Atualização do BDS'; }
+    if (button) { button.disabled = false; button.innerHTML = button.dataset.html || button.innerHTML; }
   }
 }
 
@@ -1115,7 +1731,7 @@ function setUpdateStatusView(stateType, extraMessage = '') {
       iconWrap.classList.add('updating');
       icon.textContent = 'sync';
       headline.textContent = 'Verificando atualizações...';
-      subHeadline.textContent = 'Consultando integridade dos componentes do BDS.';
+      subHeadline.textContent = 'Consultando as fontes oficiais. Isso leva alguns segundos.';
       if (progressContainer) progressContainer.classList.add('hidden');
       if (btnCheck) btnCheck.disabled = true;
       if (btnNow) btnNow.classList.add('hidden');
@@ -1126,7 +1742,7 @@ function setUpdateStatusView(stateType, extraMessage = '') {
       iconWrap.classList.add('has-updates');
       icon.textContent = 'system_update';
       headline.textContent = 'Existem atualizações disponíveis.';
-      subHeadline.textContent = 'Deseja atualizar os componentes do BDS agora?';
+      subHeadline.textContent = extraMessage || 'Deseja atualizar os componentes do BDS agora?';
       if (progressContainer) progressContainer.classList.add('hidden');
       if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.add('hidden'); }
       if (btnNow) btnNow.classList.remove('hidden');
@@ -1136,7 +1752,7 @@ function setUpdateStatusView(stateType, extraMessage = '') {
     case 'up_to_date':
       icon.textContent = 'check_circle';
       headline.textContent = 'Tudo está atualizado.';
-      subHeadline.textContent = 'Todos os componentes internos do BDS estão operando com as versões mais recentes.';
+      subHeadline.textContent = 'Os recursos do BDS já estão nas versões mais recentes.';
       if (progressContainer) progressContainer.classList.add('hidden');
       if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
       if (btnNow) btnNow.classList.add('hidden');
@@ -1161,11 +1777,22 @@ function setUpdateStatusView(stateType, extraMessage = '') {
       if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
       break;
 
+    case 'partial':
+      iconWrap.classList.add('has-updates');
+      icon.textContent = 'info';
+      headline.textContent = 'Verificação incompleta.';
+      subHeadline.textContent = extraMessage || 'Não foi possível consultar todas as fontes agora.';
+      if (progressContainer) progressContainer.classList.add('hidden');
+      if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
+      if (btnNow) btnNow.classList.add('hidden');
+      if (btnLater) btnLater.classList.add('hidden');
+      break;
+
     case 'error':
       iconWrap.classList.add('error');
       icon.textContent = 'error';
       headline.textContent = 'Não foi possível verificar atualizações.';
-      subHeadline.textContent = 'Verifique sua conexão com a internet e tente novamente.';
+      subHeadline.textContent = extraMessage || 'Verifique sua conexão com a internet e tente novamente.';
       if (progressContainer) progressContainer.classList.add('hidden');
       if (btnCheck) { btnCheck.disabled = false; btnCheck.classList.remove('hidden'); }
       if (btnNow) btnNow.classList.add('hidden');
@@ -1174,32 +1801,71 @@ function setUpdateStatusView(stateType, extraMessage = '') {
   }
 }
 
+const OFFLINE_HINT = 'Não foi possível consultar as fontes de atualização. Verifique sua conexão com a internet e tente novamente.';
+
+function setLastCheck(text) {
+  const el = document.getElementById('updateLastCheck');
+  if (!el) return;
+  const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  el.textContent = text ? `Última verificação às ${time}: ${text}` : '';
+}
+
 async function checkUpdates() {
+  const container = document.getElementById('updateProgressContainer');
+  const fill = document.getElementById('updateProgressFill');
+  const stepEl = document.getElementById('updateProgressStep');
+  const percentEl = document.getElementById('updateProgressPercent');
   setUpdateStatusView('loading');
-  setStatus('Verificando atualizações dos componentes...');
+  // Barra indeterminada enquanto consulta (sem porcentagem inventada)
+  if (container) container.classList.remove('hidden');
+  if (fill) { fill.classList.add('indeterminate'); fill.style.width = ''; }
+  if (stepEl) stepEl.textContent = 'Consultando as fontes oficiais…';
+  if (percentEl) percentEl.textContent = '';
+  setLastCheck('');
+  setStatus('Verificando atualizações...');
+  const finish = () => { fill?.classList.remove('indeterminate'); container?.classList.add('hidden'); };
 
   try {
-    let result;
-    if (window.bds.checkEverything) {
-      result = await window.bds.checkEverything();
-    } else {
-      result = await window.bds.checkUpdates();
-    }
-    // Fluxo unificado: result = { hasUpdates, app, dependencies }
-    const hasUpdates = typeof result?.hasUpdates === 'boolean' ? result.hasUpdates : result?.hasUpdates;
-    if (hasUpdates) {
-      setUpdateStatusView('has_updates');
+    const result = window.bds.checkEverything ? await window.bds.checkEverything() : await window.bds.checkUpdates();
+    finish();
+    const deps = result?.dependencies;
+    const app = result?.app;
+    const depsFailed = Boolean(deps?.checkFailed || deps?.error);
+    const appFailed = Boolean(app?.checkFailed || app?.error);
+    const names = (deps?.components || [])
+      .filter((c) => c.needsUpdate && !c.unavailable && !(c.onDemand && !c.isInstalled))
+      .map((c) => c.title);
+    if (app) reflectAppUpdate(app);
+
+    if (result?.hasUpdates) {
+      const parts = [];
+      if (names.length) parts.push(`Há atualização para: ${names.join(', ')}.`);
+      if (app?.hasUpdate) parts.push(`Há uma nova versão do BDS (v${app.latestVersion}).`);
+      parts.push('Deseja atualizar agora?');
+      setUpdateStatusView('has_updates', parts.join(' '));
       setStatus('Existem atualizações disponíveis.');
+      setLastCheck(names.length || app?.hasUpdate ? 'há atualizações disponíveis.' : 'concluída.');
+    } else if (depsFailed && appFailed) {
+      setUpdateStatusView('error', OFFLINE_HINT);
+      setStatus('Sem conexão com as fontes de atualização.');
+      setLastCheck('não foi possível consultar as fontes.');
+    } else if (depsFailed || appFailed) {
+      setUpdateStatusView('partial', depsFailed
+        ? 'Os recursos do BDS não puderam ser conferidos agora (sem conexão ou serviço indisponível). Tente novamente mais tarde.'
+        : 'A versão do aplicativo não pôde ser conferida agora (sem conexão ou serviço indisponível). Os recursos estão em dia.');
+      setStatus('Não foi possível verificar tudo agora.');
+      setLastCheck('verificação incompleta.');
     } else {
       setUpdateStatusView('up_to_date');
       setStatus('Tudo atualizado.');
-      // Atualiza também o painel do app se vierem dados explícitos.
-      if (result && result.app) reflectAppUpdate(result.app);
+      setLastCheck('tudo atualizado.');
     }
   } catch (error) {
     console.error('[SETTINGS] Erro ao verificar atualizações:', error);
-    setUpdateStatusView('error');
-    setStatus('Falha ao verificar atualizações.');
+    finish();
+    setUpdateStatusView('error', `${friendlyError(error, OFFLINE_HINT)}`);
+    setStatus('Não foi possível verificar atualizações.');
+    setLastCheck('falhou.');
   }
 }
 
@@ -1209,10 +1875,10 @@ function reflectAppUpdate(appInfo) {
   if (!statusText || !appInfo) return;
   if (appInfo.hasUpdate) {
     statusText.textContent = `Nova versão disponível: v${appInfo.latestVersion} (você está na v${appInfo.currentVersion}).`;
+  } else if (appInfo.checkFailed || appInfo.error) {
+    statusText.textContent = 'Não foi possível verificar a versão do aplicativo agora (sem conexão ou serviço indisponível).';
   } else if (appInfo.currentVersion) {
     statusText.textContent = `Você está na versão mais recente (v${appInfo.currentVersion}).`;
-  } else if (appInfo.error) {
-    statusText.textContent = `Não foi possível verificar atualizações do app (${appInfo.error}).`;
   }
 }
 
@@ -1298,7 +1964,7 @@ async function startUnifiedUpdate() {
       // Falha ao baixar/instalar o app — oferecer abrir a release no navegador.
       if (stepEl) stepEl.textContent = 'Falha ao atualizar o app automaticamente.';
       const openRelease = await window.bdsModal.confirm(
-        `Não foi possível automatizar a atualização do app (${appUpdate.error}).\n\nDeseja abrir a página da release no GitHub para baixar manualmente?`
+        `Não foi possível atualizar o aplicativo automaticamente.\n${friendlyError(appUpdate.error)}\n\nDeseja abrir a página oficial do BDS para baixar manualmente?`
       );
       if (openRelease && appUpdate.appInfo?.releaseUrl) {
         window.bds.openExternal?.(appUpdate.appInfo.releaseUrl);
@@ -1324,8 +1990,8 @@ async function startUnifiedUpdate() {
     }
   } catch (error) {
     console.error('[SETTINGS] Erro durante a atualização:', error);
-    setUpdateStatusView('error');
-    setStatus('Erro ao atualizar componentes: ' + error.message);
+    setUpdateStatusView('error', friendlyError(error, 'Verifique sua conexão e tente novamente.'));
+    setStatus('Não foi possível atualizar. ' + friendlyError(error, 'Tente novamente.'));
   }
 }
 
@@ -1383,7 +2049,7 @@ async function sendCrashReports() {
     }
   } catch (err) {
     console.error('[SETTINGS] Falha ao enviar relatórios:', err);
-    window.bdsModal.alert('Falha ao enviar os relatórios: ' + err.message);
+    window.bdsModal.alert(`Não foi possível enviar os relatórios. ${friendlyError(err, 'Verifique sua conexão e tente de novo.')}`);
   } finally {
     await loadCrashReports();
   }
@@ -1445,7 +2111,7 @@ function setupReportProblemModal() {
       await loadCrashReports();
     } catch (err) {
       console.error('[SETTINGS] Erro ao gerar e-mail de suporte:', err);
-      window.bdsModal.alert('Erro ao gerar o e-mail de suporte: ' + err.message);
+      window.bdsModal.alert(`Não foi possível preparar o e-mail de suporte. ${friendlyError(err)}`);
     } finally {
       if (confirmBtn) {
         confirmBtn.disabled = false;
@@ -1467,7 +2133,7 @@ async function loadSettingsCustomSources() {
     renderCustomSourcesList();
   } catch (err) {
     console.error('[SETTINGS] Erro ao carregar fontes personalizadas:', err);
-    container.innerHTML = `<p class="settings-empty-sources">Erro ao carregar fontes: ${escapeHtml(err.message)}</p>`;
+    container.innerHTML = `<p class="settings-empty-sources">Não foi possível carregar as fontes. ${escapeHtml(friendlyError(err))}</p>`;
   }
 }
 
@@ -1510,7 +2176,7 @@ function renderCustomSourcesList() {
           await loadSettingsCustomSources();
           window.bdsModal.alert(`A pasta da fonte "${name}" foi alterada para:\n${newFolder}`);
         } catch (err) {
-          window.bdsModal.alert('Erro ao alterar pasta da fonte: ' + err.message);
+          window.bdsModal.alert(`Não foi possível alterar a pasta da fonte. ${friendlyError(err)}`);
         }
       }
     });
@@ -1528,7 +2194,8 @@ function renderCustomSourcesList() {
         await loadSettingsCustomSources();
         window.bdsModal.alert(`A fonte "${name}" e suas mídias foram removidas da biblioteca com sucesso!`);
       } catch (err) {
-        window.bdsModal.alert('Erro ao remover fonte: ' + err.message);
+        if (/cancelad/i.test(err.message || '')) return; // usuário desistiu no diálogo nativo
+        window.bdsModal.alert(`Não foi possível remover a fonte. ${friendlyError(err)}`);
       }
     });
   });
@@ -1585,7 +2252,7 @@ function setupCustomSourceModal() {
       await loadSettingsCustomSources();
       window.bdsModal.alert(`Sucesso! A fonte personalizada "${sourceName}" foi cadastrada e suas mídias foram indexadas na biblioteca!`);
     } catch (err) {
-      window.bdsModal.alert('Erro ao cadastrar fonte personalizada: ' + err.message);
+      window.bdsModal.alert(`Não foi possível cadastrar a fonte. ${friendlyError(err)}`);
     } finally {
       btnConfirm.disabled = false;
       btnConfirm.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Cadastrar & Importar Mídias';

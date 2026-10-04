@@ -4,6 +4,10 @@ const fs = require('fs');
 const ffmpegLimiter = require('../media/FfmpegLimiter');
 
 const STDERR_TAIL_BYTES = 4096;
+const FFMPEG_TIMEOUT_MS = 15 * 60 * 1000;   // teto por extração: ffmpeg travado não segura o slot do limitador
+const MAX_OFFSET_CAP_SECONDS = 120;          // teto da janela de busca: o custo da correlação cresce com ela
+const YIELD_EVERY_SHIFTS = 16;               // a versão assíncrona cede o event loop a cada N deslocamentos
+const yieldToEventLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 /**
  * AudioSyncService
@@ -68,6 +72,8 @@ class AudioSyncService {
             ];
 
             const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
+            const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, FFMPEG_TIMEOUT_MS);
+            if (killTimer.unref) killTimer.unref();
 
             let leftover = Buffer.alloc(0);
             const envelope = [];
@@ -97,9 +103,10 @@ class AudioSyncService {
             let stderrOutput = '';
             proc.stderr.on('data', (d) => { stderrOutput = (stderrOutput + d.toString()).slice(-STDERR_TAIL_BYTES); });
 
-            proc.on('error', (err) => reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`)));
+            proc.on('error', (err) => { clearTimeout(killTimer); reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`)); });
 
             proc.on('close', (code) => {
+                clearTimeout(killTimer);
                 if (code !== 0 && envelope.length === 0) {
                     reject(new Error(`O motor de mídia finalizou com código ${code}: ${stderrOutput.slice(-500)}`));
                     return;
@@ -126,7 +133,32 @@ class AudioSyncService {
      * @returns {{offsetSeconds: number, confidence: number}}
      */
     crossCorrelate(masterEnv, targetEnv, maxOffsetSeconds = 30) {
-        const maxOffsetSamples = Math.round(maxOffsetSeconds / this.windowSeconds);
+        const steps = this._crossCorrelateSteps(masterEnv, targetEnv, maxOffsetSeconds);
+        let r = steps.next();
+        while (!r.done) r = steps.next();
+        return r.value;
+    }
+
+    /**
+     * Mesma correlação de crossCorrelate(), porém cedendo o event loop periodicamente: no processo principal
+     * (1,5 s por hora de áudio) não congela a interface nem os IPCs enquanto calcula.
+     * @returns {Promise<{offsetSeconds: number, confidence: number}>}
+     */
+    async crossCorrelateAsync(masterEnv, targetEnv, maxOffsetSeconds = 30) {
+        const steps = this._crossCorrelateSteps(masterEnv, targetEnv, maxOffsetSeconds);
+        let r = steps.next();
+        while (!r.done) {
+            await yieldToEventLoop();
+            r = steps.next();
+        }
+        return r.value;
+    }
+
+    /** Gerador da busca de correlação: dá um `yield` a cada YIELD_EVERY_SHIFTS deslocamentos testados. @private */
+    *_crossCorrelateSteps(masterEnv, targetEnv, maxOffsetSeconds = 30) {
+        // Teto na janela de busca (o custo é proporcional a ela) e valor inválido volta ao padrão
+        const maxSeconds = Math.min(Math.max(Number(maxOffsetSeconds) || 30, this.windowSeconds), MAX_OFFSET_CAP_SECONDS);
+        const maxOffsetSamples = Math.round(maxSeconds / this.windowSeconds);
 
         const masterMean = this._mean(masterEnv);
         const targetMean = this._mean(targetEnv);
@@ -144,6 +176,7 @@ class AudioSyncService {
         // shift > 0: target começa DEPOIS do master (target[i] ~ master[i + shift])
         // shift < 0: target começa ANTES do master
         for (let shift = -maxOffsetSamples; shift <= maxOffsetSamples; shift++) {
+            if ((shift + maxOffsetSamples) % YIELD_EVERY_SHIFTS === 0) yield;
             const score = this._normalizedCorrelationAt(
                 masterEnv, masterMean, masterStd,
                 targetEnv, targetMean, targetStd,
@@ -158,7 +191,7 @@ class AudioSyncService {
         // offset_seconds > 0 significa que a mídia target deve ser deslocada
         // PARA FRENTE (atrasada) em relação ao master para ficar alinhada.
         const offsetSeconds = parseFloat((bestShift * this.windowSeconds).toFixed(3));
-        const confidence = bestScore === -Infinity ? 0 : parseFloat(Math.max(0, bestScore).toFixed(4));
+        const confidence = bestScore === -Infinity ? 0 : parseFloat(Math.min(1, Math.max(0, bestScore)).toFixed(4));
 
         return { offsetSeconds, confidence };
     }
@@ -231,6 +264,17 @@ class AudioSyncService {
     syncWithDriftCorrection(masterEnv, targetEnv, maxOffsetSeconds = 30) {
         // 1) Offset global grosso, igual ao algoritmo original
         const coarse = this.crossCorrelate(masterEnv, targetEnv, maxOffsetSeconds);
+        return this._refineDrift(masterEnv, targetEnv, coarse);
+    }
+
+    /** Versão assíncrona de syncWithDriftCorrection (a busca global cede o event loop). */
+    async syncWithDriftCorrectionAsync(masterEnv, targetEnv, maxOffsetSeconds = 30) {
+        const coarse = await this.crossCorrelateAsync(masterEnv, targetEnv, maxOffsetSeconds);
+        return this._refineDrift(masterEnv, targetEnv, coarse);
+    }
+
+    /** Etapas 2 e 3: refino local em vários pontos + regressão linear (barato: janelas pequenas). @private */
+    _refineDrift(masterEnv, targetEnv, coarse) {
         if (coarse.confidence <= 0) return { ...coarse, driftRatePpm: 0, samplePoints: [] };
 
         const overlapSeconds = Math.min(masterEnv.length, targetEnv.length) * this.windowSeconds;
@@ -272,7 +316,7 @@ class AudioSyncService {
 
         return {
             offsetSeconds: parseFloat(intercept.toFixed(3)),
-            confidence: parseFloat(Math.max(0, Math.min(coarse.confidence, avgConfidence)).toFixed(4)),
+            confidence: parseFloat(Math.max(0, Math.min(1, coarse.confidence, avgConfidence)).toFixed(4)),
             driftRatePpm,
             samplePoints
         };
@@ -327,7 +371,7 @@ class AudioSyncService {
         if (bestScore === -Infinity) return null;
         return {
             offsetSeconds: parseFloat((bestShift * this.windowSeconds).toFixed(3)),
-            confidence: parseFloat(Math.max(0, bestScore).toFixed(4))
+            confidence: parseFloat(Math.min(1, Math.max(0, bestScore)).toFixed(4))
         };
     }
 
@@ -375,7 +419,7 @@ class AudioSyncService {
                 const targetEnv = await this.extractEnvelope(media.filepath);
 
                 if (onProgress) onProgress(media.id, 'correlating');
-                const { offsetSeconds, confidence, driftRatePpm } = this.syncWithDriftCorrection(masterEnv, targetEnv, maxOffsetSeconds);
+                const { offsetSeconds, confidence, driftRatePpm } = await this.syncWithDriftCorrectionAsync(masterEnv, targetEnv, maxOffsetSeconds);
 
                 results.push({ media_id: media.id, offset_seconds: offsetSeconds, confidence, drift_rate_ppm: driftRatePpm || 0 });
                 if (onProgress) onProgress(media.id, 'done');

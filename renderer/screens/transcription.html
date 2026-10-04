@@ -3,7 +3,6 @@
   <!-- CABEÇALHO: título + estado do motor (um único atalho para as Configurações) -->
   <header class="tr-head">
     <div class="tr-head-text">
-      <h2 class="tr-title">Transcrição</h2>
       <p class="tr-sub">Legendas e transcrições feitas no seu computador. O áudio não é enviado para a internet.</p>
     </div>
     <button id="trEngine" class="tr-engine" type="button" title="Escolher o modelo de transcrição" aria-haspopup="menu">
@@ -65,6 +64,10 @@
               <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
               <span class="tr-toggle-text"><strong>MD</strong><small>Transcrição</small></span>
             </button>
+            <button id="btnFmtTxt" class="tr-toggle" type="button" data-format="txt" aria-pressed="false">
+              <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
+              <span class="tr-toggle-text"><strong>TXT</strong><small>Texto simples</small></span>
+            </button>
             <button id="btnFmtAi" class="tr-toggle tr-toggle-wide" type="button" data-format="analyze" aria-pressed="false" aria-describedby="trAiStatus">
               <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
               <span class="tr-toggle-text"><strong>Análise com IA</strong><small>Resumo e pontos importantes</small></span>
@@ -103,6 +106,25 @@
         <details id="trAdvanced" class="tr-advanced">
           <summary>Avançado</summary>
           <div class="tr-advanced-body">
+            <button id="btnSkipSilence" class="tr-toggle active" type="button" aria-pressed="true">
+              <span class="tr-toggle-check material-symbols-rounded" aria-hidden="true">check</span>
+              <span class="tr-toggle-text"><strong>Ignorar trechos sem fala</strong><small>Mais rápido e evita frases inventadas no silêncio</small></span>
+            </button>
+            <div id="trSilenceFields" class="tr-silence">
+              <div class="tr-field">
+                <div class="tr-field-head"><label for="rangeTrNoise">Sensibilidade ao silêncio</label><output id="trNoiseValue" for="rangeTrNoise">-35 dB</output></div>
+                <input type="range" id="rangeTrNoise" class="tr-range" min="-60" max="-15" step="1" value="-35" />
+              </div>
+              <div class="tr-field">
+                <div class="tr-field-head"><label for="rangeTrMinSil">Pausa mínima para ignorar</label><output id="trMinSilValue" for="rangeTrMinSil">1,5 s</output></div>
+                <input type="range" id="rangeTrMinSil" class="tr-range" min="0.5" max="5" step="0.1" value="1.5" />
+              </div>
+              <div class="tr-field">
+                <div class="tr-field-head"><label for="rangeTrPad">Folga ao redor da fala</label><output id="trPadValue" for="rangeTrPad">0,3 s</output></div>
+                <input type="range" id="rangeTrPad" class="tr-range" min="0" max="1" step="0.1" value="0.3" />
+              </div>
+              <button id="btnTrSilenceReset" class="tr-link" type="button">Restaurar padrão</button>
+            </div>
             <div id="trDeviceField" class="tr-field">
               <div class="tr-field-head"><label id="lblTrDevice">Processamento</label></div>
               <div id="trDeviceSeg" class="tr-seg" role="group" aria-labelledby="lblTrDevice">

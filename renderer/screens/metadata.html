@@ -1,4 +1,4 @@
-<div class="metadata-screen-container">
+<div class="metadata-screen-container is-empty">
   
   <!-- CABEÇALHO -->
   <div class="metadata-header">
@@ -26,13 +26,22 @@
         <h3 class="metadata-panel-title">ESTRUTURA METADADOS</h3>
       </div>
       
+      <div id="metaEmptyState" class="meta-empty bds-empty" role="region" aria-label="Nenhum arquivo aberto">
+        <span class="material-symbols-rounded meta-empty-icon bds-empty-icon" aria-hidden="true">label</span>
+        <strong class="bds-empty-title">Arraste um vídeo, áudio ou foto para cá</strong>
+        <span class="bds-empty-text">Veja e edite título, artista, capa e outras informações do arquivo.</span>
+        <button type="button" id="btnMetaEmptyOpen" class="meta-btn-primary bds-empty-action" title="Escolher um arquivo no computador">
+          <span class="material-symbols-rounded" aria-hidden="true">file_open</span> Escolher arquivo
+        </button>
+      </div>
+
       <nav class="meta-tabs">
         <button type="button" class="meta-tab active" data-tab="tags">Geral (Tags)</button>
         <button type="button" class="meta-tab" data-tab="info">Info Técnica</button>
-        <button type="button" class="meta-tab" data-tab="streams">Streams</button>
+        <button type="button" class="meta-tab" data-tab="streams">Faixas</button>
         <button type="button" class="meta-tab" data-tab="chapters">Capítulos</button>
         <button type="button" class="meta-tab" data-tab="cover">Capa</button>
-        <button type="button" class="meta-tab" data-tab="json">JSON Raw</button>
+        <button type="button" class="meta-tab" data-tab="json">Dados completos</button>
       </nav>
 
       <div class="meta-panels-container">
@@ -174,7 +183,7 @@
           </div>
           <div class="metadata-summary-item">
             <span class="metadata-summary-label">Modo:</span>
-            <span class="metadata-summary-value metadata-summary-value-success">Direct Stream Copy</span>
+            <span class="metadata-summary-value metadata-summary-value-success">Sem recompressão (qualidade original)</span>
           </div>
           
           <div id="metaLogArea" class="metadata-log-area hidden">
@@ -212,7 +221,7 @@
     <h3 class="metadata-diff-modal-title">Confirmar Alterações</h3>
   </div>
   
-  <p class="metadata-diff-modal-desc">
+  <p id="diffModalDesc" class="metadata-diff-modal-desc">
     As seguintes alterações serão gravadas no arquivo original:
   </p>
 
@@ -220,6 +229,20 @@
     <!-- Preenchido pelo JS -->
   </div>
   
+  <div class="metadata-save-mode" role="radiogroup" aria-label="Onde gravar">
+    <label><input type="radio" name="exportMode" value="overwrite" checked /> Gravar no arquivo original</label>
+    <label><input type="radio" name="exportMode" value="new" /> Salvar como cópia (o original fica intacto)</label>
+  </div>
+  <div id="newFileOptions" class="metadata-save-copy hidden">
+    <div class="metadata-save-copy-row">
+      <input type="text" id="outMetaFolder" readonly placeholder="Pasta da cópia" aria-label="Pasta da cópia" />
+      <button type="button" id="btnChangeMetaFolder" class="meta-btn-secondary" title="Escolher a pasta">
+        <span class="material-symbols-rounded">folder_open</span>
+      </button>
+    </div>
+    <input type="text" id="outMetaName" placeholder="Nome do arquivo" aria-label="Nome do arquivo da cópia" />
+  </div>
+
   <div class="metadata-diff-modal-actions">
     <button type="button" id="btnCancelDiff" class="meta-btn-secondary">Cancelar</button>
     <button type="button" id="btnConfirmDiff" class="meta-btn-primary">Gravar no Arquivo</button>

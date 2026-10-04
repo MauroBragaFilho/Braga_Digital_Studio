@@ -1,8 +1,21 @@
 <div class="bds-uploads-view">
 
+  <!-- Aviso discreto: aparece por 5 s depois que os cookies do YouTube são sincronizados -->
+  <div id="cookiesSyncStatusBar" class="bds-upl-status-bar" role="status" aria-live="polite">
+    <span id="cookiesSyncStatusText"></span>
+  </div>
+
   <!-- Webview Workstation Frame -->
   <div class="bds-upl-webview-container">
     <webview id="youtubeStudioWebview" src="https://studio.youtube.com" partition="persist:youtube_studio"></webview>
+    <div id="uploadOverlay" class="bds-upl-overlay" role="status" aria-live="polite">
+      <span class="material-symbols-rounded bds-upl-overlay-icon" aria-hidden="true">cloud_sync</span>
+      <strong id="uploadOverlayTitle">Carregando o YouTube Studio…</strong>
+      <span id="uploadOverlayText">Se demorar, verifique sua conexão com a internet.</span>
+      <button type="button" id="btnUploadRetry" class="bds-upl-retry hidden" title="Carregar a página novamente">
+        <span class="material-symbols-rounded" aria-hidden="true">refresh</span> Tentar de novo
+      </button>
+    </div>
   </div>
 
 </div>

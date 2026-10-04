@@ -1,7 +1,7 @@
 import { setAppStatus, state as appState } from '../app.js';
 
 import { escapeHtml } from '../utils/escape.js';
-import { maskEngineNames } from '../utils/engineNames.js';
+import { friendlyError, cleanText } from '../utils/friendlyError.js';
 import { enhanceModals } from '../utils/modal.js';
 
 // Constantes de Status (Centralizadas para evitar typos)
@@ -21,7 +21,7 @@ let exportConverterState = {
   percent: 0
 };
 let ipcListenersInitialized = false; // Previne duplicação de listeners em recargas de tela
-let availableEncoders = null; // Lista de encoders disponíveis no FFmpeg (cache)
+let availableEncoders = null; // Lista de codificadores disponíveis (cache)
 let addMenuDocClickListener = null; // Listener do document para fechar menu Adicionar
 let overallProgressData = null; // Último payload do evento converter:overallProgress { percent, remainingSeconds }
 
@@ -47,7 +47,7 @@ function logConverterScreen(msg, type = 'info') {
     }
     if (output) {
       const time = new Date().toLocaleTimeString('pt-BR');
-      output.textContent = `❌ [ERRO DETECTADO] ${time} - ${maskEngineNames(String(msg))}\n` + output.textContent;
+      output.textContent = `❌ ${time} - ${cleanText(String(msg))}\n` + output.textContent;
     }
   }
   console.log(`[CONVERTER-${type.toUpperCase()}]:`, msg);
@@ -195,6 +195,24 @@ function toggleConverterAddMenu() {
  * Adiciona arquivos à fila de conversão usando o pipeline do backend.
  * Reutilizável por: botão Arquivo, Pasta, Biblioteca e drag-and-drop.
  */
+/** Lê a duração (e se é só áudio) dos itens recém-adicionados, no máximo 3 por vez, e atualiza a tabela. */
+async function fillConverterDurations(items) {
+  if (!window.bds || !window.bds.probeSilenceFile) return;
+  const pending = items.slice();
+  const worker = async () => {
+    while (pending.length) {
+      const item = pending.shift();
+      try {
+        const info = await window.bds.probeSilenceFile(item.path);
+        if (info && info.duration > 0) item.durationSeconds = info.duration;
+        if (info && info.isVideo === false) item.isAudio = true;
+      } catch (_) { /* arquivo ilegível: o erro aparece ao converter */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, pending.length) }, worker));
+  if (converterList.some((it) => items.includes(it))) renderConverterTable();
+}
+
 async function enqueueConverterFiles(filePaths, { extractThumbs = false } = {}) {
   if (!filePaths || filePaths.length === 0) return 0;
   if (!window.bds || !window.bds.converterAddFiles) return 0;
@@ -207,11 +225,18 @@ async function enqueueConverterFiles(filePaths, { extractThumbs = false } = {}) 
       id: String(backendItem.id),
       name: backendItem.file.split(/[\\/]/).pop(),
       path: backendItem.file,
-      thumbnail: './assets/podcast_thumb.jpg',
+      thumbnail: '',
       durationSeconds: 0,
       progress: backendItem.progress || 0,
       status: backendItem.status || STATUS_WAITING
     }));
+
+    // As linhas aparecem já; miniaturas e durações chegam depois, sem travar a tela
+    converterList.push(...newItems);
+
+    renderConverterTable();
+    updateConverterStepperVisuals();
+    fillConverterDurations(newItems);
 
     if (extractThumbs && window.bds.extractMetadataThumb) {
       // Extração de miniaturas com concorrência limitada (antes era uma por vez)
@@ -223,20 +248,16 @@ async function enqueueConverterFiles(filePaths, { extractThumbs = false } = {}) 
             const tPath = await window.bds.extractMetadataThumb(item.path);
             if (tPath) item.thumbnail = 'file:///' + tPath.replace(/\\/g, '/');
           } catch (e) {
-            logConverterScreen(`Erro ao extrair thumbnail de ${item.name}: ${e.message}`, 'warn');
+            logConverterScreen(`Erro ao extrair thumbnail de ${item.name}: ${friendlyError(e)}`, 'warn');
           }
         }
       };
       await Promise.all(Array.from({ length: Math.min(4, newItems.length) }, worker));
+      if (converterList.some((it) => newItems.includes(it))) renderConverterTable();
     }
-
-    converterList.push(...newItems);
-
-    renderConverterTable();
-    updateConverterStepperVisuals();
     return res.items.length;
   } catch (err) {
-    logConverterScreen(`Erro ao enfileirar arquivos: ${err.message}`, 'error');
+    logConverterScreen(`Erro ao enfileirar arquivos: ${friendlyError(err)}`, 'error');
     return 0;
   }
 }
@@ -314,7 +335,7 @@ function setupConverterDragAndDrop() {
 let errorHandlers = null;
 function installErrorHandlers() {
   removeErrorHandlers();
-  const onError = (e) => logConverterScreen(`Erro JS: ${e.message} (Linha: ${e.lineno})`, 'error');
+  const onError = (e) => logConverterScreen(`Erro JS: ${friendlyError(e)} (Linha: ${e.lineno})`, 'error');
   const onRejection = (e) => logConverterScreen(`Rejeição de Promessa: ${e.reason?.message || e.reason}`, 'error');
   window.addEventListener('error', onError);
   window.addEventListener('unhandledrejection', onRejection);
@@ -341,6 +362,8 @@ export async function onEnter() {
 }
 
 /** Chamado pelo app.js ao trocar de tela — limpa listeners temporários */
+let escListener = null;
+
 export function onLeave() {
   removeErrorHandlers();
   closeConverterAddMenu();
@@ -361,7 +384,7 @@ export async function initScreen() {
       const rawDir = await window.bds.getThumbDir();
       thumbsDir = 'file:///' + rawDir.replace(/\\/g, '/');
     } catch (e) {
-      logConverterScreen(`Erro ao buscar getThumbDir: ${e.message}`, 'warn');
+      logConverterScreen(`Erro ao buscar getThumbDir: ${friendlyError(e)}`, 'warn');
     }
   }
 
@@ -395,7 +418,7 @@ export async function initScreen() {
 // ---------------------------------------------------------------------------
 
 /**
- * Consulta o backend (FFmpeg) pelos encoders realmente compilados e ajusta
+ * Consulta o backend pelos codificadores realmente compilados e ajusta
  * os controles: H265 fica desabilitado se libx265 não existir; codec de áudio
  * inválido é silenciado/removido.
  */
@@ -442,7 +465,7 @@ async function applyConverterEncoderAvailability() {
       });
     }
   } catch (err) {
-    logConverterScreen(`Erro ao verificar encoders: ${err.message}`, 'warn');
+    logConverterScreen(`Erro ao verificar encoders: ${friendlyError(err)}`, 'warn');
   }
 }
 
@@ -676,6 +699,12 @@ function renderConverterTable() {
 
   const outFormatVal = (getConverterFormat() || 'mp4').toUpperCase();
 
+  // A política de segurança (CSP) bloqueia onerror inline: miniatura que não carrega some e fica o ícone.
+  if (!tbody.dataset.thumbErr) {
+    tbody.dataset.thumbErr = '1';
+    tbody.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.style.display = 'none'; }, true);
+  }
+
   tbody.innerHTML = converterList.map((item, index) => {
     const ext = item.name.split('.').pop().toUpperCase();
     const isAudio = item.isAudio || ['MP3', 'WAV', 'M4A', 'AAC', 'FLAC', 'OGG'].includes(ext);
@@ -693,7 +722,7 @@ function renderConverterTable() {
     const thumbHtml = isAudio 
       ? `<div class="converter-thumb-audio">ÁUDIO</div>`
       : `<div class="converter-thumb-video">
-          <img src="${safeThumb}" class="converter-thumb-img" loading="lazy" decoding="async" onError="this.style.display='none'" />
+          ${safeThumb ? `<img src="${safeThumb}" class="converter-thumb-img" loading="lazy" decoding="async" alt="" />` : ''}
           <span class="material-symbols-rounded converter-thumb-fallback">movie</span>
          </div>`;
 
@@ -737,18 +766,26 @@ function renderConverterTable() {
 
   if (!tbody.dataset.removeBound) {
     tbody.dataset.removeBound = '1';
-    tbody.addEventListener('click', (e) => {
+    tbody.addEventListener('click', async (e) => {
       const btn = e.target.closest('.btn-remove-converter-item');
       if (!btn) return;
+      // Durante a conversão a fila do backend está em uso: não remove (lista e fila divergiriam)
+      if (exportConverterState.active) return;
       const idx = parseInt(btn.getAttribute('data-index'), 10);
-      if (!isNaN(idx)) {
-        converterList.splice(idx, 1);
+      const item = isNaN(idx) ? null : converterList[idx];
+      if (!item) return;
+      try {
+        // Remove por id (a lista da tela pode estar ordenada de outra forma que a fila do backend)
         if (window.bds && window.bds.converterRemoveFile) {
-          window.bds.converterRemoveFile(idx);
+          await window.bds.converterRemoveFile(String(item.id));
         }
-        renderConverterTable();
-        updateConverterStepperVisuals();
+        converterList = converterList.filter(i => i !== item);
+      } catch (err) {
+        logConverterScreen(`Erro ao remover item: ${friendlyError(err)}`, 'error');
+        return;
       }
+      renderConverterTable();
+      updateConverterStepperVisuals();
     });
   }
 
@@ -930,7 +967,7 @@ function bindConverterEvents() {
         await enqueueConverterFiles(files, { extractThumbs: true });
       }
     } catch (err) {
-      logConverterScreen(`Erro ao selecionar arquivo: ${err.message}`, 'error');
+      logConverterScreen(`Erro ao selecionar arquivo: ${friendlyError(err)}`, 'error');
     }
   }
 
@@ -949,13 +986,22 @@ function bindConverterEvents() {
       }
       await enqueueConverterFiles(files, { extractThumbs: true });
     } catch (err) {
-      logConverterScreen(`Erro ao adicionar arquivos da pasta: ${err.message}`, 'error');
+      logConverterScreen(`Erro ao adicionar arquivos da pasta: ${friendlyError(err)}`, 'error');
     }
   }
 
   // 2. Modal da Biblioteca (Dinâmico)
   const modal = document.getElementById('converterLibraryModal');
   const btnClose = document.getElementById('btnCloseConverterLibModal');
+  if (modal) {
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Escolher da biblioteca');
+    if (escListener) document.removeEventListener('keydown', escListener);
+    // Esc fecha o seletor da biblioteca
+    escListener = (e) => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) { modal.classList.add('hidden'); modal.classList.remove('active'); } };
+    document.addEventListener('keydown', escListener);
+  }
 
   // Função reutilizável para abrir o modal (chamada pelo menu "+ Adicionar")
   async function openConverterLibraryModal() {
@@ -1055,7 +1101,7 @@ function bindConverterEvents() {
                           id: String(backendItem.id),
                           name: name,
                           path: fp,
-                          thumbnail: './assets/podcast_thumb.jpg',
+                          thumbnail: '',
                           durationSeconds: 0,
                           progress: backendItem.progress || 0,
                           status: backendItem.status || STATUS_WAITING
@@ -1098,7 +1144,7 @@ function bindConverterEvents() {
                             id: String(backendItem.id),
                             name: name,
                             path: fp,
-                            thumbnail: './assets/podcast_thumb.jpg',
+                            thumbnail: '',
                             durationSeconds: 0,
                             progress: backendItem.progress || 0,
                             status: backendItem.status || STATUS_WAITING
@@ -1131,7 +1177,7 @@ function bindConverterEvents() {
                           id: String(backendItem.id),
                           name: itemInfo ? itemInfo.filename : fp.split(/[\\/]/).pop(),
                           path: fp,
-                          thumbnail: itemInfo && itemInfo.thumbnail ? `${thumbsDir}/${itemInfo.thumbnail}` : './assets/podcast_thumb.jpg',
+                          thumbnail: itemInfo && itemInfo.thumbnail ? `${thumbsDir}/${itemInfo.thumbnail}` : '',
                           durationSeconds: itemInfo ? (itemInfo.duration || 0) : 0,
                           progress: backendItem.progress || 0,
                           status: backendItem.status || STATUS_WAITING
@@ -1148,14 +1194,14 @@ function bindConverterEvents() {
                   }
                 }
               } catch (e) {
-                logConverterScreen(`Erro ao carregar biblioteca: ${e.message}`, 'error');
+                logConverterScreen(`Erro ao carregar biblioteca: ${friendlyError(e)}`, 'error');
               }
             }
           });
         });
 
       } catch (err) {
-        logConverterScreen(`Erro ao carregar lista de bibliotecas: ${err.message}`, 'error');
+        logConverterScreen(`Erro ao carregar lista de bibliotecas: ${friendlyError(err)}`, 'error');
       }
   } // fim de openConverterLibraryModal
 
@@ -1169,13 +1215,23 @@ function bindConverterEvents() {
   // 3. Limpar Fila
   document.getElementById('btnClearConverterQueue')?.addEventListener('click', async () => {
     if (converterList.length === 0) return;
+    if (exportConverterState.active) {
+      window.bdsModal?.alert?.('Não é possível limpar a fila durante uma conversão. Cancele a conversão primeiro.');
+      return;
+    }
     const confirmed = window.bdsModal && window.bdsModal.confirm
       ? await window.bdsModal.confirm(`Tem certeza que deseja limpar os ${converterList.length} arquivos da fila de conversão?`)
       : true;
     if (!confirmed) return;
-    converterList = [];
-    if (window.bds && window.bds.converterClearQueue) {
-      window.bds.converterClearQueue();
+    try {
+      if (window.bds && window.bds.converterClearQueue) {
+        await window.bds.converterClearQueue();
+      }
+      converterList = [];
+    } catch (err) {
+      logConverterScreen(`Erro ao limpar a fila: ${friendlyError(err)}`, 'error');
+      window.bdsModal?.alert?.(`Não foi possível limpar a fila: ${friendlyError(err)}`);
+      return;
     }
     renderConverterTable();
     updateConverterStepperVisuals();
@@ -1194,7 +1250,7 @@ function bindConverterEvents() {
           try {
             await window.bds.saveSettings({ converterFolder: folder });
           } catch (e) {
-            logConverterScreen(`Erro ao salvar pasta de destino: ${e.message}`, 'error');
+            logConverterScreen(`Erro ao salvar pasta de destino: ${friendlyError(e)}`, 'error');
           }
         }
       }
@@ -1237,7 +1293,9 @@ function bindConverterEvents() {
       preset,
       audioCodec: effectiveAudioCodec,
       audioBitrate,
-      outFolder
+      outFolder,
+      // Ordem exata da lista da tela (o backend a adota; itens fora da lista são descartados)
+      order: converterList.map(i => String(i.id))
     };
 
     if (window.bds && window.bds.converterStart) {
@@ -1256,7 +1314,7 @@ function bindConverterEvents() {
         updateConverterStepperVisuals();
         updateConverterBatchProgress();
         setAppStatus('Erro ao iniciar conversão', 'error');
-        logConverterScreen(`Erro ao iniciar conversão: ${err.message}`, 'error');
+        logConverterScreen(`Erro ao iniciar conversão: ${friendlyError(err)}`, 'error');
       }
     }
   });
@@ -1273,7 +1331,7 @@ function bindConverterEvents() {
         setAppStatus('Cancelando…', 'warning');
         await window.bds.converterCancel();
       } catch (err) {
-        logConverterScreen(`Erro ao cancelar conversão: ${err.message}`, 'error');
+        logConverterScreen(`Erro ao cancelar conversão: ${friendlyError(err)}`, 'error');
       }
     }
   });
@@ -1362,14 +1420,19 @@ function setupConverterIPCListeners() {
       exportConverterState.active = false;
       exportConverterState.completed = true;
       const wasCancelled = payload && (payload.status === 'cancelled' || payload.status === 'canceled');
+      const failedCount = payload && payload.failed ? payload.failed : (payload && payload.status === 'error' ? converterList.length : 0);
+      const hadErrors = !wasCancelled && failedCount > 0;
       exportConverterState.cancelled = wasCancelled;
       setConverterCancelButtonVisible(false);
       if (wasCancelled) {
         setAppStatus('Cancelado', 'warning');
+      } else if (hadErrors) {
+        setAppStatus('Concluído com erros', 'error');
       } else {
         setAppStatus('Pronto', 'success');
       }
-      if (!wasCancelled) {
+      // O status de cada arquivo já veio do backend (Concluído/Erro); só completa quando não houve erro
+      if (!wasCancelled && !hadErrors) {
         converterList.forEach(item => {
           item.status = STATUS_DONE;
           item.progress = 100;
@@ -1383,6 +1446,11 @@ function setupConverterIPCListeners() {
       if (window.bdsModal && window.bdsModal.alert) {
         if (wasCancelled) {
           window.bdsModal.alert(`Conversão cancelada. A fila foi interrompida antes de concluir.\nPasta de destino: ${outFolder}`);
+        } else if (hadErrors) {
+          const total = converterList.length;
+          const details = (payload.errors || []).slice(0, 5)
+            .map((e) => `• ${String(e.file || '').split(/[\\/]/).pop()}: ${friendlyError(e.error)}`).join('\n') || friendlyError(payload.message, '');
+          window.bdsModal.alert(`${Math.max(0, total - failedCount)} de ${total} arquivo(s) convertido(s); ${failedCount} com erro:\n${details}\nPasta de destino: ${outFolder}`);
         } else {
           window.bdsModal.alert(`Sucesso! Todos os ${converterList.length} arquivos foram convertidos com sucesso em:\n${outFolder}`);
         }

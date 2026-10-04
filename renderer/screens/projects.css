@@ -471,6 +471,7 @@
    TOPBAR ACTIONS & RELINK MODAL (.bdspro)
    ========================================================================== */
 .proj-topbar-actions {
+  margin-left: auto; /* o título da tela fica só na barra superior do app */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -695,3 +696,10 @@
   .proj-card, .proj-btn-primary, .proj-btn-accent, .proj-btn-accent-sm, .proj-btn-secondary, .proj-btn-danger, .proj-btn-outline { transition: none; }
   .proj-card:hover { transform: none; }
 }
+
+/* Contraste WCAG AA (medido) */
+.proj-btn-primary, .proj-btn-accent, .proj-btn-accent-sm { background: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
+.proj-btn-primary:hover, .proj-btn-accent:hover, .proj-btn-accent-sm:hover { background: color-mix(in srgb, var(--accent-solid, var(--accent)) 86%, #000); }
+.proj-card-pill { color: #fff; }
+.cover-overlay .material-symbols-rounded { color: #fff; }
+[data-theme="light"] .proj-btn-danger { color: #c62828; }

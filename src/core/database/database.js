@@ -1,3 +1,4 @@
+const perf = require('../../infrastructure/diagnostics/startupPerf');
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
@@ -77,12 +78,46 @@ class DBManager {
         }
     }
 
+    /** Backups com o prefixo, do mais novo para o mais antigo (por data de modificação; o nome desempata). */
     _listBackups(prefix) {
         try {
             return fs.readdirSync(this.backupDir)
                 .filter(f => f.startsWith(prefix) && f.endsWith('.db'))
-                .sort().reverse(); // nomes datados: mais novo primeiro
+                .map(f => {
+                    let mtime = 0;
+                    try { mtime = fs.statSync(path.join(this.backupDir, f)).mtimeMs; } catch (_) {}
+                    return { f, mtime };
+                })
+                .sort((a, b) => (b.mtime - a.mtime) || (a.f < b.f ? 1 : -1))
+                .map(x => x.f);
         } catch (_) { return []; }
+    }
+
+    /**
+     * Troca o destino pelo arquivo novo SEM apagar o principal antes: tenta rename (com novas
+     * tentativas, pois antivírus/indexador podem segurar o arquivo no Windows). Se não conseguir,
+     * lança — o banco principal anterior permanece intacto.
+     */
+    _replaceSync(tempPath, dest) {
+        let lastErr = null;
+        for (let i = 0; i < 5; i++) {
+            try { fs.renameSync(tempPath, dest); return; } catch (e) {
+                lastErr = e;
+                try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * (i + 1)); } catch (_) {}
+            }
+        }
+        throw lastErr;
+    }
+
+    async _replaceAsync(tempPath, dest) {
+        let lastErr = null;
+        for (let i = 0; i < 5; i++) {
+            try { await fs.promises.rename(tempPath, dest); return; } catch (e) {
+                lastErr = e;
+                await new Promise(r => setTimeout(r, 50 * (i + 1)));
+            }
+        }
+        throw lastErr;
     }
 
     _pruneBackups(prefix) {
@@ -123,13 +158,13 @@ class DBManager {
         this.dbPath = path.join(dataDir, 'bds.db');
         this.backupDir = path.join(dataDir, 'backups');
 
-        this.SQL = await initSqlJs({
+        this.SQL = await perf.timeAsync('db:initSqlJs(wasm)', () => initSqlJs({
             locateFile: (file) => require.resolve(`sql.js/dist/${file}`)
-        });
+        }));
 
         let needsWrite = false;
         if (fs.existsSync(this.dbPath)) {
-            this.db = this._tryLoad(this.dbPath);
+            this.db = perf.time('db:load+quick_check', () => this._tryLoad(this.dbPath));
             if (this.db) {
                 this.mainIsValid = true;
             } else {
@@ -150,7 +185,17 @@ class DBManager {
                 needsWrite = true;
             }
         } else {
-            this.db = new this.SQL.Database();
+            // Arquivo principal ausente (ex.: queda durante a troca): tenta o .bak e os backups datados
+            // antes de criar um banco vazio.
+            const candidates = [`${this.dbPath}.bak`, ...this._listBackups('bds-').map(f => path.join(this.backupDir, f))];
+            for (const c of candidates) {
+                this.db = this._tryLoad(c);
+                if (this.db) {
+                    logger.warn(`[DBManager] bds.db ausente. Restaurado de ${path.basename(c)}`);
+                    break;
+                }
+            }
+            if (!this.db) this.db = new this.SQL.Database();
             needsWrite = true;
         }
 
@@ -164,7 +209,7 @@ class DBManager {
         if (needsWrite) this.persistSync();
 
         // Backup diário (um por dia, últimos BACKUP_KEEP)
-        if (this.mainIsValid) this.createBackup('daily', { oncePerDay: true });
+        if (this.mainIsValid) perf.time('db:dailyBackup', () => this.createBackup('daily', { oncePerDay: true }));
     }
 
     /** Descarta o cache de statements (sql.js já os libera em export()/close()). */
@@ -322,13 +367,8 @@ class DBManager {
             if (this.mainIsValid && Date.now() - this.lastBakAt >= BAK_INTERVAL_MS && fs.existsSync(this.dbPath)) {
                 await fs.promises.copyFile(this.dbPath, `${this.dbPath}.bak`).then(() => { this.lastBakAt = Date.now(); }).catch(() => {});
             }
-            // No Windows, rename para um destino existente pode falhar com EPERM
-            try {
-                await fs.promises.rename(tempPath, this.dbPath);
-            } catch (renameErr) {
-                if (fs.existsSync(this.dbPath)) await fs.promises.unlink(this.dbPath);
-                await fs.promises.rename(tempPath, this.dbPath);
-            }
+            // Nunca apaga o principal antes de ter o novo no lugar (rename com novas tentativas)
+            await this._replaceAsync(tempPath, this.dbPath);
             this.mainIsValid = true;
         } catch (err) {
             logger.error('[DBManager] Erro na persistência assíncrona:', { error: err.message });
@@ -360,12 +400,7 @@ class DBManager {
             if (this.mainIsValid && fs.existsSync(this.dbPath)) {
                 try { fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`); this.lastBakAt = Date.now(); } catch (_) {}
             }
-            try {
-                fs.renameSync(tempPath, this.dbPath);
-            } catch (renameErr) {
-                if (fs.existsSync(this.dbPath)) fs.unlinkSync(this.dbPath);
-                fs.renameSync(tempPath, this.dbPath);
-            }
+            this._replaceSync(tempPath, this.dbPath);
             this.mainIsValid = true;
             return true;
         } catch (err) {

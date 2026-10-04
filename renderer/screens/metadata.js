@@ -1,4 +1,5 @@
 import { escapeHtml, escapeAttr } from '../utils/escape.js';
+import { friendlyError } from '../utils/friendlyError.js';
 let active = false;
 let currentFilePath = null;
 let currentInfo = null;
@@ -82,11 +83,26 @@ function bindEvents() {
   });
 
   // Buttons
-  document.getElementById('btnSelectMetaFile')?.addEventListener('click', loadFile);
+  document.getElementById('btnSelectMetaFile')?.addEventListener('click', () => loadFile());
+  document.getElementById('btnMetaEmptyOpen')?.addEventListener('click', () => loadFile());
   document.getElementById('btnResetMeta')?.addEventListener('click', resetAll);
+
+  // Arrastar um arquivo para a tela abre o arquivo (só quando nenhum está aberto)
+  const metaRoot = document.getElementById('metadataView');
+  if (metaRoot && window.bds && window.bds.getPathForFile) {
+    const isFileDrag = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+    metaRoot.addEventListener('dragover', (e) => { if (isFileDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+    metaRoot.addEventListener('drop', (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      const p = file ? window.bds.getPathForFile(file) : '';
+      if (p && !currentFilePath) loadFile(p);
+    });
+  }
   
   // Tags inputs
-  document.querySelectorAll('.tags-grid input').forEach(input => {
+  document.querySelectorAll('.meta-panel input[data-tag]').forEach(input => {
     input.addEventListener('input', (e) => {
       const tag = e.target.dataset.tag;
       currentTags[tag] = e.target.value;
@@ -139,16 +155,12 @@ function bindEvents() {
   // Export
   document.querySelectorAll('input[name="exportMode"]').forEach(radio => {
     radio.addEventListener('change', (e) => {
-      const group = document.getElementById('newFileOptions');
-      if (!group) return;
-      if (e.target.value === 'new') group.classList.remove('hidden');
-      else group.classList.add('hidden');
+      syncSaveMode();
     });
   });
 
   document.getElementById('btnChangeMetaFolder')?.addEventListener('click', async () => {
     const folderInput = document.getElementById('outMetaFolder');
-    if (!folderInput) return;
     const result = await window.bds.selectFolder(folderInput.value);
     // selectFolder in main.js returns a string (the path) or null if canceled
     if (result) folderInput.value = result;
@@ -156,7 +168,7 @@ function bindEvents() {
 
   // Reverter Tags: volta os campos de tags aos valores lidos do arquivo
   document.getElementById('btnRevertTags')?.addEventListener('click', () => {
-    document.querySelectorAll('.tags-grid input[data-tag]').forEach(input => {
+    document.querySelectorAll('.meta-panel input[data-tag]').forEach(input => {
       const tag = input.dataset.tag;
       const original = originalTags[tag] ?? '';
       input.value = original;
@@ -190,19 +202,20 @@ function bindEvents() {
   }
 }
 
-async function loadFile() {
-  const result = await window.bds.selectFiles();
-  let filePaths = [];
-  if (Array.isArray(result)) {
-    filePaths = result;
-  } else if (result && result.filePaths) {
-    if (result.canceled) return;
-    filePaths = result.filePaths;
+async function loadFile(knownPath) {
+  let filePath = knownPath;
+  if (!filePath) {
+    const result = await window.bds.selectFiles();
+    let filePaths = [];
+    if (Array.isArray(result)) {
+      filePaths = result;
+    } else if (result && result.filePaths) {
+      if (result.canceled) return;
+      filePaths = result.filePaths;
+    }
+    if (filePaths.length === 0) return;
+    filePath = filePaths[0];
   }
-  
-  if (filePaths.length === 0) return;
-
-  const filePath = filePaths[0];
   resetAll();
   
   const statusEl = document.getElementById('metaStatusText');
@@ -232,10 +245,11 @@ async function loadFile() {
     document.getElementById('btnSelectMetaFile')?.classList.add('hidden');
     document.getElementById('btnResetMeta')?.classList.remove('hidden');
     document.getElementById('metaExportArea')?.classList.remove('hidden');
+    document.querySelector('.metadata-screen-container')?.classList.remove('is-empty');
     if (logArea) logArea.classList.add('hidden'); // hide after load
     
   } catch (err) {
-    window.bdsModal.alert('Erro ao ler arquivo: ' + err.message);
+    window.bdsModal.alert('Não foi possível abrir o arquivo.\n' + friendlyError(err));
     resetAll();
   }
 }
@@ -248,15 +262,20 @@ function resetAll() {
   originalChapters = []; currentChapters = [];
   thumbnailAction = 'none';
   newThumbnailPath = null;
+  // Volta o salvamento ao padrão (arquivo original) a cada arquivo novo
+  for (const id of ['outMetaFolder', 'outMetaName']) { const el = document.getElementById(id); if (el) el.value = ''; }
+  const rbOverwrite = document.querySelector('input[name="exportMode"][value="overwrite"]');
+  if (rbOverwrite) rbOverwrite.checked = true;
   
   document.getElementById('btnSelectMetaFile')?.classList.remove('hidden');
   document.getElementById('btnResetMeta')?.classList.add('hidden');
   document.getElementById('metaExportArea')?.classList.add('hidden');
+  document.querySelector('.metadata-screen-container')?.classList.add('is-empty');
   document.getElementById('metaLogArea')?.classList.add('hidden');
   
   const nameEl = document.getElementById('metaFileName');
   if (nameEl) nameEl.textContent = '-';
-  const durationEl = document.getElementById('metaFileDurationInfo') || document.getElementById('metaFileDuration');
+  const durationEl = document.getElementById('metaFileDurationInfo');
   if (durationEl) durationEl.textContent = '-';
   
   document.querySelectorAll('.meta-panel input[type="text"]').forEach(input => {
@@ -311,7 +330,7 @@ function parseInfo(filePath) {
   const nameEl = document.getElementById('metaFileName');
   if (nameEl) nameEl.textContent = filePath.split('\\').pop().split('/').pop();
   
-  const durationEl = document.getElementById('metaFileDurationInfo') || document.getElementById('metaFileDuration');
+  const durationEl = document.getElementById('metaFileDurationInfo');
   if (durationEl) durationEl.textContent = formatTime(f.duration || 0);
   
   // Raw JSON
@@ -390,7 +409,7 @@ function parseInfo(filePath) {
   currentStreams = [];
   if (currentInfo.streams) {
     currentInfo.streams.forEach(s => {
-      if (s.codec_type === 'data' || (s.disposition && s.disposition.attached_pic === 1)) return;
+      if (s.codec_type === 'data' || s.codec_type === 'attachment' || (s.disposition && s.disposition.attached_pic === 1)) return;
       
       const st = {
         index: s.index,
@@ -575,41 +594,73 @@ function showValidationDiff() {
     document.getElementById('btnConfirmDiff').style.display = 'block';
   }
   
+  syncSaveMode();
   document.getElementById('diffModal').showModal();
 }
 
+/** Mostra/oculta os campos da cópia e ajusta os textos da confirmação conforme o modo escolhido. */
+function syncSaveMode() {
+  const mode = document.querySelector('input[name="exportMode"]:checked')?.value || 'overwrite';
+  const group = document.getElementById('newFileOptions');
+  const folderEl = document.getElementById('outMetaFolder');
+  const nameEl = document.getElementById('outMetaName');
+  if (mode === 'new' && currentFilePath) {
+    const cut = Math.max(currentFilePath.lastIndexOf('/'), currentFilePath.lastIndexOf('\\'));
+    const dot = currentFilePath.lastIndexOf('.');
+    const ext = dot > cut ? currentFilePath.substring(dot) : '';
+    if (!folderEl.value) folderEl.value = currentFilePath.substring(0, cut);
+    if (!nameEl.value) nameEl.value = currentFilePath.substring(cut + 1, ext ? dot : undefined) + '_metadados' + ext;
+  }
+  group.classList.toggle('hidden', mode !== 'new');
+  document.getElementById('diffModalDesc').textContent = mode === 'new'
+    ? 'As alterações serão gravadas em uma cópia; o arquivo original não muda:'
+    : 'As seguintes alterações serão gravadas no arquivo original:';
+  document.getElementById('btnConfirmDiff').textContent = mode === 'new' ? 'Salvar Cópia' : 'Gravar no Arquivo';
+}
+
 async function executeSave() {
-  document.getElementById('diffModal').close();
-  
-  // Sem opções de exportação na tela, grava direto no arquivo original
   const mode = document.querySelector('input[name="exportMode"]:checked')?.value || 'overwrite';
   let outputPath = '';
   if (mode === 'new') {
-    const folder = document.getElementById('outMetaFolder')?.value;
-    const name = document.getElementById('outMetaName')?.value || 'copia_metadados' + currentFilePath.substring(currentFilePath.lastIndexOf('.'));
-    if (!folder) return window.bdsModal.alert('Selecione uma pasta para salvar a cópia.');
-    outputPath = folder + '\\' + name;
+    const folder = (document.getElementById('outMetaFolder').value || '').trim();
+    let name = (document.getElementById('outMetaName').value || '').trim();
+    if (!folder) return window.bdsModal.alert('Escolha uma pasta para salvar a cópia.');
+    if (!name || /[\\/:*?"<>|]/.test(name)) return window.bdsModal.alert('Informe um nome de arquivo válido para a cópia (sem barras nem os caracteres : * ? " < > |).');
+    const dot = currentFilePath.lastIndexOf('.');
+    if (!/\.[A-Za-z0-9]{2,5}$/.test(name) && dot > Math.max(currentFilePath.lastIndexOf('/'), currentFilePath.lastIndexOf('\\'))) name += currentFilePath.substring(dot);
+    outputPath = folder.replace(/[\\/]+$/, '') + '\\' + name;
   }
+  document.getElementById('diffModal').close();
   
   document.getElementById('metaLogArea').classList.remove('hidden');
   document.getElementById('metaLogOutput').textContent = '';
   document.getElementById('metaStatusText').textContent = 'Iniciando cópia de streams e injeção de metadados...';
   
   // Prepare streams payload for FFmpeg mapping
-  const streamsPayload = currentStreams.map(s => ({
-    type: s.type === 'audio' ? 'a' : (s.type === 'video' ? 'v' : 's'),
-    typeIndex: s.typeIndex,
-    language: s.lang,
-    title: s.title
-  }));
+  // Só o que mudou: o restante o ffmpeg preserva do original
+  const streamsPayload = [];
+  currentStreams.forEach((s, i) => {
+    const o = originalStreams[i];
+    const item = { index: s.index, type: s.type === 'audio' ? 'a' : (s.type === 'video' ? 'v' : 's'), typeIndex: s.typeIndex };
+    let changed = false;
+    if (o && s.lang !== o.langOrig) { item.language = s.lang; changed = true; }
+    if (o && s.title !== o.titleOrig) { item.title = s.title; changed = true; }
+    if (changed) streamsPayload.push(item);
+  });
+  const changedTags = {};
+  for (const key of Object.keys(originalTags)) {
+    if ((originalTags[key] || '') !== (currentTags[key] || '')) changedTags[key] = currentTags[key] || '';
+  }
+  const chaptersChanged = originalChapters.length !== currentChapters.length || currentChapters.some((c, i) =>
+    c.start !== originalChapters[i].start || c.end !== originalChapters[i].end || c.title !== originalChapters[i].title);
   
   const config = {
     filePath: currentFilePath,
     outMode: mode,
     outputPath: outputPath,
-    tags: currentTags,
+    tags: changedTags,
     streams: streamsPayload,
-    chapters: currentChapters,
+    chapters: chaptersChanged ? currentChapters : null,
     thumbnailAction,
     newThumbnailPath
   };
@@ -617,15 +668,16 @@ async function executeSave() {
   try {
     const result = await window.bds.saveMetadata(config);
     if (result.status === 'success') {
-      document.getElementById('metaStatusText').textContent = 'Concluído com sucesso! (Direct Stream Copy)';
+      document.getElementById('metaStatusText').textContent = 'Concluído com sucesso! A qualidade do vídeo foi mantida.';
       // reload
       clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => { if (active) loadFile(); }, 1000);
+      const savedPath = mode === 'new' ? outputPath : currentFilePath;
+      reloadTimer = setTimeout(() => { if (active) loadFile(savedPath); }, 1000);
     } else {
       document.getElementById('metaStatusText').textContent = 'Cancelado.';
     }
   } catch (err) {
-    document.getElementById('metaStatusText').textContent = 'Falha: ' + err.message;
+    document.getElementById('metaStatusText').textContent = 'Não foi possível salvar. ' + friendlyError(err);
   }
 }
 

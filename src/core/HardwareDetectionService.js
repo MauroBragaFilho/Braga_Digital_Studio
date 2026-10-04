@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const logger = require('../services/logService');
 const FailureCooldown = require('./FailureCooldown');
+const { systemExe } = require('../infrastructure/hardware/systemExe');
 
 /** Tempo máximo da consulta WMI via PowerShell (nesta classe de máquina ela costuma estourar). */
 const WMI_TIMEOUT_MS = 4000;
@@ -447,7 +448,7 @@ class HardwareDetectionService {
   _runPowerShell(command, timeoutMs = WMI_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
       const child = spawn(
-        'powershell.exe',
+        systemExe('powershell'),
         ['-NoProfile', '-NonInteractive', '-Command', command],
         { windowsHide: true }
       );
@@ -532,10 +533,10 @@ class HardwareDetectionService {
     if (process.platform !== 'win32') return [];
     const KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}';
     // Só as subchaves (sem /s: a árvore inteira tem centenas de KB e é lenta).
-    const listing = await this._runExecutable('reg', ['query', KEY], 3000);
+    const listing = await this._runExecutable(systemExe('reg'), ['query', KEY], 3000);
     const subkeys = [...listing.matchAll(/\\(\d{4})\s*$/gm)].map((m) => m[1]).slice(0, 12);
     // Pede só os valores necessários (/v): a subchave inteira de alguns drivers tem >100 KB e leva segundos.
-    const query = (sk, valueName) => this._runExecutable('reg', ['query', `${KEY}\\${sk}`, '/v', valueName], 3000);
+    const query = (sk, valueName) => this._runExecutable(systemExe('reg'), ['query', `${KEY}\\${sk}`, '/v', valueName], 3000);
     const parsed = await Promise.all(subkeys.map(async (sk) => {
       const head = (await Promise.all([query(sk, 'DriverDesc'), query(sk, 'MatchingDeviceId')])).join('\n');
       if (!/DriverDesc/.test(head) || !/PCI\\VEN_/i.test(head)) return null; // sem ID PCI: virtual/básico

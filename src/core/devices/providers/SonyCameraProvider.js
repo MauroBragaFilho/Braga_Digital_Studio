@@ -83,14 +83,20 @@ class SonyCameraProvider {
      */
     async list(options = {}) {
         try {
-            const rawItems = await this.client.getContentList({
-                uri: options.uri || 'storage:memoryCard1',
-                stIndex: options.stIndex || 0,
-                cnt: options.cnt || 100,
-                view: options.view || 'flat'
-            });
-
-            return this.normalizeContentList(rawItems);
+            const uri = options.uri || 'storage:memoryCard1';
+            const pageSize = options.cnt || 100;
+            const maxItems = options.maxItems || 5000;
+            let stIndex = options.stIndex || 0;
+            const all = [];
+            // A câmera devolve em páginas: continua até vir uma página incompleta (ou o limite)
+            for (;;) {
+                const rawItems = await this.client.getContentList({ uri, stIndex, cnt: pageSize, view: options.view || 'flat' });
+                const page = Array.isArray(rawItems) ? rawItems : [];
+                all.push(...page);
+                if (page.length < pageSize || all.length >= maxItems || options.stIndex !== undefined) break;
+                stIndex += page.length;
+            }
+            return this.normalizeContentList(all);
         } catch (e) {
             logger.error(`[SonyCameraProvider] Falha ao listar conteúdo: ${e.message}`);
             return [];
@@ -162,55 +168,88 @@ class SonyCameraProvider {
     }
 
     /**
-     * Baixa um arquivo da câmera (JPG, RAW e/ou MP4) com reporte de progresso
+     * Baixa um arquivo da câmera (JPG, RAW e/ou MP4) com reporte de progresso.
+     * Nunca sobrescreve (nome livre "x (2).ext") e só deixa o arquivo final depois de baixar por inteiro.
+     * Se algo falhar depois de baixar parte dos arquivos, o erro traz `partial` com os que já estão no disco.
      * @param {Object} fileItem - Objeto do item normalizado
      * @param {string} destinationDirectory - Diretório destino no disco
-     * @param {Function} onProgress - Callback (percent, bytesDownloaded, totalBytes)
+     * @param {Function} onProgress - Callback ({phase,file,percent,downloaded,total})
      * @returns {Promise<string[]>} Caminhos dos arquivos baixados no disco
      */
     async import(fileItem, destinationDirectory, onProgress) {
         const downloadedFiles = [];
+        const safe = (n, fallback) => {
+            const clean = path.basename(String(n || '')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+            return clean && clean !== '.' && clean !== '..' ? clean : fallback;
+        };
 
-        // 1. Download do arquivo principal (JPG ou MP4)
-        if (fileItem.url) {
-            const mainFilename = fileItem.filename || 'media_file.jpg';
-            const destPath = path.join(destinationDirectory, mainFilename);
-            await this.downloadFileWithProgress(fileItem.url, destPath, (pct, dl, total) => {
-                if (onProgress) onProgress({ phase: 'main', file: mainFilename, percent: pct, downloaded: dl, total });
-            });
-            downloadedFiles.push(destPath);
-        }
+        try {
+            // 1. Arquivo principal (JPG ou MP4)
+            if (fileItem.url) {
+                const mainFilename = safe(fileItem.filename, 'media_file.jpg');
+                const dest = await this.downloadFileWithProgress(fileItem.url, destinationDirectory, mainFilename, (pct, dl, total) => {
+                    if (onProgress) onProgress({ phase: 'main', file: mainFilename, percent: pct, downloaded: dl, total });
+                });
+                downloadedFiles.push(dest);
+            }
 
-        // 2. Download do arquivo RAW (ARW) se existir separadamente
-        if (fileItem.rawUrl) {
-            let rawFilename = fileItem.filename.replace(/\.[^/.]+$/, "") + '.ARW';
-            const destRawPath = path.join(destinationDirectory, rawFilename);
-            await this.downloadFileWithProgress(fileItem.rawUrl, destRawPath, (pct, dl, total) => {
-                if (onProgress) onProgress({ phase: 'raw', file: rawFilename, percent: pct, downloaded: dl, total });
-            });
-            downloadedFiles.push(destRawPath);
+            // 2. RAW (ARW) quando existe separadamente
+            if (fileItem.rawUrl) {
+                const rawFilename = safe(String(fileItem.filename || 'media_file').replace(/\.[^/.]+$/, '') + '.ARW', 'media_file.ARW');
+                const dest = await this.downloadFileWithProgress(fileItem.rawUrl, destinationDirectory, rawFilename, (pct, dl, total) => {
+                    if (onProgress) onProgress({ phase: 'raw', file: rawFilename, percent: pct, downloaded: dl, total });
+                });
+                downloadedFiles.push(dest);
+            }
+        } catch (err) {
+            err.partial = downloadedFiles;
+            throw err;
         }
 
         return downloadedFiles;
     }
 
-    /**
-     * Helper de stream para download HTTP com progresso
-     */
-    downloadFileWithProgress(url, destPath, progressCallback) {
-        return new Promise((resolve, reject) => {
-            const fileStream = fs.createWriteStream(destPath);
-            const clientModule = url.startsWith('https') ? https : http;
+    /** Só baixa de dentro da rede da própria câmera (o endereço vem do dispositivo, não do renderer). */
+    _assertCameraUrl(url) {
+        let target;
+        try { target = new URL(url); } catch (_) { throw new Error('Endereço de download inválido.'); }
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new Error('Protocolo de download não permitido.');
+        const cameraHost = new URL(this.cameraInfo.endpointURL).hostname;
+        if (target.hostname !== cameraHost) throw new Error('O arquivo não pertence à câmera conectada.');
+    }
 
+    /**
+     * Download HTTP com progresso: grava em ".part" (com timeout de inatividade), confere o tamanho e
+     * renomeia para um nome livre dentro de `dir`.
+     */
+    downloadFileWithProgress(url, dir, name, progressCallback) {
+        return new Promise((resolve, reject) => {
+            try { this._assertCameraUrl(url); } catch (e) { return reject(e); }
+            const ext = path.extname(name);
+            const base = path.basename(name, ext);
+            const part = path.join(dir, `${base}.${process.pid}-${Date.now()}.part`);
+            let settled = false;
+            let fileStream = null;
+            const fail = (err) => {
+                if (settled) return;
+                settled = true;
+                try { if (fileStream) fileStream.destroy(); } catch (_) { /* noop */ }
+                fs.unlink(part, () => {});
+                reject(err);
+            };
+
+            const clientModule = url.startsWith('https') ? https : http;
             const req = clientModule.get(url, (res) => {
                 if (res.statusCode !== 200) {
-                    fileStream.close();
-                    fs.unlink(destPath, () => {});
-                    return reject(new Error(`Falha no download. HTTP ${res.statusCode}`));
+                    res.resume();
+                    return fail(new Error(`Falha no download. HTTP ${res.statusCode}`));
                 }
-
                 const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
                 let downloadedBytes = 0;
+                fileStream = fs.createWriteStream(part, { flags: 'wx' });
+                fileStream.on('error', fail);
+                res.on('error', fail);
+                res.on('aborted', () => fail(new Error('Conexão com a câmera interrompida.')));
 
                 res.on('data', (chunk) => {
                     downloadedBytes += chunk.length;
@@ -220,24 +259,26 @@ class SonyCameraProvider {
                     }
                 });
 
-                res.pipe(fileStream);
-
                 fileStream.on('finish', () => {
-                    fileStream.close();
-                    resolve(destPath);
+                    if (settled) return;
+                    try {
+                        if (totalBytes > 0 && downloadedBytes !== totalBytes) throw new Error('Download incompleto.');
+                        for (let n = 1; n < 10000; n++) {
+                            const candidate = path.join(dir, n === 1 ? name : `${base} (${n})${ext}`);
+                            if (fs.existsSync(candidate)) continue;
+                            fs.renameSync(part, candidate);
+                            settled = true;
+                            return resolve(candidate);
+                        }
+                        throw new Error('Não foi possível escolher um nome livre para o arquivo.');
+                    } catch (e) { fail(e); }
                 });
+                res.pipe(fileStream);
             });
 
-            req.on('error', (err) => {
-                fileStream.close();
-                fs.unlink(destPath, () => {});
-                reject(err);
-            });
-
-            fileStream.on('error', (err) => {
-                fs.unlink(destPath, () => {});
-                reject(err);
-            });
+            // Sem dados por 30 s = câmera travada ou fora de alcance
+            req.setTimeout(30000, () => req.destroy(new Error('A câmera parou de responder (tempo esgotado).')));
+            req.on('error', fail);
         });
     }
 }

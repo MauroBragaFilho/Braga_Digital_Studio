@@ -96,6 +96,7 @@
 }
 
 .ws-header-title {
+  flex-shrink: 0;
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
@@ -1938,3 +1939,26 @@
   }
   .ws-bins-pane { min-height: 320px; }
 }
+
+/* --- Revisão de UX/contraste --- */
+/* As miniaturas do grid colapsavam para ~2 px de altura (trilha automática encolhia); agora seguem o conteúdo */
+.ws-media-grid { grid-auto-rows: max-content; }
+/* Tema claro: painéis de conteúdo deixam de ser escuros fixos (texto escuro sobre fundo preto) */
+[data-theme="light"] .ws-bins-pane, [data-theme="light"] .ws-bins-tree, [data-theme="light"] .ws-media-grid,
+[data-theme="light"] .ws-sync-groups-list { background: var(--card-2); }
+[data-theme="light"] .ws-media-card { background: var(--card); }
+.ws-export-section { background: color-mix(in srgb, var(--text) 5%, transparent); }
+/* Seleção/estado ativo no tom de destaque do app (antes azul fixo, destoando do vermelho) */
+.ws-view-toggle-btn.active, .ws-media-filter.active, .ws-sync-group-item.selected, .ws-import-modal-item.checked { background: var(--accent-light); }
+.ws-media-card.selected { background: var(--accent-light); }
+.ws-bin-header.drag-over, .ws-unfiled-header.drag-over { background: var(--accent-light); border-color: var(--accent); }
+.ws-media-filter.active, .ws-center-tab.active, .ws-view-toggle-btn.active { color: var(--accent-text, var(--accent)); }
+.ws-btn-accent { background: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
+.ws-btn-accent:hover { filter: none; background: color-mix(in srgb, var(--accent-solid, var(--accent)) 86%, #000); }
+.ws-media-card-meta, .ws-section-title, .ws-export-desc { color: var(--muted); }
+/* Cabeçalho: o seletor de status não ocupa toda a linha (sobrepunha os contadores) */
+.ws-status-select { width: auto; max-width: 160px; min-height: 32px; }
+[data-theme="light"] .ws-summary-item.ws-summary-ok .material-symbols-rounded { color: #15803d; }
+[data-theme="light"] .ws-summary-item.ws-summary-warn .material-symbols-rounded { color: #b45309; }
+[data-theme="light"] .ws-cover-img { background-color: var(--card-2); }
+[data-theme="light"] .ws-media-filter.active { background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }

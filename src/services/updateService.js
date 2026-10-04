@@ -168,7 +168,16 @@ class UpdateService extends EventEmitter {
       appUpdate.checked = true;
       appUpdate.appInfo = appInfo;
 
-      if (appInfo.hasUpdate && appInfo.installerUrl) {
+      if (appInfo.hasUpdate && process.platform !== 'win32') {
+        // O instalador automático é um .exe do Windows: em outros sistemas só avisa (nada é baixado nem executado)
+        const asset = appInfo.platformAsset;
+        appUpdate.unsupported = true;
+        appUpdate.installed = false;
+        appUpdate.manualAsset = asset ? { name: asset.name, url: asset.url } : null;
+        appUpdate.error = asset
+          ? `A atualização automática do aplicativo está disponível só no Windows. Baixe o arquivo ${asset.name} pela página de releases e instale manualmente.`
+          : 'A atualização automática do aplicativo está disponível só no Windows, e a release não traz pacote para este sistema. Veja a página de releases.';
+      } else if (appInfo.hasUpdate && appInfo.installerUrl) {
         emitProgress(100, 'Baixando nova versão do BDS...', 'app-download');
         const dl = await appUpdateChecker.downloadLatestInstaller(
           installerPath,
@@ -197,6 +206,11 @@ class UpdateService extends EventEmitter {
         appUpdate.install = install;
         appUpdate.installed = install.success;
         appUpdate.needsRestart = install.success;
+        if (!install.success) {
+          appUpdate.error = install.timedOut
+            ? 'A instalação da nova versão demorou demais e foi interrompida.'
+            : `A instalação da nova versão falhou (código ${install.exitCode ?? 'desconhecido'}).`;
+        }
 
         logger.info('UpdateService:updateEverything:install_result', {
           exitCode: install.exitCode,

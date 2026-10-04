@@ -1,4 +1,5 @@
 import { escapeHtml, escapeAttr } from '../utils/escape.js';
+import { originLabel } from '../utils/originLabel.js';
 let recentJobs = [];
 let thumbsDir = '';
 
@@ -31,9 +32,25 @@ export async function onEnter() {
   await loadRecentJobs();
 }
 
+// Cartões de Ações Rápidas somem junto com a aba da tela (módulo desligado ou só de desenvolvimento).
+function applyQuickActionVisibility() {
+  document.querySelectorAll('.qa-card[data-target]').forEach((card) => {
+    const btn = document.querySelector(`.sidebar .tab-button[data-view="${card.getAttribute('data-target')}"]`);
+    const visible = !!btn && !btn.classList.contains('hidden') && btn.style.display !== 'none';
+    card.classList.toggle('hidden', !visible);
+    card.style.display = visible ? '' : 'none';
+  });
+}
+let modulesListenerBound = false;
+
 export async function initScreen() {
   try {
     console.log('[HOME] Inicializando tela...');
+    applyQuickActionVisibility();
+    if (!modulesListenerBound) {
+      modulesListenerBound = true;
+      window.addEventListener('bds:modules-changed', applyQuickActionVisibility);
+    }
 
     if (window.bds && window.bds.getThumbDir) {
       try {
@@ -68,17 +85,28 @@ export async function initScreen() {
       });
     });
 
-    // Carga inicial
+    // Carga inicial (esqueletos enquanto a biblioteca responde)
+    const rec = document.getElementById('recentRecordings');
+    if (rec && !rec.children.length) {
+      rec.setAttribute('aria-busy', 'true');
+      rec.innerHTML = '<div class="bds-skeleton" style="height:150px;width:240px;flex:0 0 auto" aria-hidden="true"></div>'.repeat(3);
+    }
     await loadStats();
+    performance.mark('bds:home-stats-loaded');
     await loadRecentJobs();
+    performance.mark('bds:home-data-loaded');
+    requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('bds:home-data-painted')));
 
     bindImportListener();
   } catch (err) {
     console.error('[HOME] ERRO NO INIT:', err);
+    document.getElementById('recentRecordings')?.removeAttribute('aria-busy');
+    document.querySelectorAll('#recentRecordings .bds-skeleton').forEach((n) => n.remove());
     const mediaEl = document.getElementById('statTotalMedia');
     if (mediaEl) {
       mediaEl.classList.add('stat-error');
-      mediaEl.textContent = "ERRO: " + err.message;
+      mediaEl.textContent = 'Não foi possível carregar';
+      mediaEl.title = String(err && err.message || '');
     }
   }
 }
@@ -124,15 +152,30 @@ async function loadRecentJobs() {
   if (!window.bds || !window.bds.getRecentMedia) return;
   
   recentJobs = await window.bds.getRecentMedia(10);
-  
-  renderRecordingsCarousel();
-  
+
+  // O carrossel mostra só vídeos: busca os últimos vídeos direto (as 10 mídias mais recentes
+  // podem ser todas fotos/áudios e deixariam a seção vazia).
+  let recordings = [];
+  try {
+    recordings = libraryItems(await window.bds.searchLibrary?.({ types: ['video'], limit: 5 }));
+  } catch (e) {
+    console.error('[HOME] Erro ao carregar gravações recentes:', e);
+  }
+  if (!recordings.length) recordings = (recentJobs || []).filter(m => m.media_type === 'video');
+  renderRecordingsCarousel(recordings);
+
   const activeTab = document.querySelector('.job-tab.active');
   if (activeTab) {
     await loadJobsForTab(activeTab.textContent.trim());
   } else {
     renderJobsTable();
   }
+}
+
+/** searchLibrary devolve { items, ... } (ou array em chamadores antigos): sempre devolve a lista. */
+function libraryItems(res) {
+  if (Array.isArray(res)) return res;
+  return res && Array.isArray(res.items) ? res.items : [];
 }
 
 async function loadJobsForTab(tabName) {
@@ -153,10 +196,10 @@ async function loadJobsForTab(tabName) {
             filesize: 0
           }));
         } else {
-          recentJobs = await window.bds.searchLibrary({ origins: ['DOWNLOAD'], limit: 10 });
+          recentJobs = libraryItems(await window.bds.searchLibrary({ origins: ['DOWNLOAD'], limit: 10 }));
         }
       } else {
-        recentJobs = await window.bds.searchLibrary({ origins: ['DOWNLOAD'], limit: 10 });
+        recentJobs = libraryItems(await window.bds.searchLibrary({ origins: ['DOWNLOAD'], limit: 10 }));
       }
     } else if (tabName === 'Convertidos') {
       if (window.bds.listConversions) {
@@ -174,15 +217,15 @@ async function loadJobsForTab(tabName) {
             filesize: 0
           }));
         } else {
-          recentJobs = await window.bds.searchLibrary({ origins: ['CONVERTER'], limit: 10 });
+          recentJobs = libraryItems(await window.bds.searchLibrary({ origins: ['CONVERTER'], limit: 10 }));
         }
       } else {
-        recentJobs = await window.bds.searchLibrary({ origins: ['CONVERTER'], limit: 10 });
+        recentJobs = libraryItems(await window.bds.searchLibrary({ origins: ['CONVERTER'], limit: 10 }));
       }
     } else if (tabName === 'Favoritos') {
-      recentJobs = await window.bds.searchLibrary({ favorites: true, limit: 10 });
+      recentJobs = libraryItems(await window.bds.searchLibrary({ favorites: true, limit: 10 }));
     } else if (tabName === 'Importados') {
-      recentJobs = await window.bds.searchLibrary({ limit: 10 });
+      recentJobs = libraryItems(await window.bds.searchLibrary({ limit: 10 }));
     } else {
       recentJobs = await window.bds.getRecentMedia(10);
     }
@@ -194,14 +237,21 @@ async function loadJobsForTab(tabName) {
   renderJobsTable();
 }
 
-function renderRecordingsCarousel() {
+function renderRecordingsCarousel(recordings) {
   const container = document.getElementById('recentRecordings');
   if (!container) return;
+  container.removeAttribute('aria-busy');
 
-  const videos = (recentJobs || []).filter(m => m.video_codec !== null && m.filename).slice(0, 5);
+  const videos = (recordings || []).filter(m => m.media_type === 'video' && m.filename).slice(0, 5);
   
   if (videos.length === 0) {
-    container.innerHTML = '<div class="empty-message">Nenhuma gravação recente encontrada.</div>';
+    container.innerHTML = '<div class="empty-message bds-empty" role="status"><span class="material-symbols-rounded bds-empty-icon" aria-hidden="true">videocam_off</span>'
+      + '<strong class="bds-empty-title">Nenhuma gravação recente</strong>'
+      + '<span class="bds-empty-text">Os vídeos que você adicionar à Biblioteca ou importar de um dispositivo aparecem aqui.</span>'
+      + '<button type="button" class="bds-empty-action" data-go="library">Abrir a Biblioteca</button></div>';
+    container.querySelector('[data-go]')?.addEventListener('click', (e) => {
+      document.querySelector(`.sidebar .tab-button[data-view="${e.currentTarget.dataset.go}"]`)?.click();
+    });
     return;
   }
 
@@ -251,13 +301,14 @@ function renderJobsTable() {
 
   const html = recentJobs.map(job => {
     const filename = job.filename || job.titulo || job.arquivo_saida || 'Arquivo sem nome';
-    const isVideo = Boolean(
+    const isPhoto = job.media_type === 'photo';
+    const isVideo = !isPhoto && (job.media_type === 'video' || Boolean(
       job.video_codec
       || (job.width && job.width > 0)
       || (job.height && job.height > 0)
       || (filename && /\.(mp4|mkv|mov|webm|avi)$/i.test(filename))
-    );
-    const isAudio = !isVideo && Boolean(
+    ));
+    const isAudio = !isVideo && !isPhoto && Boolean(
       job.audio_codec
       || (job.typeLabel && (
         job.typeLabel.includes('MP3')
@@ -269,17 +320,18 @@ function renderJobsTable() {
     const originIcon = originText.includes('BDSM')
       ? 'smartphone'
       : (originText === 'DOWNLOAD' ? 'download' : (originText === 'CONVERTER' ? 'sync' : 'computer'));
-    const typeLabel = isVideo ? 'Vídeo' : (isAudio ? 'Áudio' : (job.typeLabel || 'Vídeo'));
-    const icon = isVideo ? 'movie' : (isAudio ? 'audio_file' : 'movie');
+    const typeLabel = isPhoto ? 'Foto' : (isVideo ? 'Vídeo' : (isAudio ? 'Áudio' : (job.typeLabel || 'Vídeo')));
+    const icon = isPhoto ? 'image' : (isVideo ? 'movie' : (isAudio ? 'audio_file' : 'movie'));
     const resString = job.resolution
-      || (job.width ? `${job.width}x${job.height} ${job.fps || 30}fps` : '-');
+      || (job.width ? (isPhoto ? `${job.width}x${job.height}` : `${job.width}x${job.height} ${job.fps || 30}fps`) : '-');
     
     let dateStr = '-';
     if (job.imported_at) {
       try {
+        // O SQLite grava em UTC sem fuso ('YYYY-MM-DD HH:MM:SS'): marca como UTC para exibir no horário local
         const rawDate = job.imported_at.includes('T')
           ? job.imported_at
-          : job.imported_at.replace(' ', 'T');
+          : job.imported_at.replace(' ', 'T') + 'Z';
         dateStr = new Date(rawDate).toLocaleString('pt-BR');
       } catch (e) {
         dateStr = String(job.imported_at);
@@ -301,7 +353,7 @@ function renderJobsTable() {
         <td>
           <div class="job-origin-cell">
             <span class="material-symbols-rounded">${originIcon}</span>
-            <span>${escapeHtml(originText)}</span>
+            <span>${escapeHtml(originLabel(originText))}</span>
           </div>
         </td>
         <td class="muted-cell">${job.duration ? formatDuration(job.duration) : '-'}</td>
@@ -309,8 +361,7 @@ function renderJobsTable() {
         <td class="muted-cell">${escapeHtml(dateStr)}</td>
         <td class="muted-cell">${escapeHtml(sizeStr)}</td>
         <td class="job-actions-cell">
-          <span class="material-symbols-rounded" title="Abrir pasta">folder</span>
-          <span class="material-symbols-rounded" title="Mais opções">more_vert</span>
+          ${job.filepath ? '<span class="material-symbols-rounded job-open-folder" role="button" tabindex="0" title="Abrir pasta">folder</span>' : ''}
         </td>
       </tr>
     `;
@@ -320,12 +371,16 @@ function renderJobsTable() {
 
   tbody.querySelectorAll('.recent-job-row').forEach(row => {
     row.addEventListener('click', (e) => {
-      // Ignora clique nos ícones de ação
-      if (e.target.closest('.job-actions-cell .material-symbols-rounded')) {
-        return;
-      }
       const id = row.getAttribute('data-id');
       const job = recentJobs.find(j => String(j.id) === String(id));
+      // Ícone de ação: abre a pasta que contém o arquivo
+      if (e.target.closest('.job-open-folder')) {
+        if (job && job.filepath) {
+          const folder = String(job.filepath).replace(/[\\/][^\\/]*$/, '');
+          window.bds?.openLocalPath?.(folder);
+        }
+        return;
+      }
       if (job && job.filepath) {
         window.openPreview?.(job, recentJobs);
       }

@@ -12,6 +12,8 @@
 import { setAppStatus } from '../app.js';
 import { escapeHtml, escapeAttr } from '../utils/escape.js';
 import { enhanceModals } from '../utils/modal.js';
+import { friendlyError } from '../utils/friendlyError.js';
+import { toFileUrl, joinFileUrl } from '../utils/fileUrl.js';
 
 let projectId = null;
 let project = null;
@@ -20,6 +22,7 @@ let bins = [];
 let projectMedia = [];
 
 let draggedItem = null;
+let thumbsBase = ''; // file:// da pasta de miniaturas (media.thumbnail guarda só o nome do arquivo)
 let selectedItem = null;
 
 // --- FASE 4: SOURCE MONITOR (Decupagem) ---
@@ -52,6 +55,7 @@ export async function initScreen() {
     projectId = app.state.currentProjectId;
     if (!projectId) return goBack();
 
+    try { thumbsBase = toFileUrl(await window.bds.getThumbDir()); } catch (_) { thumbsBase = ''; }
     await loadInitialData();
     setupEventListeners();
     enhanceModals(document.getElementById('project_workspaceView') || document, '.ws-modal-overlay');
@@ -73,7 +77,7 @@ async function importFilesViaDialog() {
     await handleImportResult(result);
   } catch (e) {
     console.error('[WORKSPACE] Erro ao importar arquivos:', e);
-    window.bdsModal.alert(`Erro ao importar arquivos: ${e.message || e}`);
+    window.bdsModal.alert(`Erro ao importar arquivos: ${friendlyError(e)}`);
   }
 }
 
@@ -96,7 +100,7 @@ async function importDroppedFiles(fileList) {
     await handleImportResult(result);
   } catch (e) {
     console.error('[WORKSPACE] Erro ao importar arquivos soltos:', e);
-    window.bdsModal.alert(`Erro ao importar arquivos: ${e.message || e}`);
+    window.bdsModal.alert(`Erro ao importar arquivos: ${friendlyError(e)}`);
   }
 }
 
@@ -185,7 +189,7 @@ function renderImportModalList() {
   available.forEach(m => {
     const el = document.createElement('div');
     el.className = `ws-import-modal-item ${importModalSelection.has(m.id) ? 'checked' : ''}`;
-    const thumbUrl = m.thumbnail_path ? `url('file:///${m.thumbnail_path.replace(/\\/g, '/')}')` : 'none';
+    const thumbUrl = thumbCss(m, 'none');
     el.innerHTML = `
       <input type="checkbox" ${importModalSelection.has(m.id) ? 'checked' : ''} />
       <div class="ws-import-thumb" style="background-image:${thumbUrl};"></div>
@@ -289,7 +293,12 @@ function renderProjectHeader() {
   if (nameEl) nameEl.textContent = project.name;
 
   const statusSel = document.getElementById('wsProjectStatus');
-  if (statusSel) statusSel.value = project.status || 'Ativo';
+  if (statusSel) {
+    const status = project.status || 'Ativo';
+    // Status gravado fora da lista (ex.: legado): acrescenta a opção para o seletor não ficar em branco
+    if (![...statusSel.options].some((o) => o.value === status)) statusSel.add(new Option(status, status));
+    statusSel.value = status;
+  }
 
   renderCoverImage(project.cover_path);
 }
@@ -298,7 +307,7 @@ function renderCoverImage(coverPath) {
   const el = document.getElementById('wsCoverImg');
   if (!el) return;
   if (coverPath) {
-    el.style.backgroundImage = `url("file:///${coverPath.replace(/\\/g, '/')}")`;
+    el.style.backgroundImage = `url("${toFileUrl(coverPath)}")`;
     el.classList.remove('empty');
   } else {
     el.style.backgroundImage = 'none';
@@ -356,7 +365,7 @@ async function reloadSyncGroups() {
 }
 
 function renderProjectSummary() {
-  const videos = projectMedia.filter(pm => !isMediaAudioOnly(pm));
+  const videos = projectMedia.filter(pm => !isMediaAudioOnly(pm) && pm.media_type !== 'photo');
   const audios = projectMedia.filter(pm => isMediaAudioOnly(pm));
 
   const syncedMediaIds = new Set();
@@ -375,15 +384,15 @@ async function exportProjectBdspro() {
   try {
     const folder = await window.bds.selectFolder();
     if (!folder) return;
-    const safeName = (project.name || 'Projeto').replace(/[\\/:*?"<>|]/g, '_');
-    const outputPath = `${folder}\\${safeName}.bdspro`;
+    // O processo principal monta o caminho (nome sanitizado + path.join) e confirma a sobrescrita
     setAppStatus('Exportando .bdspro...', 'info');
-    await window.bds.exportBdspro(projectId, outputPath);
+    await window.bds.exportBdspro(projectId, { folder, name: project.name });
     setAppStatus('Pacote .bdspro exportado com sucesso!', 'success');
     await window.bds.openLocalPath(folder);
   } catch (e) {
     console.error('[WORKSPACE] Erro ao exportar .bdspro:', e);
-    window.bdsModal.alert('Erro ao exportar pacote .bdspro.');
+    setAppStatus('Falha ao exportar o pacote .bdspro', 'error');
+    window.bdsModal.alert(`Erro ao exportar pacote .bdspro: ${friendlyError(e)}`);
   }
 }
 
@@ -405,7 +414,7 @@ function renderSyncGroupsList() {
   if (syncGroupsCache.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'ws-empty-state';
-    empty.textContent = 'Nenhum Sync Group ainda. Selecione mídias (Ctrl+clique) na aba Pastas e clique em "Sincronizar por Áudio".';
+    empty.textContent = 'Nenhum Grupo de sincronia ainda. Selecione mídias (Ctrl+clique) na aba Pastas e clique em "Sincronizar por Áudio".';
     list.appendChild(empty);
   } else {
     syncGroupsCache.forEach(group => {
@@ -428,7 +437,7 @@ function renderSyncGroupsList() {
   } else {
     selectedSyncGroupId = null;
     const detail = document.getElementById('wsSyncGroupDetail');
-    if (detail) detail.innerHTML = '<div class="ws-empty-state">Selecione um Sync Group à esquerda, ou crie um pelo botão "Sincronizar por Áudio".</div>';
+    if (detail) detail.innerHTML = '<div class="ws-empty-state">Selecione um Grupo de sincronia à esquerda, ou crie um pelo botão "Sincronizar por Áudio".</div>';
   }
 }
 
@@ -442,7 +451,7 @@ function renderSyncGroupDetail(groupId) {
   if (!detail) return;
   const group = syncGroupsCache.find(g => g.id === groupId);
   if (!group) {
-    detail.innerHTML = '<div class="ws-empty-state">Sync Group não encontrado.</div>';
+    detail.innerHTML = '<div class="ws-empty-state">Grupo de sincronia não encontrado.</div>';
     return;
   }
 
@@ -499,11 +508,11 @@ function renderSyncGroupDetail(groupId) {
     try {
       await window.bds.updateProjectSyncGroup(group.id, { name: newName });
       group.name = newName;
-      setAppStatus('Sync Group renomeado.', 'success');
+      setAppStatus('Grupo de sincronia renomeado.', 'success');
       renderSyncGroupsList();
     } catch (err) {
       console.error(err);
-      setAppStatus('Erro ao renomear Sync Group.', 'error');
+      setAppStatus('Erro ao renomear Grupo de sincronia.', 'error');
     }
   });
 
@@ -534,7 +543,7 @@ async function setSyncGroupMaster(groupId, mediaId) {
     const group = syncGroupsCache.find(g => g.id === groupId);
     if (group) group.master_media_id = mediaId;
     renderSyncGroupDetail(groupId);
-    setAppStatus('Master do Sync Group atualizado.', 'success');
+    setAppStatus('Master do Grupo de sincronia atualizado.', 'success');
   } catch (e) {
     console.error(e);
     setAppStatus('Erro ao definir master.', 'error');
@@ -542,12 +551,12 @@ async function setSyncGroupMaster(groupId, mediaId) {
 }
 
 async function removeSyncGroupItemAction(groupId, itemId) {
-  const confirmed = await window.bdsModal.confirm('Remover esta mídia do Sync Group?');
+  const confirmed = await window.bdsModal.confirm('Remover esta mídia do Grupo de sincronia?');
   if (!confirmed) return;
   try {
     await window.bds.removeProjectSyncGroupItem(itemId);
     await reloadSyncGroups();
-    setAppStatus('Mídia removida do Sync Group.', 'success');
+    setAppStatus('Mídia removida do Grupo de sincronia.', 'success');
   } catch (e) {
     console.error(e);
     setAppStatus('Erro ao remover mídia do grupo.', 'error');
@@ -555,16 +564,16 @@ async function removeSyncGroupItemAction(groupId, itemId) {
 }
 
 async function deleteSyncGroupAction(groupId) {
-  const confirmed = await window.bdsModal.confirm('Excluir este Sync Group inteiro? Isso não afeta os arquivos originais.');
+  const confirmed = await window.bdsModal.confirm('Excluir este Grupo de sincronia inteiro? Isso não afeta os arquivos originais.');
   if (!confirmed) return;
   try {
     await window.bds.deleteProjectSyncGroup(groupId);
     if (selectedSyncGroupId === groupId) selectedSyncGroupId = null;
     await reloadSyncGroups();
-    setAppStatus('Sync Group excluído.', 'success');
+    setAppStatus('Grupo de sincronia excluído.', 'success');
   } catch (e) {
     console.error(e);
-    setAppStatus('Erro ao excluir Sync Group.', 'error');
+    setAppStatus('Erro ao excluir Grupo de sincronia.', 'error');
   }
 }
 
@@ -816,7 +825,7 @@ function renderLibrary() {
   bindLibraryDragDelegation(container);
 
   filtered.forEach(m => {
-    const thumbUrl = m.thumbnail_path ? `url('file:///${m.thumbnail_path.replace(/\\/g, '/')}')` : 'none';
+    const thumbUrl = thumbCss(m, 'none');
     const el = document.createElement('div');
     el.className = 'ws-lib-item';
     el.draggable = true;
@@ -825,7 +834,7 @@ function renderLibrary() {
       <div class="ws-lib-thumb" style="background-image: ${thumbUrl};"></div>
       <div class="ws-lib-info">
         <div class="ws-lib-title" title="${escapeHtml(m.filename)}">${escapeHtml(m.filename)}</div>
-        <div class="ws-lib-meta">${formatBytes(m.filesize)} • ${m.extension || 'UNK'}</div>
+        <div class="ws-lib-meta">${formatBytes(m.filesize)} • ${escapeHtml(extLabel(m) || 'UNK')}</div>
       </div>
       <span class="material-symbols-rounded" style="color: var(--muted); font-size: 16px;">drag_indicator</span>
     `;
@@ -851,7 +860,7 @@ function bindLibraryDragDelegation(container) {
 function mediaMatchesFilter(pm) {
   if (mediaTypeFilter === 'all') return true;
   const isAudio = isMediaAudioOnly(pm);
-  return mediaTypeFilter === 'audio' ? isAudio : !isAudio;
+  return mediaTypeFilter === 'audio' ? isAudio : (!isAudio && pm.media_type !== 'photo');
 }
 
 // Set de mídias sincronizadas, calculado uma vez e invalidado quando syncGroupsCache é substituído
@@ -920,10 +929,10 @@ function renderMediaGrid() {
 
 function createMediaGridCard(pm) {
   const isAudio = isMediaAudioOnly(pm);
-  const isPhoto = ['JPG', 'PNG', 'WEBP'].includes(pm.extension);
+  const isPhoto = isMediaPhoto(pm);
   const synced = isMediaSynced(pm);
   const name = pm.custom_name || pm.filename;
-  const thumbUrl = pm.thumbnail_path ? `url('file:///${pm.thumbnail_path.replace(/\\/g, '/')}')` : '';
+  const thumbUrl = thumbCss(pm, '');
 
   const card = document.createElement('div');
   card.className = `ws-media-card ${selectedItem?.type === 'project_media' && selectedItem.id === pm.pm_id ? 'selected' : ''} ${syncSelection.has(pm.pm_id) ? 'sync-selected' : ''}`;
@@ -942,7 +951,7 @@ function createMediaGridCard(pm) {
     </div>
     <div class="ws-media-card-info">
       <div class="ws-media-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-      <div class="ws-media-card-meta">${pm.width && pm.height ? `${pm.width}x${pm.height} · ` : ''}${escapeHtml(pm.extension || '')}</div>
+      <div class="ws-media-card-meta">${pm.width && pm.height ? `${pm.width}x${pm.height} · ` : ''}${escapeHtml(extLabel(pm))}</div>
     </div>
   `;
 
@@ -1008,11 +1017,15 @@ function renderTree() {
     container.appendChild(empty);
   }
 
-  container.addEventListener('dragover', e => e.preventDefault());
-  container.addEventListener('drop', e => {
-    e.preventDefault();
-    if (draggedItem) handleDrop(null);
-  });
+  // Registrado uma única vez por container: renderTree roda a cada recarga e os listeners se acumulavam (RK-035)
+  if (!container._wsDropBound) {
+    container._wsDropBound = true;
+    container.addEventListener('dragover', e => e.preventDefault());
+    container.addEventListener('drop', e => {
+      e.preventDefault();
+      if (draggedItem) handleDrop(null);
+    });
+  }
 }
 
 function createUnfiledMediaGroup(mediaList) {
@@ -1095,12 +1108,11 @@ function createBinNode(bin) {
 function createMediaNode(pm) {
   const el = document.createElement('div');
   el.className = `ws-bin-media ${selectedItem?.type === 'project_media' && selectedItem.id === pm.pm_id ? 'selected' : ''} ${syncSelection.has(pm.pm_id) ? 'sync-selected' : ''}`;
-  const isAudio = pm.extension === 'MP3' || pm.extension === 'WAV';
-  const icon = isAudio ? 'audiotrack' :
-               ['JPG','PNG','WEBP'].includes(pm.extension) ? 'image' : 'movie';
+  const isAudio = isMediaAudioOnly(pm);
+  const icon = isAudio ? 'audiotrack' : isMediaPhoto(pm) ? 'image' : 'movie';
   const name = pm.custom_name || pm.filename;
   const synced = isMediaSynced(pm);
-  const thumbUrl = pm.thumbnail_path ? `url('file:///${pm.thumbnail_path.replace(/\\/g, '/')}')` : '';
+  const thumbUrl = thumbCss(pm, '');
 
   const thumbHtml = isAudio
     ? `<canvas class="ws-bin-media-thumb ws-bin-media-thumb-wave" data-uuid="${escapeAttr(pm.uuid || '')}" data-path="${escapeAttr(pm.filepath || '')}"></canvas>`
@@ -1168,14 +1180,17 @@ function updateSyncSelectionHint() {
 
 async function handleDrop(targetBinId) {
   if (!draggedItem) return;
+  // Consome o item já no início: o evento 'drop' sobe do bin para o container e uma segunda chamada não pode repetir a ação
+  const item = draggedItem;
+  draggedItem = null;
   try {
-    if (draggedItem.type === 'library_media') {
-      await window.bds.addProjectMedia(projectId, targetBinId, draggedItem.id, null);
-    } else if (draggedItem.type === 'project_media') {
-      await window.bds.moveProjectMedia(draggedItem.id, targetBinId);
-    } else if (draggedItem.type === 'bin') {
-      if (targetBinId !== draggedItem.id) {
-        const bin = bins.find(b => b.id === draggedItem.id);
+    if (item.type === 'library_media') {
+      await window.bds.addProjectMedia(projectId, targetBinId, item.id, null);
+    } else if (item.type === 'project_media') {
+      await window.bds.moveProjectMedia(item.id, targetBinId);
+    } else if (item.type === 'bin') {
+      if (targetBinId !== item.id) {
+        const bin = bins.find(b => b.id === item.id);
         if (bin) await window.bds.updateProjectBin(bin.id, bin.name, targetBinId);
       }
     }
@@ -1183,7 +1198,6 @@ async function handleDrop(targetBinId) {
     console.error(e);
     window.bdsModal.alert('Erro ao mover item.');
   }
-  draggedItem = null;
   await reloadTree();
 }
 
@@ -1225,7 +1239,7 @@ function updateInspector() {
       inspTabs?.classList.remove('hidden');
       setInspectorTab(inspectorTab);
 
-      const thumbUrl = pm.thumbnail_path ? `url('file:///${pm.thumbnail_path.replace(/\\/g, '/')}')` : 'none';
+      const thumbUrl = thumbCss(pm, 'none');
       document.getElementById('wsMediaThumb').style.backgroundImage = thumbUrl;
       document.getElementById('wsMediaPath').textContent = pm.filepath;
       document.getElementById('wsMediaSize').textContent = formatBytes(pm.filesize);
@@ -1238,7 +1252,7 @@ function updateInspector() {
       document.getElementById('wsMetaCamera').textContent = pm.bdsm_camera || '—';
       document.getElementById('wsMetaProfile').textContent = pm.bdsm_profile || '—';
       document.getElementById('wsMetaLut').textContent = pm.bdsm_lut || '—';
-      document.getElementById('wsMetaRecordedAt').textContent = pm.recorded_at || '—';
+      document.getElementById('wsMetaRecordedAt').textContent = formatRecordedAt(pm.recorded_at);
     }
   }
 }
@@ -1267,9 +1281,35 @@ function switchCenterTab(tab) {
   if (tab === 'sync') renderSyncGroupsList();
 }
 
+// Classificação única de tipo: o backend devolve media.media_type ('video'|'audio'|'photo'|'raw'); sem ele,
+// cai na extensão do nome do arquivo (o backend não devolve `extension` nem `thumbnail_path`).
+function extLabel(pm) {
+  const name = pm && (pm.filename || pm.filepath) ? String(pm.filename || pm.filepath) : '';
+  const i = name.lastIndexOf('.');
+  return i >= 0 ? name.slice(i + 1).toUpperCase() : '';
+}
+
+function isMediaPhoto(pm) {
+  if (pm.media_type) return pm.media_type === 'photo' || pm.media_type === 'raw';
+  return ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'BMP', 'TIF', 'TIFF', 'HEIC'].includes(extLabel(pm));
+}
+
+/** Data de gravação (ISO ou 'YYYY-MM-DD HH:MM:SS' em UTC) no horário local; '—' quando vazia/inválida. */
+function formatRecordedAt(value) {
+  if (!value) return '—';
+  const raw = String(value);
+  const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
+  return isNaN(d) ? raw : d.toLocaleString('pt-BR');
+}
+
 function isMediaAudioOnly(pm) {
-  const ext = (pm.extension || pm.filename?.split('.').pop() || '').toUpperCase();
-  return ['MP3', 'WAV', 'AAC', 'FLAC', 'M4A', 'OGG'].includes(ext) || (!pm.video_codec && !!pm.audio_codec);
+  if (pm.media_type) return pm.media_type === 'audio';
+  return ['MP3', 'WAV', 'AAC', 'FLAC', 'M4A', 'OGG'].includes(extLabel(pm)) || (!pm.video_codec && !!pm.audio_codec);
+}
+
+/** background-image CSS da miniatura (media.thumbnail dentro da pasta de miniaturas) ou o valor `fallback`. */
+function thumbCss(pm, fallback) {
+  return pm && pm.thumbnail && thumbsBase ? `url('${joinFileUrl(thumbsBase, pm.thumbnail)}')` : fallback;
 }
 
 async function loadIntoMonitor(pm) {
@@ -1289,7 +1329,7 @@ async function loadIntoMonitor(pm) {
     const audioIcon = document.getElementById('wsAudioOnlyIcon');
 
     monitorIsAudio = isMediaAudioOnly(pm);
-    const fileUrl = `file:///${(pm.filepath || '').replace(/\\/g, '/')}`;
+    const fileUrl = toFileUrl(pm.filepath || '');
 
     // Pausa e limpa fonte anterior
     videoEl.pause(); audioEl.pause();
@@ -1622,7 +1662,7 @@ async function runAudioSyncOnSelection() {
       return;
     }
 
-    const groupName = await window.bdsModal.prompt('Nome do Sync Group:', `Sync ${new Date().toLocaleTimeString('pt-BR')}`);
+    const groupName = await window.bdsModal.prompt('Nome do Grupo de sincronia:', `Sync ${new Date().toLocaleTimeString('pt-BR')}`);
     if (groupName === null) return; // usuário cancelou
 
     const mediaList = selectedPm.map(pm => ({ id: pm.id, filepath: pm.filepath }));
@@ -1664,11 +1704,11 @@ async function runAudioSyncOnSelection() {
         const confidencePct = Math.round((r.confidence || 0) * 100);
         return isMaster
           ? `• ${label}: MASTER (offset 0ms)`
-          : `• ${label}: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms (confiança ${confidencePct}%)${r.error ? ` — erro: ${r.error}` : ''}`;
+          : `• ${label}: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms (confiança ${confidencePct}%)${r.error ? ` — ${friendlyError(r.error)}` : ''}`;
       }).join('\n');
 
       setAppStatus('Sincronização por áudio concluída.', 'success');
-      await window.bdsModal.alert(`Sync Group #${groupId} criado com sucesso:\n\n${summary}`);
+      await window.bdsModal.alert(`Grupo de sincronia #${groupId} criado com sucesso:\n\n${summary}`);
 
       syncSelection.clear();
       renderTree();
@@ -1680,7 +1720,7 @@ async function runAudioSyncOnSelection() {
   } catch (e) {
     console.error('[WORKSPACE] Erro na sincronização por áudio:', e);
     setAppStatus('Erro ao sincronizar por áudio.', 'error');
-    await window.bdsModal.alert(`Erro ao sincronizar por áudio:\n\n${e.message || e}\n\n(Veja o console — Ctrl+Shift+I — para detalhes técnicos)`);
+    await window.bdsModal.alert(`Erro ao sincronizar por áudio:\n\n${friendlyError(e)}\n\n(Veja o console — Ctrl+Shift+I — para detalhes técnicos)`);
   }
 }
 
@@ -1806,14 +1846,13 @@ function setupEventListeners() {
   document.getElementById('wsBtnExportPremiere')?.addEventListener('click', async () => {
     const folder = await window.bds.selectFolder();
     if (folder) {
-      const outputPath = `${folder}\\${project.name || 'Projeto'} - Pastas.xml`;
       try {
-        await window.bds.exportProjectPremiere(projectId, outputPath);
+        await window.bds.exportProjectPremiere(projectId, { folder, name: project.name, suffix: ' - Pastas' });
         setAppStatus('XML gerado com sucesso!', 'success');
         await window.bds.openLocalPath(folder);
       } catch (e) {
         console.error(e);
-        window.bdsModal.alert('Erro ao exportar XML.');
+        window.bdsModal.alert(`Erro ao exportar XML: ${friendlyError(e)}`);
       }
     }
   });
@@ -1822,21 +1861,20 @@ function setupEventListeners() {
   document.getElementById('wsBtnExportSequencePremiere')?.addEventListener('click', async () => {
     if (syncGroupsCache.length === 0) {
       const proceed = await window.bdsModal.confirm(
-        'Nenhum Sync Group encontrado neste projeto. A sequência será gerada apenas com as mídias soltas, cada uma começando em 00:00. Deseja continuar?'
+        'Nenhum Grupo de sincronia encontrado neste projeto. A sequência será gerada apenas com as mídias soltas, cada uma começando em 00:00. Deseja continuar?'
       );
       if (!proceed) return;
     }
     const folder = await window.bds.selectFolder();
     if (!folder) return;
-    const outputPath = `${folder}\\${project.name || 'Projeto'} - Sequência.xml`;
     try {
       setAppStatus('Gerando sequência...', 'info');
-      await window.bds.exportProjectSequencePremiere(projectId, outputPath);
+      await window.bds.exportProjectSequencePremiere(projectId, { folder, name: project.name, suffix: ' - Sequência' });
       setAppStatus('Sequência exportada com sucesso!', 'success');
       await window.bds.openLocalPath(folder);
     } catch (e) {
       console.error('[WORKSPACE] Erro ao gerar sequência:', e);
-      window.bdsModal.alert(`Erro ao gerar sequência: ${e.message || e}`);
+      window.bdsModal.alert(`Erro ao gerar sequência: ${friendlyError(e)}`);
     }
   });
 }

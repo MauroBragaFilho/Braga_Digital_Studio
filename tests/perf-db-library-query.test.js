@@ -15,7 +15,7 @@ const LQS = require('../src/core/library/LibraryQueryService');
 const VIDEO = ['mp4', 'mkv', 'webm', 'mov', 'avi'];
 const AUDIO = ['mp3', 'm4a', 'wav', 'flac', 'ogg'];
 const RAW = ['arw', 'cr2', 'cr3', 'nef', 'dng', 'raf', 'orf', 'rw2'];
-const PHOTO = ['jpg', 'jpeg', 'png', 'heic', ...RAW];
+const PHOTO = ['jpg', 'jpeg', 'png', 'heic', 'gif', 'bmp', 'tiff', 'svg', ...RAW]; // gif/bmp/tiff/svg: migração 13
 const ext = (f) => f.slice(f.lastIndexOf('.') + 1).toLowerCase();
 let rows;
 

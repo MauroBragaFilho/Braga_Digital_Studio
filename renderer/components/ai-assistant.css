@@ -1,0 +1,238 @@
+/* ==========================================================================
+   Assistente de IA flutuante: botão arrastável + painel de chat.
+   Só usa os tokens do app (style.css): temas claro e escuro, contraste AA.
+   A posição vem das variáveis --aia-right / --aia-bottom (definidas pelo JS).
+   ========================================================================== */
+
+.aia-root {
+  --aia-right: 24px;
+  --aia-bottom: 84px;
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;           /* o contêiner não bloqueia a tela; só o botão e o painel recebem cliques */
+}
+
+/* Visualizadores de mídia em tela cheia e pop-ups: o botão sai de cena (não cobre controles) */
+body:has(.photo-preview-overlay:not(.hidden)) .aia-root,
+body:has(.video-preview-overlay:not(.hidden)) .aia-root,
+body:has(.audio-preview-overlay:not(.hidden)) .aia-root,
+body:has(.preview-backdrop:not(.hidden)) .aia-root,
+body:has(dialog[open]) .aia-root {
+  display: none;
+}
+
+.aia-fab {
+  position: absolute;
+  right: var(--aia-right);
+  bottom: var(--aia-bottom);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;             /* o arrasto por toque não rola a página */
+  user-select: none;
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.aia-fab .material-symbols-rounded { font-size: 26px; }
+.aia-fab:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.aia-fab:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+.aia-root.aia-dragging .aia-fab { cursor: grabbing; transition: none; transform: scale(1.06); box-shadow: 0 10px 26px var(--shadow); }
+.aia-fab[aria-expanded="true"] { filter: brightness(0.92); }
+
+/* Resposta chegou com o painel fechado */
+.aia-fab.aia-has-news::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--success);
+  border: 2px solid var(--bg);
+}
+
+/* ----- Painel ----- */
+.aia-panel {
+  position: absolute;             /* left/top/width/height vêm do JS (ancorado ao botão) */
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px var(--shadow);
+  overflow: hidden;
+}
+.aia-panel[hidden] { display: none; }
+
+.aia-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card-2);
+}
+.aia-title { flex: 1; margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
+.aia-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.aia-icon-btn .material-symbols-rounded { font-size: 20px; }
+.aia-icon-btn:hover { background: var(--accent-light); color: var(--text); }
+.aia-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.aia-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aia-empty {
+  margin: auto;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.aia-empty .material-symbols-rounded { font-size: 32px; color: var(--accent-text); }
+.aia-empty strong { color: var(--text); font-size: 14px; }
+
+.aia-msg { display: flex; }
+.aia-msg-user { justify-content: flex-end; }
+.aia-bubble {
+  max-width: 88%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  background: var(--card-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.aia-msg-user .aia-bubble {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  border-color: transparent;
+  white-space: pre-wrap;
+}
+.aia-msg-pending .aia-bubble { color: var(--muted); font-style: italic; }
+.aia-msg[hidden] { display: none; }
+.aia-msg-status { padding: 0 4px; }
+.aia-status { font-size: 12px; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.aia-msg-note .aia-bubble { background: transparent; border-style: dashed; color: var(--muted); font-size: 12px; }
+.aia-msg-error .aia-bubble {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.aia-bubble .aia-p { margin: 0; }
+.aia-bubble .aia-p + .aia-p, .aia-bubble .aia-p + .aia-list, .aia-bubble .aia-list + .aia-p,
+.aia-bubble .aia-code + .aia-p, .aia-bubble .aia-p + .aia-code { margin-top: 6px; }
+.aia-bubble .aia-list { margin: 0; padding-left: 20px; }
+.aia-bubble code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.aia-bubble .aia-code {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border: 1px solid var(--line);
+}
+.aia-bubble .aia-code code { padding: 0; background: none; white-space: pre; }
+
+.aia-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+.aia-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  max-height: 120px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.aia-input::placeholder { color: var(--muted); }
+.aia-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.aia-send {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+.aia-send .material-symbols-rounded { font-size: 20px; }
+.aia-send:hover { filter: brightness(1.1); }
+.aia-send:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* Só para leitores de tela */
+.aia-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aia-fab, .aia-root.aia-dragging .aia-fab {
+    transition: none;
+  }
+  .aia-fab:hover { transform: none; }
+}

@@ -1,6 +1,22 @@
 import { els, setAppStatus } from '../app.js';
 import { escapeHtml } from '../utils/escape.js';
 import { enhanceModals } from '../utils/modal.js';
+import { friendlyError } from '../utils/friendlyError.js';
+import { daysUntilLocal, formatLocalDate } from '../utils/localDate.js';
+import { toFileUrl } from '../utils/fileUrl.js';
+
+/** Só aceita cor hexadecimal (#rgb, #rgba, #rrggbb, #rrggbbaa); qualquer outra coisa vira o padrão. */
+function safeHexColor(value, fallback = '#3b82f6') {
+    return typeof value === 'string' && /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value) ? value : fallback;
+}
+
+/** Os diálogos devolvem string, array de caminhos ou { filePaths }: normaliza para o 1º caminho (ou null). */
+function firstDialogPath(res) {
+    if (!res) return null;
+    if (typeof res === 'string') return res;
+    const list = Array.isArray(res) ? res : (res.canceled ? [] : res.filePaths);
+    return Array.isArray(list) && list.length > 0 ? list[0] : null;
+}
 
 
 let projectsList = [];
@@ -20,24 +36,17 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+// Datas 'YYYY-MM-DD' são dias de calendário: o parse como data local fica em utils/localDate.js
 function formatDate(isoStr) {
-    if (!isoStr) return '-';
-    const d = new Date(isoStr);
-    return d.toLocaleDateString('pt-BR');
+    return formatLocalDate(isoStr);
 }
 
 function getDeadlinePill(deadlineStr) {
-    if (!deadlineStr) return { text: 'Sem Prazo', color: 'gray', icon: 'schedule' };
-    
-    const deadline = new Date(deadlineStr);
-    const now = new Date();
-    
-    deadline.setHours(0,0,0,0);
-    now.setHours(0,0,0,0);
-    
-    const diffTime = deadline - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+    if (!deadlineStr) return { text: 'Sem Prazo', color: '#bdbdbd', icon: 'schedule' };
+
+    const diffDays = daysUntilLocal(deadlineStr);
+    if (diffDays === null) return { text: 'Sem Prazo', color: '#bdbdbd', icon: 'schedule' };
+
     if (diffDays < 0) {
         return { text: `${Math.abs(diffDays)} dias atrasado`, color: '#f44336', icon: 'error' }; // 🔴 Vermelho (Atrasado)
     } else if (diffDays === 0) {
@@ -53,6 +62,12 @@ function getDeadlinePill(deadlineStr) {
 
 async function loadProjects() {
     try {
+        const grid = document.getElementById('projectsGrid');
+        if (grid && projectsList.length === 0) {
+            // Primeira carga: esqueletos no lugar da grade (substituídos por renderGrid)
+            grid.setAttribute('aria-busy', 'true');
+            grid.innerHTML = '<div class="proj-card bds-skeleton" aria-hidden="true"></div>'.repeat(3);
+        }
         projectsList = await window.bds.listProjects();
         renderGrid();
     } catch (e) {
@@ -66,33 +81,36 @@ function renderGrid() {
     if (!grid) return;
     
     grid.innerHTML = '';
+    grid.removeAttribute('aria-busy');
     bindGridDelegation();
     
     if (projectsList.length === 0) {
-        grid.innerHTML = '<div class="proj-empty-state">Nenhum projeto encontrado.</div>';
+        grid.innerHTML = '<div class="proj-empty-state bds-empty" role="status"><span class="material-symbols-rounded bds-empty-icon" aria-hidden="true">create_new_folder</span>'
+            + '<strong class="bds-empty-title">Nenhum projeto ainda</strong>'
+            + '<span class="bds-empty-text">Projetos reúnem os arquivos de um trabalho (vídeos, áudios, fotos e prazos) em um só lugar.</span>'
+            + '<button type="button" class="bds-empty-action" data-empty-action="new-project">Criar primeiro projeto</button></div>';
         return;
     }
     
     projectsList.forEach(proj => {
         const pill = getDeadlinePill(proj.deadline);
-        const bgSize = proj.cover_path ? `url('file:///${proj.cover_path.replace(/\\/g, '/')}')` : 'none';
         const displayCount = proj.media_count || 0;
         const displaySize = formatBytes(proj.total_size);
         
         // Cor do gradiente baseada na cor do projeto
-        const bgColor = proj.color || '#3b82f6';
+        const bgColor = safeHexColor(proj.color);
         
         const card = document.createElement('div');
         card.className = `proj-card ${selectedProjectId === proj.id ? 'selected' : ''}`;
         card.dataset.id = String(proj.id);
         card.innerHTML = `
-            <div class="proj-card-cover" style="background-image: ${bgSize};">
-                <div class="proj-card-cover-gradient" style="background: linear-gradient(0deg, ${bgColor}33 0%, transparent 100%);"></div>
+            <div class="proj-card-cover">
+                <div class="proj-card-cover-gradient"></div>
                 <div class="proj-card-pill">
-                    <span style="color: ${pill.color};">●</span> ${pill.text}
+                    <span class="proj-card-pill-dot" aria-hidden="true">●</span> ${pill.text}
                 </div>
             </div>
-            <div class="proj-card-info" style="background: linear-gradient(180deg, transparent 0%, ${bgColor}11 100%);">
+            <div class="proj-card-info">
                 <h4 class="proj-card-title" title="${escapeHtml(proj.name)}">${escapeHtml(proj.name)}</h4>
                 <div class="proj-card-dates">
                     <span>📅 Início: ${formatDate(proj.start_date)}</span>
@@ -105,6 +123,16 @@ function renderGrid() {
             </div>
         `;
         
+        // Valores dinâmicos (capa, cores) via setters DOM: nada de string interpolada em style=
+        const cover = card.querySelector('.proj-card-cover');
+        if (cover && proj.cover_path) cover.style.backgroundImage = `url(${JSON.stringify(toFileUrl(proj.cover_path))})`;
+        const gradient = card.querySelector('.proj-card-cover-gradient');
+        if (gradient) gradient.style.background = `linear-gradient(0deg, ${bgColor}33 0%, transparent 100%)`;
+        const info = card.querySelector('.proj-card-info');
+        if (info) info.style.background = `linear-gradient(180deg, transparent 0%, ${bgColor}11 100%)`;
+        const dot = card.querySelector('.proj-card-pill-dot');
+        if (dot) dot.style.color = pill.color; // constante interna de getDeadlinePill (não vem de dados do usuário)
+
         grid.appendChild(card);
     });
 }
@@ -118,7 +146,9 @@ function bindGridDelegation() {
         const card = e.target.closest('.proj-card');
         return card && grid.contains(card) ? Number(card.dataset.id) : null;
     };
-    grid.addEventListener('click', (e) => { const id = idOf(e); if (id !== null) selectProject(id); });
+    grid.addEventListener('click', (e) => {
+        if (e.target.closest('[data-empty-action="new-project"]')) { document.getElementById('btnNewProject')?.click(); return; }
+        const id = idOf(e); if (id !== null) selectProject(id); });
     grid.addEventListener('dblclick', (e) => { const id = idOf(e); if (id !== null) openProjectWorkspace(id); });
 }
 
@@ -278,9 +308,10 @@ function setupEventListeners() {
             properties: ['openFile'],
             filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
         });
-        if (res && res.filePaths && res.filePaths.length > 0) {
+        const coverPath = firstDialogPath(res);
+        if (coverPath) {
             try {
-                await window.bds.updateProject(selectedProjectId, { cover_path: res.filePaths[0] });
+                await window.bds.updateProject(selectedProjectId, { cover_path: coverPath });
                 await loadProjects();
                 selectProject(selectedProjectId);
             } catch(e) {
@@ -311,11 +342,9 @@ function setupEventListeners() {
         try {
             const destFolder = await window.bds.selectFolder(); // caminho escolhido, ou null se cancelou
             if (destFolder) {
-                const sanitizedName = (proj.name || 'Projeto').replace(/[\\/:*?"<>|]/g, '_');
-                const outputPath = `${destFolder}\\${sanitizedName}.bdspro`;
-                
+                // O processo principal monta o caminho (nome sanitizado + path.join) e confirma a sobrescrita
                 setAppStatus('Exportando pacote .bdspro...', 'info');
-                const result = await window.bds.exportBdspro(selectedProjectId, outputPath);
+                const result = await window.bds.exportBdspro(selectedProjectId, { folder: destFolder, name: proj.name });
                 if (result && result.success) {
                     setAppStatus(`Projeto "${proj.name}" exportado com sucesso!`, 'success');
                     window.bdsModal.alert(`Pacote .bdspro exportado com sucesso!\n\nSalvo em: ${result.filePath}`);
@@ -324,7 +353,7 @@ function setupEventListeners() {
         } catch (e) {
             console.error('Erro ao exportar .bdspro:', e);
             setAppStatus('Erro ao exportar pacote .bdspro', 'error');
-            window.bdsModal.alert(`Erro ao exportar projeto .bdspro: ${e.message || e}`);
+            window.bdsModal.alert(`Erro ao exportar projeto .bdspro: ${friendlyError(e)}`);
         }
     });
 
@@ -336,8 +365,8 @@ function setupEventListeners() {
                 filters: [{ name: 'Pacote de Projeto BDS (*.bdspro)', extensions: ['bdspro'] }]
             });
 
-            if (fileRes && fileRes.filePaths && fileRes.filePaths.length > 0) {
-                const bdsproPath = fileRes.filePaths[0];
+            const bdsproPath = firstDialogPath(fileRes);
+            if (bdsproPath) {
                 setAppStatus('Inspecionando pacote .bdspro...', 'info');
                 const inspectData = await window.bds.inspectBdspro(bdsproPath);
                 openRelinkModal(bdsproPath, inspectData);
@@ -345,7 +374,7 @@ function setupEventListeners() {
         } catch (e) {
             console.error('Erro ao abrir .bdspro:', e);
             setAppStatus('Erro ao ler pacote .bdspro', 'error');
-            window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${e.message || e}`);
+            window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${friendlyError(e)}`);
         }
     });
 
@@ -465,8 +494,8 @@ function setupRelinkModalListeners() {
         if (!currentRelinkContext) return;
         try {
             const folderRes = await window.bds.selectFolder();
-            if (folderRes && folderRes.filePaths && folderRes.filePaths.length > 0) {
-                const searchFolder = folderRes.filePaths[0];
+            const searchFolder = firstDialogPath(folderRes);
+            if (searchFolder) {
                 setAppStatus('Buscando mídias correspondentes...', 'info');
 
                 const scannedFiles = await window.bds.scanRelinkFolder(searchFolder);
@@ -507,7 +536,7 @@ function setupRelinkModalListeners() {
         } catch (e) {
             console.error('Erro ao confirmar importação:', e);
             setAppStatus('Erro ao importar projeto', 'error');
-            window.bdsModal.alert(`Erro ao importar projeto: ${e.message || e}`);
+            window.bdsModal.alert(`Erro ao importar projeto: ${friendlyError(e)}`);
         }
     });
 }

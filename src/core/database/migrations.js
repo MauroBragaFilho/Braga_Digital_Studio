@@ -5,7 +5,7 @@ const dbManager = require('./database');
 const { mediaTypeCaseSql } = require('../media/MediaTypes');
 
 // [FASE 3.2] Controle de versao do schema com tabela de metadados.
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 function getAppliedMigrations(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -196,16 +196,32 @@ const MIGRATIONS = [
                 db.exec('CREATE INDEX IF NOT EXISTS idx_media_favorite ON media(favorite) WHERE favorite = 1;');
             }
         }
+    },
+    {
+        // Classificação de tipos unificada em MediaTypes (RK-088): GIF, BMP, TIFF e SVG passam a ser 'photo'.
+        // Recria os triggers (que fixam a lista de extensões no SQL) e classifica só as linhas ainda sem tipo.
+        version: 13,
+        up: (db) => {
+            if (!columnExists(db, 'media', 'media_type')) return;
+            const typeSql = mediaTypeCaseSql('NEW.filename');
+            const derive = `UPDATE media SET media_type = ${typeSql}, sort_date = COALESCE(NEW.recorded_at, NEW.imported_at) WHERE id = NEW.id;`;
+            db.exec('DROP TRIGGER IF EXISTS trg_media_derived_ins;');
+            db.exec('DROP TRIGGER IF EXISTS trg_media_derived_upd;');
+            db.exec(`CREATE TRIGGER trg_media_derived_ins AFTER INSERT ON media BEGIN ${derive} END;`);
+            db.exec(`CREATE TRIGGER trg_media_derived_upd AFTER UPDATE OF filename, recorded_at, imported_at ON media BEGIN ${derive} END;`);
+            db.exec(`UPDATE media SET media_type = ${mediaTypeCaseSql('filename')} WHERE media_type IS NULL;`);
+        }
     }
 ];
 
+/** @returns {{ok: boolean, failedVersion: (number|null), reason?: string}} */
 function runMigrations() {
     const db = dbManager.get();
     const schemaPath = path.join(__dirname, 'schema.sql');
 
     if (!fs.existsSync(schemaPath)) {
         logger.warn('[Migrations] Arquivo schema.sql nao encontrado.');
-        return;
+        return { ok: false, failedVersion: null, reason: 'schema.sql ausente' };
     }
 
     let applied;
@@ -213,12 +229,12 @@ function runMigrations() {
         applied = getAppliedMigrations(db);
     } catch (e) {
         logger.error('[Migrations] Nao foi possivel ler schema_migrations; migracoes abortadas.', { error: e.message });
-        return;
+        return { ok: false, failedVersion: null, reason: e.message };
     }
 
     const pending = MIGRATIONS.filter(m => !applied.includes(m.version));
     const needsSchema = !applied.includes(1) || pending.length > 0;
-    if (!needsSchema) return; // banco ja esta na versao atual: nao reexecuta o schema
+    if (!needsSchema) return { ok: true, failedVersion: null }; // banco ja esta na versao atual: nao reexecuta o schema
 
     // Backup antes de migrar (somente se ja existe um banco com dados/versoes anteriores)
     if (applied.length > 0) {
@@ -232,9 +248,10 @@ function runMigrations() {
         markMigrationApplied(db, 1);
     } catch (e) {
         logger.error('[Migrations] Falha ao executar schema.sql; migracoes abortadas.', { error: e.message });
-        return;
+        return { ok: false, failedVersion: 1, reason: e.message };
     }
 
+    let failed = null;
     for (const m of pending) {
         try {
             db.exec('BEGIN TRANSACTION');
@@ -245,9 +262,13 @@ function runMigrations() {
         } catch (e) {
             try { db.exec('ROLLBACK'); } catch (_) {}
             logger.error(`[Migrations] Migracao ${m.version} falhou e foi revertida: ${e.message}`);
+            failed = { version: m.version, reason: e.message };
             break; // migracoes seguintes podem depender desta
         }
     }
+    return failed
+        ? { ok: false, failedVersion: failed.version, reason: failed.reason }
+        : { ok: true, failedVersion: null };
 }
 
 module.exports = {

@@ -1,9 +1,11 @@
 ﻿'use strict';
 
-const { exec } = require('node:child_process');
+const { execOffThread } = require('../offThreadExec'); // criação do powershell fora do processo principal
 const fs = require('node:fs');
+const { copyFileUnique } = require('../copyUnique');
 const path = require('node:path');
 const { StorageProvider } = require('../StorageProvider');
+const { systemExe } = require('../systemExe');
 const logger = require('../../../services/logService');
 
 /**
@@ -43,8 +45,8 @@ foreach ($disk in $disks) {
 $results | ConvertTo-Json -Compress
       `;
       const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
-      exec(
-        `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
+      execOffThread(
+        `"${systemExe('powershell')}" -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
         { encoding: 'utf8', timeout: 8000, windowsHide: true },
         (error, stdout) => {
           if (error) {
@@ -126,34 +128,28 @@ $results | ConvertTo-Json -Compress
       for (const p of pathArray) {
         if (p) currentPath = path.join(currentPath, p);
       }
+      let lastUpdate = 0;
+      let allOk = true;
       for (const itemName of itemNames) {
         const sourceFile = path.join(currentPath, itemName);
-        const destFile = path.join(destFolder, itemName);
         if (!fs.existsSync(sourceFile)) continue;
-        const stat = fs.statSync(sourceFile);
-        if (stat.isDirectory()) continue;
-        const totalSize = stat.size;
-        let copiedSize = 0;
-        await new Promise((resCopy) => {
-          const readStream = fs.createReadStream(sourceFile);
-          const writeStream = fs.createWriteStream(destFile);
-          let lastUpdate = Date.now();
-          readStream.on('data', (chunk) => {
-            copiedSize += chunk.length;
+        if (fs.statSync(sourceFile).isDirectory()) continue;
+        try {
+          await copyFileUnique(sourceFile, destFolder, path.basename(itemName), (copied, total) => {
             const now = Date.now();
-            if (now - lastUpdate > 150 || copiedSize === totalSize) {
+            if (now - lastUpdate > 150 || copied === total) {
               lastUpdate = now;
-              const percent = totalSize > 0 ? Math.round((copiedSize / totalSize) * 100) : 100;
-              this.emit('progress', { file: itemName, percent, currentSize: copiedSize, totalSize, type: 'usb' });
+              const percent = total > 0 ? Math.round((copied / total) * 100) : 100;
+              this.emit('progress', { file: itemName, percent, currentSize: copied, totalSize: total, type: 'usb' });
             }
           });
-          writeStream.on('finish', resCopy);
-          readStream.on('error', (err) => { logger.error('WindowsStorageProvider:importItems:read_error', { error: err.message }); resCopy(); });
-          writeStream.on('error', (err) => { logger.error('WindowsStorageProvider:importItems:write_error', { error: err.message }); resCopy(); });
-          readStream.pipe(writeStream);
-        });
+        } catch (err) {
+          allOk = false;
+          logger.error('WindowsStorageProvider:importItems:copy_error', { file: itemName, error: err.message });
+        }
       }
-      return true;
+      // false se algum arquivo falhou: a tela avisa em vez de dizer que concluiu
+      return allOk;
     } catch (err) {
       logger.error('WindowsStorageProvider:importItems:error', { error: err.message });
       return false;

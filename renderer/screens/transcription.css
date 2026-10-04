@@ -96,6 +96,7 @@
   cursor: pointer;
 }
 .tr-link:hover { background: var(--card-2); }
+.tr-empty-box .tr-link { justify-content: center; text-align: center; align-self: center; }
 .tr-link .material-symbols-rounded { font-size: 18px; }
 .tr-link-muted { color: var(--muted); font-weight: 500; }
 
@@ -229,6 +230,7 @@
 .tr-toggle.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .tr-toggle.active .tr-toggle-check { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tr-toggle-wide { grid-column: 1 / -1; }
+.tr-advanced-body .tr-toggle { width: 100%; }
 
 /* Situação da análise por IA (aparece só com a opção ligada) */
 .tr-ai-status { display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
@@ -242,6 +244,13 @@
 .tr-field { display: flex; flex-direction: column; gap: 8px; }
 .tr-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12.5px; }
 .tr-field-head output { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+.tr-silence { display: flex; flex-direction: column; gap: 12px; }
+.tr-silence.off { opacity: 0.45; pointer-events: none; }
+.tr-link { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.tr-link:hover { color: var(--accent); }
+.tr-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.tr-link[hidden] { display: none; }
 
 .tr-range { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
@@ -319,3 +328,7 @@
 @media (prefers-reduced-motion: reduce) {
   .tr-bar-fill, .tr-btn, .tr-toggle, .tr-seg button, .tr-advanced > summary::after { transition: none; }
 }
+
+/* Contraste AA (tokens globais) */
+.tr-btn-primary { background: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
+:root[data-theme="light"] .tr-formats { opacity: 1; color: var(--text); }

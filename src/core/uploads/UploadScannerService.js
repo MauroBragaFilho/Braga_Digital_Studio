@@ -117,7 +117,7 @@ class UploadScannerService {
                 filePath
             ];
 
-            const proc = spawn(this.ffprobePath, args);
+            const proc = spawn(this.ffprobePath, args, { windowsHide: true });
             let output = '';
 
             proc.stdout.on('data', (data) => output += data.toString());
@@ -193,7 +193,7 @@ class UploadScannerService {
                 outputPath
             ];
 
-            const proc = spawn(this.ffmpegPath, args);
+            const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
             proc.on('close', (code) => {
                 if (code === 0 && fs.existsSync(outputPath)) {
                     resolve(`file://${outputPath.replace(/\\/g, '/')}`);

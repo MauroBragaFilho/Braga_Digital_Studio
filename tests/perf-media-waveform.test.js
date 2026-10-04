@@ -74,12 +74,13 @@ test('gera picos reais com o ffmpeg, grava .wfm pequeno e relê do cache', { ski
 
   const file = svc.getCachePath('tone');
   assert.ok(fs.existsSync(file));
-  assert.ok(fs.statSync(file).size < 24 + 210, 'cache binário: 24 bytes + 1 byte/pico');
+  // O cache guarda a resolução-mestre (100 picos/s): 24 bytes + 1 byte/pico
+  assert.ok(fs.statSync(file).size < 24 + 410, 'cache binário: 24 bytes + 1 byte/pico (resolução-mestre)');
 
   const cached = await svc.getOrGenerate({ uuid: 'tone', filePath: path.join(tmp, 'nao-usado.wav'), peaksPerSecond: 50 });
   assert.deepStrictEqual(cached.peaks, wf.peaks, 'segunda chamada vem do cache (arquivo de origem nem é aberto)');
 
-  // resolução diferente => regenera
+  // outra resolução: a mestre (100) atende por redução, sem regenerar
   const wf2 = await svc.getOrGenerate({ uuid: 'tone', filePath: media, peaksPerSecond: 100 });
   assert.strictEqual(wf2.peaks_per_second, 100);
 });

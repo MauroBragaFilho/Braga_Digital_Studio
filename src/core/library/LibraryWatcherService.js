@@ -2,10 +2,12 @@ const logger = require('../../services/logService');
 const fsp = require('fs').promises;
 const dbManager = require('../database/database');
 const EventBus = require('../EventBus');
-const { mapLimit, classifyRows } = require('./reconcile');
+const { mapLimit, classifyRows, yieldToEventLoop } = require('./reconcile');
 
 // Concorrência moderada: disco frio/HD externo e a UI competem pelo mesmo I/O.
 const RECONCILE_CONCURRENCY = 12;
+const INDEX_BATCH = 100;          // arquivos enfileirados por lote na varredura de novos arquivos
+const INDEX_MAX_PENDING = 500;    // teto de itens pendentes na ImportQueue antes de esperar
 
 class LibraryWatcherService {
     constructor(importQueue) {
@@ -50,10 +52,78 @@ class LibraryWatcherService {
             setTimeout(() => {
                 this.reconcileMissingFiles()
                     .catch(err => logger.error(`[LibraryWatcherService] Falha na reconciliação: ${err.message}`))
+                    // Arquivos novos (já existentes ou criados com o app fechado) entram depois da reconciliação (RK-019)
+                    .then(() => this.indexNewFiles())
+                    .catch(err => logger.error(`[LibraryWatcherService] Falha na varredura de novos arquivos: ${err.message}`))
                     .finally(resolve);
             }, delayMs);
         });
         return this._reconcilePromise;
+    }
+
+    /**
+     * Varre cada biblioteca ativa com o MediaScanner e enfileira só os caminhos que ainda não estão
+     * no banco (o watcher usa ignoreInitial, então nada disso seria indexado de outra forma).
+     * [PERF] 100% assíncrona: leitura de pastas em paralelo limitado, enfileiramento em lotes cedendo
+     * ao event loop e com contrapressão (não deixa a fila de importação crescer sem limite).
+     * Uma nova chamada (ex.: rescan) ou stopAll() interrompe a varredura anterior.
+     * @returns {Promise<number>} quantidade de arquivos enfileirados
+     */
+    async indexNewFiles() {
+        const token = {};
+        this._indexToken = token;
+        const alive = () => this._indexToken === token;
+        const db = dbManager.get();
+        const t0 = Date.now();
+        const MediaScanner = require('../media/MediaScanner');
+        const norm = process.platform === 'win32' ? (p) => p.toLowerCase() : (p) => p;
+        let queued = 0;
+        const seen = new Set(); // bibliotecas aninhadas não enfileiram o mesmo arquivo duas vezes
+
+        const libraries = db.prepare('SELECT id, path FROM libraries WHERE enabled = 1 AND auto_scan = 1').all();
+        for (const lib of libraries) {
+            if (!alive()) return queued;
+            if (!lib.path) continue;
+            // Raiz inacessível (HD externo/rede desconectado): nada a varrer
+            const ok = await fsp.access(lib.path).then(() => true, () => false);
+            if (!ok) continue;
+
+            let files;
+            try { files = await MediaScanner.scanDirectory(lib.path); } catch (_) { continue; }
+            if (!alive()) return queued;
+            if (files.length === 0) continue;
+
+            const known = new Set(db.prepare('SELECT filepath FROM media WHERE library_id = ?').all(lib.id)
+                .filter(r => r.filepath).map(r => norm(r.filepath)));
+            const missing = [];
+            for (const f of files) {
+                const key = norm(f);
+                if (known.has(key) || seen.has(key)) continue;
+                seen.add(key);
+                missing.push(f);
+            }
+
+            for (let i = 0; i < missing.length; i += INDEX_BATCH) {
+                for (const filePath of missing.slice(i, i + INDEX_BATCH)) {
+                    this.importQueue.add({ libraryId: lib.id, path: filePath, event: 'CREATE' });
+                    queued++;
+                }
+                await yieldToEventLoop();
+                // Contrapressão: espera a fila de importação esvaziar antes do próximo lote
+                while (alive() && this._pendingImports() > INDEX_MAX_PENDING) {
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                }
+                if (!alive()) return queued;
+            }
+        }
+        if (queued > 0) {
+            logger.info(`[LibraryWatcherService] ${queued} arquivos novos enfileirados em ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
+        }
+        return queued;
+    }
+
+    _pendingImports() {
+        try { return this.importQueue.getProgress().pending; } catch (_) { return 0; }
     }
 
     /**
@@ -183,6 +253,7 @@ class LibraryWatcherService {
     }
 
     stopAll() {
+        this._indexToken = null; // interrompe uma varredura de novos arquivos em andamento
         for (const [id, watcher] of this.watchers) {
             watcher.stop();
         }

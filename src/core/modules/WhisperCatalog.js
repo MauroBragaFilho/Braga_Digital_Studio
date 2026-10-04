@@ -20,33 +20,33 @@ const REPO = 'ggerganov/whisper.cpp';
 const WHISPER_MODELS = [
   {
     id: 'tiny', label: 'Tiny', repo: REPO, file: 'ggml-tiny-q5_1.bin', dtw: 'tiny',
-    sizeBytes: 32152673, speed: '~10x', speedLevel: 5, quality: 2, vramGb: 1,
-    description: 'O mais rápido e leve. Serve para testar; erra bastante em áudio com ruído, sotaque forte ou termos técnicos.'
+    sizeBytes: 32152673, speed: '~10x', speedLevel: 5, quality: 1, vramGb: 1,
+    description: 'Mais rápido e leve'
   },
   {
     id: 'base', label: 'Base', repo: REPO, file: 'ggml-base-q5_1.bin', dtw: 'base',
     sizeBytes: 59707625, speed: '~7x', speedLevel: 4, quality: 2, vramGb: 1,
-    description: 'Um pouco mais preciso que o Tiny e ainda muito leve. Bom para áudio limpo e computadores modestos.'
+    description: 'Pouco melhor que o Tiny'
   },
   {
     id: 'small', label: 'Small', repo: REPO, file: 'ggml-small-q5_1.bin', dtw: 'small',
     sizeBytes: 190085487, speed: '~4x', speedLevel: 3, quality: 3, vramGb: 1, recommendedFor: 'cpu',
-    description: 'Bom equilíbrio para quem não tem placa NVIDIA: qualidade razoável em português com tempo aceitável na CPU.'
+    description: 'Equilíbrio entre desempenho e precisão (melhor em CPU)'
   },
   {
     id: 'medium', label: 'Medium', repo: REPO, file: 'ggml-medium-q5_0.bin', dtw: 'medium',
     sizeBytes: 539212467, speed: '~2x', speedLevel: 2, quality: 4, vramGb: 2,
-    description: 'Boa precisão. Fica muito lento na CPU; compensa mais com placa NVIDIA.'
+    description: 'Boa precisão'
   },
   {
-    id: 'large-v3-turbo', label: 'Large V3 Turbo', repo: REPO, file: 'ggml-large-v3-turbo-q5_0.bin', dtw: 'large.v3.turbo',
+    id: 'large-v3', label: 'Large v3', repo: REPO, file: 'ggml-large-v3-q5_0.bin', dtw: 'large.v3',
+    sizeBytes: 1081140203, speed: '1x', speedLevel: 1, quality: 5, vramGb: 3, recommendedFor: 'gpu',
+    description: 'Precisão máxima (recomendado GPU)'
+  },
+  {
+    id: 'large-v3-turbo', label: 'Large v3 Turbo', repo: REPO, file: 'ggml-large-v3-turbo-q5_0.bin', dtw: 'large.v3.turbo',
     sizeBytes: 574041195, speed: '~8x', speedLevel: 4, quality: 5, vramGb: 2, recommendedFor: 'gpu',
-    description: 'Qualidade próxima à do Large V3 com velocidade bem maior. É o recomendado quando há placa NVIDIA (com a aceleração instalada); na CPU fica muito lento.'
-  },
-  {
-    id: 'large-v3', label: 'Large V3', repo: REPO, file: 'ggml-large-v3-q5_0.bin', dtw: 'large.v3',
-    sizeBytes: 1081140203, speed: '1x', speedLevel: 1, quality: 5, vramGb: 3,
-    description: 'A máxima precisão disponível, porém o mais pesado e lento. Use em áudio difícil, com placa NVIDIA potente.'
+    description: 'Precisão e velocidade (recomendado GPU)'
   }
 ];
 

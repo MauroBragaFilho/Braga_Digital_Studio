@@ -1336,3 +1336,164 @@
 /* Lista do celular (BDS Mobile): uma linha por vídeo */
 .bdsm-media-grid { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
 .bdsm-media-grid .mtp-item { cursor: default; }
+
+/* Alvos de clique >= 32 px (auditoria de UX) */
+.devices-icon-btn, .dev-card-hide-btn { min-width: 32px; min-height: 32px; }
+.devices-manage-hidden-btn { min-height: 32px; }
+
+/* Contraste WCAG AA (medido) */
+.dev-card-btn.primary, .inspector-footer-btn.primary { background: var(--accent-solid, var(--accent)); border-color: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
+.dev-card-hide-btn { background: rgba(0, 0, 0, 0.55); color: #fff; }
+.dev-card-storage-free, .dev-card-storage-label { color: var(--text); }
+[data-theme="light"] .dev-card-category.tone-usb { color: #9a5b00; }
+[data-theme="light"] .dev-card-category.tone-sony { color: #7b1fa2; }
+[data-theme="light"] .dev-card-category.tone-mtp { color: #0d5fb0; }
+.dev-card-category.tone-bdsm { color: var(--accent-text, var(--accent)); }
+
+/* --- PAREAMENTO COM O CELULAR --- */
+.dev-card-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.dev-card-pair .material-symbols-rounded {
+  font-size: 14px;
+}
+
+.dev-card-pair.needed {
+  color: var(--warning, #f5a623);
+  border-color: color-mix(in srgb, var(--warning, #f5a623) 55%, transparent);
+}
+
+.dev-card-pair.paired {
+  color: var(--success, #4caf50);
+  border-color: color-mix(in srgb, var(--success, #4caf50) 55%, transparent);
+}
+
+.devices-modal-small {
+  width: 440px;
+  height: auto;
+}
+
+.bdsm-pair-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 220px;
+  justify-content: center;
+  text-align: center;
+}
+
+.bdsm-pair-device {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bdsm-pair-wait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bdsm-pair-codebox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.bdsm-pair-code {
+  display: flex;
+  gap: 10px;
+}
+
+.bdsm-pair-digit {
+  width: 56px;
+  height: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.bdsm-pair-hint {
+  margin: 0;
+  max-width: 340px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.bdsm-pair-bar {
+  width: 100%;
+  max-width: 340px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--card-2);
+  overflow: hidden;
+}
+
+.bdsm-pair-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transition: width 0.5s linear;
+}
+
+.bdsm-pair-timer {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bdsm-pair-result {
+  width: 100%;
+}
+
+@media (max-width: 520px) {
+  .bdsm-pair-digit {
+    width: 44px;
+    height: 60px;
+    font-size: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bdsm-pair-bar-fill {
+    transition: none;
+  }
+}
+
+:root[data-theme="light"] .devices-btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.bdsm-pair-modal .devices-btn-primary-orange {
+  background: var(--accent-solid, var(--accent));
+  color: var(--on-accent, #fff);
+}
+
+.bdsm-pair-modal .devices-btn-secondary {
+  background: var(--card-2);
+  color: var(--text);
+}

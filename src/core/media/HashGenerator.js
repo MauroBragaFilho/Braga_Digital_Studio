@@ -1,7 +1,39 @@
 const crypto = require('crypto');
 const fs = require('fs');
 
+const FULL_HASH_LIMIT = 5 * 1024 * 1024; // até este tamanho o hash cobre o arquivo inteiro
+const FINGERPRINT_BLOCKS = 32;           // pontos amostrados pela impressão digital estendida
+const FINGERPRINT_BLOCK_SIZE = 16 * 1024;
+
 class HashGenerator {
+    /** Tamanho até o qual generate() lê o arquivo completo (acima disso o hash é amostrado). */
+    static get FULL_HASH_LIMIT() { return FULL_HASH_LIMIT; }
+
+    /**
+     * Impressão digital estendida (32 blocos de 16 KB espalhados pelo arquivo + tamanho), bem mais densa que a
+     * amostragem de generate(). Só é usada para desempatar arquivos grandes cujo hash amostrado coincidiu.
+     * @param {string} filePath
+     * @returns {Promise<string>} SHA256 hexadecimal
+     */
+    static async extendedFingerprint(filePath) {
+        const fh = await fs.promises.open(filePath, 'r');
+        try {
+            const { size } = await fh.stat();
+            const hash = crypto.createHash('sha256');
+            hash.update(Buffer.from(String(size)));
+            const buf = Buffer.alloc(FINGERPRINT_BLOCK_SIZE);
+            const span = Math.max(0, size - FINGERPRINT_BLOCK_SIZE);
+            for (let i = 0; i < FINGERPRINT_BLOCKS; i++) {
+                const pos = Math.floor((span * i) / (FINGERPRINT_BLOCKS - 1));
+                const { bytesRead } = await fh.read(buf, 0, FINGERPRINT_BLOCK_SIZE, pos);
+                hash.update(buf.subarray(0, bytesRead));
+            }
+            return hash.digest('hex');
+        } finally {
+            await fh.close().catch(() => {});
+        }
+    }
+
     /**
      * Calcula o hash SHA256 de um arquivo.
      * Para arquivos pequenos (<= 5MB), lê o arquivo completo.

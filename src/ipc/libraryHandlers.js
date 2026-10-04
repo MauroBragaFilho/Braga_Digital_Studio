@@ -1,4 +1,5 @@
-const { ipcMain, BrowserWindow, dialog, shell } = require('electron');
+const { BrowserWindow, dialog, shell } = require('electron');
+const { handle } = require('./channelRegistry');
 const path = require('path');
 const fs = require('fs');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
@@ -6,6 +7,7 @@ const {
   assertSafeFileName, assertNonEmpty, assertPositiveInt, assertIdArray, assertUserDirectory,
   assertAbsolutePath, sqlPlaceholders, chunk
 } = require('./validate');
+const { countMediaLinks, countLibraryLinks, countAllLinks, describeLinks } = require('../core/library/mediaLinks');
 
 const MAX_IDS = 50000;   // limite por operação em lote
 const SQL_BATCH = 500;   // SQLite limita variáveis por consulta: processa em lotes
@@ -50,36 +52,34 @@ async function moveFileNoOverwrite(src, dest) {
 module.exports = function registerLibraryHandlers(paths, watcherService) {
   const LibraryQueryService = require('../core/library/LibraryQueryService');
 
-  ipcMain.handle('library:getStats', () => {
+  handle('library:getStats', () => {
     return LibraryQueryService.getStats();
   });
 
-  ipcMain.handle('library:getThumbDir', () => {
+  handle('library:getThumbDir', () => {
     return path.join(paths.dataDir, 'Thumbnails');
   });
 
-  ipcMain.handle('library:search', (event, options) => {
+  handle('library:search', (event, options) => {
     return LibraryQueryService.searchMedia(options);
   });
 
-  ipcMain.handle('library:getRecent', (event, limit) => {
+  handle('library:getRecent', (event, limit) => {
     return LibraryQueryService.getRecentMedia(limit);
   });
 
-  ipcMain.handle('library:getFilterOptions', () => {
+  handle('library:getFilterOptions', () => {
     return LibraryQueryService.getFilterOptions();
   });
 
-  ipcMain.handle('library:addCustomSource', async (event, { name, folderPath } = {}) => {
+  handle('library:addCustomSource', async (event, { name, folderPath } = {}) => {
     const dbManager = require('../core/database/database');
     const MediaImporter = require('../core/media/MediaImporter');
     const EventBus = require('../core/EventBus');
     const db = dbManager.get();
 
-    // [FASE 1.2] Validação de entrada: pasta absoluta, existente e que não seja a raiz de um drive
-    assertNonEmpty(name, 'Nome da fonte');
-    if (name.length > 120) throw new Error('Nome da fonte muito longo.');
-    folderPath = assertUserDirectory(folderPath, 'Caminho da pasta');
+    // Validação de entrada no esquema do canal (channels.js): nome de 1 a 120 caracteres e pasta
+    // absoluta, existente e que não seja a raiz de um drive (já resolvida).
 
     let lib = db.prepare('SELECT * FROM libraries WHERE path = ? OR name = ?').get(folderPath, name);
     if (!lib) {
@@ -89,20 +89,31 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
 
     const importer = new MediaImporter({ ffprobePath: ffprobeTool.resolve() });
     await importer.importLibrary(lib);
+    // Fonte nova passa a ser monitorada sem precisar reiniciar o app (RK-087)
+    if (watcherService && lib.path) watcherService.startWatcher(lib.id, lib.path);
 
     EventBus.emit('MEDIA_IMPORTED', { source: name });
     return { ok: true, sourceName: lib.name, origin: lib.type };
   });
 
-  ipcMain.handle('library:getCustomSources', () => {
+  handle('library:getCustomSources', () => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     const defaultTypes = ['OBS', 'SHADOWPLAY', 'BDSM_DEVICE', 'OBS Studio', 'NVIDIA ShadowPlay', 'NVIDIA Shadowplay', 'BDSM Devices'];
     const libraries = db.prepare('SELECT id, name, type, path FROM libraries').all();
-    return libraries.filter(l => !defaultTypes.includes(l.name) && !defaultTypes.includes(l.type));
+    // 'MANUAL' (Importação Manual dos projetos) é interna: não aparece nem pode ser alterada/removida (RK-034)
+    return libraries.filter(l => l.type !== 'MANUAL' && !defaultTypes.includes(l.name) && !defaultTypes.includes(l.type));
   });
 
-  ipcMain.handle('library:updateCustomSourcePath', async (event, { id, name, newFolderPath } = {}) => {
+  // Quantos vínculos de projeto seriam apagados ao excluir estas mídias (diálogo de confirmação, RK-015)
+  handle('library:getMediaProjectLinks', (event, ids) => {
+    const dbManager = require('../core/database/database');
+    const list = assertIdArray(ids, { max: MAX_IDS });
+    const r = countMediaLinks(dbManager.get(), list);
+    return { links: r.links, projects: r.projects, text: describeLinks(r) };
+  });
+
+  handle('library:updateCustomSourcePath', async (event, { id, name, newFolderPath } = {}) => {
     const dbManager = require('../core/database/database');
     const MediaImporter = require('../core/media/MediaImporter');
     const EventBus = require('../core/EventBus');
@@ -110,11 +121,16 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
 
     // Usa SOMENTE o id (antes "OR name" podia atualizar várias bibliotecas de mesmo nome).
     const libId = assertPositiveInt(id, 'ID da fonte');
-    const folder = assertUserDirectory(newFolderPath, 'Caminho da pasta');
+    const folder = newFolderPath; // pasta validada e resolvida pelo esquema do canal
+    const target = db.prepare('SELECT type FROM libraries WHERE id = ?').get(libId);
+    if (target && target.type === 'MANUAL') throw new Error('A biblioteca "Importação Manual" é interna e não pode ser alterada.');
 
     db.prepare('UPDATE libraries SET path = ? WHERE id = ?').run(folder, libId);
+    // O watcher antigo seguia na pasta anterior: troca para a nova (RK-087)
+    if (watcherService) watcherService.stopWatcher(libId);
 
     const lib = db.prepare('SELECT * FROM libraries WHERE id = ?').get(libId);
+    if (watcherService && lib && lib.path && lib.enabled !== 0 && lib.auto_scan !== 0) watcherService.startWatcher(libId, lib.path);
     if (lib) {
       const importer = new MediaImporter({ ffprobePath: ffprobeTool.resolve() });
       await importer.importLibrary(lib);
@@ -124,16 +140,36 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return { ok: true };
   });
 
-  ipcMain.handle('library:removeCustomSource', (event, { id, name } = {}) => {
+  handle('library:removeCustomSource', async (event, { id, name } = {}) => {
     const dbManager = require('../core/database/database');
     const EventBus = require('../core/EventBus');
     const db = dbManager.get();
 
     const libId = assertPositiveInt(id, 'ID da fonte');
     // O nome usado para limpar `origin` vem do banco, não do renderer.
-    const lib = db.prepare('SELECT id, name FROM libraries WHERE id = ?').get(libId);
+    const lib = db.prepare('SELECT id, name, type FROM libraries WHERE id = ?').get(libId);
+    if (lib && lib.type === 'MANUAL') throw new Error('A biblioteca "Importação Manual" é interna e não pode ser removida.');
     const libName = lib ? lib.name : (typeof name === 'string' ? name : '');
 
+    // Remover a fonte apaga as mídias dela e, em cascata, os vínculos de projeto: avisa antes (RK-015)
+    const impact = countLibraryLinks(db, libId, libName);
+    if (impact.links > 0) {
+      const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+      const options = {
+        type: 'warning',
+        title: 'Remover fonte',
+        message: `Remover "${libName}" também apaga ${describeLinks(impact)}.`,
+        detail: 'As mídias saem dos projetos, dos grupos de sincronização e da timeline. Os arquivos do disco não são removidos.',
+        buttons: ['Cancelar', 'Remover mesmo assim'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      };
+      const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+      if (response !== 1) throw new Error('Operação cancelada pelo usuário.');
+    }
+
+    if (watcherService) watcherService.stopWatcher(libId);
     db.prepare('DELETE FROM media WHERE library_id = ? OR origin = ?').run(libId, libName || '\u0000');
     db.prepare('DELETE FROM libraries WHERE id = ?').run(libId);
 
@@ -141,24 +177,40 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return { ok: true };
   });
 
-  ipcMain.handle('library:renameMedia', (event, id, newName) => {
+  handle('library:renameMedia', async (event, id, newName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     const mediaId = assertPositiveInt(id, 'ID da mídia');
     const clean = typeof newName === 'string' ? newName.trim() : newName;
     assertSafeFileName(clean);
-    db.prepare('UPDATE media SET filename = ? WHERE id = ?').run(clean, mediaId);
+
+    // Semântica (RK-082): renomeia também o arquivo no disco e preserva a extensão (o tipo da mídia é
+    // derivado dela por trigger), sem sobrescrever outro arquivo.
+    const row = db.prepare('SELECT filename, filepath FROM media WHERE id = ?').get(mediaId);
+    if (!row) throw new Error('Mídia não encontrada.');
+    const ext = path.extname(row.filename || '');
+    const newFilename = ext && !clean.toLowerCase().endsWith(ext.toLowerCase()) ? `${clean}${ext}` : clean;
+    assertSafeFileName(newFilename);
+
+    let newFilepath = row.filepath;
+    if (row.filepath && fs.existsSync(row.filepath)) {
+      newFilepath = path.join(path.dirname(row.filepath), newFilename);
+      const sameFile = newFilepath.toLowerCase() === row.filepath.toLowerCase();
+      if (!sameFile && fs.existsSync(newFilepath)) throw new Error('Já existe um arquivo com esse nome na pasta.');
+      if (newFilepath !== row.filepath) await fs.promises.rename(row.filepath, newFilepath);
+    }
+    db.prepare('UPDATE media SET filename = ?, filepath = ? WHERE id = ?').run(newFilename, newFilepath, mediaId);
     return true;
   });
 
-  ipcMain.handle('library:toggleFavorite', (event, id, isFav) => {
+  handle('library:toggleFavorite', (event, id, isFav) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     db.prepare('UPDATE media SET favorite = ? WHERE id = ?').run(isFav ? 1 : 0, assertPositiveInt(id, 'ID da mídia'));
     return true;
   });
 
-  ipcMain.handle('library:getMediaTags', (event, id) => {
+  handle('library:getMediaTags', (event, id) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     return db.prepare(`
@@ -168,11 +220,10 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     `).all(id);
   });
 
-  ipcMain.handle('library:addMediaTag', (event, mediaId, tagName) => {
+  handle('library:addMediaTag', (event, mediaId, tagName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
-    assertNonEmpty(tagName, 'Nome da tag');
-    const normalizedName = tagName.toLowerCase();
+    const normalizedName = tagName.toLowerCase(); // texto não vazio garantido pelo esquema do canal
 
     let tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(normalizedName);
     if (!tag) {
@@ -188,7 +239,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return true;
   });
 
-  ipcMain.handle('library:removeMediaTag', (event, mediaId, tagId) => {
+  handle('library:removeMediaTag', (event, mediaId, tagId) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     db.prepare('DELETE FROM media_tags WHERE media_id = ? AND tag_id = ?').run(mediaId, tagId);
@@ -197,7 +248,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
 
   // Exclui mídias em lote: arquivos vão para a Lixeira (recuperáveis). Se a Lixeira falhar para
   // um item, ele NÃO é apagado em definitivo — permanece (arquivo + registro) e entra em `failed`.
-  ipcMain.handle('library:deleteMediaBulk', async (event, ids) => {
+  handle('library:deleteMediaBulk', async (event, ids) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     const list = assertIdArray(ids, { max: MAX_IDS });
@@ -231,7 +282,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return { ok: failed.length === 0, deleted, failed };
   });
 
-  ipcMain.handle('library:toggleFavoriteBulk', (event, ids, isFav) => {
+  handle('library:toggleFavoriteBulk', (event, ids, isFav) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     const list = assertIdArray(ids, { max: MAX_IDS });
@@ -241,7 +292,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return true;
   });
 
-  ipcMain.handle('library:setProjectBulk', (event, ids, projectId) => {
+  handle('library:setProjectBulk', (event, ids, projectId) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     const list = assertIdArray(ids, { max: MAX_IDS });
@@ -252,7 +303,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return true;
   });
 
-  ipcMain.handle('library:addMediaTagBulk', (event, ids, tagName) => {
+  handle('library:addMediaTagBulk', (event, ids, tagName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     const list = assertIdArray(ids, { max: MAX_IDS });
@@ -277,7 +328,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return true;
   });
 
-  ipcMain.handle('library:renameMediaBulk', async (event, ids, baseName) => {
+  handle('library:renameMediaBulk', async (event, ids, baseName) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     if (!Array.isArray(ids) || ids.length === 0 || !baseName) return true;
@@ -322,7 +373,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return { ok: failed.length === 0, renamed, failed };
   });
 
-  ipcMain.handle('library:moveMediaBulk', async (event, ids, newDir) => {
+  handle('library:moveMediaBulk', async (event, ids, newDir) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     if (!Array.isArray(ids) || ids.length === 0 || !newDir) return true;
@@ -358,17 +409,20 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return { ok: failed.length === 0, moved, failed };
   });
 
-  ipcMain.handle('library:clearDatabase', async (event) => {
+  handle('library:clearDatabase', async (event) => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
 
     // Confirmação nativa no processo principal: o renderer sozinho não pode apagar a biblioteca.
     const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+    const linksInfo = describeLinks(countAllLinks(db));
     const options = {
       type: 'warning',
       title: 'Limpar banco de dados',
       message: 'Limpar todo o banco de dados da biblioteca?',
-      detail: 'Registros de mídia, tags e favoritos serão apagados. Os arquivos do disco não são removidos.',
+      detail: 'Registros de mídia, tags e favoritos serão apagados' +
+        (linksInfo ? `, junto com ${linksInfo}, grupos de sincronização e referências da timeline` : '') +
+        '. Um backup do banco é criado antes. Os arquivos do disco não são removidos.',
       buttons: ['Cancelar', 'Limpar banco'],
       defaultId: 0,
       cancelId: 0,
@@ -376,6 +430,11 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     };
     const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
     if (response !== 1) throw new Error('Operação cancelada pelo usuário.');
+
+    // Backup antes de apagar (RK-015); sem backup não limpa
+    let backup = null;
+    try { backup = dbManager.createBackup('preclear'); } catch (e) { throw new Error(`Não foi possível criar o backup antes de limpar: ${e.message}`); }
+    if (!backup) throw new Error('Não foi possível criar o backup antes de limpar o banco.');
 
     const details = {};
     for (const table of ['media_tags', 'media']) {
@@ -391,21 +450,25 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     return { ok: Object.values(details).every((v) => v === 'ok'), details };
   });
 
-  ipcMain.handle('library:rescanAll', () => {
+  handle('library:rescanAll', () => {
     if (watcherService) {
       watcherService.stopAll();
-      setTimeout(() => watcherService.startAll(), 500);
+      setTimeout(() => {
+        watcherService.startAll();
+        // Rescan também indexa arquivos novos que o watcher (ignoreInitial) nunca veria (RK-019)
+        watcherService.indexNewFiles().catch(() => {});
+      }, 500);
     }
     return true;
   });
 
-  ipcMain.handle('library:getAll', () => {
+  handle('library:getAll', () => {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
     return db.prepare('SELECT id, name, type, path FROM libraries ORDER BY name ASC').all();
   });
 
-  ipcMain.handle('library:getFolderFiles', async (event, folderPath) => {
+  handle('library:getFolderFiles', async (event, folderPath) => {
     if (!folderPath) return [];
     try {
       folderPath = assertAbsolutePath(folderPath, 'Pasta');
@@ -428,13 +491,14 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
 
   // [FIX] Regenera thumbnails ausentes — usado no startup quando thumbnails foram deletadas indevidamente.
   // Lógica compartilhada com o bootstrap e com o clearCache (systemHandlers).
-  ipcMain.handle('library:regenerateMissingThumbnails', async (event, { batchSize = 8 } = {}) => {
+  handle('library:regenerateMissingThumbnails', async (event, { batchSize = 8 } = {}) => {
     const { regenerateMissingThumbnails: regenerate } = require('../core/library/ThumbnailRegenService');
     return regenerate({
       paths,
       dbManager: require('../core/database/database'),
       window: BrowserWindow.getAllWindows()[0] || null,
       batchSize,
+      retryFailed: true, // pedido manual: tenta de novo também as que falharam recentemente
       logPrefix: '[RegenThumbs]',
     });
   });

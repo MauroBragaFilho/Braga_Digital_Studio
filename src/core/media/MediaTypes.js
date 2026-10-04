@@ -35,8 +35,9 @@ function mediaTypeOf(p) {
     return 'unknown';
 }
 
-// Fotos "de biblioteca": é o que a Biblioteca sempre considerou foto (além dos RAW, que têm tipo próprio).
-const PHOTO_LIBRARY_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.heic'];
+// Fotos "de biblioteca": todas as extensões de imagem suportadas (além dos RAW, que têm tipo próprio).
+// Antes só jpg/jpeg/png/heic: GIF, BMP, TIFF e SVG ficavam com media_type NULL e sumiam dos filtros de tipo.
+const PHOTO_LIBRARY_EXTENSIONS = [...IMAGE_EXTENSIONS];
 
 /**
  * Tipo gravado em media.media_type: 'video' | 'audio' | 'photo' | 'raw' | null (extensão fora dessas listas).

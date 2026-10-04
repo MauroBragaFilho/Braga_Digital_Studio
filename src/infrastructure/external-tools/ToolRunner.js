@@ -1,6 +1,12 @@
 'use strict';
 
+const { StringDecoder } = require('node:string_decoder');
 const { processRunner } = require('./ProcessRunner');
+
+/** Teto padrão de stdout/stderr acumulados por execução (por fluxo). */
+const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
+/** Linha sem quebra acima disso é entregue em pedaços ao consumidor. */
+const MAX_LINE_CARRY = 1024 * 1024;
 
 /**
  * ToolRunner — Interface de alto nível para executar ferramentas externas.
@@ -30,6 +36,7 @@ class ToolRunner {
    * @param {string} [opts.cwd] - Diretório de trabalho
    * @param {object} [opts.env] - Variáveis de ambiente extras
    * @param {boolean} [opts.windowsHide=true] - Ocultar janela no Windows
+   * @param {number} [opts.maxBytes=67108864] - Teto de stdout/stderr acumulados por fluxo (0 = sem teto); ao passar, mata a árvore e devolve truncated: true
    * @returns {Promise<{code: number, stdout: string, stderr: string, killed: boolean, durationMs: number}> & { cancel: () => void, process: import('child_process').ChildProcess }}
    */
   run(executablePath, args, opts = {}) {
@@ -42,6 +49,7 @@ class ToolRunner {
       cwd,
       env,
       windowsHide = true,
+      maxBytes = DEFAULT_MAX_BYTES,
     } = opts;
 
     let childProcess = null;
@@ -51,10 +59,16 @@ class ToolRunner {
 
     const promise = new Promise((resolve, reject) => {
       const startedAt = Date.now();
-      let stdoutBuffer = '';
-      let stderrBuffer = '';
-      let stdoutLines = '';
-      let stderrLines = '';
+      // Acúmulo em pedaços (join no fim): concatenar string a cada chunk era quadrático em saídas grandes.
+      const stdoutChunks = [];
+      const stderrChunks = [];
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      let truncated = false;
+      const stdoutDecoder = new StringDecoder('utf8');
+      const stderrDecoder = new StringDecoder('utf8');
+      let stdoutCarry = '';
+      let stderrCarry = '';
 
       try {
         childProcess = processRunner.spawn(executablePath, args, {
@@ -79,44 +93,64 @@ class ToolRunner {
         if (timeoutHandle.unref) timeoutHandle.unref();
       }
 
+      // Teto de bytes por fluxo: passou, mata a árvore e devolve o que coube (truncated: true).
+      const overLimit = (bytes) => {
+        if (!(maxBytes > 0) || bytes <= maxBytes || truncated) return false;
+        truncated = true;
+        killed = true;
+        processRunner.cancel(childProcess).catch(() => {});
+        return true;
+      };
+
+      const emitStdoutLine = (line) => {
+        if (!line) return;
+        if (onStdout) onStdout(line);
+        if (onProgress) {
+          try {
+            const parsed = _parseProgressLine(line);
+            if (parsed) onProgress(parsed);
+          } catch (_) {}
+        }
+      };
+      const emitStderrLine = (line) => {
+        if (!line) return;
+        if (onStderr) onStderr(line);
+        if (onLog) onLog(line);
+      };
+      // Só divide em linhas quando há quem consuma; uma linha gigante sem quebra é entregue em
+      // pedaços de até MAX_LINE_CARRY para não crescer sem limite.
+      const feedLines = (data, carry, emit) => {
+        const joined = carry ? carry + data : data;
+        const lines = joined.split(/\r?\n/);
+        let rest = lines.pop();
+        for (const line of lines) emit(line);
+        if (rest.length > MAX_LINE_CARRY) { emit(rest); rest = ''; }
+        return rest;
+      };
+      const wantsStdoutLines = !!(onStdout || onProgress);
+      const wantsStderrLines = !!(onStderr || onLog);
+
       // stdout
       if (childProcess.stdout) {
         childProcess.stdout.on('data', (chunk) => {
-          const data = chunk.toString('utf8');
-          stdoutBuffer += data;
-          stdoutLines += data;
-
-          const lines = stdoutLines.split(/\r?\n/);
-          stdoutLines = lines.pop(); // última linha (pode estar incompleta)
-          for (const line of lines) {
-            if (line) {
-              if (onStdout) onStdout(line);
-              if (onProgress) {
-                try {
-                  const parsed = _parseProgressLine(line);
-                  if (parsed) onProgress(parsed);
-                } catch (_) {}
-              }
-            }
-          }
+          if (truncated) return;
+          stdoutBytes += chunk.length;
+          if (overLimit(stdoutBytes)) return;
+          const data = stdoutDecoder.write(chunk);
+          stdoutChunks.push(data);
+          if (wantsStdoutLines && data) stdoutCarry = feedLines(data, stdoutCarry, emitStdoutLine);
         });
       }
 
       // stderr
       if (childProcess.stderr) {
         childProcess.stderr.on('data', (chunk) => {
-          const data = chunk.toString('utf8');
-          stderrBuffer += data;
-          stderrLines += data;
-
-          const lines = stderrLines.split(/\r?\n/);
-          stderrLines = lines.pop();
-          for (const line of lines) {
-            if (line) {
-              if (onStderr) onStderr(line);
-              if (onLog) onLog(line);
-            }
-          }
+          if (truncated) return;
+          stderrBytes += chunk.length;
+          if (overLimit(stderrBytes)) return;
+          const data = stderrDecoder.write(chunk);
+          stderrChunks.push(data);
+          if (wantsStderrLines && data) stderrCarry = feedLines(data, stderrCarry, emitStderrLine);
         });
       }
 
@@ -129,12 +163,23 @@ class ToolRunner {
         if (timeoutHandle) clearTimeout(timeoutHandle);
         if (timedOut) return; // o timeout rejeita depois que a árvore terminar
 
+        // Resto dos decoders e última linha sem quebra (antes era perdida)
+        const stdoutTail = stdoutDecoder.end();
+        const stderrTail = stderrDecoder.end();
+        if (stdoutTail && !truncated) { stdoutChunks.push(stdoutTail); stdoutCarry += stdoutTail; }
+        if (stderrTail && !truncated) { stderrChunks.push(stderrTail); stderrCarry += stderrTail; }
+        try {
+          if (wantsStdoutLines && stdoutCarry) emitStdoutLine(stdoutCarry);
+          if (wantsStderrLines && stderrCarry) emitStderrLine(stderrCarry);
+        } catch (_) { /* callback do consumidor não derruba o resolve */ }
+
         const durationMs = Date.now() - startedAt;
         resolve({
           code: code ?? -1,
-          stdout: stdoutBuffer,
-          stderr: stderrBuffer,
+          stdout: stdoutChunks.join(''),
+          stderr: stderrChunks.join(''),
           killed,
+          truncated,
           durationMs,
         });
       });

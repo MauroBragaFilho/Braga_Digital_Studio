@@ -1,6 +1,7 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
+const { systemExe } = require('../hardware/systemExe');
 
 /**
  * ProcessRunner — Abstração de baixo nível para execução e cancelamento
@@ -8,7 +9,7 @@ const { spawn } = require('node:child_process');
  *
  * Encapsula o comportamento específico de plataforma para cancelamento:
  *  - Windows: taskkill /PID <pid> /T /F
- *  - Linux/macOS: process.kill(pid, 'SIGTERM') com fallback SIGKILL
+ *  - Linux/macOS: processo lançado em grupo próprio (detached); kill(-pid, SIGTERM) com SIGKILL após 3s
  *
  * Regra do roadmap (seção 9):
  *   Nenhum serviço deve chamar taskkill diretamente.
@@ -25,7 +26,12 @@ class ProcessRunner {
    */
   spawn(executable, args, options = {}) {
     const defaults = { windowsHide: true };
-    return spawn(executable, args, { ...defaults, ...options });
+    // POSIX: o filho vira líder de um novo grupo de processos (detached) para que o cancelamento
+    // alcance também os netos (kill(-pid)). No Windows o taskkill /T já cobre a árvore.
+    if (process.platform !== 'win32' && options.detached === undefined) defaults.detached = true;
+    const child = spawn(executable, args, { ...defaults, ...options });
+    if (process.platform !== 'win32' && child && ({ ...defaults, ...options }).detached) child.bdsProcessGroup = true;
+    return child;
   }
 
   /**
@@ -73,6 +79,10 @@ class ProcessRunner {
 
     const fallbackKill = (signal) => {
       try {
+        // POSIX: mata o grupo inteiro quando o filho foi lançado como líder de grupo
+        if (process.platform !== 'win32' && child && child.bdsProcessGroup) {
+          try { process.kill(-pid, signal || 'SIGTERM'); return; } catch (_) { /* grupo inexistente: cai para o PID */ }
+        }
         if (child && typeof child.kill === 'function') child.kill(signal);
         else process.kill(pid, signal);
       } catch (_) { /* processo já terminou */ }
@@ -82,7 +92,7 @@ class ProcessRunner {
       if (process.platform === 'win32') {
         let killer;
         try {
-          killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+          killer = spawn(systemExe('taskkill'), ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
         } catch (_) {
           fallbackKill();
           return resolve();

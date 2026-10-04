@@ -158,7 +158,7 @@ async function attemptDownload(opts) {
       const actual = hash.digest('hex');
       if (expectedSha256 && actual.toLowerCase() !== expectedSha256.toLowerCase()) {
         return failDropPart(new DownloadError(
-          `SHA-256 diferente do esperado (obtido ${actual.slice(0, 12)}…, esperado ${expectedSha256.slice(0, 12)}…).`, 'CHECKSUM'
+          'O arquivo baixado não passou na verificação de integridade. Tente novamente; se continuar, verifique sua conexão.', 'CHECKSUM'
         ));
       }
       try {

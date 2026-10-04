@@ -7,7 +7,7 @@
 .silence-screen-container [style*="color: #ffffff"],
 .silence-screen-container [style*="color:#ffffff"] { color: var(--text) !important; }
 .silence-screen-container #btnAddSilenceVideos,
-.silence-screen-container #btnStartSilenceQueue { color: #fff !important; background: var(--accent) !important; }
+.silence-screen-container #btnStartSilenceQueue { color: var(--on-accent, #fff) !important; background: var(--accent-solid, var(--accent)) !important; }
 .silence-screen-container .step-item { min-width: 0; }
 .silence-screen-container .silence-stepper { border-radius: 12px !important; gap: 8px; flex-wrap: wrap; }
 .silence-screen-container button {
@@ -19,6 +19,9 @@
   outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
   outline-offset: 2px;
 }
+.silence-screen-container .silence-row:hover { background: rgba(255, 255, 255, 0.04); }
+.silence-screen-container .btn-remove-silence-item:hover { color: #ff5252 !important; }
+.silence-screen-container .btn-silence-lib-option:hover { border-color: var(--accent) !important; }
 .silence-screen-container button:hover:not(:disabled) { filter: brightness(1.08); }
 .silence-screen-container button:disabled { opacity: 0.5; cursor: not-allowed !important; filter: none; }
 .silence-screen-container input:not([type="range"]):focus,
@@ -51,6 +54,12 @@
 .silence-screen-container select { background: color-mix(in srgb, var(--text) 6%, transparent) !important; }
 .silence-screen-container .btn-silence-lib-option:hover { background: color-mix(in srgb, var(--text) 6%, var(--card-2)) !important; }
 #silenceLibraryModal > div { border-radius: 14px !important; }
+/* Coluna principal pode encolher (a tabela rola por dentro) e a barra de botões quebra linha */
+.silence-screen-container > div[style*="min-height: 480px"] > div:first-child { min-width: 0; }
+.silence-screen-container > div[style*="min-height: 480px"] > div:first-child > div:first-child { flex-wrap: wrap; }
+.silence-screen-container > div[style*="min-height: 480px"] > div:first-child > div:first-child > div:last-child { flex-wrap: wrap !important; }
+.silence-screen-container button, .silence-screen-container select { min-height: 32px; }
+:root[data-theme="light"] .silence-screen-container .silence-row:hover { background: rgba(0, 0, 0, 0.05); }
 @media (max-width: 1000px) {
   .silence-screen-container > div[style*="min-height: 480px"] { flex-direction: column; }
   .silence-screen-container > div[style*="min-height: 480px"] > div[style*="width: 290px"] { width: 100% !important; }
@@ -58,3 +67,12 @@
 @media (prefers-reduced-motion: reduce) {
   .silence-screen-container button, .silence-screen-container #silenceMainBody tr { transition: none; }
 }
+:root.reduce-motion .silence-screen-container button, :root.reduce-motion .silence-screen-container #silenceMainBody tr { transition: none; }
+:root[data-theme="light"] .silence-screen-container #lblSensitivity { color: #b3261e !important; }
+
+/* Contraste AA (tokens globais) */
+.silence-screen-container { --silence-ok: #66bb6a; }
+:root[data-theme="light"] .silence-screen-container { --silence-ok: #1b6e1f; }
+.silence-screen-container #lblSensitivity { color: var(--accent-text, var(--accent)) !important; }
+.silence-screen-container #btnAddSilenceVideos .material-symbols-rounded,
+.silence-screen-container #btnStartSilenceQueue .material-symbols-rounded { color: inherit; }

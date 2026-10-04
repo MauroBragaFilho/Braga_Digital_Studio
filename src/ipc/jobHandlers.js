@@ -1,40 +1,40 @@
 ﻿'use strict';
 
-const { ipcMain } = require('electron');
+const { handle } = require('./channelRegistry');
 const { jobManager } = require('../core/jobs/JobManager');
 
 /**
  * Registra os handlers IPC do JobManager.
  */
 module.exports = function registerJobHandlers() {
-  ipcMain.handle('jobs:getStatus', () => {
+  handle('jobs:getStatus', () => {
     return jobManager.getStatus();
   });
 
-  ipcMain.handle('jobs:cancel', (_, jobId) => {
+  handle('jobs:cancel', (_, jobId) => {
     return jobManager.cancel(jobId);
   });
 
-  ipcMain.handle('jobs:cancelAll', () => {
+  handle('jobs:cancelAll', () => {
     jobManager.cancelAll();
     return true;
   });
 
-  ipcMain.handle('jobs:getHistory', () => {
+  handle('jobs:getHistory', () => {
     return jobManager.listHistory();
   });
 
-  ipcMain.handle('jobs:clearHistory', () => {
+  handle('jobs:clearHistory', () => {
     jobManager.clearHistory();
     return true;
   });
 
-  ipcMain.handle('jobs:pause', () => {
+  handle('jobs:pause', () => {
     jobManager.pause();
     return true;
   });
 
-  ipcMain.handle('jobs:resume', () => {
+  handle('jobs:resume', () => {
     jobManager.resume();
     return true;
   });

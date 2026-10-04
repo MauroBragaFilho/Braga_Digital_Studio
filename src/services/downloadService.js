@@ -11,11 +11,48 @@ const { spotDlTool } = require('../infrastructure/external-tools/adapters/SpotDl
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const { isHttpUrl, assertHttpUrl } = require('./urlValidator');
 const { friendlyYtDlpError, sanitizeUserMessage } = require('./ytdlpErrors');
+const { inspectCookiesFile, cookiesFileFor } = require('./youtubeCookies');
 
 // Persistência/emissão de progresso no máximo a cada 500ms (mudanças de status gravam na hora)
 const PROGRESS_THROTTLE_MS = 500;
 // Sem nenhuma saída do yt-dlp por este tempo => considera travado, mata a árvore e marca falha
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Só MP4 ou MP3: qualquer outro valor vindo da tela cai em MP4. */
+function normalizeFormat(value) {
+  return String(value || 'MP4').toUpperCase() === 'MP3' ? 'MP3' : 'MP4';
+}
+
+/** Qualidade aceita: "best", altura ("720" ou "720p") ou bitrate ("320kbps"); o resto vira "best". */
+function normalizeQuality(value) {
+  const q = String(value || 'best').trim().toLowerCase();
+  return /^(best|\d{3,4}p?|\d{2,3}kbps)$/.test(q) ? q : 'best';
+}
+
+/**
+ * Pausa aleatória entre downloads de uma lista (evita que o YouTube trate a fila como robô).
+ * Ajustável em Configurações → Mídia; padrão 10 s a 3 min.
+ */
+const PAUSE_DEFAULT_MIN_SEC = 10;
+const PAUSE_DEFAULT_MAX_SEC = 180;
+
+/** Lê e valida a configuração de pausa: { enabled, minSec, maxSec } (min <= max, dentro de 0 a 600 s). */
+function readPauseSettings(settings) {
+  const s = settings || {};
+  const clamp = (v, d) => {
+    if (v === null || v === undefined || v === '') return d; // Number(null) seria 0: ausente não é "sem pausa"
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(600, Math.max(0, Math.round(n))) : d;
+  };
+  const minSec = clamp(s.downloadPauseMinSec, PAUSE_DEFAULT_MIN_SEC);
+  const maxSec = Math.max(minSec, clamp(s.downloadPauseMaxSec, PAUSE_DEFAULT_MAX_SEC));
+  return { enabled: s.downloadPauseEnabled !== false, minSec, maxSec };
+}
+
+/** Sorteia a espera (em ms) dentro da faixa configurada. `random` é injetável para teste. */
+function pickPauseMs({ minSec, maxSec }, random = Math.random) {
+  return Math.round((minSec + random() * (maxSec - minSec)) * 1000);
+}
 
 class DownloadManager extends EventEmitter {
   constructor({ paths, getSettings, historyService }) {
@@ -35,6 +72,16 @@ class DownloadManager extends EventEmitter {
     this._lastSaveAt = 0;
     this._lastEmitAt = 0;
     this._lastActivityAt = 0;      // última saída do processo atual (watchdog)
+
+    // Pausa entre downloads: instante em que a espera termina (null = sem espera) e como acordar antes
+    this._waitUntil = null;
+    this._wakeWait = null;
+
+    // Cookies do YouTube: função opcional (injetada pelo bootstrap) que renova o arquivo a partir da sessão
+    // da aba Envio; _cookiesFile é o arquivo validado para esta rodada da fila
+    this.cookiesProvider = null;
+    this._cookiesFile = undefined;
+    this._cookiesCheckedAt = 0;
 
     // Carrega a fila salva no SQLite no startup
     this.initDatabaseQueue();
@@ -149,7 +196,7 @@ class DownloadManager extends EventEmitter {
     const url = this.validateRequest(request);
     const settings = this.getSettings();
     const isSpotify = detectarSpotify(url).isSpotify;
-    const format = (request.format || request.type || 'MP4').toUpperCase();
+    const format = normalizeFormat(request.format || request.type);
     const folder = format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
     fs.mkdirSync(folder, { recursive: true });
 
@@ -166,7 +213,7 @@ class DownloadManager extends EventEmitter {
       platform: request.platform || (isSpotify ? 'Spotify' : 'YouTube'),
       duration: request.duration || null,
       format,
-      quality: request.quality || request.resolution || 'best',
+      quality: normalizeQuality(request.quality || request.resolution),
       folder,
       isSpotify,
       status: initialStatus,
@@ -218,12 +265,17 @@ class DownloadManager extends EventEmitter {
       this.currentItem.status = 'paused';
       this.saveItemToDb(this.currentItem);
       if (this.currentProcess) {
+        // Marca o filho: o fechamento dele (código != 0 por causa do kill) não pode virar "failed",
+        // mesmo que start() já tenha devolvido o item para 'queued' antes de o processo morrer.
+        this.currentProcess.killedByPause = true;
         this.killProcessTree(this.currentProcess);
         this.currentProcess = null;
       }
     }
 
     this.emit('downloads:updated', this.queue);
+    // Quem acompanha a barra da taskbar precisa soltar o progresso preso (não é "fila concluída")
+    this.emit('downloads:paused');
     return { ok: true };
   }
 
@@ -340,7 +392,7 @@ class DownloadManager extends EventEmitter {
     if (!item) return { ok: false, error: 'Item não encontrado.' };
 
     const settings = this.getSettings();
-    const targetFormat = (newFormat || (item.format === 'MP4' ? 'MP3' : 'MP4')).toUpperCase();
+    const targetFormat = newFormat ? normalizeFormat(newFormat) : (item.format === 'MP4' ? 'MP3' : 'MP4');
     
     // Se mudou de formato, ajusta a qualidade padrão para o novo formato se necessário
     if (item.format !== targetFormat) {
@@ -363,7 +415,7 @@ class DownloadManager extends EventEmitter {
     const item = this.queue.find(i => i.id === id);
     if (!item) return { ok: false, error: 'Item não encontrado.' };
 
-    item.quality = newQuality || 'best';
+    item.quality = normalizeQuality(newQuality);
     this.saveItemToDb(item);
 
     this.emit('downloads:updated', this.queue);
@@ -423,6 +475,7 @@ class DownloadManager extends EventEmitter {
         continue;
       }
 
+      await this._prepareCookies();
       this.currentItem = nextItem;
       nextItem.status = 'downloading';
       nextItem.startedAt = new Date().toISOString();
@@ -444,11 +497,79 @@ class DownloadManager extends EventEmitter {
 
       this.currentItem = null;
       await this._sleep(500);
+
+      // Pausa aleatória antes do próximo da lista (só se o item chegou a baixar e ainda há fila)
+      if (!this.isPaused && this.queue.some((i) => i.status === 'queued')) {
+        const pause = readPauseSettings(this.getSettings());
+        if (pause.enabled && pause.maxSec > 0) {
+          const ms = pickPauseMs(pause);
+          logger.info('[DownloadManager] Pausa entre downloads', { seconds: Math.round(ms / 1000) });
+          await this._waitBetweenItems(ms);
+        }
+      }
     }
   }
 
   _sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Espera `ms` entre dois downloads. Termina antes se a fila for pausada, o item da vez for removido/cancelado
+   * ou `skipWait()` for chamado. Emite `downloads:wait` ({ until, seconds }) ao começar e ({ until: null }) ao terminar.
+   * @returns {Promise<boolean>} true se esperou até o fim
+   */
+  async _waitBetweenItems(ms) {
+    if (!(ms > 0)) return true;
+    const until = Date.now() + ms;
+    this._waitUntil = until;
+    this.emit('downloads:wait', { until, seconds: Math.round(ms / 1000) });
+    let woken = false;
+    this._wakeWait = () => { woken = true; };
+    try {
+      while (!woken && !this.isPaused && Date.now() < until) {
+        await this._sleep(Math.min(250, Math.max(10, until - Date.now())));
+      }
+    } finally {
+      this._waitUntil = null;
+      this._wakeWait = null;
+      this.emit('downloads:wait', { until: null, seconds: 0 });
+    }
+    return !woken && !this.isPaused;
+  }
+
+  /** Pula a espera atual e segue para o próximo download (botão do usuário). */
+  skipWait() {
+    if (this._wakeWait) this._wakeWait();
+    return { ok: true };
+  }
+
+  getWaitState() {
+    return { until: this._waitUntil };
+  }
+
+  /**
+   * Confere (no máximo a cada 2 min) se há sessão do YouTube válida: renova o arquivo de cookies a partir da aba
+   * Envio, quando possível, e guarda o arquivo a usar nesta rodada.
+   */
+  async _prepareCookies(force = false) {
+    const now = Date.now();
+    if (!force && this._cookiesFile !== undefined && now - this._cookiesCheckedAt < 120000) return;
+    this._cookiesCheckedAt = now;
+    let file = null;
+    try { if (typeof this.cookiesProvider === 'function') file = await this.cookiesProvider(); } catch (err) {
+      logger.warn('[DownloadManager] Falha ao renovar os cookies do YouTube', { error: err.message });
+    }
+    if (!file) file = this.getSettings().cookiesFile || null;
+    const info = inspectCookiesFile(file);
+    this._cookiesFile = info.valid ? file : null;
+  }
+
+  /** Estado da sessão do YouTube para a tela: { valid, expiresAt }. */
+  async getCookiesStatus() {
+    await this._prepareCookies(true);
+    const info = inspectCookiesFile(this._cookiesFile || this.getSettings().cookiesFile);
+    return { valid: info.valid, expiresAt: info.expiresAt, reason: info.reason };
   }
 
   /** Marca o item como falho (nunca sobrescreve cancelled/paused), persiste e emite o evento. */
@@ -464,6 +585,7 @@ class DownloadManager extends EventEmitter {
   /** Marca o item como concluído (nunca sobrescreve cancelled/paused). */
   _completeItem(item) {
     if (item.status === 'cancelled' || item.status === 'paused') return false;
+    item.outputPath = this._resolveOutputPath(item);
     item.status = 'completed';
     item.progress = 100;
     item.completedAt = new Date().toISOString();
@@ -485,6 +607,42 @@ class DownloadManager extends EventEmitter {
   }
 
   /**
+   * Garante que o outputPath de um item concluído aponte para um arquivo existente.
+   * O yt-dlp pode informar o arquivo intermediário (ex.: .webm antes da extração do MP3) e o spotDL
+   * não informa o destino; nesses casos tenta a extensão final e, para o Spotify, o arquivo mais
+   * recente da pasta de destino. Devolve '' se nada for encontrado.
+   */
+  _resolveOutputPath(item) {
+    const exists = (p) => {
+      try { return fs.statSync(p).size > 0; } catch (_) { return false; }
+    };
+    const current = item.outputPath || '';
+    if (current && exists(current)) return current;
+
+    if (current) {
+      const finalExt = item.format === 'MP3' || item.isSpotify ? '.mp3' : '.mp4';
+      const alt = path.join(path.dirname(current), path.basename(current, path.extname(current)) + finalExt);
+      if (exists(alt)) return alt;
+    }
+
+    if (item.isSpotify) {
+      const folder = item.folder || '';
+      const since = (item.startedAt ? Date.parse(item.startedAt) : 0) - 2000;
+      try {
+        let best = null;
+        for (const name of fs.readdirSync(folder)) {
+          if (path.extname(name).toLowerCase() !== '.mp3') continue;
+          const full = path.join(folder, name);
+          const st = fs.statSync(full);
+          if (st.size > 0 && st.mtimeMs >= since && (!best || st.mtimeMs > best.mtimeMs)) best = { full, mtimeMs: st.mtimeMs };
+        }
+        if (best) return best.full;
+      } catch (_) { /* pasta inexistente/ilegível */ }
+    }
+    return '';
+  }
+
+  /**
    * Chave estável do vídeo para comparar itens: ID do YouTube quando a URL permite extraí-lo,
    * senão a URL sem query/fragmento. null se a URL for inválida.
    */
@@ -499,7 +657,9 @@ class DownloadManager extends EventEmitter {
         const m = /^\/(?:shorts|live|embed|v)\/([\w-]{6,})/.exec(u.pathname);
         if (m) return `yt:${m[1]}`;
       }
-      return `url:${host}${u.pathname}`;
+      // Outros sites: o identificador do vídeo pode estar na query string (ex.: ?id=123), então ela
+      // entra na chave; o fragmento (#...) nunca identifica o conteúdo.
+      return `url:${host}${u.pathname}${u.search}`;
     } catch (_) {
       return null;
     }
@@ -560,7 +720,7 @@ class DownloadManager extends EventEmitter {
         cwd: targetFolder || settings.mp4Folder,
         env: {
           ...process.env,
-          PATH: `${this.paths.dataDir};${process.env.PATH || ''}`,
+          PATH: `${this.paths.dataDir}${path.delimiter}${process.env.PATH || ''}`,
           PYTHONIOENCODING: 'utf-8',
           PYTHONUTF8: '1'
         }
@@ -581,7 +741,10 @@ class DownloadManager extends EventEmitter {
         if (watchdog) clearInterval(watchdog);
         if (this.currentProcess === child) this.currentProcess = null;
 
-        if (item.status !== 'cancelled' && item.status !== 'paused') {
+        // Filho morto por pausa: não finaliza o item (fica 'paused' ou já 'queued' se houve start())
+        if (child.killedByPause) {
+          this.emit('downloads:updated', this.queue);
+        } else if (item.status !== 'cancelled' && item.status !== 'paused') {
           apply();
           this.emit('downloads:updated', this.queue);
         }
@@ -641,7 +804,8 @@ class DownloadManager extends EventEmitter {
       const line = rawLine.trim();
       if (!line) continue;
 
-      const destination = line.match(/\[download\]\s+Destination:\s+(.+)$/i);
+      // "[download] Destination:" (arquivo baixado) e "[ExtractAudio] Destination:" (MP3 final)
+      const destination = line.match(/\[(?:download|ExtractAudio)\]\s+Destination:\s+(.+)$/i);
       if (destination) {
         item.outputPath = destination[1];
         item.title = path.basename(destination[1], path.extname(destination[1]));
@@ -742,14 +906,17 @@ class DownloadManager extends EventEmitter {
     const args = [
       '--newline',
       '--progress',
+      '--no-playlist', // link de vídeo com "&list=" baixa só o vídeo; playlists são expandidas antes, pela UI
       '--windows-filenames',
       '--continue', // retoma o ".part" de execuções anteriores (padrão do yt-dlp, explícito aqui)
       '--no-mtime',
       '--ffmpeg-location', this.paths.dataDir
     ];
 
-    if (settings.cookiesFile && fs.existsSync(settings.cookiesFile)) {
-      args.push('--cookies', settings.cookiesFile);
+    // Sessão do YouTube válida (aba Envio): baixa já autenticado; o arquivo nunca vai para outros sites
+    const cookies = cookiesFileFor(item.url, this._cookiesFile !== undefined ? this._cookiesFile : settings.cookiesFile);
+    if (cookies) {
+      args.push('--cookies', cookies);
     }
 
     if (item.format === 'MP3') {
@@ -789,3 +956,5 @@ class DownloadManager extends EventEmitter {
 }
 
 module.exports = DownloadManager;
+module.exports.readPauseSettings = readPauseSettings;
+module.exports.pickPauseMs = pickPauseMs;

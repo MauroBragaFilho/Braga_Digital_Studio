@@ -45,7 +45,7 @@
           <!-- Pão de migalhas preenchido via JS -->
         </div>
       </div>
-      <button id="btnMtpClose" class="devices-modal-close-btn" type="button">
+      <button id="btnMtpClose" class="devices-modal-close-btn" type="button" title="Fechar" aria-label="Fechar">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -109,7 +109,7 @@
         <span class="material-symbols-rounded bdsm-icon">smartphone</span>
         Importação Inteligente
       </h2>
-      <button id="btnBdsmClose" class="devices-modal-close-btn" type="button">
+      <button id="btnBdsmClose" class="devices-modal-close-btn" type="button" title="Fechar" aria-label="Fechar">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -155,7 +155,7 @@
         <span class="material-symbols-rounded">settings_applications</span>
         Gerenciar Dispositivos
       </h2>
-      <button id="btnManageHiddenClose" class="devices-modal-close-btn" type="button">
+      <button id="btnManageHiddenClose" class="devices-modal-close-btn" type="button" title="Fechar" aria-label="Fechar">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -185,6 +185,47 @@
     <div class="devices-modal-footer devices-modal-footer-right">
       <button id="btnManageHiddenDone" class="devices-btn-secondary" type="button">
         Concluir
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Pareamento com o celular -->
+<div id="bdsmPairModal" class="devices-modal-overlay hidden" aria-describedby="bdsmPairHint">
+  <div class="devices-modal devices-modal-small bdsm-pair-modal">
+    <div class="devices-modal-header">
+      <h2 class="devices-modal-title">
+        <span class="material-symbols-rounded bdsm-icon" aria-hidden="true">smartphone</span>
+        Conectar ao celular
+      </h2>
+      <button id="btnBdsmPairClose" class="devices-modal-close-btn" type="button" title="Cancelar" aria-label="Cancelar">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <div class="devices-modal-body bdsm-pair-body">
+      <p id="bdsmPairDevice" class="bdsm-pair-device"></p>
+
+      <div id="bdsmPairWait" class="bdsm-pair-wait" role="status">
+        <span class="material-symbols-rounded bdsm-loading-icon" aria-hidden="true">sync</span>
+        <div>Pedindo a conexão ao celular...</div>
+      </div>
+
+      <div id="bdsmPairCodeBox" class="bdsm-pair-codebox hidden">
+        <div id="bdsmPairCode" class="bdsm-pair-code" role="img" aria-label="Código de pareamento"></div>
+        <p id="bdsmPairHint" class="bdsm-pair-hint">Confira no celular se o código é o mesmo e toque em Aprovar.</p>
+        <div class="bdsm-pair-bar" aria-hidden="true"><div id="bdsmPairBar" class="bdsm-pair-bar-fill"></div></div>
+        <div id="bdsmPairTimer" class="bdsm-pair-timer" role="timer" aria-live="off">Expira em 90 s</div>
+      </div>
+
+      <div id="bdsmPairResult" class="bds-empty bdsm-pair-result hidden" role="alert"></div>
+    </div>
+
+    <div class="devices-modal-footer devices-modal-footer-right">
+      <button id="btnBdsmPairCancel" class="devices-btn-secondary" type="button">Cancelar</button>
+      <button id="btnBdsmPairRetry" class="devices-btn-primary-orange hidden" type="button">
+        <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+        Tentar de novo
       </button>
     </div>
   </div>

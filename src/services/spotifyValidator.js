@@ -28,7 +28,7 @@ function validarSpotifyDownload(url) {
     return {
       permitido: false,
       tipo: null,
-      motivo: 'Link do Spotify não detectado.'
+      motivo: 'Link de música não reconhecido.'
     };
   }
 

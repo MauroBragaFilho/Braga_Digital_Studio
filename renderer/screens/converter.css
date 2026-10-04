@@ -1313,3 +1313,42 @@
   .converter-action-group .converter-btn { padding: 7px 10px; }
   .converter-action-group .converter-sort-select { padding: 7px 8px; max-width: 150px; }
 }
+
+/* Auditoria UX: a barra de ações quebra linha em vez de cortar o botão "Adicionar" em janelas médias */
+.converter-content-panel { min-width: 0; }
+.converter-panel-header { flex-wrap: wrap; }
+.converter-action-group { flex-wrap: wrap; flex-shrink: 1; }
+.converter-title-group { overflow: visible; }
+.converter-btn, .converter-sort-select { min-height: 32px; }
+.converter-sidebar { padding-bottom: 8px; }
+:root.reduce-motion .converter-btn, :root.reduce-motion .converter-btn-start { transition: none; }
+
+/* Contraste AA (tokens globais) */
+.converter-btn-primary, .converter-codec-btn.active,
+.converter-format-toggle.mp4-active .converter-format-btn[data-format="mp4"],
+.converter-format-toggle.mp3-active .converter-format-btn[data-format="mp3"] {
+  background: var(--accent-solid, var(--accent));
+  border-color: var(--accent-solid, var(--accent));
+  color: var(--on-accent, #fff);
+}
+.converter-bitrate-display { color: var(--accent-text, var(--accent)); }
+.step-badge-done { color: var(--ok-text, var(--success)); }
+:root { --ok-text: #66bb6a; }
+:root[data-theme="light"] { --ok-text: #1b6e1f; }
+:root[data-theme="light"] .converter-format-chip { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+
+/* Tema claro: fundos neutros claros no lugar de camadas pretas translúcidas (contraste AA) */
+:root[data-theme="light"] .converter-table-container,
+:root[data-theme="light"] .converter-select,
+:root[data-theme="light"] .converter-input,
+:root[data-theme="light"] .converter-format-toggle,
+:root[data-theme="light"] .converter-codec-btn:not(.active),
+:root[data-theme="light"] .converter-bitrate-input,
+:root[data-theme="light"] .converter-empty-content,
+:root[data-theme="light"] .converter-batch-progress-track { background: color-mix(in srgb, var(--text) 5%, var(--card)); }
+:root[data-theme="light"] .converter-codec-btn:not(.active) { color: var(--text); }
+:root[data-theme="light"] .converter-format-toggle:not(.mp4-active) .converter-format-btn[data-format="mp4"],
+:root[data-theme="light"] .converter-format-toggle:not(.mp3-active) .converter-format-btn[data-format="mp3"] { color: var(--text); }
+.converter-title-group #converterMainCount { color: var(--accent-text, var(--accent)); }
+.step-text-done { color: var(--ok-text, var(--success)); }
+:root[data-theme="light"] .converter-bitrate-display { color: var(--accent-text, #b3261e); }

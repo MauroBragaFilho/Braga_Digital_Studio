@@ -5,9 +5,11 @@
  *
  * Nada é obrigatório: o BDS funciona sem nenhum módulo, e cada parte é instalada só quando o
  * usuário pede, direto da fonte oficial:
- *   - Motor      : whisper.cpp (release oficial no GitHub, versão e SHA-256 fixados), versão para CPU (~8 MB).
+ *   - Motor      : whisper.cpp (release oficial no GitHub, versão e SHA-256 fixados), versão para CPU (~5 a 10 MB).
+ *                  Existe para Windows (x64/arm64) e Linux (x64/arm64); no macOS o projeto oficial não publica
+ *                  o programa, então getStatus() informa engine.available=false com o motivo (unavailableReason).
  *   - Modelos    : Hugging Face, ggerganov/whisper.cpp (escolha do usuário; tamanho e SHA-256 vêm da fonte).
- *   - GPU NVIDIA : o mesmo whisper.cpp compilado para CUDA (~640 MB, já com as bibliotecas da NVIDIA);
+ *   - GPU NVIDIA : (só Windows x64) o mesmo whisper.cpp compilado para CUDA (~640 MB, já com as bibliotecas da NVIDIA);
  *                  exige aceitar a licença da NVIDIA. Sem ele tudo funciona na CPU, só que mais devagar.
  *
  * Layout em disco (<dataDir>/modules):
@@ -25,8 +27,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { downloadFile, fetchJson, sha256File, CANCELLED } = require('./FileDownloader');
-const { extractZip, walkFiles } = require('./ZipExtractor');
-const { WhisperCppSource, HuggingFaceSource, ENGINE_FILES, CUDA_LICENSE_LINKS } = require('./sources');
+const { extractZip, extractTarball, walkFiles } = require('./ZipExtractor');
+const { WhisperCppSource, HuggingFaceSource, engineFiles, unavailableReason, CUDA_LICENSE_LINKS } = require('./sources');
 const { WHISPER_MODELS, DEFAULT_MODEL_ID, REFERENCE_NOTE, getModel } = require('./WhisperCatalog');
 const { WhisperCppRunner } = require('./WhisperCppRunner');
 
@@ -70,7 +72,14 @@ class ModuleManager extends EventEmitter {
     this.cpp = new WhisperCppSource({ baseUrl: config.githubBaseUrl, release: config.release });
     this._active = null;
     this._platform = config.platform || process.platform;
+    this._arch = config.arch || process.arch;
+    this._files = engineFiles(this._platform);
   }
+
+  /** O projeto oficial publica o motor (CPU) / a aceleração NVIDIA para este sistema e arquitetura? */
+  _hasSource(kind) { return this.cpp.hasAsset(kind, this._platform, this._arch); }
+
+  _asset(kind) { return this.cpp.asset(kind, this._platform, this._arch); }
 
   // ------------------------------------------------------------------ estado em disco
 
@@ -92,10 +101,10 @@ class ModuleManager extends EventEmitter {
     this._writeState(state);
   }
 
-  _engineInstalled() { return fs.existsSync(path.join(this.paths.engine, ENGINE_FILES.cli)); }
+  _engineInstalled() { return fs.existsSync(path.join(this.paths.engine, this._files.cli)); }
 
   _cudaInstalled() {
-    return fs.existsSync(path.join(this.paths.cuda, ENGINE_FILES.cli)) && fs.existsSync(path.join(this.paths.cuda, ENGINE_FILES.cuda));
+    return fs.existsSync(path.join(this.paths.cuda, this._files.cli)) && fs.existsSync(path.join(this.paths.cuda, this._files.cuda));
   }
 
   _modelDir(id) { return path.join(this.paths.models, id); }
@@ -123,7 +132,10 @@ class ModuleManager extends EventEmitter {
     const activeId = this._activeModelId();
     const engineOk = this._engineInstalled();
     const cudaOk = this._cudaInstalled();
-    const cudaAsset = this.cpp.asset('cuda');
+    const engineAvailable = this._hasSource('cpu') || Boolean(this.config.cliCommand);
+    const cudaAvailable = engineAvailable && this._hasSource('cuda');
+    const cudaAsset = cudaAvailable ? this._asset('cuda') : null;
+    const cpuAsset = this._hasSource('cpu') ? this._asset('cpu') : null;
 
     let freeBytes = null;
     try {
@@ -134,7 +146,7 @@ class ModuleManager extends EventEmitter {
 
     return {
       apiVersion: MODULE_API_VERSION,
-      platformSupported: this._platform === 'win32',
+      platformSupported: engineAvailable,
       engineDownload: true, // o motor é baixado da release oficial (também dá para instalar de um .zip)
       busy: this._active ? { opId: this._active.opId, kind: this._active.kind, label: this._active.label } : null,
       disk: { freeBytes },
@@ -143,11 +155,13 @@ class ModuleManager extends EventEmitter {
         name: 'Transcrição',
         description: 'Gera legendas (.srt) e transcrições com tempo (.md) de vídeos e áudios, em português e outros idiomas. O reconhecimento roda no seu computador: o áudio não é enviado para a internet.',
         engine: {
+          available: engineAvailable,
+          unavailableReason: engineAvailable ? null : unavailableReason('cpu', this._platform, this._arch),
           installed: engineOk,
           version: engineOk ? (state.engine || {}).version || null : null,
           source: engineOk ? (state.engine || {}).source || null : null,
           installedAt: engineOk ? (state.engine || {}).installedAt || null : null,
-          downloadBytes: this.cpp.asset('cpu').size
+          downloadBytes: cpuAsset ? cpuAsset.size : 0
         },
         models: WHISPER_MODELS.map((m) => {
           const installed = this._modelInstalled(m.id);
@@ -163,9 +177,11 @@ class ModuleManager extends EventEmitter {
         defaultModelId: DEFAULT_MODEL_ID,
         activeModelId: activeId,
         cuda: {
+          available: cudaAvailable,
+          unavailableReason: cudaAvailable ? null : unavailableReason('cuda', this._platform, this._arch),
           installed: cudaOk,
           versions: cudaOk ? (state.cuda || {}).versions || null : null,
-          approxDownloadBytes: cudaAsset.size,
+          approxDownloadBytes: cudaAsset ? cudaAsset.size : 0,
           licenseLinks: CUDA_LICENSE_LINKS,
           requirement: 'Exige uma placa de vídeo NVIDIA com driver atualizado (versão 551 ou mais nova). Sem a aceleração, a transcrição funciona normalmente na CPU, só que bem mais devagar.'
         },
@@ -236,8 +252,9 @@ class ModuleManager extends EventEmitter {
     }
   }
 
-  _requireWindows() {
-    if (this._platform !== 'win32') throw new ModuleError('Este módulo está disponível apenas no Windows nesta versão.', 'PLATFORM');
+  /** Recusa, em português, quando o projeto oficial não publica o pacote para este sistema. */
+  _requireSource(kind) {
+    if (!this._hasSource(kind)) throw new ModuleError(unavailableReason(kind, this._platform, this._arch), 'PLATFORM');
   }
 
   /** Baixa um arquivo, aproveitando um download já concluído e íntegro. */
@@ -259,13 +276,14 @@ class ModuleManager extends EventEmitter {
   async _placeEnginePackage({ archive, work, targetDir, requiredFiles, signal, op, label }) {
     this._progress(op, { phase: 'extract', message: `Extraindo ${label}…` });
     const extracted = path.join(work, 'files');
-    await extractZip(archive, extracted, { signal });
+    if (/\.(tar\.gz|tgz)$/i.test(archive)) await extractTarball(archive, extracted, { signal });
+    else await extractZip(archive, extracted, { signal });
 
-    const cli = walkFiles(extracted).find((f) => path.basename(f).toLowerCase() === ENGINE_FILES.cli);
-    if (!cli) throw new ModuleError(`O pacote não contém ${ENGINE_FILES.cli}.`, 'BAD_ZIP');
+    const cli = walkFiles(extracted).find((f) => path.basename(f).toLowerCase() === this._files.cli);
+    if (!cli) throw new ModuleError('Este pacote não é o do recurso de transcrição. Baixe-o de novo pelo botão de instalação.', 'BAD_ZIP');
     const source = path.dirname(cli);
     for (const f of requiredFiles) {
-      if (!fs.existsSync(path.join(source, f))) throw new ModuleError(`O pacote está incompleto (falta ${f}).`, 'BAD_ZIP');
+      if (!fs.existsSync(path.join(source, f))) throw new ModuleError('O pacote do recurso está incompleto. Baixe-o de novo pelo botão de instalação.', 'BAD_ZIP');
     }
 
     this._progress(op, { phase: 'install', message: 'Instalando…' });
@@ -280,6 +298,9 @@ class ModuleManager extends EventEmitter {
       throw err;
     }
     rmrf(backup);
+    if (this._platform !== 'win32') {
+      try { fs.chmodSync(path.join(targetDir, this._files.cli), 0o755); } catch (_) { /* noop */ }
+    }
   }
 
   // ------------------------------------------------------------------ motor (CPU)
@@ -288,8 +309,8 @@ class ModuleManager extends EventEmitter {
    * Instala o motor do Whisper (whisper.cpp para CPU).
    * @param {{zipPath?:string}} [opts]  Sem zipPath, baixa a release oficial; com zipPath, instala de um .zip local.
    */
-  async installEngine({ zipPath = null } = {}) {
-    this._requireWindows();
+  async installEngine({ zipPath = null, confirmUnofficial = null } = {}) {
+    this._requireSource('cpu');
     return this._run('engine', 'Instalando o motor de transcrição', async (op) => {
       const signal = op.controller.signal;
       fs.mkdirSync(this.tempDir, { recursive: true });
@@ -298,10 +319,21 @@ class ModuleManager extends EventEmitter {
       let meta;
       try {
         if (zipPath) {
-          if (!/\.zip$/i.test(zipPath) || !fs.existsSync(zipPath)) throw new ModuleError('Selecione um arquivo .zip válido do motor.', 'BAD_ZIP');
-          meta = { version: null, source: 'zip' };
+          if (!/\.(zip|tar\.gz|tgz)$/i.test(zipPath) || !fs.existsSync(zipPath)) throw new ModuleError('Selecione um arquivo de pacote válido do recurso de transcrição.', 'BAD_ZIP');
+          // O pacote local é executado depois: confere o SHA-256 fixado. Fora do esperado, só segue
+          // com confirmação explícita do usuário (origem não oficial) — sem confirmação, recusa.
+          const zipSha = (await sha256File(zipPath, signal)).toLowerCase();
+          const pinned = String(this._asset('cpu').sha256 || '').toLowerCase();
+          const official = !!pinned && zipSha === pinned;
+          if (!official) {
+            const allowed = typeof confirmUnofficial === 'function' ? await confirmUnofficial({ zipPath, sha256: zipSha, expected: pinned }) : false;
+            if (allowed !== true) {
+              throw new ModuleError('Este arquivo não é o pacote oficial do recurso (a verificação de integridade falhou). Instalação recusada; use o botão de instalação para baixar o pacote oficial.', 'UNOFFICIAL_ZIP');
+            }
+          }
+          meta = { version: null, source: 'zip', sha256: zipSha, official };
         } else {
-          const asset = this.cpp.asset('cpu');
+          const asset = this._asset('cpu');
           await this._ensureSpace(this.root, asset.size * 4);
           archive = path.join(work, asset.name);
           this._progress(op, { phase: 'download', message: 'Baixando o motor…' });
@@ -335,8 +367,12 @@ class ModuleManager extends EventEmitter {
     if (!model) throw new ModuleError('Modelo desconhecido.', 'BAD_MODEL');
     return this._run('model', `Baixando o modelo ${model.label}`, async (op) => {
       const signal = op.controller.signal;
-      this._progress(op, { phase: 'prepare', message: 'Consultando o Hugging Face…' });
+      this._progress(op, { phase: 'prepare', message: 'Consultando a fonte do modelo…' });
       const info = await this.hf.getModelFile(model.repo, model.file);
+      // Falha fechado: sem o hash LFS da fonte não há como verificar o modelo baixado.
+      if (!info.file.sha256) {
+        throw new ModuleError('A fonte do modelo não informou os dados de verificação de integridade; a instalação foi recusada por segurança. Tente de novo mais tarde.', 'NO_CHECKSUM');
+      }
       const totalBytes = info.file.size;
       await this._ensureSpace(this.paths.models, totalBytes * 1.05);
 
@@ -399,14 +435,14 @@ class ModuleManager extends EventEmitter {
    * Exige o motor instalado e que o usuário aceite a licença da NVIDIA.
    */
   async installCuda({ acceptLicense = false } = {}) {
-    this._requireWindows();
+    this._requireSource('cuda');
     if (acceptLicense !== true) {
-      throw new ModuleError('É preciso aceitar os termos de licença da NVIDIA (CUDA) para baixar as bibliotecas.', 'LICENSE');
+      throw new ModuleError('É preciso aceitar os termos de licença da NVIDIA para baixar as bibliotecas de aceleração.', 'LICENSE');
     }
     if (!this._engineInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
-    return this._run('cuda', 'Baixando a aceleração NVIDIA (CUDA)', async (op) => {
+    return this._run('cuda', 'Baixando a aceleração NVIDIA', async (op) => {
       const signal = op.controller.signal;
-      const asset = this.cpp.asset('cuda');
+      const asset = this._asset('cuda');
       await this._ensureSpace(this.root, asset.size * 2.4); // zip + arquivos extraídos
 
       fs.mkdirSync(this.tempDir, { recursive: true });
@@ -419,7 +455,7 @@ class ModuleManager extends EventEmitter {
           onProgress: (p) => this._progress(op, { phase: 'download', message: `Baixando ${asset.label}…`, ...p })
         });
         await this._placeEnginePackage({
-          archive, work, targetDir: this.paths.cuda, requiredFiles: [ENGINE_FILES.cuda], signal, op, label: 'a aceleração NVIDIA'
+          archive, work, targetDir: this.paths.cuda, requiredFiles: [this._files.cuda], signal, op, label: 'a aceleração NVIDIA'
         });
         this._patchWhisper((w) => {
           w.cuda = { installedAt: new Date().toISOString(), versions: { whispercpp: asset.tag, cuda: asset.cudaVersion } };
@@ -448,8 +484,8 @@ class ModuleManager extends EventEmitter {
    * @param {{files:string[], srt?:boolean, md?:boolean, maxWords?:number, lines?:1|2, outDir?:string, forceCpu?:boolean}} options
    */
   async transcribe(options) {
-    this._requireWindows();
     const custom = Boolean(this.config.cliCommand);
+    if (!custom) this._requireSource('cpu');
     if (!custom && !this._engineInstalled() && !this._cudaInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
     const modelId = this._activeModelId();
     if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');

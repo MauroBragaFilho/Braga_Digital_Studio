@@ -1,8 +1,30 @@
 const { EventEmitter } = require('events');
 const logger = require('../../services/logService');
 const { execFile } = require('child_process');
-const BdsmClient = require('./BdsmClient');
+const { probeInfo } = require('../integrations/bdsm/BdsmPairing');
 const { backoffDelay, deviceChanged } = require('./backoff');
+
+/**
+ * Porta de teste (BDS_TEST_BDSM_PORT): só em desenvolvimento (app não empacotado), a sondagem "USB" vai para
+ * 127.0.0.1:<porta> em vez de 8080 e o adb forward é ignorado. Serve para testar contra um celular falso.
+ */
+function testBdsmPort() {
+    const port = Number(process.env.BDS_TEST_BDSM_PORT);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    try {
+        const { app } = require('electron');
+        if (app && app.isPackaged) return null;
+    } catch (_) { /* fora do Electron (testes): não é empacotado */ }
+    return port;
+}
+
+/** Entre conexões do mesmo aparelho (physicalId), fica a USB; sem USB, a Wi-Fi. Mantém a ordem original. */
+function pickPreferredConnection(devices) {
+    const hasUsb = new Set(
+        devices.filter((d) => d.connection === 'usb' && d.physicalId).map((d) => d.physicalId)
+    );
+    return devices.filter((d) => !(d.connection !== 'usb' && d.physicalId && hasUsb.has(d.physicalId)));
+}
 
 class DeviceDiscoveryService extends EventEmitter {
     constructor() {
@@ -107,6 +129,7 @@ class DeviceDiscoveryService extends EventEmitter {
      * quando o adb falha ou não há aparelhos; o adb ausente desliga o ciclo.
      */
     async setupAdbForward() {
+        if (testBdsmPort()) return; // modo de teste: não mexe no adb
         if (this._adbRunning || Date.now() < this._adbNextAt) return;
         this._adbRunning = true;
         try {
@@ -172,7 +195,7 @@ class DeviceDiscoveryService extends EventEmitter {
             const probePromises = [];
 
             // 1. Polling USB (localhost)
-            probePromises.push(this.probeDevice('127.0.0.1', 8080, 'usb', true));
+            probePromises.push(this.probeDevice('127.0.0.1', testBdsmPort() || 8080, 'usb', true));
 
             // 2. Polling Wi-Fi (manter vivos os dispositivos encontrados via Bonjour ou sondagem anterior)
             for (const [id, device] of this.devices.entries()) {
@@ -190,25 +213,32 @@ class DeviceDiscoveryService extends EventEmitter {
     async probeDevice(ip, port, connectionType, silentFail = false) {
         if (!ip) return;
         try {
-            const client = new BdsmClient(ip, port);
-            const info = await client.getInfo(silentFail, 2000); // 2s timeout para não travar o polling
+            // 2s de timeout para não travar o polling. Sem pareamento o celular só informa nome/modelo/versão;
+            // com o token guardado, vêm também bateria e armazenamento.
+            const probe = await probeInfo(ip, port, { silent: silentFail, timeout: 2000 });
+            const info = probe.info;
 
             if (!info) return;
 
             const name = info.deviceName || info.name || info.deviceModel || info.model || 'Smartphone BDSM';
             const model = info.deviceModel || info.model || 'Mobile Device';
-            const rawId = info.id || info.deviceId || info.serial || name;
+            const rawId = info.id || info.deviceId || info.serial || name; // mantém o id do card (histórico de importação)
+            const full = probe.paired || !probe.authRequired;
 
             const deviceData = {
                 id: `${rawId}_${connectionType}`.replace(/\s+/g, '_'),
+                // identifica o aparelho, igual nas conexões por USB e Wi-Fi: "nome|modelo" (o celular não publica um id único)
+                physicalId: probe.key || String(rawId),
                 name: name,
                 model: model,
                 ip: ip,
                 port: port,
-                battery: info.batteryLevel ?? info.battery ?? 100,
-                storage_total: info.totalStorageBytes || info.storage_total || 0,
-                storage_free: info.freeStorageBytes || info.storage_free || 0,
+                battery: full ? (info.batteryLevel ?? info.battery ?? null) : null,
+                storage_total: full ? (info.totalStorageBytes || info.storage_total || 0) : 0,
+                storage_free: full ? (info.freeStorageBytes || info.storage_free || 0) : 0,
                 app_version: info.appVersion || info.version || '1.0.0',
+                paired: probe.paired,
+                authRequired: probe.authRequired,
                 connection: connectionType,
                 type: 'bdsm',
                 last_seen: Date.now()
@@ -220,6 +250,13 @@ class DeviceDiscoveryService extends EventEmitter {
                 logger.error(`[Discovery] Falha ao sondar dispositivo ${ip}:${port} (${connectionType}) - ${e.message}`);
             }
         }
+    }
+
+    /** Sonda de novo um endereço conhecido (depois de parear ou esquecer o pareamento), para a UI atualizar já. */
+    async refreshEndpoint(ip, port) {
+        const known = Array.from(this.devices.values()).find((d) => d.ip === ip && Number(d.port) === Number(port));
+        const connection = known ? known.connection : (ip === '127.0.0.1' ? 'usb' : 'wifi');
+        await this.probeDevice(ip, port, connection, true);
     }
 
     stop() {
@@ -264,8 +301,12 @@ class DeviceDiscoveryService extends EventEmitter {
         }
     }
 
+    /**
+     * Dispositivos conhecidos, um por aparelho físico. Se o mesmo aparelho responde por USB e por Wi-Fi, só a
+     * conexão USB é listada (a Wi-Fi fica oculta e volta sozinha se o cabo for retirado).
+     */
     getDevices() {
-        return Array.from(this.devices.values());
+        return pickPreferredConnection(Array.from(this.devices.values()));
     }
 
     async forceRescan() {
@@ -280,3 +321,5 @@ class DeviceDiscoveryService extends EventEmitter {
 }
 
 module.exports = new DeviceDiscoveryService();
+module.exports.pickPreferredConnection = pickPreferredConnection;
+module.exports.testBdsmPort = testBdsmPort;

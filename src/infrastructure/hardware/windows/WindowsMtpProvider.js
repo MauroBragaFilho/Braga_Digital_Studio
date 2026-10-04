@@ -1,6 +1,7 @@
 ﻿'use strict';
 
-const { exec, spawn } = require('node:child_process');
+const { spawn } = require('node:child_process');
+const { execOffThread } = require('../offThreadExec'); // criação do powershell fora do processo principal
 const { StorageProvider } = require('../StorageProvider');
 const logger = require('../../../services/logService');
 
@@ -55,7 +56,7 @@ $devices | ConvertTo-Json -Depth 5
       `;
 
       const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
-      exec(
+      execOffThread(
         `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
         { encoding: 'utf8', timeout: 8000, windowsHide: true },
         (error, stdout) => {
@@ -80,46 +81,19 @@ $devices | ConvertTo-Json -Depth 5
 
   /**
    * Lista o conteudo de uma pasta MTP.
+   * Os dados (nome do dispositivo e caminho) vão para o PowerShell em JSON/base64 numa variável de ambiente:
+   * nunca são interpolados no texto do script (sem injeção de comandos).
    * @param {string} deviceName
    * @param {string[]} pathArray
    * @returns {Promise<Array>}
    */
   async listFolder(deviceName, pathArray) {
     return new Promise((resolve) => {
-      const pathStr = pathArray.map(p => `"${p.replace(/"/g, '""')}"`).join(',');
-      const psScript = `
-$shell = New-Object -ComObject Shell.Application
-$computer = $shell.NameSpace(17)
-$deviceName = "${deviceName}"
-$pathArray = @(${pathStr})
-
-$device = $computer.Items() | Where-Object { $_.Name -eq $deviceName -or $_.Name -match $deviceName } | Select-Object -First 1
-if ($device -eq $null) { exit }
-
-$currentFolder = $device.GetFolder
-foreach ($p in $pathArray) {
-    if ($p -ne "") {
-        $found = $currentFolder.Items() | Where-Object { $_.Name -eq $p -or $_.Name -match $p } | Select-Object -First 1
-        if ($found -eq $null) { exit }
-        $currentFolder = $found.GetFolder
-    }
-}
-
-$results = @()
-foreach ($item in $currentFolder.Items()) {
-    $results += @{
-        Name = $item.Name
-        IsFolder = $item.IsFolder
-        Size = $item.ExtendedProperty("System.Size")
-    }
-}
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$results | ConvertTo-Json -Depth 5
-      `;
-      const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
-      exec(
+      const args = encodeArgs({ deviceName: String(deviceName || ''), pathArray: cleanSegments(pathArray) });
+      const encodedCommand = Buffer.from(LIST_SCRIPT, 'utf16le').toString('base64');
+      execOffThread(
         `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
-        { encoding: 'utf8', windowsHide: true },
+        { encoding: 'utf8', windowsHide: true, timeout: 60000, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, BDS_MTP_ARGS: args } },
         (error, stdout) => {
           if (error) {
             logger.error('WindowsMtpProvider:listFolder:error', { error: error.message });
@@ -141,7 +115,10 @@ $results | ConvertTo-Json -Depth 5
   }
 
   /**
-   * Importa arquivos MTP para destino local com progresso via IPC/events.
+   * Importa arquivos MTP para destino local com progresso via eventos.
+   * Nunca sobrescreve: mesmo nome e tamanho = já importado (pula); mesmo nome com tamanho diferente = "nome (2).ext".
+   * Copia para ".part" e só renomeia ao fechar com o tamanho certo.
+   * Resolve `false` se o dispositivo/pasta não foi encontrado ou se qualquer arquivo falhou.
    * @param {string} deviceName
    * @param {string[]} pathArray
    * @param {string[]} itemNames
@@ -150,144 +127,34 @@ $results | ConvertTo-Json -Depth 5
    */
   async importItems(deviceName, pathArray, itemNames, destFolder) {
     return new Promise((resolve) => {
-      const pathStr = pathArray.map(p => `"${p.replace(/"/g, '""')}"`).join(',');
-      const itemsStr = itemNames.map(n => `"${n.replace(/"/g, '""')}"`).join(',');
-
-      const psScript = `
-$shell = New-Object -ComObject Shell.Application
-$computer = $shell.NameSpace(17)
-$deviceName = "${deviceName}"
-$pathArray = @(${pathStr})
-$itemNames = @(${itemsStr})
-$destPath = "${destFolder}"
-
-New-Item -ItemType Directory -Force -Path $destPath | Out-Null
-$destFolderObj = $shell.NameSpace($destPath)
-
-$device = $computer.Items() | Where-Object { $_.Name -eq $deviceName -or $_.Name -match $deviceName } | Select-Object -First 1
-if ($device -eq $null) { exit }
-
-$currentFolder = $device.GetFolder
-foreach ($p in $pathArray) {
-    if ($p -ne "") {
-        $found = $currentFolder.Items() | Where-Object { $_.Name -eq $p -or $_.Name -match $p } | Select-Object -First 1
-        if ($found -eq $null) { exit }
-        $currentFolder = $found.GetFolder
-    }
-}
-
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-foreach ($itemName in $itemNames) {
-    $targetItem = $currentFolder.Items() | Where-Object { $_.Name -eq $itemName -or $_.Name -match $itemName } | Select-Object -First 1
-    if ($targetItem -ne $null) {
-        $fileSize = [long]($targetItem.ExtendedProperty("System.Size"))
-        $dateModified = $targetItem.ModifyDate
-        $dateCreated = $targetItem.ExtendedProperty("System.DateCreated")
-        $itemDate = $targetItem.ExtendedProperty("System.ItemDate")
-        $destFilePath = Join-Path $destPath $itemName
-        $copiedSuccessfully = $false
-
-        try {
-            $bufferSize = 1048576
-            $buffer = New-Object byte[] $bufferSize
-            $sourceStream = $null
-            if ($targetItem.PSObject.Properties['Open']) {
-                $sourceStream = $targetItem.Open()
-            }
-            if ($sourceStream -ne $null) {
-                $outStream = [System.IO.File]::Create($destFilePath)
-                $totalRead = 0L
-                $lastTime = [System.DateTime]::Now
-                $lastRead = 0L
-                while (($read = $sourceStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                    $outStream.Write($buffer, 0, $read)
-                    $totalRead += $read
-                    $now = [System.DateTime]::Now
-                    $elapsedSeconds = ($now - $lastTime).TotalSeconds
-                    $speedBps = 0
-                    if ($elapsedSeconds -ge 0.2) {
-                        $bytesSinceLast = $totalRead - $lastRead
-                        $speedBps = [long]($bytesSinceLast / $elapsedSeconds)
-                        $lastTime = $now
-                        $lastRead = $totalRead
-                    }
-                    $percent = if ($fileSize -gt 0) { [math]::Round(($totalRead / $fileSize) * 100) } else { 100 }
-                    $progressObj = @{ file = $itemName; percent = $percent; currentSize = $totalRead; totalSize = $fileSize; speedBps = $speedBps }
-                    [Console]::Out.WriteLine($progressObj | ConvertTo-Json -Compress); [Console]::Out.Flush()
-                }
-                $outStream.Close()
-                $sourceStream.Close()
-                $copiedSuccessfully = $true
-            }
-        } catch { $copiedSuccessfully = $false }
-
-        if (-not $copiedSuccessfully) {
-            $destFolderObj.CopyHere($targetItem, 1044)
-            $timeoutCount = 0
-            $lastSize = -1
-            $lastTime = [System.DateTime]::Now
-            while ($true) {
-                Start-Sleep -Milliseconds 200
-                if (Test-Path $destFilePath) {
-                    $currentSize = (Get-Item $destFilePath).Length
-                    $now = [System.DateTime]::Now
-                    $elapsedSeconds = ($now - $lastTime).TotalSeconds
-                    $speedBps = 0
-                    if ($elapsedSeconds -gt 0 -and $lastSize -ge 0) {
-                        $bytesDiff = $currentSize - $lastSize
-                        if ($bytesDiff -gt 0) { $speedBps = [long]($bytesDiff / $elapsedSeconds) }
-                    }
-                    $lastTime = $now
-                    $percent = if ($fileSize -gt 0) { [math]::Round(($currentSize / $fileSize) * 100) } else { 100 }
-                    $progressObj = @{ file = $itemName; percent = $percent; currentSize = $currentSize; totalSize = $fileSize; speedBps = $speedBps }
-                    [Console]::Out.WriteLine($progressObj | ConvertTo-Json -Compress); [Console]::Out.Flush()
-                    if ($currentSize -ge $fileSize) { break }
-                    if ($currentSize -eq $lastSize) {
-                        $timeoutCount++
-                        if ($timeoutCount -gt 50) { [Console]::Out.WriteLine('{"error":"Timeout on ' + $itemName + '"}'); [Console]::Out.Flush(); break }
-                    } else { $timeoutCount = 0; $lastSize = $currentSize }
-                } else {
-                    $timeoutCount++
-                    if ($timeoutCount -gt 50) { [Console]::Out.WriteLine('{"error":"Timeout waiting ' + $itemName + '"}'); [Console]::Out.Flush(); break }
-                }
-            }
-        }
-
-        if (Test-Path $destFilePath) {
-            try {
-                $fileObj = Get-Item $destFilePath
-                $bestDate = $null
-                if ($itemDate -ne $null) { $bestDate = $itemDate }
-                elseif ($dateModified -ne $null) { $bestDate = $dateModified }
-                elseif ($dateCreated -ne $null) { $bestDate = $dateCreated }
-                if ($bestDate -ne $null) { $fileObj.CreationTime = $bestDate; $fileObj.LastWriteTime = $bestDate }
-            } catch {}
-        }
-    }
-}
-      `;
-
-      const ps = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', '-']);
+      const args = encodeArgs({
+        deviceName: String(deviceName || ''),
+        pathArray: cleanSegments(pathArray),
+        itemNames: cleanSegments(itemNames),
+        destPath: String(destFolder || ''),
+      });
+      const encodedCommand = Buffer.from(IMPORT_SCRIPT, 'utf16le').toString('base64');
+      const ps = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodedCommand], {
+        windowsHide: true,
+        env: { ...process.env, BDS_MTP_ARGS: args },
+      });
 
       let stdoutBuffer = '';
       ps.stdout.on('data', (data) => {
-        const text = data.toString('utf8');
-        stdoutBuffer += text;
+        stdoutBuffer += data.toString('utf8');
         const lines = stdoutBuffer.split('\n');
         stdoutBuffer = lines.pop();
         for (let line of lines) {
           line = line.trim();
-          if (line.startsWith('{')) {
-            try {
-              const obj = JSON.parse(line);
-              if (obj.error) {
-                logger.error('WindowsMtpProvider:importItems:script_error', { error: obj.error });
-              } else {
-                this.emit('progress', obj);
-              }
-            } catch (_) {}
-          }
+          if (!line.startsWith('{')) continue;
+          try {
+            const obj = JSON.parse(line);
+            if (obj.error) {
+              logger.error('WindowsMtpProvider:importItems:script_error', { error: obj.error });
+            } else {
+              this.emit('progress', obj);
+            }
+          } catch (_) { /* linha parcial */ }
         }
       });
 
@@ -295,12 +162,197 @@ foreach ($itemName in $itemNames) {
         logger.error('WindowsMtpProvider:importItems:stderr', { msg: data.toString() });
       });
 
+      ps.on('error', (err) => {
+        logger.error('WindowsMtpProvider:importItems:spawn_error', { error: err.message });
+        resolve(false);
+      });
       ps.on('close', (code) => resolve(code === 0));
-
-      ps.stdin.write(psScript);
-      ps.stdin.end();
     });
   }
 }
+
+/** Remove segmentos vazios e qualquer coisa que não seja texto. */
+function cleanSegments(list) {
+  return (Array.isArray(list) ? list : []).filter((s) => typeof s === 'string' && s !== '');
+}
+
+function encodeArgs(obj) {
+  return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64');
+}
+
+// Trecho comum: lê os argumentos (JSON em base64) e navega até a pasta. Comparação sempre exata (-eq).
+const PS_NAVIGATE = `
+$cfg = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:BDS_MTP_ARGS)) | ConvertFrom-Json
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$shell = New-Object -ComObject Shell.Application
+$computer = $shell.NameSpace(17)
+$deviceName = [string]$cfg.deviceName
+$pathArray = @($cfg.pathArray)
+
+$device = $computer.Items() | Where-Object { $_.Name -eq $deviceName } | Select-Object -First 1
+if ($device -eq $null) { [Console]::Error.WriteLine('Dispositivo nao encontrado'); exit 2 }
+
+$currentFolder = $device.GetFolder
+foreach ($p in $pathArray) {
+    $found = $currentFolder.Items() | Where-Object { $_.Name -eq $p } | Select-Object -First 1
+    if ($found -eq $null) { [Console]::Error.WriteLine('Pasta nao encontrada'); exit 2 }
+    $currentFolder = $found.GetFolder
+}
+`;
+
+const LIST_SCRIPT = `${PS_NAVIGATE}
+$results = @()
+foreach ($item in $currentFolder.Items()) {
+    $results += @{
+        Name = $item.Name
+        IsFolder = $item.IsFolder
+        Size = $item.ExtendedProperty("System.Size")
+    }
+}
+$results | ConvertTo-Json -Depth 5
+`;
+
+const IMPORT_SCRIPT = `${PS_NAVIGATE}
+$itemNames = @($cfg.itemNames)
+$destPath = [string]$cfg.destPath
+New-Item -ItemType Directory -Force -Path $destPath | Out-Null
+$failed = $false
+
+function Get-UniquePath($dir, $name) {
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($name)
+    $ext = [System.IO.Path]::GetExtension($name)
+    $candidate = Join-Path $dir $name
+    $n = 2
+    while (Test-Path -LiteralPath $candidate) {
+        $candidate = Join-Path $dir ("{0} ({1}){2}" -f $base, $n, $ext)
+        $n++
+    }
+    return $candidate
+}
+
+function Send-Progress($file, $percent, $current, $total, $speed) {
+    $o = @{ file = $file; percent = $percent; currentSize = $current; totalSize = $total; speedBps = $speed }
+    [Console]::Out.WriteLine(($o | ConvertTo-Json -Compress)); [Console]::Out.Flush()
+}
+
+foreach ($itemName in $itemNames) {
+    $targetItem = $currentFolder.Items() | Where-Object { $_.Name -eq $itemName } | Select-Object -First 1
+    if ($targetItem -eq $null) {
+        [Console]::Out.WriteLine((@{ error = ('Item nao encontrado: ' + $itemName) } | ConvertTo-Json -Compress)); [Console]::Out.Flush()
+        $failed = $true
+        continue
+    }
+
+    $fileSize = [long]($targetItem.ExtendedProperty("System.Size"))
+    $dateModified = $targetItem.ModifyDate
+    $dateCreated = $targetItem.ExtendedProperty("System.DateCreated")
+    $itemDate = $targetItem.ExtendedProperty("System.ItemDate")
+    $safeName = [System.IO.Path]::GetFileName($itemName)
+
+    $finalPath = Join-Path $destPath $safeName
+    if (Test-Path -LiteralPath $finalPath) {
+        if ($fileSize -gt 0 -and (Get-Item -LiteralPath $finalPath).Length -eq $fileSize) {
+            Send-Progress $itemName 100 $fileSize $fileSize 0
+            continue
+        }
+        $finalPath = Get-UniquePath $destPath $safeName
+    }
+    $partPath = $finalPath + '.part'
+    $copiedSuccessfully = $false
+    $sourceStream = $null
+    $outStream = $null
+
+    try {
+        if ($targetItem.PSObject.Properties['Open']) { $sourceStream = $targetItem.Open() }
+        if ($sourceStream -ne $null) {
+            $buffer = New-Object byte[] 1048576
+            $outStream = [System.IO.File]::Create($partPath)
+            $totalRead = 0L
+            $lastTime = [System.DateTime]::Now
+            $lastRead = 0L
+            $speedBps = 0
+            while (($read = $sourceStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $outStream.Write($buffer, 0, $read)
+                $totalRead += $read
+                $now = [System.DateTime]::Now
+                $elapsedSeconds = ($now - $lastTime).TotalSeconds
+                if ($elapsedSeconds -ge 0.2) {
+                    $speedBps = [long](($totalRead - $lastRead) / $elapsedSeconds)
+                    $lastTime = $now
+                    $lastRead = $totalRead
+                }
+                $percent = if ($fileSize -gt 0) { [math]::Round(($totalRead / $fileSize) * 100) } else { 100 }
+                Send-Progress $itemName $percent $totalRead $fileSize $speedBps
+            }
+            $outStream.Close(); $outStream = $null
+            $sourceStream.Close(); $sourceStream = $null
+            $copiedSuccessfully = $true
+        }
+    } catch { $copiedSuccessfully = $false }
+    finally {
+        if ($outStream -ne $null) { try { $outStream.Close() } catch {} }
+        if ($sourceStream -ne $null) { try { $sourceStream.Close() } catch {} }
+    }
+
+    if (-not $copiedSuccessfully) {
+        if (Test-Path -LiteralPath $partPath) { Remove-Item -LiteralPath $partPath -Force -ErrorAction SilentlyContinue }
+        # Plano B (cópia pelo Explorer): numa subpasta temporária, para o Explorer não sobrescrever nada
+        $tmpDir = Join-Path $destPath ('.bds-tmp-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+        $tmpObj = $shell.NameSpace($tmpDir)
+        $tmpObj.CopyHere($targetItem, 1044)
+        $tmpFile = Join-Path $tmpDir $targetItem.Name
+        $timeoutCount = 0
+        $lastSize = -1
+        $lastTime = [System.DateTime]::Now
+        while ($true) {
+            Start-Sleep -Milliseconds 200
+            if (Test-Path -LiteralPath $tmpFile) {
+                $currentSize = (Get-Item -LiteralPath $tmpFile).Length
+                $now = [System.DateTime]::Now
+                $elapsedSeconds = ($now - $lastTime).TotalSeconds
+                $speedBps = 0
+                if ($elapsedSeconds -gt 0 -and $lastSize -ge 0 -and ($currentSize - $lastSize) -gt 0) { $speedBps = [long](($currentSize - $lastSize) / $elapsedSeconds) }
+                $lastTime = $now
+                $percent = if ($fileSize -gt 0) { [math]::Round(($currentSize / $fileSize) * 100) } else { 100 }
+                Send-Progress $itemName $percent $currentSize $fileSize $speedBps
+                if ($currentSize -ge $fileSize) { Start-Sleep -Milliseconds 300; break }
+                if ($currentSize -eq $lastSize) {
+                    $timeoutCount++
+                    if ($timeoutCount -gt 50) { break }
+                } else { $timeoutCount = 0; $lastSize = $currentSize }
+            } else {
+                $timeoutCount++
+                if ($timeoutCount -gt 50) { break }
+            }
+        }
+        if ((Test-Path -LiteralPath $tmpFile) -and ((Get-Item -LiteralPath $tmpFile).Length -eq $fileSize -or $fileSize -eq 0)) {
+            Move-Item -LiteralPath $tmpFile -Destination $partPath -Force
+            $copiedSuccessfully = $true
+        }
+        Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($copiedSuccessfully -and $fileSize -gt 0 -and (Get-Item -LiteralPath $partPath).Length -ne $fileSize) { $copiedSuccessfully = $false }
+
+    if (-not $copiedSuccessfully) {
+        if (Test-Path -LiteralPath $partPath) { Remove-Item -LiteralPath $partPath -Force -ErrorAction SilentlyContinue }
+        [Console]::Out.WriteLine((@{ error = ('Falha ao copiar: ' + $itemName) } | ConvertTo-Json -Compress)); [Console]::Out.Flush()
+        $failed = $true
+        continue
+    }
+
+    Move-Item -LiteralPath $partPath -Destination $finalPath
+    try {
+        $fileObj = Get-Item -LiteralPath $finalPath
+        $bestDate = $null
+        if ($itemDate -ne $null) { $bestDate = $itemDate }
+        elseif ($dateModified -ne $null) { $bestDate = $dateModified }
+        elseif ($dateCreated -ne $null) { $bestDate = $dateCreated }
+        if ($bestDate -ne $null) { $fileObj.CreationTime = $bestDate; $fileObj.LastWriteTime = $bestDate }
+    } catch {}
+}
+if ($failed) { exit 1 }
+`;
 
 module.exports = { WindowsMtpProvider };

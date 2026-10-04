@@ -9,15 +9,39 @@ const { dependencyManager } = require('../infrastructure/external-tools/Dependen
 const logger = require('./logService');
 const probeCache = require('../core/ffmpeg/ProbeCache');
 const ffmpegLimiter = require('../core/media/FfmpegLimiter');
-const { findSiblingJpg } = require('../core/media/MediaTypes');
+const { findSiblingJpg, RAW_EXTENSIONS: MEDIA_RAW_EXTENSIONS } = require('../core/media/MediaTypes');
 
 // Miniatura de RAW/TIFF: lado maior de 480 px (grade ~300 px + HiDPI)
 const THUMB_MAX_DIMENSION = 480;
 const STDERR_TAIL_BYTES = 4096;
+// Tetos por processo (ffmpeg, ffprobe e motor RAW): um processo travado não segura mais o slot do limitador
+const FFMPEG_TIMEOUT_MS = 2 * 60 * 1000;
+const PROBE_TIMEOUT_MS = 30 * 1000;
+const RAW_ENGINE_TIMEOUT_MS = 3 * 60 * 1000;
 
-const RAW_EXTENSIONS = new Set([
-  '.cr2', '.cr3', '.arw', '.nef', '.dng', '.raf', '.orf', '.rw2', '.pef', '.srw'
-]);
+/** Encerra o processo (e os filhos, no Windows) — melhor esforço. */
+function killTree(child) {
+  if (!child || child.killed || !child.pid) return;
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
+    } else {
+      child.kill('SIGKILL');
+    }
+  } catch (_) { try { child.kill(); } catch (__) {} }
+}
+
+/** Arma um timeout que mata o processo; devolve o estado (fired) e a função que o cancela (clear). */
+function armTimeout(child, ms) {
+  const state = { fired: false };
+  const timer = setTimeout(() => { state.fired = true; killTree(child); }, ms);
+  if (timer.unref) timer.unref();
+  state.clear = () => clearTimeout(timer);
+  return state;
+}
+
+// RAW: lista única de MediaTypes + formatos que só o visualizador decodifica (via motor RAW/ffmpeg)
+const RAW_EXTENSIONS = new Set([...MEDIA_RAW_EXTENSIONS, '.pef', '.srw']);
 
 const STANDARD_IMAGE_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.tiff', '.tif', '.bmp', '.gif', '.svg'
@@ -28,6 +52,8 @@ class PhotoPreviewService {
     this.paths = paths;
     this.cacheDir = path.join(this.paths.dataDir || process.cwd(), 'cache', 'previews');
     this._ensureCacheDir();
+    // Mapa único de gerações em andamento (miniatura e preview em alta): chave = arquivo de cache de saída
+    this._inflight = new Map();
     const toolsDir = this.paths.tools || this.paths.dataDir;
     if (toolsDir) {
       dependencyManager.init(path.resolve(toolsDir));
@@ -42,6 +68,16 @@ class PhotoPreviewService {
     } catch (e) {
       logger.error('[PhotoPreviewService] Falha ao criar diretório de cache:', e.message);
     }
+  }
+
+  /** Pedidos simultâneos do mesmo arquivo de cache compartilham uma única geração. */
+  _generateOnce(key, factory) {
+    let pending = this._inflight.get(key);
+    if (!pending) {
+      pending = Promise.resolve().then(factory).finally(() => this._inflight.delete(key));
+      this._inflight.set(key, pending);
+    }
+    return pending;
   }
 
   isRaw(filePath) {
@@ -231,15 +267,8 @@ class PhotoPreviewService {
           isThumbnail: true
         };
       }
-      // Pedidos simultâneos da mesma miniatura compartilham uma única geração
-      this._thumbInflight = this._thumbInflight || new Map();
-      let pending = this._thumbInflight.get(thumbCacheFile);
-      if (!pending) {
-        pending = this._generateThumbnail(filePath, isRawFile, highResCacheFile, thumbCacheFile)
-          .finally(() => this._thumbInflight.delete(thumbCacheFile));
-        this._thumbInflight.set(thumbCacheFile, pending);
-      }
-      const thumb = await pending;
+      const thumb = await this._generateOnce(thumbCacheFile,
+        () => this._generateThumbnail(filePath, isRawFile, highResCacheFile, thumbCacheFile));
       if (thumb) {
         return {
           renderablePath: thumbCacheFile,
@@ -271,17 +300,39 @@ class PhotoPreviewService {
       };
     }
 
-    // Decodificação via RawRecoveryEngine (se for RAW) ou FFmpeg (se for TIFF)
+    // Decodificação via RawRecoveryEngine (se for RAW) ou FFmpeg (se for TIFF): uma geração por arquivo de cache
+    return this._generateOnce(highResCacheFile, () => this._buildHighRes(filePath, isRawFile, highResCacheFile));
+  }
+
+  /** Converte para JPG de visualização em alta de forma atômica (.tmp.jpg + rename). */
+  async _convertAtomic(ffmpeg, source, finalFile, maxDimension, quality) {
+    const tmpFile = `${finalFile}.tmp.jpg`;
+    try {
+      await this._convertWithFfmpeg(ffmpeg, source, tmpFile, maxDimension, quality);
+      fs.renameSync(tmpFile, finalFile);
+      return finalFile;
+    } catch (err) {
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      throw err;
+    }
+  }
+
+  async _buildHighRes(filePath, isRawFile, highResCacheFile) {
+    // Outra chamada pode ter concluído enquanto esta esperava
+    if (fs.existsSync(highResCacheFile)) {
+      return { renderablePath: highResCacheFile, isCached: true, isRaw: isRawFile };
+    }
+
     if (isRawFile && dependencyManager.isAvailable('rawEngine')) {
       const rawEngineExe = dependencyManager.resolveComponent('rawEngine');
-      const tempTiff = path.join(this.cacheDir, `${cacheKey}_temp.tiff`);
+      const tempTiff = `${highResCacheFile}.tmp.tiff`;
 
       try {
         await this._runRawEngineExport(rawEngineExe, filePath, tempTiff);
         if (fs.existsSync(tempTiff)) {
           // Converte o TIFF exportado para JPG de visualização em alta qualidade via ffmpeg
           const ffmpeg = ffmpegTool.resolve();
-          await this._convertWithFfmpeg(ffmpeg, tempTiff, highResCacheFile, 2560);
+          await this._convertAtomic(ffmpeg, tempTiff, highResCacheFile, 2560);
           try { fs.unlinkSync(tempTiff); } catch (_) {}
 
           if (fs.existsSync(highResCacheFile)) {
@@ -294,16 +345,14 @@ class PhotoPreviewService {
         }
       } catch (err) {
         logger.error('[PhotoPreviewService] Falha na decodificação RAW com RawRecoveryEngine:', err.message);
-        if (fs.existsSync(tempTiff)) {
-          try { fs.unlinkSync(tempTiff); } catch (_) {}
-        }
+        try { fs.unlinkSync(tempTiff); } catch (_) {}
       }
     }
 
     // Fallback: Tenta decodificar via FFmpeg (útil para TIFFs ou RAWs que FFmpeg consiga abrir)
     try {
       const ffmpeg = ffmpegTool.resolve();
-      await this._convertWithFfmpeg(ffmpeg, filePath, highResCacheFile, 2560);
+      await this._convertAtomic(ffmpeg, filePath, highResCacheFile, 2560);
       if (fs.existsSync(highResCacheFile)) {
         return {
           renderablePath: highResCacheFile,
@@ -376,10 +425,12 @@ class PhotoPreviewService {
   _runRawEngineIdentify(exePath, filePath) {
     return new Promise((resolve) => {
       const child = spawn(exePath, ['identify', filePath], { windowsHide: true });
+      const guard = armTimeout(child, PROBE_TIMEOUT_MS);
       let stdout = '';
       child.stdout.on('data', d => { stdout += d.toString('utf8'); });
       child.stderr.resume(); // o motor escreve progresso no stderr: sem drenar, o pipe pode encher e travar
       child.on('close', code => {
+        guard.clear();
         if (code !== 0) return resolve(null);
         try {
           const line = stdout.trim().split(/\r?\n/).pop();
@@ -388,24 +439,28 @@ class PhotoPreviewService {
           resolve(null);
         }
       });
-      child.on('error', () => resolve(null));
+      child.on('error', () => { guard.clear(); resolve(null); });
     });
   }
 
   _runRawEngineExport(exePath, filePath, outputPath) {
     return new Promise((resolve, reject) => {
       const child = spawn(exePath, ['export', filePath, outputPath, '--tolerant'], { windowsHide: true });
+      const guard = armTimeout(child, RAW_ENGINE_TIMEOUT_MS);
       let stderr = '';
       child.stdout.resume();
       child.stderr.on('data', d => { stderr = (stderr + d.toString('utf8')).slice(-STDERR_TAIL_BYTES); });
       child.on('close', code => {
+        guard.clear();
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve(outputPath);
         } else {
-          reject(new Error(`Falha ao exportar RAW (código ${code}): ${stderr.slice(-300)}`));
+          reject(new Error(guard.fired
+            ? `Tempo esgotado ao exportar RAW (${Math.round(RAW_ENGINE_TIMEOUT_MS / 1000)} s)`
+            : `Falha ao exportar RAW (código ${code}): ${stderr.slice(-300)}`));
         }
       });
-      child.on('error', reject);
+      child.on('error', (err) => { guard.clear(); reject(err); });
     });
   }
 
@@ -427,17 +482,22 @@ class PhotoPreviewService {
       ];
 
       const child = spawn(ffmpegPath, args, { windowsHide: true });
+      // Timeout: o processo morto fecha o stream e o limitador libera o slot
+      const guard = armTimeout(child, FFMPEG_TIMEOUT_MS);
       let stderr = '';
       child.stdout.resume();
       child.stderr.on('data', d => { stderr = (stderr + d.toString('utf8')).slice(-STDERR_TAIL_BYTES); });
       child.on('close', code => {
+        guard.clear();
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve(outputPath);
         } else {
-          reject(new Error(`O motor de mídia finalizou com código ${code}${stderr ? `: ${stderr.trim().slice(-300)}` : ''}`));
+          reject(new Error(guard.fired
+            ? `Tempo esgotado ao converter a imagem (${Math.round(FFMPEG_TIMEOUT_MS / 1000)} s)`
+            : `O motor de mídia finalizou com código ${code}${stderr ? `: ${stderr.trim().slice(-300)}` : ''}`));
         }
       });
-      child.on('error', reject);
+      child.on('error', (err) => { guard.clear(); reject(err); });
     }), ffmpegLimiter.PRIORITY.HIGH);
   }
 
@@ -455,19 +515,21 @@ class PhotoPreviewService {
         '-show_streams',
         filePath
       ], { windowsHide: true });
+      const guard = armTimeout(child, PROBE_TIMEOUT_MS);
 
       let stdout = '';
       child.stdout.on('data', d => { stdout += d.toString('utf8'); });
       child.stderr.resume();
       child.on('close', code => {
-        if (code !== 0) return reject(new Error(`Erro ao analisar a imagem (código ${code})`));
+        guard.clear();
+        if (code !== 0) return reject(new Error(guard.fired ? 'Tempo esgotado ao analisar a imagem' : `Erro ao analisar a imagem (código ${code})`));
         try {
           resolve(JSON.parse(stdout));
         } catch (e) {
           reject(e);
         }
       });
-      child.on('error', reject);
+      child.on('error', (err) => { guard.clear(); reject(err); });
     });
   }
 }

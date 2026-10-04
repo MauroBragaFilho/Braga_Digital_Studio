@@ -68,16 +68,10 @@ class ErrorReporter {
    * @private
    */
   _setupGlobalHandlers() {
-    process.on('uncaughtException', (error) => {
-      logger.error('CRITICAL:uncaughtException', { error: error.message, stack: error.stack });
-      this.report(error, { source: 'main:uncaughtException', isFatal: true });
-    });
-
-    process.on('unhandledRejection', (reason) => {
-      const error = reason instanceof Error ? reason : new Error(String(reason));
-      logger.error('CRITICAL:unhandledRejection', { error: error.message, stack: error.stack });
-      this.report(error, { source: 'main:unhandledRejection', isFatal: false });
-    });
+    // Os handlers globais (uncaughtException/unhandledRejection) são registrados uma única vez
+    // em main.js, com limite de taxa e diálogo. Registrar aqui de novo duplicava cada linha de
+    // log e cada relatório (RK-058).
+    this._globalHandlersExternal = true;
   }
 
   /**
@@ -238,6 +232,8 @@ class ErrorReporter {
    */
   _getRecentLogsSnippet(maxLines = 30) {
     try {
+      // O logService enfileira as linhas até carregar o winston; grava a fila antes de ler o arquivo.
+      if (typeof logger.flushNow === 'function') logger.flushNow();
       let logFile = null;
       if (typeof logger.getCurrentLogFile === 'function') logFile = logger.getCurrentLogFile();
       if (!logFile || !fs.existsSync(logFile)) {
