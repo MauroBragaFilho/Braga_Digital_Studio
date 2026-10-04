@@ -31,7 +31,9 @@ module.exports = [
   {
     ignores: [
       'node_modules/**', 'dist/**', 'data/**', 'database/**', 'logs/**', '_Archives/**',
-      '.freebuff/**', '.Teste*/**', '.tmp-clone-check/**', '.docs/**', 'build/**', 'release/**', 'out/**'
+      '.freebuff/**', '.Teste*/**', '.tmp-clone-check/**', '.docs/**', 'build/**', 'release/**', 'out/**',
+      // Caches restaurados pelos workflows de build (electron-builder/Electron): não são código do projeto
+      '.cache/**'
     ]
   },
   js.configs.recommended,
