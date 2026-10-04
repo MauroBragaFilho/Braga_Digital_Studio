@@ -2864,6 +2864,30 @@
       "returns": "promise"
     }
   },
+  "getDefaultFolders": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "settings:getDefaultFolders",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "settings:getDefaultFolders",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "getDefaultOutputDir": {
     "type": "function",
     "length": 0,

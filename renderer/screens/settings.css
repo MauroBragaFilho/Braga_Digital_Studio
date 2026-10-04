@@ -1530,3 +1530,8 @@
   .st-card { padding: 16px 18px; }
 }
 .st-header-text { flex: 1; min-width: 0; }
+
+/* Botão "Restaurar padrão" no fim dos cartões de pastas */
+.st-restore-row { display: flex; justify-content: flex-end; margin-top: 12px; }
+.st-restore-row .settings-btn-outline { display: inline-flex; align-items: center; gap: 6px; }
+.st-restore-row .material-symbols-rounded { font-size: 18px; }

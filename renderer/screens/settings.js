@@ -399,6 +399,8 @@ function bindEvents() {
   document.getElementById('shadowplayFolderButton')?.addEventListener('click', () => chooseFolder('shadowplayFolderInput'));
   document.getElementById('deviceFolderButton')?.addEventListener('click', () => chooseFolder('deviceFolderInput'));
   document.getElementById('converterFolderButton')?.addEventListener('click', () => chooseFolder('converterFolderInput'));
+  document.getElementById('restoreDownloadFoldersButton')?.addEventListener('click', () => restoreDefaultFolders([['mp3FolderInput', 'mp3Folder'], ['mp4FolderInput', 'mp4Folder']]));
+  document.getElementById('restoreConverterFolderButton')?.addEventListener('click', () => restoreDefaultFolders([['converterFolderInput', 'converterFolder']]));
 
   // Pasta de uploads do YouTube — seleciona a pasta, escaneia os vídeos e persiste no save
   document.getElementById('uploadsFolderButton')?.addEventListener('click', async () => {
@@ -573,6 +575,31 @@ async function runCacheClear(key, what, button) {
     restore();
     [...all, ...others].forEach((b) => { if (b) b.disabled = false; });
     loadCacheInfo();
+  }
+}
+
+/** Aviso visível (toast); o texto de status do app não existe nesta tela. */
+function notify(message, type) {
+  if (typeof window.bdsToast === 'function') window.bdsToast(message, { type });
+  else setStatus(message);
+}
+
+/** "Restaurar padrão": põe nos campos as pastas padrão do app. Só vale depois de Salvar (como ao escolher uma pasta). */
+async function restoreDefaultFolders(pairs) {
+  try {
+    const defaults = await window.bds.getDefaultFolders();
+    let changed = 0;
+    for (const [inputId, key] of pairs) {
+      const input = document.getElementById(inputId);
+      if (!input || !defaults || !defaults[key]) continue;
+      input.value = defaults[key];
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      changed++;
+    }
+    if (changed) notify('Pasta padrão restaurada. Clique em Salvar para aplicar.', 'success');
+  } catch (error) {
+    console.error('[SETTINGS] Erro ao restaurar a pasta padrão:', error);
+    notify('Não foi possível restaurar a pasta padrão.', 'error');
   }
 }
 

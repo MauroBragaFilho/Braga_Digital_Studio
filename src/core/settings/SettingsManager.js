@@ -118,6 +118,12 @@ class SettingsManager {
    * Utiliza cache em memória para evitar I/O de disco em chamadas frequentes.
    * @returns {Object}
    */
+  /** Pastas padrão de destino (áudio, vídeo e Conversor): usadas pelo botão "Restaurar padrão" das Configurações. */
+  getDefaultFolders() {
+    const d = this.defaultSettings;
+    return { mp3Folder: d.mp3Folder, mp4Folder: d.mp4Folder, converterFolder: d.converterFolder };
+  }
+
   load() {
     // Cache: devolve a cópia em memória sem tocar no disco
     if (this._cached) return { ...this._cached };
