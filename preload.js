@@ -25,6 +25,7 @@ const registerListener = (channel, callback) => {
 const api = {
   // --- Configurações ---
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  getDefaultFolders: () => ipcRenderer.invoke('settings:getDefaultFolders'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getConverterOutputDir'),
 

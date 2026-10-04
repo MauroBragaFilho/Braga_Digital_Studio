@@ -192,6 +192,7 @@
     "recovery:raw:start",
     "recovery:start",
     "settings:get",
+    "settings:getDefaultFolders",
     "settings:save",
     "shell:openExternal",
     "silence:analyze",

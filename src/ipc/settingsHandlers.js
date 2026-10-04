@@ -19,6 +19,7 @@ module.exports = function registerSettingsHandlers({
 }) {
   // Segredos listados em settingsSecrets são mascarados antes de chegar ao renderer.
   handle('settings:get', () => maskSettings(settingsManager.load()));
+  handle('settings:getDefaultFolders', () => settingsManager.getDefaultFolders());
   handle('settings:save', (_, settings) => {
     // (objeto de configurações já validado pelo esquema do canal)
     // Campo ainda mascarado = não alterado: preserva o valor real guardado no main.

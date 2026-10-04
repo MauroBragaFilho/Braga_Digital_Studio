@@ -51,6 +51,7 @@ function define(domain, error, entries) {
 // --- Configurações, app e atualizações ---------------------------------------------------------
 define('settings', 'throw', {
   'settings:get': { returns: 'Configurações do usuário (segredos mascarados)', api: ['getSettings'] },
+  'settings:getDefaultFolders': { returns: 'Pastas padrão de áudio, vídeo e Conversor', api: ['getDefaultFolders'] },
   'settings:save': {
     args: [OBJ('settings', {}, { label: 'Configurações', maxKeys: 1000 })],
     returns: 'Configurações salvas (segredos mascarados)',
