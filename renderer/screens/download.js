@@ -1,5 +1,6 @@
 // --- MÚLTIPLOS LINKS LOGIC ---
 function showMultipleLinksModal() {
+  const opener = document.activeElement;
   const overlay = document.createElement('div');
   overlay.className = 'multiple-links-overlay';
   overlay.id = 'multipleLinksOverlay';
@@ -7,8 +8,8 @@ function showMultipleLinksModal() {
   overlay.innerHTML = `
     <div class="multiple-links-modal">
       <div class="multiple-links-header">
-        <span class="material-symbols-rounded">list_alt</span>
-        <h3>Adição de Múltiplos Links</h3>
+        <span class="material-symbols-rounded" aria-hidden="true">list_alt</span>
+        <h3 id="multipleLinksTitle">Adição de Múltiplos Links</h3>
       </div>
       <div class="multiple-links-body">
         <p class="multiple-links-hint">
@@ -35,13 +36,28 @@ function showMultipleLinksModal() {
   const modalBox = overlay.querySelector('.multiple-links-modal');
   modalBox.setAttribute('role', 'dialog');
   modalBox.setAttribute('aria-modal', 'true');
-  modalBox.setAttribute('aria-label', 'Adição de múltiplos links');
+  modalBox.setAttribute('aria-labelledby', 'multipleLinksTitle');
   const textarea = overlay.querySelector('#multipleLinksInput');
   textarea.focus();
-  // Esc fecha; Ctrl+Enter adiciona; clique fora fecha
+  // Ao fechar, devolve o foco ao botão que abriu o diálogo
+  const closeOverlay = overlay.remove.bind(overlay);
+  overlay.remove = () => {
+    closeOverlay();
+    if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+  };
+  // Esc fecha; Ctrl+Enter adiciona; Tab fica preso dentro do diálogo; clique fora fecha
   const onKey = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); overlay.remove(); }
     else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); overlay.querySelector('#confirmLinks')?.click(); }
+    else if (e.key === 'Tab') {
+      const items = Array.from(overlay.querySelectorAll('textarea, button:not([disabled]), input:not([disabled])'))
+        .filter((n) => n.getClientRects().length > 0);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   };
   overlay.addEventListener('keydown', onKey);
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -721,6 +737,91 @@ function renderMetadata(metadata) {
   }
 }
 
+// --- Playlist: "só este item" ou "playlist inteira" ---
+/** true se o link aponta para um item específico dentro de uma playlist (ex.: watch?v=ID&list=...). */
+export function isItemInsidePlaylist(url) {
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.get('list')) return false;
+    const host = u.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+    if (host === 'youtu.be') return u.pathname.length > 1;
+    return /(^|\.)youtube\.com$/.test(host) && u.searchParams.has('v');
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Diálogo simples com duas escolhas. Devolve 'single', 'playlist' ou 'cancel' (Esc ou clicar fora). */
+function askPlaylistScope() {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'bds-modal playlist-choice';
+    dlg.setAttribute('aria-labelledby', 'playlistChoiceTitle');
+    dlg.setAttribute('aria-describedby', 'playlistChoiceText');
+
+    const content = document.createElement('div');
+    content.className = 'bds-modal-content';
+
+    const header = document.createElement('div');
+    header.className = 'bds-modal-header';
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-rounded bds-modal-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = 'queue_music';
+    const title = document.createElement('h3');
+    title.id = 'playlistChoiceTitle';
+    title.textContent = 'Este link faz parte de uma playlist';
+    header.append(icon, title);
+
+    const body = document.createElement('div');
+    body.className = 'bds-modal-body';
+    const text = document.createElement('p');
+    text.id = 'playlistChoiceText';
+    text.textContent = 'Quer baixar só este item ou todos os itens da playlist?';
+    body.append(text);
+
+    const footer = document.createElement('div');
+    footer.className = 'bds-modal-footer';
+    const btnAll = document.createElement('button');
+    btnAll.type = 'button';
+    btnAll.className = 'bds-btn-secondary';
+    btnAll.textContent = 'Playlist inteira';
+    const btnOne = document.createElement('button');
+    btnOne.type = 'button';
+    btnOne.className = 'bds-btn-primary';
+    btnOne.textContent = 'Só este item';
+    footer.append(btnAll, btnOne);
+
+    content.append(header, body, footer);
+    dlg.append(content);
+
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      try { dlg.close(); } catch (_) { /* já fechado */ }
+      dlg.remove();
+      resolve(value);
+    };
+    btnOne.addEventListener('click', () => finish('single'));
+    btnAll.addEventListener('click', () => finish('playlist'));
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish('cancel'); });
+    dlg.addEventListener('close', () => finish('cancel'));
+    // Clicar na área escura (fora do conteúdo) cancela
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) finish('cancel'); });
+
+    document.body.append(dlg);
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    btnOne.focus();
+  });
+}
+
+/** 'auto' (link comum: segue o fluxo normal), 'single', 'playlist' ou 'cancel'. */
+async function choosePlaylistScope(url) {
+  if (!isItemInsidePlaylist(url)) return 'auto';
+  return askPlaylistScope();
+}
+
 async function addToQueue() {
   const url = els.urlInput.value.trim();
   if (!url) {
@@ -733,8 +834,14 @@ async function addToQueue() {
     setStatus('Analisando URL...');
     const api = getDownloadsApi();
     
-    let isPlaylist = false;
-    if (window.bds && window.bds.inspectPlaylist) {
+    // Link de um item que está dentro de uma playlist: pergunta se é só o item ou a playlist inteira.
+    const scope = await choosePlaylistScope(url);
+    if (scope === 'cancel') {
+      setStatus('Adição cancelada.');
+      return;
+    }
+    let isPlaylist = scope === 'playlist';
+    if (scope === 'auto' && window.bds && window.bds.inspectPlaylist) {
       try {
         const playlistInfo = await window.bds.inspectPlaylist(url);
         isPlaylist = playlistInfo && playlistInfo.isPlaylist;
@@ -815,8 +922,14 @@ async function startDownloadDirect(format) {
     setStatus('Analisando URL...');
     const api = getDownloadsApi();
 
-    let isPlaylist = false;
-    if (window.bds && window.bds.inspectPlaylist) {
+    // Link de um item que está dentro de uma playlist: pergunta se é só o item ou a playlist inteira.
+    const scope = await choosePlaylistScope(url);
+    if (scope === 'cancel') {
+      setStatus('Adição cancelada.');
+      return;
+    }
+    let isPlaylist = scope === 'playlist';
+    if (scope === 'auto' && window.bds && window.bds.inspectPlaylist) {
       try {
         const playlistInfo = await window.bds.inspectPlaylist(url);
         isPlaylist = playlistInfo && playlistInfo.isPlaylist;

@@ -4,14 +4,17 @@
  * Ferramentas do assistente de IA (function calling do protocolo compatível com a OpenAI).
  * Documentação completa: .docs/ASSISTENTE_IA_FERRAMENTAS.md
  *
- * A lista é FIXA e só tem ferramentas de leitura e de ação "aditiva" (criar projeto, transcrever). Não existe
- * ferramenta que apague, mova ou renomeie, e o modelo só consegue chamar o que está nesta lista: qualquer outro nome
- * (por exemplo uma ferramenta destrutiva sugerida por texto injetado em um nome de arquivo) é recusado.
+ * A lista é FIXA e tem três tipos: LEITURA (consultas), INTERFACE (open_screen, só navega) e AÇÃO "aditiva" (baixar,
+ * converter, tirar silêncio, transcrever, criar projeto, adicionar a projeto, etiquetar, favoritar, exportar). Não existe
+ * ferramenta que apague, mova, renomeie, mude configurações ou execute comandos, e o modelo só consegue chamar o que
+ * está nesta lista: qualquer outro nome (por exemplo uma ferramenta destrutiva sugerida por texto injetado em um nome
+ * de arquivo) é recusado.
  *
  * Quem executa é o ToolBox, SEMPRE no processo principal:
  *   1. acha a ferramenta pelo nome (desconhecida = recusa);
  *   2. valida os argumentos com o esquema estrito (schema.js);
- *   3. ferramenta de LEITURA: executa; ferramenta de AÇÃO: prepare() → diálogo nativo de confirmação (confirm) → run();
+ *   3. ferramenta de LEITURA ou de INTERFACE: executa; ferramenta de AÇÃO: prepare() → diálogo nativo de confirmação
+ *      (confirm) → run();
  *   4. devolve um texto curto e seguro (results.js: sem caminhos, com limite, marcado como dado).
  * O renderer não tem canal para executar ferramentas nem para confirmar: a confirmação é do app, não do modelo.
  */
@@ -20,18 +23,27 @@ const { validateArgs, parseArgs, ArgError } = require('./schema');
 const { serializeResult, serializeError, safeText } = require('./results');
 const { ToolError } = require('./common');
 const { readTools } = require('./readTools');
+const { statusTools } = require('./statusTools');
 const { actionTools } = require('./actionTools');
+const { mediaActionTools } = require('./mediaActionTools');
+const { libraryActionTools } = require('./libraryActionTools');
+const { selectToolNames } = require('./toolSelect');
 const { ASSISTANT_ALLOWED_IN_PACKAGED_APP, isAssistantBuildAllowed } = require('../releaseGate');
 
-/** Lista fixa de ferramentas (somente leitura + criar projeto + transcrever). */
-const TOOLS = Object.freeze([...readTools, ...actionTools].map((t) => Object.freeze(t)));
+/** Lista fixa de ferramentas: leitura, interface (open_screen) e ações com confirmação. */
+const TOOLS = Object.freeze([...readTools, ...statusTools, ...actionTools, ...mediaActionTools, ...libraryActionTools].map((t) => Object.freeze(t)));
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 function listTools() { return TOOLS; }
 
-/** Definições no formato `tools` do protocolo de chat (tipo "function" + esquema JSON). */
-function toolDefinitions() {
-  return TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+/**
+ * Definições no formato `tools` do protocolo de chat (tipo "function" + esquema JSON).
+ * @param {Set<string>|string[]|null} [only]  nomes a incluir (subconjunto por turno, ver toolSelect.js); sem isso, todas
+ */
+function toolDefinitions(only = null) {
+  const keep = only ? new Set(only) : null;
+  return TOOLS.filter((t) => !keep || keep.has(t.name))
+    .map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
 
 /** Promessa que rejeita com CANCELLED se o sinal abortar antes dela terminar. */
@@ -56,14 +68,36 @@ class ToolBox {
    *        diálogo de confirmação NATIVO (injetável em teste). Só `true` explícito executa a ação.
    * @param {{info:Function,warn:Function}} [deps.log]
    * @param {() => void} [deps.onProjectsChanged]      avisa as telas que a lista de projetos mudou
+   * @param {{downloads?:object, converter?:object, silence?:object, devices?:object}} [deps.services]
+   *        serviços que as telas já usam (fila de Downloads, Conversor, Remover Silêncio, descoberta de dispositivos)
+   * @param {{load:Function}} [deps.settings]            SettingsManager (só leitura: tema, módulos, pastas de destino)
+   * @param {() => Record<string,boolean>} [deps.getEnabledModules]  módulos ligados agora
+   * @param {{videosDir?:string}} [deps.paths]           pastas padrão do app
+   * @param {{premiere?:object, bdspro?:object, thumbnailsDir?:string}} [deps.exporters]  exportadores de projeto
+   * @param {(req:object) => Promise<string|null>} [deps.chooseSavePath]  diálogo de SALVAR do sistema (escolha do usuário)
+   * @param {(screen:string) => void} [deps.navigate]     manda o renderer abrir uma tela (evento ai:navigate)
+   * @param {(ids:number[]) => void} [deps.notifyMediaChanged]  avisa a Biblioteca que mídias mudaram
    */
-  constructor({ getDb, library, projects, getModuleManager = () => null, confirm, log = null, onProjectsChanged = null }) {
-    this.deps = { getDb, library, projects, getModuleManager, onProjectsChanged };
+  constructor({
+    getDb, library, projects, getModuleManager = () => null, confirm, log = null, onProjectsChanged = null,
+    services = {}, settings = null, getEnabledModules = () => ({}), paths = {}, exporters = {}, chooseSavePath = null,
+    navigate = null, notifyMediaChanged = null
+  }) {
+    this.deps = {
+      getDb, library, projects, getModuleManager, onProjectsChanged,
+      services, settings, getEnabledModules, paths, exporters, chooseSavePath, navigate, notifyMediaChanged
+    };
     this.confirm = confirm;
     this.log = log || { info() {}, warn() {} };
   }
 
-  definitions() { return toolDefinitions(); }
+  /**
+   * Definições a oferecer ao modelo. Sem `hints` = todas. Com `hints` ({ texts, screen, used }) = só o subconjunto
+   * relevante (toolSelect.js). Isto NÃO limita o que o ToolBox aceita na execução: a lista fixa inteira continua valendo.
+   */
+  definitions(hints = null) {
+    return toolDefinitions(hints ? selectToolNames(hints) : null);
+  }
 
   /** Resposta para chamadas além do limite por pergunta (o laço do chat as recusa sem executar). */
   limitReached() {
@@ -90,7 +124,7 @@ class ToolBox {
     try {
       const args = validateArgs(tool.parameters, parseArgs(rawArgs));
       onStatus(tool.status(args), tool.kind === 'action' ? 'confirm' : 'tool');
-      if (tool.kind === 'read') return serializeResult(await tool.run(args, ctx));
+      if (tool.kind !== 'action') return serializeResult(await tool.run(args, ctx), tool.resultOptions); // leitura e interface
 
       // ---- AÇÃO: prepara (valida no banco), pede confirmação NATIVA e só então executa ----
       const prep = await tool.prepare(args, ctx);
@@ -113,7 +147,7 @@ class ToolBox {
       const out = await tool.run(prep.plan, ctx);
       this.log.info(`[Assistente] ação concluída: ${tool.name}`);
       if (signal && signal.aborted) throw cancelled(); // parou no meio: o laço do chat encerra
-      return serializeResult(out);
+      return serializeResult(out, tool.resultOptions);
     } catch (err) {
       if (err && err.code === 'CANCELLED') throw Object.assign(new Error('Cancelado.'), { code: 'CANCELLED' });
       if (err instanceof ArgError || err instanceof ToolError) return serializeError(err.message);
@@ -123,4 +157,4 @@ class ToolBox {
   }
 }
 
-module.exports = { TOOLS, listTools, toolDefinitions, ToolBox, isAssistantBuildAllowed, ASSISTANT_ALLOWED_IN_PACKAGED_APP };
+module.exports = { TOOLS, listTools, toolDefinitions, ToolBox, selectToolNames, isAssistantBuildAllowed, ASSISTANT_ALLOWED_IN_PACKAGED_APP };

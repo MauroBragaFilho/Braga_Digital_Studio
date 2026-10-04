@@ -9,7 +9,11 @@
  *   ai:chatError { id, error, code }                   falha (a mensagem do usuário NÃO entra no histórico)
  *   ai:chatStatus { id, text, kind }                   linha de status discreta: kind 'tool' (consultando/executando),
  *                                                      'confirm' (aguardando confirmação), 'progress', 'notice' (aviso
- *                                                      que fica na conversa) ou 'clear' (apaga a linha de status)
+ *                                                      que fica na conversa), 'clear' (apaga a linha de status),
+ *                                                      'provider' (nome do provedor em uso, para o cabeçalho do painel),
+ *                                                      'fallback' (linha discreta "Usando Qwen (Groq indisponível)") ou
+ *                                                      'reset' (texto = o que deve ficar na tela: o provedor que falhou
+ *                                                      no meio da resposta tinha entregue texto parcial, descartado)
  *
  * LAÇO DE FERRAMENTAS (function calling): se há `toolbox`, as definições vão junto da conversa; quando o modelo pede
  * ferramentas, o app as executa (ToolBox, com confirmação nativa nas ações), devolve cada resultado como mensagem de
@@ -17,9 +21,20 @@
  * chamadas por resposta do modelo e MAX_CALLS_TOTAL por pergunta; depois disso o modelo é obrigado a responder em texto.
  * Servidor/modelo sem suporte a ferramentas: cai para só texto, com um aviso amigável (uma vez por servidor+modelo).
  * O histórico persistido guarda só user/assistant (nunca resultados de ferramentas).
+ *
+ * FALLBACK ENTRE PROVEDORES: a troca acontece dentro do AIService.chatStream, que reenvia ao próximo provedor a MESMA
+ * lista `convo` (inclusive as mensagens de ferramenta do turno): a conversa continua do ponto em que estava e uma
+ * ação já executada não se repete (o resultado dela já está em `convo`). Aqui só se traduzem os avisos em status
+ * ('provider', 'fallback', 'reset'); o histórico persistido recebe a resposta final uma única vez.
+ *
+ * CONTEXTO DA TELA: `start(texto, contexto)` recebe o contexto opcional do renderer ({ screen, selectedIds, projectId }),
+ * validado em context.js (BAD_CONTEXT se fugir do esquema) e acrescentado ao prompt de sistema como dado NÃO confiável.
+ * FERRAMENTAS POR TURNO: a cada rodada só o subconjunto relevante das definições vai ao modelo (tools/toolSelect.js);
+ * o ToolBox continua aceitando e validando a lista fixa inteira.
  */
 
-const { MAX_MESSAGES, MAX_MESSAGE_CHARS } = require('./AIService');
+const { MAX_MESSAGES, MAX_MESSAGE_CHARS, switchLine } = require('./AIService');
+const { validateContext, buildContextBlock } = require('./context');
 
 let seq = 0;
 
@@ -47,7 +62,10 @@ class AssistantChat {
   isBusy() { return this._active !== null; }
 
   /** Esquece que o servidor/modelo recusou ferramentas (a configuração mudou: vale tentar de novo). */
-  forgetToolSupport() { this._noTools.clear(); }
+  forgetToolSupport() {
+    this._noTools.clear();
+    if (this.ai && typeof this.ai.forgetToolSupport === 'function') this.ai.forgetToolSupport();
+  }
 
   getHistory() { return this.history.get(); }
 
@@ -75,23 +93,25 @@ class AssistantChat {
   /**
    * Inicia uma resposta. Devolve o id da conversa; o resto chega pelos eventos.
    * @param {string} rawText
+   * @param {object} [rawContext]  contexto da tela (opcional; inválido = erro BAD_CONTEXT, nada é enviado ao modelo)
    * @returns {string}
    */
-  start(rawText) {
+  start(rawText, rawContext) {
     if (this._active) throw Object.assign(new Error('O assistente já está respondendo. Aguarde ou cancele.'), { code: 'BUSY' });
     const text = typeof rawText === 'string' ? rawText.trim() : '';
     if (!text) throw new Error('Escreva uma mensagem.');
     if (text.length > MAX_MESSAGE_CHARS) throw new Error(`Mensagem longa demais (máximo ${MAX_MESSAGE_CHARS} caracteres).`);
+    const context = validateContext(rawContext);
     const messages = this._context(text);
 
     const id = `c${Date.now().toString(36)}${(++seq).toString(36)}`;
     const controller = new AbortController();
     this._active = { id, controller };
-    this._run(id, controller, text, messages);
+    this._run(id, controller, text, messages, context);
     return id;
   }
 
-  async _run(id, controller, userText, messages) {
+  async _run(id, controller, userText, messages, context = null) {
     let partial = '';
     let needSep = false;
     const active = this._active;
@@ -110,11 +130,36 @@ class AssistantChat {
       this.emit('ai:chatDelta', { id, text: piece });
     };
 
+    // Texto que o provedor atual já entregou NESTA rodada (para descartar se ele falhar no meio e outro assumir)
+    const round = { len: 0, needSep: false };
+    const announced = new Set();
+    const onReset = () => {
+      partial = partial.slice(0, round.len);
+      needSep = round.needSep;
+      status(partial, 'reset');
+    };
+    const onProvider = (ev) => {
+      if (!ev || typeof ev !== 'object') return;
+      if (ev.type === 'use') {
+        status(ev.label, 'provider');
+        if (Array.isArray(ev.before) && ev.before.length) {
+          const mark = `${ev.id}|${ev.before.map((b) => `${b.id}:${b.reason}`).join(',')}`;
+          if (!announced.has(mark)) { announced.add(mark); status(switchLine(ev.label, ev.before), 'fallback'); }
+        }
+      } else if (ev.type === 'noTools' && ev.key && !this._noTools.has(ev.key)) {
+        this._noTools.add(ev.key);
+        status(NO_TOOLS_NOTICE, 'notice');
+      }
+    };
+
     try {
       const convo = [...messages];
       const key = typeof this.ai.serverKey === 'function' ? this.ai.serverKey() : 'padrao';
-      const defs = this.toolbox ? this.toolbox.definitions() : [];
-      let useTools = defs.length > 0 && !this._noTools.has(key);
+      const hasTools = Boolean(this.toolbox);
+      let useTools = hasTools && !this._noTools.has(key);
+      const contextBlock = buildContextBlock(context, this.toolbox ? this.toolbox.deps : {});
+      const usedTools = [];
+      const recentUserTexts = () => convo.filter((m) => m.role === 'user' && typeof m.content === 'string').slice(-3).map((m) => m.content);
       let rounds = 0;
       let totalCalls = 0;
       let result = null;
@@ -123,7 +168,10 @@ class AssistantChat {
       for (;;) {
         const toolsNow = useTools && rounds < MAX_ITERATIONS;
         try {
-          result = await this.ai.chatStream({ messages: convo, signal, timeouts: this.timeouts, onDelta, tools: toolsNow ? defs : null });
+          const defs = toolsNow ? this.toolbox.definitions({ texts: recentUserTexts(), screen: context ? context.screen : null, used: usedTools }) : null;
+          round.len = partial.length;
+          round.needSep = needSep;
+          result = await this.ai.chatStream({ messages: convo, signal, timeouts: this.timeouts, onDelta, onReset, onProvider, tools: defs, contextBlock });
         } catch (err) {
           if (err && err.code === 'NO_TOOLS' && toolsNow) {
             // Servidor/modelo sem function calling: continua só como chat de texto e avisa UMA vez
@@ -150,6 +198,7 @@ class AssistantChat {
           } else {
             totalCalls++;
             ranTools = true;
+            if (!usedTools.includes(call.name)) usedTools.push(call.name);
             content = await this.toolbox.execute(call.name, call.arguments, { signal, onStatus: status });
             status('', 'clear');
           }

@@ -95,7 +95,7 @@ class SettingsManager {
       cacheAutoClean: false,
       // Interface e janela
       defaultStartScreen: 'home',      // tela aberta ao iniciar o app
-      enabledModules: {},              // { idDoModulo: boolean } — chave ausente = padrão do módulo (ModuleRegistry: todos desligados)
+      enabledModules: {},              // { idDoModulo: boolean } — chave ausente = padrão do módulo (ModuleRegistry: desligados, menos o Assistente de IA)
       modulesMigrated: false,          // true após a migração única dos módulos (ver _migrateModules)
       sidebarOrder: [],                // ordem das telas no menu lateral (vazio = padrão; Home é sempre a primeira)
       reduceMotion: false,             // desliga animações e transições
@@ -118,12 +118,18 @@ class SettingsManager {
    * Utiliza cache em memória para evitar I/O de disco em chamadas frequentes.
    * @returns {Object}
    */
+  /** Pastas padrão de destino (áudio, vídeo e Conversor): usadas pelo botão "Restaurar padrão" das Configurações. */
+  getDefaultFolders() {
+    const d = this.defaultSettings;
+    return { mp3Folder: d.mp3Folder, mp4Folder: d.mp4Folder, converterFolder: d.converterFolder };
+  }
+
   load() {
     // Cache: devolve a cópia em memória sem tocar no disco
     if (this._cached) return { ...this._cached };
 
     if (!fs.existsSync(this.settingsPath)) {
-      // Instalação nova: todos os módulos desligados e nada a migrar depois.
+      // Instalação nova: módulos pesados desligados (o assistente de IA vem ligado) e nada a migrar depois.
       const fresh = { ...this.defaultSettings, enabledModules: {}, modulesMigrated: true };
       try {
         fs.writeFileSync(this.settingsPath, JSON.stringify(fresh, null, 2), 'utf8');
@@ -172,7 +178,8 @@ class SettingsManager {
   /** Módulos ligados para quem já usava o app antes do sistema de módulos. */
   _legacyModulesPatch() {
     return {
-      enabledModules: { transcription: true, metadata: true, silence: true, recovery: false, montage: false, ai: false },
+      // 'ai' fica de fora de propósito: chave ausente = padrão do módulo (ligado)
+      enabledModules: { transcription: true, metadata: true, silence: true, recovery: false, montage: false },
       modulesMigrated: true
     };
   }
@@ -184,11 +191,16 @@ class SettingsManager {
    * nova execução, então a escolha do usuário nunca é sobrescrita. Altera `merged`; true = precisa gravar.
    */
   _migrateModules(saved, merged) {
-    if (saved.modulesMigrated === true) return false;
-    const hasChoice = saved.enabledModules && typeof saved.enabledModules === 'object' && !Array.isArray(saved.enabledModules);
-    if (!hasChoice) Object.assign(merged, this._legacyModulesPatch());
-    else merged.modulesMigrated = true;
-    return true;
+    let changed = false;
+    if (saved.modulesMigrated !== true) {
+      const hasChoice = saved.enabledModules && typeof saved.enabledModules === 'object' && !Array.isArray(saved.enabledModules);
+      if (!hasChoice) Object.assign(merged, this._legacyModulesPatch());
+      else merged.modulesMigrated = true;
+      changed = true;
+    }
+    // O que o usuário já escolheu em enabledModules (inclusive o assistente de IA) tem prioridade e nunca é
+    // alterado: só quem NUNCA escolheu (chave ausente) recebe o padrão do módulo.
+    return changed;
   }
 
   /**

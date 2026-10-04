@@ -5,6 +5,7 @@ const GROUPS = [
   ['Navegação', [
     ['Ctrl + 1 … 9', 'Abrir a tela na posição do menu'],
     ['Ctrl + B', 'Recolher ou expandir o menu'],
+    ['Ctrl + J', 'Abrir ou fechar o assistente de IA'],
     ['Ctrl + K  ou  /', 'Pesquisar na biblioteca'],
     ['F11', 'Tela cheia (Esc sai)']
   ]],

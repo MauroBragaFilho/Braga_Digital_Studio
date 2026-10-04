@@ -7,9 +7,7 @@
   position: fixed;
   inset: 0;
   z-index: 99998;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.62); /* exceção: cortina do pop-up, escurece o fundo nos 2 temas */
   animation: previewFade 0.18s ease-out;
 }
 .preview-backdrop.hidden { display: none; }
@@ -18,9 +16,8 @@
 .video-preview-overlay:not(:fullscreen),
 .audio-preview-overlay:not(:fullscreen) {
   inset: 6vh 6vw;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
   animation: previewPop 0.18s ease-out;
 }
@@ -34,7 +31,7 @@
 @media (max-width: 900px) {
   .photo-preview-overlay:not(:fullscreen),
   .video-preview-overlay:not(:fullscreen),
-  .audio-preview-overlay:not(:fullscreen) { inset: 2vh 2vw; border-radius: 10px; }
+  .audio-preview-overlay:not(:fullscreen) { inset: 2vh 2vw; border-radius: var(--radius-md); }
 }
 
 /* ===== Galeria mista: vídeo exibido como miniatura com botão de play ===== */
@@ -55,7 +52,7 @@
   transition: transform 0.15s ease, background 0.15s ease;
 }
 .photo-video-play .material-symbols-rounded { font-size: 54px; }
-.photo-video-play:hover { background: var(--accent, #e53935); transform: translate(-50%, -50%) scale(1.08); }
+.photo-video-play:hover { background: var(--accent-solid); color: var(--on-accent); transform: translate(-50%, -50%) scale(1.08); }
 .photo-video-play.hidden { display: none; }
 
 /* Em vídeo, ferramentas de foto (zoom, giro, grade...) ficam ocultas; o filmstrip permanece */

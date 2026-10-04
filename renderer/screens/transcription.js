@@ -187,7 +187,7 @@ async function refreshAi() {
   renderAiStatus();
 }
 
-const aiReady = () => Boolean(aiConfig && aiConfig.model && (aiConfig.isOfficialOpenAI ? aiConfig.hasKey : true));
+const aiReady = () => Boolean(aiConfig && (aiConfig.ready !== undefined ? aiConfig.ready : (aiConfig.model && (aiConfig.isOfficialOpenAI ? aiConfig.hasKey : true))));
 
 /** Linha abaixo da opção "Análise com IA": onde o texto vai parar (ou o que falta configurar). */
 function renderAiStatus() {

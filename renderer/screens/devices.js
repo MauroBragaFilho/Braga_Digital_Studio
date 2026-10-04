@@ -83,7 +83,6 @@ function getDeviceImage(kind, name) {
   if (kind === 'bdsm') return './assets/devices/galaxy_phone.jpg';
   if (kind === 'sony') return './assets/devices/sony_camera.jpg';
   if (/camera|câmera|canon|lumix|eos|nikon|sony|gopro/.test(n)) return './assets/devices/sony_camera.jpg';
-  if (/server|servidor|ftp/.test(n)) return './assets/devices/ftp_server.jpg';
   return './assets/devices/galaxy_phone.jpg';
 }
 

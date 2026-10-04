@@ -25,6 +25,7 @@ const registerListener = (channel, callback) => {
 const api = {
   // --- Configurações ---
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  getDefaultFolders: () => ipcRenderer.invoke('settings:getDefaultFolders'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getConverterOutputDir'),
 
@@ -199,9 +200,9 @@ const api = {
   // --- IA (a chave de API nunca volta para o renderer) ---
   aiGetConfig: () => ipcRenderer.invoke('ai:getConfig'),
   aiSaveConfig: (patch) => ipcRenderer.invoke('ai:saveConfig', patch),
-  aiTestConnection: () => ipcRenderer.invoke('ai:testConnection'),
-  aiListModels: () => ipcRenderer.invoke('ai:listModels'),
-  aiChatStart: (text) => ipcRenderer.invoke('ai:chatStart', { text }),
+  aiTestConnection: (providerId) => ipcRenderer.invoke('ai:testConnection', providerId),
+  aiListModels: (providerId) => ipcRenderer.invoke('ai:listModels', providerId),
+  aiChatStart: (text, context) => ipcRenderer.invoke('ai:chatStart', { text, context }),
   aiChatCancel: (id) => ipcRenderer.invoke('ai:chatCancel', id),
   aiHistoryGet: () => ipcRenderer.invoke('ai:historyGet'),
   aiHistoryClear: () => ipcRenderer.invoke('ai:historyClear'),
@@ -370,6 +371,7 @@ const api = {
   onAiChatDone: (cb) => registerListener('ai:chatDone', cb),
   onAiChatError: (cb) => registerListener('ai:chatError', cb),
   onAiChatStatus: (cb) => registerListener('ai:chatStatus', cb),
+  onAiNavigate: (cb) => registerListener('ai:navigate', cb),
   onModulesChanged: (cb) => registerListener('modules:changed', cb),
   onModulesProgress: (cb) => registerListener('modules:progress', cb),
   onModulesStatus: (cb) => registerListener('modules:status', cb),

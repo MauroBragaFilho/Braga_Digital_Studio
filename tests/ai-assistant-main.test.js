@@ -368,22 +368,41 @@ const GATED = [
   ['ai:historyClear', []]
 ];
 
-test('trava: app EMPACOTADO recusa todos os canais do assistente com AI_DISABLED (mesmo com módulo e interruptor ligados)', async () => {
-  const h = setupHandlers({ isDev: false, enabledModules: { ai: true } });
-  try {
-    for (const [ch, args] of GATED) {
-      const r = await h.call(ch, ...args);
-      assert.equal(r.ok, false, ch);
-      assert.equal(r.code, 'AI_DISABLED', ch);
-    }
-  } finally { rm(h.dir); }
+test('trava: app EMPACOTADO (simulado) tem o assistente liberado — os canais respondem, com o módulo no padrão (ligado) ou ligado à mão', async () => {
+  for (const enabledModules of [{}, { ai: true }]) {
+    const h = setupHandlers({ isDev: false, enabledModules });
+    try {
+      assert.deepEqual(await h.call('ai:historyGet'), { ok: true, data: { messages: [], busy: false } }, JSON.stringify(enabledModules));
+      assert.deepEqual(await h.call('ai:chatCancel'), { ok: true, data: false });
+      assert.deepEqual(await h.call('ai:historyClear'), { ok: true, data: true });
+      // sem servidor configurado (OpenAI sem chave): não é a trava, é o primeiro uso amigável
+      const start = await h.call('ai:chatStart', { text: 'oi' });
+      assert.equal(start.ok, false);
+      assert.equal(start.code, 'AI_NOT_CONFIGURED');
+    } finally { rm(h.dir); }
+  }
+});
+
+test('trava: assistantBlock respeita a constante de liberação (dev sempre liberado; empacotado só se a constante for true)', () => {
+  const gate = require('../src/services/ai/releaseGate');
+  const { assistantBlock } = registerAiHandlers;
+  const ai = { isAssistantEnabled: () => true };
+  const settings = { enabledModules: { ai: true } };
+  assert.equal(gate.isAssistantBuildAllowed(true), true);
+  assert.equal(gate.isAssistantBuildAllowed(false), gate.ASSISTANT_ALLOWED_IN_PACKAGED_APP);
+  assert.equal(assistantBlock({ isDev: true, settings, ai }), null);
+  const packaged = assistantBlock({ isDev: false, settings, ai });
+  if (gate.ASSISTANT_ALLOWED_IN_PACKAGED_APP) assert.equal(packaged, null);
+  else assert.equal(packaged.code, 'AI_DISABLED');
 });
 
 test('trava: módulo desligado recusa; interruptor desligado recusa; tudo ligado libera', async () => {
-  const h = setupHandlers({ isDev: true, enabledModules: {} });
+  const h = setupHandlers({ isDev: true, enabledModules: { ai: false } }); // desligado de propósito (o padrão agora é ligado)
   try {
     for (const [ch, args] of GATED) assert.equal((await h.call(ch, ...args)).code, 'AI_DISABLED', `módulo off: ${ch}`);
 
+    h.settings.enabledModules = {}; // chave ausente = padrão do módulo = ligado
+    assert.equal((await h.call('ai:historyGet')).ok, true, 'módulo no padrão (ligado)');
     h.settings.enabledModules = { ai: true };
     assert.equal((await h.call('ai:historyGet')).ok, true, 'módulo ligado + interruptor padrão (ligado)');
 
@@ -428,8 +447,8 @@ test('configuração pública do assistente não devolve a chave; interruptor pa
   } finally { rm(h.dir); }
 });
 
-test('sem projectService (testes antigos) o chat não envia ferramentas; com ele, a lista é a fixa de 7 ferramentas (detalhes em ai-assistant-tools.test.js)', () => {
-  assert.equal(listTools().length, 7);
+test('sem projectService (testes antigos) o chat não envia ferramentas; com ele, a lista é a fixa de 22 ferramentas (detalhes em ai-assistant-tools.test.js)', () => {
+  assert.equal(listTools().length, 22);
   assert.ok(Object.isFrozen(listTools()));
 });
 
