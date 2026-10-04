@@ -4,6 +4,7 @@ import { enhanceModals } from '../utils/modal.js';
 import { friendlyError } from '../utils/friendlyError.js';
 import { daysUntilLocal, formatLocalDate } from '../utils/localDate.js';
 import { toFileUrl } from '../utils/fileUrl.js';
+import { setContextProvider } from '../utils/assistantContext.js';
 
 /** Só aceita cor hexadecimal (#rgb, #rgba, #rrggbb, #rrggbbaa); qualquer outra coisa vira o padrão. */
 function safeHexColor(value, fallback = '#3b82f6') {
@@ -23,6 +24,8 @@ let projectsList = [];
 let selectedProjectId = null;
 
 export function initScreen() {
+    // Assistente de IA: o projeto selecionado na lista entra no contexto da tela (só o id)
+    setContextProvider('projectSelected', () => selectedProjectId);
     loadProjects();
     setupEventListeners();
     enhanceModals(document.getElementById('projectsView') || document, '.proj-modal-overlay');
@@ -41,6 +44,7 @@ function formatDate(isoStr) {
     return formatLocalDate(isoStr);
 }
 
+// exceção: cores do selo de prazo ficam sobre a capa escura do cartão (independentes de tema)
 function getDeadlinePill(deadlineStr) {
     if (!deadlineStr) return { text: 'Sem Prazo', color: '#bdbdbd', icon: 'schedule' };
 

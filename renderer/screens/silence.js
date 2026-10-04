@@ -90,74 +90,50 @@ export async function initScreen() {
 }
 
 function updateSilenceStepperVisuals() {
+  // O visual de cada etapa vem de [data-state] (idle, done ou active) em silence.css.
+  const setStep = (n, state, badge) => {
+    const item = document.getElementById(`step${n}ItemSilence`);
+    const bd = document.getElementById(`step${n}BadgeSilence`);
+    if (item) item.dataset.state = state;
+    if (bd) bd.textContent = badge;
+  };
+
   // PASSO 1: FILA DE ARQUIVOS
-  const b1 = document.getElementById('step1BadgeSilence');
   const s1 = document.getElementById('step1SubSilence');
-  if (b1 && s1) {
+  if (s1) {
     if (silenceList.length > 0) {
-      b1.style.borderColor = '#4caf50';
-      b1.style.background = 'rgba(76, 175, 80, 0.15)';
-      b1.style.color = 'var(--silence-ok)';
-      b1.textContent = '✓';
-      s1.style.color = 'var(--silence-ok)';
+      setStep(1, 'done', '✓');
       s1.textContent = `${silenceList.length} arquivo(s) na fila`;
     } else {
-      b1.style.borderColor = 'var(--muted)';
-      b1.style.background = 'transparent';
-      b1.style.color = 'var(--muted)';
-      b1.textContent = '1';
-      s1.style.color = 'var(--muted)';
-      s1.textContent = 'Adicione os áudios/vídeos';
+      setStep(1, 'idle', '1');
+      s1.textContent = 'Adicione os áudios ou vídeos';
     }
   }
 
   // PASSO 2: CONFIGURAÇÃO DE CORTE
-  const b2 = document.getElementById('step2BadgeSilence');
   const s2 = document.getElementById('step2SubSilence');
   const sensitivity = document.getElementById('numSensitivity')?.value || '-30';
   const minDur = document.getElementById('numMinDuration')?.value || '0.5';
-
-  if (b2 && s2) {
-    b2.style.borderColor = '#4caf50';
-    b2.style.background = 'rgba(76, 175, 80, 0.15)';
-    b2.style.color = 'var(--silence-ok)';
-    b2.textContent = '✓';
-    s2.style.color = 'var(--silence-ok)';
+  if (s2) {
+    setStep(2, 'done', '✓');
     s2.textContent = `Sensibilidade: ${sensitivity}dB / ${minDur}s`;
   }
 
-  // PASSO 3: PROCESSAR & EXPORTAR
-  const b3 = document.getElementById('step3BadgeSilence');
+  // PASSO 3: PROCESSAR E EXPORTAR
   const t3 = document.getElementById('step3TitleSilence');
   const s3 = document.getElementById('step3SubSilence');
-
-  if (b3 && t3 && s3) {
+  if (t3 && s3) {
     if (exportSilenceState.completed) {
-      b3.style.borderColor = '#4caf50';
-      b3.style.background = 'rgba(76, 175, 80, 0.15)';
-      b3.style.color = 'var(--silence-ok)';
-      b3.textContent = '✓';
-      t3.textContent = 'CONCLUÍDO!';
-      t3.style.color = 'var(--silence-ok)';
-      s3.style.color = 'var(--silence-ok)';
+      setStep(3, 'done', '✓');
+      t3.textContent = 'Concluído';
       s3.textContent = 'Todos os arquivos foram processados!';
     } else if (exportSilenceState.active) {
-      b3.style.borderColor = 'var(--accent)';
-      b3.style.background = 'color-mix(in srgb, var(--accent) 15%, transparent)';
-      b3.style.color = 'var(--accent)';
-      b3.textContent = '⏳';
-      t3.textContent = `PROCESSANDO (${exportSilenceState.current}/${exportSilenceState.total})`;
-      t3.style.color = 'var(--accent)';
-      s3.style.color = 'var(--accent)';
+      setStep(3, 'active', '…');
+      t3.textContent = `Processando (${exportSilenceState.current}/${exportSilenceState.total})`;
       s3.textContent = `Progresso: ${Math.round(exportSilenceState.percent)}%`;
     } else {
-      b3.style.borderColor = 'var(--muted)';
-      b3.style.background = 'transparent';
-      b3.style.color = 'var(--muted)';
-      b3.textContent = '3';
-      t3.textContent = 'PROCESSAR & EXPORTAR';
-      t3.style.color = '#ffffff';
-      s3.style.color = 'var(--muted)';
+      setStep(3, 'idle', '3');
+      t3.textContent = 'Processar e exportar';
       s3.textContent = 'Inicie os cortes automáticos';
     }
   }
@@ -181,12 +157,10 @@ function renderSilenceTable() {
   if (silenceList.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" style="padding: 40px; text-align: center; color: var(--muted);">
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
-            <span class="material-symbols-rounded" style="font-size: 36px; opacity: 0.4;">graphic_eq</span>
-            <strong>Fila de arquivos vazia</strong>
-            <span style="font-size: 11px;">Arraste arquivos para cá ou use "Adicionar".</span>
-          </div>
+        <td colspan="7" class="sil-empty">
+          <span class="material-symbols-rounded" aria-hidden="true">graphic_eq</span>
+          <strong>Fila de arquivos vazia</strong>
+          <span>Arraste arquivos para cá ou use "Adicionar".</span>
         </td>
       </tr>
     `;
@@ -199,52 +173,51 @@ function renderSilenceTable() {
     const isAudio = item.isAudio || ['MP3', 'WAV', 'M4A', 'AAC', 'FLAC', 'OGG'].includes(ext);
 
     const thumbHtml = isAudio
-      ? `<div style="width: 56px; height: 34px; background: rgba(33, 150, 243, 0.15); border: 1px solid rgba(33, 150, 243, 0.3); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #2196f3; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; flex-shrink: 0;">ÁUDIO</div>`
-      : `<div style="width: 56px; height: 34px; background: #000; border-radius: 4px; overflow: hidden; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line);">
-          ${item.thumbnail ? `<img src="${escapeAttr(item.thumbnail)}" alt="" style="width: 100%; height: 100%; object-fit: cover; position: relative; z-index: 1;" />` : ''}
-          <span class="material-symbols-rounded" style="color: var(--muted); font-size: 16px; position: absolute;">movie</span>
+      ? `<div class="sil-thumb sil-thumb-audio">ÁUDIO</div>`
+      : `<div class="sil-thumb">
+          ${item.thumbnail ? `<img src="${escapeAttr(item.thumbnail)}" alt="" />` : ''}
+          <span class="material-symbols-rounded" aria-hidden="true">movie</span>
          </div>`;
 
     const isDone = item.status === 'Concluído' || String(item.status || '').startsWith('Exportado');
     const isBad = item.status === 'Erro';
     const isWarn = item.status === 'Ignorado' || item.status === 'Cancelado';
-    const statusColor = isDone ? '#4caf50' : (isBad ? '#e53935' : (isWarn ? '#ffb300' : ((item.progress || 0) > 0 ? 'var(--accent)' : 'var(--muted)')));
+    const stClass = isDone ? 'done' : (isBad ? 'bad' : (isWarn ? 'warn' : ((item.progress || 0) > 0 ? 'run' : 'idle')));
+    const pct = Math.round(item.progress || 0);
 
     return `
-      <tr class="silence-row" style="border-bottom: 1px solid var(--line);">
-        <td style="padding: 10px 12px; font-weight: 700; color: var(--muted);">${index + 1}</td>
-        
-        <!-- VÍDEO / ARQUIVO COM THUMBNAIL REAL OU BADGE ÁUDIO -->
-        <td style="padding: 10px 12px;">
-          <div style="display: flex; align-items: center; gap: 10px;">
+      <tr class="silence-row">
+        <td class="sil-cell-num">${index + 1}</td>
+
+        <!-- VÍDEO / ARQUIVO COM MINIATURA REAL OU SELO DE ÁUDIO -->
+        <td>
+          <div class="sil-file">
             ${thumbHtml}
-            <div style="min-width: 0; flex: 1;">
-              <div style="font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeAttr(item.name)}">${escapeHtml(item.name)}</div>
-              <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Formato: ${escapeHtml(ext)}</div>
+            <div class="sil-file-text">
+              <div class="sil-file-name" title="${escapeAttr(item.name)}">${escapeHtml(item.name)}</div>
+              <div class="sil-file-fmt">Formato: ${escapeHtml(ext)}</div>
             </div>
           </div>
         </td>
 
-        <td style="padding: 10px 12px; font-weight: 600; color: #ffffff;">${item.durationSeconds > 0 ? durStr : '—'}</td>
-        <td style="padding: 10px 12px; color: var(--accent); font-weight: 600;">${item.silenceSeconds != null ? formatSecondsToHHMMSS(Math.round(item.silenceSeconds)) : '—'}</td>
-        <td style="padding: 10px 12px; color: #4caf50; font-weight: 600;">${item.newDuration != null ? formatSecondsToHHMMSS(Math.round(item.newDuration)) : '—'}</td>
+        <td class="sil-cell-strong">${item.durationSeconds > 0 ? durStr : '—'}</td>
+        <td class="sil-cell-cut">${item.silenceSeconds != null ? formatSecondsToHHMMSS(Math.round(item.silenceSeconds)) : '—'}</td>
+        <td class="sil-cell-new">${item.newDuration != null ? formatSecondsToHHMMSS(Math.round(item.newDuration)) : '—'}</td>
 
         <!-- PROGRESSO INDIVIDUAL POR ARQUIVO -->
-        <td style="padding: 10px 12px; width: 160px;">
-          <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700;">
-              <span style="color: ${statusColor};" title="${escapeAttr(cleanText(item.message || ''))}">${escapeHtml(item.status || 'Pronto')}</span>
-              <span style="color: #ffffff;">${Math.round(item.progress || 0)}%</span>
+        <td class="sil-cell-status">
+          <div class="sil-st sil-st-${stClass}">
+            <div class="sil-st-line">
+              <span class="sil-st-label" title="${escapeAttr(cleanText(item.message || ''))}">${escapeHtml(item.status || 'Pronto')}</span>
+              <span>${pct}%</span>
             </div>
-            <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; overflow: hidden; border: 1px solid var(--line);">
-              <div style="width: ${Math.round(item.progress || 0)}%; height: 100%; background: ${isDone ? '#4caf50' : (isBad ? '#e53935' : 'var(--accent)')}; transition: width 0.25s ease;"></div>
-            </div>
+            <div class="sil-bar"><div class="sil-bar-fill" style="width: ${pct}%;"></div></div>
           </div>
         </td>
 
-        <td style="padding: 10px 12px; text-align: center;">
-          <button class="btn-remove-silence-item" data-id="${item.id}" title="Remover item" style="background: transparent; border: none; color: #e53935; cursor: pointer; padding: 4px; display: inline-flex; align-items: center;">
-            <span class="material-symbols-rounded" style="font-size: 18px;">delete</span>
+        <td class="sil-cell-act">
+          <button class="btn-remove-silence-item sil-icon-btn" type="button" data-id="${item.id}" title="Remover item" aria-label="Remover item da fila">
+            <span class="material-symbols-rounded" aria-hidden="true">delete</span>
           </button>
         </td>
       </tr>

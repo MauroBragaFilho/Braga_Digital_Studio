@@ -31,7 +31,6 @@
     "bonjour-service": "^1.4.4",
     "chokidar": "^5.0.0",
     "sql.js": "^1.12.0",
-    "uuid": "^14.0.1",
     "winston": "^3.19.0"
   },
   "devDependencies": {
@@ -68,7 +67,8 @@
       "description": "Braga Digital Studio desktop app built with Electron, Node.js and SQLite."
     },
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "installer"
     },
     "files": [
       "main.js",
@@ -78,6 +78,7 @@
       "assets/**/*",
       "logs/.gitkeep",
       "package.json",
+      "!**/*.log",
       "!**/*.map",
       "!**/*.md",
       "!**/*.psd",
@@ -118,17 +119,31 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
+      "installerHeader": "installer/installerHeader.bmp",
+      "installerSidebar": "installer/installerSidebar.bmp",
+      "uninstallerSidebar": "installer/uninstallerSidebar.bmp",
+      "include": "installer/installer.nsh",
+      "language": "1046",
+      "installerLanguages": [
+        "pt_BR"
+      ],
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": false,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "Braga Digital Studio",
+      "uninstallDisplayName": "Braga Digital Studio",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     },
     "compression": "maximum",
     "electronLanguages": [
       "pt-BR",
       "en-US"
     ],
-    "afterPack": "scripts/after-pack-check.js"
+    "afterPack": "scripts/after-pack-check.js",
+    "copyright": "© 2026 Mauro Braga. Todos os direitos reservados."
   },
   "engines": {
     "node": ">=22"

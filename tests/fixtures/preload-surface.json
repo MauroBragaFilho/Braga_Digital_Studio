@@ -297,7 +297,7 @@
   },
   "aiChatStart": {
     "type": "function",
-    "length": 1,
+    "length": 2,
     "withSentinels": {
       "made": [
         {
@@ -305,7 +305,8 @@
           "ch": "ai:chatStart",
           "args": [
             {
-              "text": "@1"
+              "text": "@1",
+              "context": "@2"
             }
           ]
         }
@@ -319,7 +320,8 @@
           "ch": "ai:chatStart",
           "args": [
             {
-              "text": "__undefined__"
+              "text": "__undefined__",
+              "context": "__undefined__"
             }
           ]
         }
@@ -401,13 +403,15 @@
   },
   "aiListModels": {
     "type": "function",
-    "length": 0,
+    "length": 1,
     "withSentinels": {
       "made": [
         {
           "op": "invoke",
           "ch": "ai:listModels",
-          "args": []
+          "args": [
+            "@1"
+          ]
         }
       ],
       "returns": "promise"
@@ -417,7 +421,9 @@
         {
           "op": "invoke",
           "ch": "ai:listModels",
-          "args": []
+          "args": [
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"
@@ -453,13 +459,15 @@
   },
   "aiTestConnection": {
     "type": "function",
-    "length": 0,
+    "length": 1,
     "withSentinels": {
       "made": [
         {
           "op": "invoke",
           "ch": "ai:testConnection",
-          "args": []
+          "args": [
+            "@1"
+          ]
         }
       ],
       "returns": "promise"
@@ -469,7 +477,9 @@
         {
           "op": "invoke",
           "ch": "ai:testConnection",
-          "args": []
+          "args": [
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"
@@ -5155,6 +5165,37 @@
       }
     ]
   },
+  "onAiNavigate": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:navigate"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:navigate"
+      },
+      {
+        "op": "off",
+        "ch": "ai:navigate"
+      },
+      {
+        "op": "off",
+        "ch": "ai:navigate"
+      }
+    ]
+  },
   "onAudioSyncProgress": {
     "type": "function",
     "length": 1,
@@ -7347,6 +7388,10 @@
         {
           "op": "off",
           "ch": "ai:chatStatus"
+        },
+        {
+          "op": "off",
+          "ch": "ai:navigate"
         },
         {
           "op": "off",

@@ -885,7 +885,7 @@ const startApp = () => {
 
   if (window.bds?.onModulesChanged) window.bds.onModulesChanged(() => refreshModules());
 
-  // Assistente de IA: botão flutuante em todas as telas (só existe com o módulo e o interruptor ligados, fora do app final).
+  // Assistente de IA: botão flutuante em todas as telas (só existe com o módulo e o interruptor ligados; liberado no app final).
   // Um erro aqui nunca pode afetar o restante do app.
   import('./components/ai-assistant.js')
     .then((m) => m.mountAssistant())

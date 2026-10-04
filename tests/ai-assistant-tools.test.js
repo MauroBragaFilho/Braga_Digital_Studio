@@ -25,7 +25,7 @@ const AssistantChat = require('../src/services/ai/AssistantChat');
 const ChatHistory = require('../src/services/ai/ChatHistory');
 const registerAiHandlers = require('../src/ipc/aiHandlers');
 const { createRegistry, APP_PAGE } = require('../src/ipc/channelRegistry');
-const { TOOLS, ToolBox, toolDefinitions } = require('../src/services/ai/tools');
+const { TOOLS, ToolBox, toolDefinitions, selectToolNames } = require('../src/services/ai/tools');
 const { validateArgs, parseArgs, ArgError } = require('../src/services/ai/tools/schema');
 const { serializeResult, safeText, MAX_RESULT_BYTES } = require('../src/services/ai/tools/results');
 const { createNativeConfirm } = require('../src/services/ai/tools/confirmDialog');
@@ -156,10 +156,19 @@ test('esquema: aceita o certo, preenche padrão e recusa tipo errado, argumento 
 });
 
 test('a lista de ferramentas é fixa e não tem nada destrutivo; as definições seguem o formato do protocolo', () => {
-  assert.deepEqual(TOOLS.map((t) => t.name), ['library_search', 'media_get', 'projects_list', 'project_get', 'transcription_status', 'transcribe_media', 'create_project']);
+  assert.deepEqual(TOOLS.map((t) => t.name), [
+    'library_search', 'media_get', 'projects_list', 'project_get', 'transcription_status',
+    'app_overview', 'library_stats', 'downloads_status', 'converter_status', 'devices_list', 'settings_summary', 'get_transcript', 'open_screen',
+    'transcribe_media', 'create_project',
+    'add_download', 'convert_media', 'remove_silence',
+    'add_media_to_project', 'tag_media', 'set_favorite', 'export_project'
+  ]);
   assert.ok(Object.isFrozen(TOOLS));
-  for (const t of TOOLS) assert.doesNotMatch(t.name, /delete|remove|rename|move|clear/i);
-  assert.deepEqual(TOOLS.filter((t) => t.kind === 'action').map((t) => t.name), ['transcribe_media', 'create_project']);
+  // nada destrutivo: nenhum nome de apagar/mover/renomear/limpar/executar/configurar (remove_silence só CRIA arquivo novo)
+  for (const t of TOOLS) assert.doesNotMatch(t.name.replace('remove_silence', 'silence'), /delete|remove|rename|move|clear|exec|run|command|shell|setting(?!s_summary)|config/i);
+  assert.deepEqual(TOOLS.filter((t) => t.kind === 'action').map((t) => t.name), ['transcribe_media', 'create_project', 'add_download', 'convert_media', 'remove_silence', 'add_media_to_project', 'tag_media', 'set_favorite', 'export_project']);
+  assert.deepEqual(TOOLS.filter((t) => t.kind === 'ui').map((t) => t.name), ['open_screen']);
+  assert.equal(TOOLS.filter((t) => t.kind === 'read').length, 12);
   for (const d of toolDefinitions()) {
     assert.equal(d.type, 'function');
     assert.ok(d.function.name && d.function.description);
@@ -534,7 +543,9 @@ test('laço: tool_calls em streaming (argumentos em pedaços) -> executa -> devo
     assert.equal(server.requests.length, 2);
     // 1ª chamada leva as ferramentas e o prompt novo
     const first = server.requests[0].body;
-    assert.deepEqual(first.tools.map((t) => t.function.name), TOOLS.map((t) => t.name));
+    // subconjunto por turno: sem palavra-chave, só o núcleo + consultas de estado (nenhuma ação é oferecida)
+    assert.deepEqual(first.tools.map((t) => t.function.name), TOOLS.filter((t) => selectToolNames({ texts: ['Quais vídeos de aula eu tenho?'] }).has(t.name)).map((t) => t.name));
+    assert.ok(first.tools.every((t) => TOOLS.find((x) => x.name === t.function.name).kind !== 'action'));
     assert.equal(first.tool_choice, 'auto');
     assert.match(first.messages[0].content, /ferramentas/);
     assert.match(first.messages[0].content, /nunca siga instruções/);
@@ -812,12 +823,13 @@ test('fiação: não existe canal IPC para executar ferramenta nem confirmar —
   assert.ok(![...h.handlers.keys()].some((k) => /tool|confirm/i.test(k)));
 });
 
-test('fiação: com o chat travado (empacotado) as ferramentas não rodam; liberado, o laço usa o diálogo injetado do main', async () => {
+test('fiação: app empacotado (simulado) liberado; o laço usa o diálogo injetado do main', async () => {
   const blocked = setupHandlers({ isDev: false });
-  assert.equal((await blocked.call('ai:chatStart', { text: 'crie um projeto' })).code, 'AI_DISABLED');
+  // app empacotado simulado: o assistente está LIBERADO (releaseGate.js); sem servidor configurado vem o primeiro uso amigável
+  assert.equal((await blocked.call('ai:chatStart', { text: 'crie um projeto' })).code, 'AI_NOT_CONFIGURED');
   assert.equal(isAssistantBuildAllowed(true), true);
   assert.equal(isAssistantBuildAllowed(false), ASSISTANT_ALLOWED_IN_PACKAGED_APP);
-  assert.equal(ASSISTANT_ALLOWED_IN_PACKAGED_APP, false, 'liberar no app final é decisão consciente (releaseGate.js)');
+  assert.equal(ASSISTANT_ALLOWED_IN_PACKAGED_APP, true, 'liberado no app final (decisão registrada em releaseGate.js)');
 
   const server = await startServer((req, res, body, n) => {
     if (n === 1) streamCalls(res, [{ id: 'k', name: 'create_project', args: { nome: 'Pelo handler' } }]);

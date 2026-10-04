@@ -1,9 +1,12 @@
 /* ==========================================================================
-   LUTS SCREEN - MODULAR CSS (Refatorado)
+   LUTs - estilo novo: cartões planos de 16px, botões em pílula, busca em pílula,
+   Montserrat só nos títulos, acento puro só em foco, seleção, divisor e indicadores.
+   Tokens globais em style.css. (.hidden e prefers-reduced-motion já são globais.)
    ========================================================================== */
 
 /* --- CONTAINER PRINCIPAL --- */
 .luts-screen-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -15,54 +18,34 @@
   background: var(--bg);
 }
 
-/* --- HEADER --- */
+/* --- CABEÇALHO --- */
 .luts-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 16px;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
-.luts-tabs {
-  display: flex;
-  gap: 32px;
-}
-
+/* Título da seção (única "aba" da tela) */
 .luts-tab {
-  font-size: 12px;
+  font-family: var(--font-title);
+  font-size: var(--fs-section);
   font-weight: 700;
-  color: var(--muted);
-  text-transform: uppercase;
-  cursor: pointer;
-  position: relative;
-  padding-bottom: 16px;
-  margin-bottom: -17px;
-  transition: 0.2s;
-}
-
-.luts-tab.active {
-  color: var(--accent);
-}
-
-.luts-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent);
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .luts-header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 
-/* --- INPUTS & SELECTS (Padrão global aplicado) --- */
+/* --- BUSCA E FILTROS --- */
 .luts-search {
   position: relative;
   display: flex;
@@ -70,13 +53,26 @@
 }
 
 .luts-search-input {
-  width: 200px;
-  padding-left: 34px !important;
+  width: 220px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 16px 0 40px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+}
+
+.luts-search-input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+  border-color: var(--accent);
 }
 
 .luts-search-icon {
   position: absolute;
-  left: 10px;
+  left: 14px;
   font-size: 18px;
   color: var(--muted);
   pointer-events: none;
@@ -86,161 +82,181 @@
 .luts-filters {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-right: 16px;
+  gap: var(--space-2);
 }
 
 .lut-select {
   width: auto;
   min-width: 140px;
+  height: 40px;
+  box-sizing: border-box;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  padding: 8px 32px 8px 12px;
-  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23999999%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+  padding: 0 32px 0 16px;
+  background-color: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  cursor: pointer;
+  /* exceção: seta do seletor embutida em SVG (não aceita var()); cinza neutro legível nos dois temas */
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
+  background-position: right 14px center;
   background-size: 10px auto;
 }
 
-/* --- BUTTONS (Padrão global aplicado) --- */
+.lut-select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- BOTÕES (pílula) --- */
 .lut-btn-primary {
-  background: var(--accent);
-  color: var(--text);
-  border: none;
-  padding: 8px 16px;
-  font-weight: 600;
-  font-size: 12px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  min-height: 40px;
+  padding: 8px 20px;
+  font-weight: 700;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  transition: 0.2s;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.lut-btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
+.lut-btn-primary:hover:not(:disabled) { background: var(--btn-bg-hover); }
 
-.lut-btn-primary:disabled {
+.lut-btn-primary:disabled,
+.lut-btn-outline:disabled,
+.lut-icon-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .lut-btn-outline {
   background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  padding: 8px 16px;
+  color: var(--text);
+  border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
+  border-radius: var(--radius-pill);
+  min-height: 36px;
+  padding: 6px 18px;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
-  transition: 0.2s;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.lut-btn-outline:hover {
-  background: var(--card-2);
-  color: var(--text);
-}
+.lut-btn-outline:hover:not(:disabled) { background: var(--card-2); }
 
-.lut-btn-outline.lut-btn-danger:hover {
-  background: var(--accent-light);
-  color: var(--accent);
-  border-color: rgba(229, 57, 53, 0.3);
-}
+.lut-btn-outline.lut-btn-danger { color: var(--danger-fg); border-color: var(--danger); }
+.lut-btn-outline.lut-btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
 
 .lut-btn-full-width { width: 100%; justify-content: center; }
 
-.lut-icon-btn {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.lut-icon-btn:hover { background: var(--card-2); color: var(--text); }
-.lut-icon-btn.lut-icon-btn-small { width: 24px; height: 24px; border: none; }
-
+.lut-icon-btn,
 .lut-view-mode-btn {
   background: transparent;
   border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
   color: var(--muted);
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: 0.2s;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
+.lut-icon-btn:hover:not(:disabled),
 .lut-view-mode-btn:hover { background: var(--card-2); color: var(--text); }
-.lut-view-mode-btn.active { background: rgba(255, 255, 255, 0.1); color: var(--text); }
 
-/* --- CONTENT AREA --- */
+.lut-icon-btn.lut-icon-btn-small { width: 32px; height: 32px; border: none; }
+
+.lut-view-mode-btn.active {
+  background: var(--accent-light);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+
+.lut-icon-btn.loading .material-symbols-rounded { animation: spin 1s linear infinite; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* --- FOCO VISÍVEL --- */
+.lut-card:focus-visible,
+.lut-btn-primary:focus-visible,
+.lut-btn-outline:focus-visible,
+.lut-icon-btn:focus-visible,
+.lut-view-mode-btn:focus-visible,
+.lut-select:focus-visible,
+.lut-fullscreen-close-btn:focus-visible,
+.inspector-section > summary:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- ÁREA DE CONTEÚDO --- */
 .luts-content {
   display: flex;
-  gap: 24px;
+  gap: var(--space-5);
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* --- GRID AREA --- */
+/* --- GRADE --- */
 .luts-grid-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding-right: 8px;
+  padding-right: var(--space-2);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
-
-.luts-grid-area::-webkit-scrollbar { width: 6px; }
-.luts-grid-area::-webkit-scrollbar-track { background: transparent; }
-.luts-grid-area::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
-.luts-grid-area::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
 .luts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-  padding-bottom: 24px;
-  transition: gap 0.2s ease;
+  gap: var(--space-4);
+  padding-bottom: var(--space-5);
 }
 
-/* Modo Compacto */
+/* Modo compacto */
 .luts-grid-area.view-compact .luts-grid {
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
+  gap: var(--space-3);
 }
 
-/* Modo Lista */
+/* Modo lista */
 .luts-grid-area.view-list .luts-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .luts-grid-area.view-list .lut-card {
   width: 100%;
   flex-direction: row;
   align-items: center;
-  padding: 8px;
+  padding: var(--space-2);
 }
 
 .luts-grid-area.view-list .lut-card-img {
   width: 80px;
   height: 45px;
   flex-shrink: 0;
-  margin-right: 12px;
+  margin-right: var(--space-3);
+  border-bottom: none;
+  border-radius: var(--radius-sm);
 }
 
 .luts-grid-area.view-list .lut-card-body {
@@ -249,50 +265,30 @@
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 0;
 }
 
-.luts-grid-area.view-list .lut-card-info {
-  flex: 1;
-}
+.luts-grid-area.view-list .lut-card-info { flex: 1; }
+.luts-grid-area.view-list .lut-card-title { font-size: var(--fs-body); margin-bottom: var(--space-1); }
+.luts-grid-area.view-list .lut-card-meta { font-size: var(--fs-label); display: flex; gap: 6px; }
+.luts-grid-area.view-list .lut-badge-3d { top: 50%; right: 44px; transform: translateY(-50%); }
+.luts-grid-area.view-list .lut-checkbox { top: 8px; left: 8px; }
 
-.luts-grid-area.view-list .lut-card-title {
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.luts-grid-area.view-list .lut-card-meta {
-  font-size: 10px;
-  display: flex;
-  gap: 6px;
-}
-
-.luts-grid-area.view-list .lut-badge-3d {
-  top: 50%;
-  right: 44px;
-  transform: translateY(-50%);
-}
-
-.luts-grid-area.view-list .lut-checkbox {
-  top: 8px;
-  left: 8px;
-}
-
-/* --- CARD --- */
+/* --- CARTÃO --- */
 .lut-card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: 0.2s;
   position: relative;
   display: flex;
   flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.lut-card:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
+.lut-card:hover { border-color: var(--muted); }
 .lut-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 .lut-card-img {
@@ -301,12 +297,13 @@
   object-fit: cover;
   border-bottom: 1px solid var(--line);
   filter: brightness(0.9);
-  transition: 0.3s;
+  transition: filter 0.3s;
 }
+
 .lut-card:hover .lut-card-img { filter: brightness(1.1); }
 
 .lut-card-body {
-  padding: 12px;
+  padding: var(--space-3) var(--space-4);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -315,13 +312,13 @@
 .lut-card-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   overflow: hidden;
 }
 
 .lut-card-title {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -329,38 +326,48 @@
 }
 
 .lut-card-meta {
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--muted);
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
 }
 
+/* Seleção sobre a miniatura (mídia): fica legível independente de tema */
 .lut-checkbox {
   position: absolute;
   top: 10px;
   left: 10px;
-  width: 20px;
-  height: 20px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  width: 22px;
+  height: 22px;
+  background: rgba(0, 0, 0, 0.55); /* exceção: controle sobre a miniatura (mídia), independente de tema */
+  border: 1px solid rgba(255, 255, 255, 0.5); /* exceção: idem */
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: 0.2s;
+  transition: opacity 0.15s ease;
 }
-.lut-card:hover .lut-checkbox { opacity: 1; }
-.lut-card.selected .lut-checkbox { opacity: 1; background: var(--accent); border-color: var(--accent); }
-.lut-checkbox .material-symbols-rounded { font-size: 14px; color: #fff; opacity: 0; }
+
+.lut-card:hover .lut-checkbox,
+.lut-card:focus-visible .lut-checkbox { opacity: 1; }
+
+.lut-card.selected .lut-checkbox {
+  opacity: 1;
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+}
+
+.lut-checkbox .material-symbols-rounded { font-size: 14px; color: var(--on-accent); opacity: 0; }
 .lut-card.selected .lut-checkbox .material-symbols-rounded { opacity: 1; }
 
-/* --- INSPECTOR --- */
+/* --- INSPETOR --- */
 .luts-inspector {
   width: 340px;
   flex-shrink: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--card);
   display: flex;
   flex-direction: column;
@@ -368,40 +375,58 @@
 }
 
 .inspector-header {
-  padding: 16px;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .inspector-title {
+  font-family: var(--font-title);
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .inspector-content {
-  padding: 16px;
+  padding: var(--space-5);
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 
-.inspector-content::-webkit-scrollbar { width: 4px; }
-.inspector-content::-webkit-scrollbar-track { background: transparent; }
-.inspector-content::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+/* O preview antes/depois não tem altura própria: sem isto ele encolhia na coluna flex */
+.inspector-content > * { flex-shrink: 0; }
 
-/* --- COMPONENTE BEFORE/AFTER SLIDER --- */
+.inspector-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-5);
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+
+.inspector-footer-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+
+.inspector-footer .lut-btn-outline,
+.inspector-footer .lut-btn-primary { padding: 7px 8px; }
+
+.inspector-footer .material-symbols-rounded { font-size: 16px; }
+
+/* --- ANTES/DEPOIS --- */
 .lut-slider-container {
   position: relative;
   width: 100%;
   aspect-ratio: 16/9;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
   user-select: none;
   border: 1px solid var(--line);
   background: var(--card-2);
@@ -424,20 +449,13 @@
   object-fit: cover;
 }
 
-/* O canvas real (com a LUT aplicada) e a imagem "DEPOIS" cru precisam
-   ocupar exatamente o mesmo espaço, sobrepostos, dentro do overlay —
-   caso contrário ficam empilhados verticalmente e o canvas (que é o
-   segundo elemento) acaba cortado pelo overflow:hidden do overlay,
-   nunca aparecendo mesmo depois de a LUT ser aplicada. */
+/* O canvas real (com a LUT aplicada) e a imagem "DEPOIS" precisam ocupar exatamente o
+   mesmo espaço, sobrepostos, dentro do overlay; senão ficam empilhados e o canvas é cortado. */
 .lut-slider-overlay .lut-slider-img,
 .lut-slider-overlay .lut-slider-canvas {
   position: absolute;
   top: 0;
   left: 0;
-}
-
-.lut-slider-canvas.hidden {
-  display: none !important;
 }
 
 .lut-slider-overlay {
@@ -469,22 +487,23 @@
   transform: translate(-50%, -50%);
   width: 28px;
   height: 28px;
-  background: var(--accent);
+  background: var(--accent-solid);
+  color: var(--on-accent);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
 }
 
+/* Rótulos sobre a imagem (mídia): independentes de tema */
 .lut-slider-label {
   position: absolute;
   top: 10px;
-  background: rgba(0, 0, 0, 0.6);
-  color: var(--text);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
+  background: rgba(0, 0, 0, 0.65); /* exceção: rótulo sobre mídia */
+  color: #fff; /* exceção: rótulo sobre mídia (contraste >= 4,5:1 sobre o fundo escuro) */
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-label);
   font-weight: 700;
   pointer-events: none;
   z-index: 5;
@@ -492,120 +511,133 @@
 .lut-slider-label-before { left: 10px; }
 .lut-slider-label-after { right: 10px; }
 
-/* --- DETAILS --- */
+/* --- DETALHES --- */
 .inspector-header-info {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
   position: relative;
 }
 
 .inspector-name {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--fs-section);
+  font-weight: 600;
   color: var(--text);
   word-break: break-all;
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.lut-badge {
+  background: var(--accent-light);
+  color: var(--accent-text);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+}
+
+/* Selo 3D sobre o cartão (mídia): independente de tema */
 .lut-badge-3d {
   position: absolute;
   top: 10px;
   right: 10px;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  color: var(--text);
-  font-size: 10px;
+  background: rgba(0, 0, 0, 0.65); /* exceção: selo sobre mídia */
+  color: #fff; /* exceção: selo sobre mídia */
+  font-size: var(--fs-label);
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(255,255,255,0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
   align-self: flex-start;
 }
 
-.lut-badge {
+.inspector-header-info .lut-badge-3d {
+  position: static;
   background: var(--accent-light);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  font-size: 10px;
+  color: var(--accent-text);
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
+  padding: 2px 10px;
 }
 
 .inspector-details {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  font-size: 12px;
-  margin-bottom: 24px;
+  gap: var(--space-2);
+  font-size: var(--fs-label);
+  margin-bottom: var(--space-5);
 }
 
 .detail-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
 }
 
-.detail-label {
-  color: var(--muted);
-}
-
-.detail-value {
-  color: var(--text);
-}
-
-.inspector-section {
-  margin-bottom: 16px;
-}
+.detail-row:last-child { border-bottom: 0; }
+.detail-label { color: var(--muted); }
+.detail-value { color: var(--text); font-variant-numeric: tabular-nums; }
 
 .inspector-section-title {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--fs-label);
+  font-weight: 600;
   color: var(--muted);
-  letter-spacing: 1px;
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-2);
 }
 
-.inspector-actions-section {
-  margin-top: auto;
-  padding-top: 20px;
-}
+/* Seção .cube recolhível */
+details.inspector-section { margin-top: var(--space-4); }
 
-.inspector-actions {
+details.inspector-section > summary {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
-/* --- ARQUIVO .CUBE (Inspector) --- */
+details.inspector-section > summary::-webkit-details-marker { display: none; }
+
+details.inspector-section > summary::after {
+  content: 'expand_more';
+  font-family: 'Material Symbols Rounded';
+  font-size: 18px;
+  letter-spacing: 0;
+  transition: transform 0.2s;
+}
+
+details.inspector-section[open] > summary::after { transform: rotate(180deg); }
+details.inspector-section:not([open]) > summary { margin-bottom: 0; }
+
+/* --- ARQUIVO .CUBE (inspetor) --- */
 .cube-header-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   background: var(--card-2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-label);
 }
 
 .cube-meta-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
-.cube-meta-label {
-  color: var(--muted);
-}
+.cube-meta-label { color: var(--muted); }
 
 .cube-meta-value {
   color: var(--text);
@@ -615,10 +647,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 60%;
+  font-variant-numeric: tabular-nums;
 }
 
+.cube-meta-value-warning { color: var(--warning) !important; }
+
 .cube-preview-label {
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--muted);
   margin-bottom: 6px;
 }
@@ -629,7 +664,7 @@
   max-height: 220px;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--card-2);
 }
 
@@ -639,145 +674,107 @@
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-family: 'Consolas', 'Courier New', monospace;
   border-bottom: 1px solid var(--line);
 }
 
-.cube-rgb-row:last-child {
-  border-bottom: none;
-}
+.cube-rgb-row:last-child { border-bottom: none; }
+.cube-rgb-row:nth-child(even) { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.cube-rgb-index { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cube-rgb-value { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 
-.cube-rgb-index {
-  color: var(--muted);
-}
-
-.cube-rgb-value {
-  color: var(--text);
-  text-align: right;
-}
-
+/* A cor do quadradinho vem inline do arquivo (amostra do gráfico), independente de tema */
 .cube-swatch {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  border: 1px solid var(--line);
   flex-shrink: 0;
 }
 
 .cube-rgb-empty {
-  padding: 12px;
-  font-size: 12px;
+  padding: var(--space-3);
+  font-size: var(--fs-label);
   color: var(--muted);
   text-align: center;
 }
 
-/* --- MODAL: Arquivo .cube completo --- */
+#btnViewCubeRaw { margin-top: var(--space-3); }
+
+/* --- JANELA: arquivo .cube completo --- */
 .lut-cube-raw-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.75);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75); /* exceção: cortina sobre a tela, independente de tema */
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 
-.lut-cube-raw-modal.hidden {
-  display: none;
-}
+.lut-cube-raw-modal.hidden { display: none; }
 
 .lut-cube-raw-inner {
   width: 720px;
   max-width: 90vw;
   max-height: 80vh;
-  background: var(--bg);
+  background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .lut-cube-raw-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
 }
 
 .lut-cube-raw-title {
-  font-size: 13px;
+  font-family: var(--font-title);
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
 }
 
 .lut-cube-raw-content {
   margin: 0;
-  padding: 16px;
+  padding: var(--space-4) var(--space-5);
   overflow: auto;
   font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 12px;
+  font-size: var(--fs-label);
   line-height: 1.6;
   color: var(--text);
   white-space: pre;
+  scrollbar-width: thin;
+  font-variant-numeric: tabular-nums;
 }
 
-.cube-line-comment {
-  color: var(--muted);
-}
-
-.cube-line-directive {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.cube-line-data {
-  color: var(--text);
-}
-
-.cube-meta-value-warning {
-  color: var(--warning) !important;
-}
+.cube-line-comment { color: var(--muted); }
+.cube-line-directive { color: var(--accent-text); font-weight: 600; }
+.cube-line-data { color: var(--text); }
 
 .cube-raw-truncated-notice {
-  background: rgba(255, 176, 32, 0.12);
-  border: 1px solid rgba(255, 176, 32, 0.4);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
   color: var(--warning);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  margin-bottom: 10px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-label);
+  font-family: var(--font-body);
+  margin-bottom: var(--space-3);
 }
 
-/* --- FOOTER --- */
-.luts-footer {
-  display: flex;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-  margin-top: 8px;
-  font-size: 12px;
-}
-
-.luts-footer-text { color: var(--muted); }
-.luts-footer-highlight { color: var(--accent); font-weight: 700; }
-.luts-footer-separator { color: var(--muted); }
-
-/* --- MODAL FULLSCREEN --- */
+/* --- TELA CHEIA --- */
 .lut-fullscreen-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #000;
+  inset: 0;
+  background: #000; /* exceção: palco de visualização de mídia, independente de tema */
   z-index: 9999;
   align-items: center;
   justify-content: center;
@@ -790,50 +787,97 @@
   position: absolute;
   top: 20px;
   left: 20px;
-  color: var(--text);
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  color: #fff; /* exceção: texto sobre mídia, independente de tema */
   z-index: 10;
 }
 
 .lut-fullscreen-title {
   margin: 0;
+  font-family: var(--font-title);
   font-size: 24px;
   font-weight: 700;
 }
 
-.lut-fullscreen-subtitle {
-  font-size: 14px;
-  opacity: 0.7;
-}
+.lut-fullscreen-subtitle { font-size: var(--fs-body); opacity: 0.85; }
 
 .lut-fullscreen-close-btn {
   position: absolute;
   top: 20px;
   right: 20px;
   z-index: 10;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55); /* exceção: botão sobre mídia */
+  color: #fff; /* exceção: botão sobre mídia */
   border: none;
 }
 
-/* --- EMPTY STATE --- */
+/* --- AVISO --- */
+.luts-notice {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  color: var(--text);
+  font-size: var(--fs-label);
+}
+.luts-notice.tone-success { border-color: var(--success); }
+.luts-notice.tone-success .luts-notice-icon { color: var(--status-ok); }
+.luts-notice.tone-warning { border-color: var(--warning); }
+.luts-notice.tone-warning .luts-notice-icon { color: var(--status-warn); }
+.luts-notice.tone-danger { border-color: var(--danger); }
+.luts-notice.tone-danger .luts-notice-icon { color: var(--danger-fg); }
+.luts-notice-text { flex: 1; line-height: 1.4; white-space: pre-line; }
+
+/* --- ARRASTAR E SOLTAR --- */
+.luts-drop-zone {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--accent-text);
+  font-weight: 700;
+  pointer-events: none;
+}
+.luts-drop-zone .material-symbols-rounded { font-size: 44px; }
+
+/* --- ESTADO VAZIO --- */
 .luts-empty-state {
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  padding: 48px var(--space-5);
   color: var(--muted);
-  gap: 12px;
+  gap: var(--space-3);
+  text-align: center;
 }
 
-.luts-empty-state.active { display: flex; }
+.luts-empty-state.active {
+  display: flex;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-md);
+}
 
-.luts-empty-icon { font-size: 48px; opacity: 0.5; }
-.luts-empty-text { font-size: 13px; }
+.luts-empty-icon { font-size: 48px; color: var(--accent-text); opacity: 0.8; }
+.luts-empty-text { font-size: var(--fs-body); color: var(--text); font-weight: 600; }
+.luts-empty-hint { font-size: var(--fs-label); }
+.luts-empty-state.active .lut-btn-primary { margin-top: var(--space-1); }
 
-/* --- UTILS --- */
-.hidden { display: none !important; }
-
+/* --- CARREGAMENTO E ERRO --- */
 .luts-loading {
   display: flex;
   align-items: center;
@@ -848,212 +892,71 @@
   align-items: center;
   justify-content: center;
   height: 100px;
-  color: var(--danger);
+  color: var(--danger-fg);
   font-weight: 600;
   text-align: center;
-  padding: 20px;
+  padding: var(--space-5);
 }
 
-.lut-icon-btn.loading .material-symbols-rounded {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  100% { transform: rotate(360deg); }
-}
-
-/* REFINAMENTOS DE INTERFACE */
-.luts-header { position: relative; }
-.lut-card { border-radius: 12px; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease; }
-.lut-card:hover { box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 10%, transparent); }
-.lut-card.selected { box-shadow: 0 0 0 1px var(--accent), 0 6px 18px color-mix(in srgb, var(--accent) 16%, transparent); }
-.lut-card:focus-visible, .luts-tab:focus-visible, .lut-btn-primary:focus-visible, .lut-btn-outline:focus-visible,
-.lut-icon-btn:focus-visible, .lut-view-mode-btn:focus-visible, .lut-select:focus-visible,
-.lut-fullscreen-close-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.luts-search-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
-.lut-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lut-card-meta, .detail-value, .cube-meta-value, .cube-rgb-value, .cube-rgb-index,
-.luts-footer-text, .luts-footer-highlight { font-variant-numeric: tabular-nums; }
-.lut-btn-primary, .lut-btn-outline, .lut-icon-btn, .lut-view-mode-btn, .luts-tab {
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
-}
-.lut-btn-outline:disabled, .lut-icon-btn:disabled, .lut-select:disabled { opacity: 0.5; cursor: not-allowed; }
-.luts-inspector, .inspector-content { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent; }
-.luts-grid-area { scrollbar-width: thin; }
-.detail-row { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
-.detail-row:last-child { border-bottom: 0; }
-.cube-rgb-table { border-radius: 10px; overflow: hidden; }
-.cube-rgb-row:nth-child(even) { background: color-mix(in srgb, var(--text) 4%, transparent); }
-.cube-swatch { border-radius: 4px; }
-.lut-cube-raw-inner, .lut-fullscreen-modal { border-radius: 14px; }
-.lut-cube-raw-content { scrollbar-width: thin; font-variant-numeric: tabular-nums; }
-.luts-empty-state { padding: 48px 24px; }
-.luts-empty-state.active { border: 1px dashed var(--line); border-radius: 14px; }
-.luts-footer { border-top: 1px solid var(--line); }
-@media (prefers-reduced-motion: reduce) {
-  .lut-card, .lut-btn-primary, .lut-btn-outline, .lut-icon-btn, .lut-view-mode-btn, .luts-tab { transition: none; }
-}
-
-/* --- MELHORIAS: aviso, arrastar-e-soltar, menu do cartão, foco --- */
-.luts-screen-container { position: relative; }
-
-.luts-notice {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--card-2);
-  color: var(--text);
-  font-size: 12px;
-}
-.luts-notice.tone-success { border-color: var(--success, #2e7d32); }
-.luts-notice.tone-success .luts-notice-icon { color: var(--success, #2e7d32); }
-.luts-notice.tone-warning { border-color: var(--warning); }
-.luts-notice.tone-warning .luts-notice-icon { color: var(--warning); }
-.luts-notice.tone-danger { border-color: var(--danger); }
-.luts-notice.tone-danger .luts-notice-icon { color: var(--danger-fg); }
-.luts-notice-text { flex: 1; line-height: 1.4; white-space: pre-line; }
-
-.luts-drop-zone {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  border: 2px dashed var(--accent);
-  border-radius: 14px;
-  color: var(--accent);
-  font-weight: 700;
-  pointer-events: none;
-}
-.luts-drop-zone .material-symbols-rounded { font-size: 44px; }
-
-.luts-empty-hint { font-size: 12px; opacity: 0.8; }
-.luts-empty-state.active .lut-btn-primary { margin-top: 4px; }
-
-.luts-footer-spacer { flex: 1; }
-.luts-footer-hint { font-size: 11px; opacity: 0.8; }
-
-.lut-card:focus-visible,
-.lut-icon-btn:focus-visible,
-.lut-btn-primary:focus-visible,
-.lut-btn-outline:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
+/* --- MENU DE AÇÕES DO CARTÃO --- */
 .lut-card-menu {
   position: fixed;
   z-index: 200;
   min-width: 190px;
-  padding: 6px;
+  padding: var(--space-1);
   display: flex;
   flex-direction: column;
   gap: 2px;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px var(--shadow);
 }
+
 .lut-card-menu button {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--space-3);
+  padding: 9px 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
-.lut-card-menu button:hover,
-.lut-card-menu button:focus-visible { background: var(--card-2); outline: none; }
+
+.lut-card-menu button:hover { background: var(--card-2); }
+.lut-card-menu button:focus-visible { background: var(--card-2); outline: var(--focus-ring); outline-offset: -2px; }
 .lut-card-menu button.danger { color: var(--danger-fg); }
 .lut-card-menu .material-symbols-rounded { font-size: 18px; }
 
-#btnViewCubeRaw { margin-top: 10px; }
-
-/* --- REFINO VISUAL --- */
-/* O preview antes/depois não tem altura própria: sem isto ele encolhia até 2px na coluna flex */
-.inspector-content > * { flex-shrink: 0; }
-
-.inspector-footer {
+/* --- RODAPÉ --- */
+.luts-footer {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px 16px;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
   border-top: 1px solid var(--line);
-  background: var(--card);
+  font-size: var(--fs-label);
 }
-.inspector-footer-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.inspector-footer .lut-btn-outline,
-.inspector-footer .lut-btn-primary { justify-content: center; gap: 6px; padding: 9px 8px; border-radius: 8px; }
-.inspector-footer .material-symbols-rounded { font-size: 16px; }
-.inspector-footer button:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Seção .cube recolhível */
-details.inspector-section { margin-top: 16px; }
-details.inspector-section > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  list-style: none;
-  margin: 0 0 8px;
-}
-details.inspector-section > summary::-webkit-details-marker { display: none; }
-details.inspector-section > summary::after {
-  content: 'expand_more';
-  font-family: 'Material Symbols Rounded';
-  font-size: 18px;
-  letter-spacing: 0;
-  transition: transform 0.2s;
-}
-details.inspector-section[open] > summary::after { transform: rotate(180deg); }
-details.inspector-section:not([open]) > summary { margin-bottom: 0; }
+.luts-footer-text { color: var(--muted); font-variant-numeric: tabular-nums; }
+.luts-footer-highlight { color: var(--accent-text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.luts-footer-separator { color: var(--muted); }
+.luts-footer-spacer { flex: 1; }
 
-/* Cartões: leve elevação ao passar o mouse */
-.lut-card { transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s; }
-.lut-card:hover:not(.selected) { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28); }
-
-/* Cabeçalho: quebra de linha em larguras menores em vez de espremer os controles */
+/* --- RESPONSIVIDADE (janelas ~980px) --- */
 @media (max-width: 1180px) {
-  .luts-header { flex-wrap: wrap; gap: 12px; }
-  .luts-header-actions { flex-wrap: wrap; }
-  .luts-filters { margin-right: 0; }
   .luts-inspector { width: 300px; }
 }
+
 @media (max-width: 900px) {
-  .luts-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .luts-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-3); }
   .luts-inspector { width: 260px; }
-  .luts-content { gap: 14px; }
-  .luts-search-input { width: 150px; }
+  .luts-content { gap: var(--space-4); }
+  .luts-search-input { width: 160px; }
   .lut-select { min-width: 110px; }
   .luts-footer-hint { display: none; }
 }
-
-/* Alvo de clique >= 32 px (auditoria de UX) */
-.lut-icon-btn.lut-icon-btn-small { width: 32px; height: 32px; }
-
-/* Contraste WCAG AA (medido) */
-.lut-btn-primary { background: var(--accent-solid, var(--accent)); color: var(--on-accent, #fff); }
-.lut-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-solid, var(--accent)) 86%, #000); }
-.luts-tab.active, .luts-footer-highlight, .lut-badge, .lut-badge-3d { color: var(--accent-text, var(--accent)); }
-.lut-slider-label { color: #fff; }
-.luts-empty-icon { opacity: 0.75; }
-.luts-empty-hint, .luts-footer-hint { opacity: 1; }

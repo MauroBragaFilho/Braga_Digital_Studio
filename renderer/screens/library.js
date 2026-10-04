@@ -4,6 +4,7 @@ import { originLabel } from '../utils/originLabel.js';
 import { friendlyError } from '../utils/friendlyError.js';
 import { t } from '../strings.js';
 import { toFileUrl, joinFileUrl } from '../utils/fileUrl.js';
+import { setContextProvider } from '../utils/assistantContext.js';
 import {
   computeColumns, groupConsecutive, buildRows, rowTops, rowAt, visibleRange, itemPosition,
   scrollToReveal, navigateIndex, rangeBetween, diffById, scrollTopForAnchor
@@ -78,6 +79,8 @@ const waveformCache = new Map();  // uuid -> picos (evita pedir de novo ao rolar
 
 export async function initScreen() {
   console.log('[LIBRARY] Inicializando tela...');
+  // Assistente de IA: a seleção atual entra no contexto da tela (só ids; o assistente nunca age sem confirmação)
+  setContextProvider('librarySelection', () => Array.from(selectedIds));
 
   if (window.bds && window.bds.getThumbDir) {
     try {
@@ -212,11 +215,15 @@ function bindGlobalListeners() {
         }, IMPORT_REFRESH_WINDOW_MS);
       }, 50);
     };
-    const unsub = window.bds.onMediaImported(() => {
+    const onChanged = () => {
       if (importDebounceTimer || importCooldownTimer) { importPending = true; return; }
       refreshAfterImport();
-    });
+    };
+    const unsub = window.bds.onMediaImported(onChanged);
     if (typeof unsub === 'function') cleanups.push(unsub);
+    // Mídias alteradas por fora da tela (ex.: etiquetas e favoritos aplicados pelo assistente)
+    const unsubUpdated = typeof window.bds.onMediaUpdated === 'function' ? window.bds.onMediaUpdated(onChanged) : null;
+    if (typeof unsubUpdated === 'function') cleanups.push(unsubUpdated);
   }
 
   // Atualiza a biblioteca PROGRESSIVAMENTE durante a regeneração de thumbnails (com debounce)
@@ -259,7 +266,7 @@ export function onLeave() {
   const markDirty = () => { libraryDirty = true; };
   awayUnsubs.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
   awayUnsubs = [];
-  [window.bds?.onMediaImported, window.bds?.onThumbsRegenProgress].forEach((sub) => {
+  [window.bds?.onMediaImported, window.bds?.onMediaUpdated, window.bds?.onThumbsRegenProgress].forEach((sub) => {
     if (typeof sub !== 'function') return;
     const unsub = sub.call(window.bds, markDirty);
     if (typeof unsub === 'function') awayUnsubs.push(unsub);

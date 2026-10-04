@@ -112,7 +112,7 @@ const projects_list = {
 const project_get = {
   name: 'project_get',
   kind: 'read',
-  description: 'Conteúdo de UM projeto pelo id: descrição, pastas, mídias (com a pasta de cada uma) e sequências em resumo.',
+  description: 'Conteúdo de UM projeto pelo id: descrição, pastas, mídias (com a pasta de cada uma), sequências (com contagem de trilhas, clipes e marcadores) e marcadores em resumo.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -127,6 +127,26 @@ const project_get = {
     const binName = new Map(bins.map((b) => [b.id, safeText(b.name, 60)]));
     const media = ctx.projects.getProjectMedia(args.id);
     const sequences = ctx.projects.getSequences(args.id);
+    const markers = typeof ctx.projects.getMarkers === 'function' ? ctx.projects.getMarkers(args.id) : [];
+    // Sequências em resumo: trilhas e clipes (só contagens; nada da linha do tempo sai daqui)
+    const sequenceSummary = (s) => {
+      let tracks = [];
+      let clips = 0;
+      try {
+        tracks = ctx.projects.getTracks(s.id);
+        const byTrack = ctx.projects.getClipsByTrackIds(tracks.map((t) => t.id));
+        for (const list of byTrack.values()) clips += list.length;
+      } catch (_) { /* resumo parcial: contagens ficam em 0 */ }
+      return {
+        id: s.id,
+        nome: safeText(s.name, 60),
+        largura: s.width || null,
+        altura: s.height || null,
+        trilhas: tracks.length,
+        clipes: clips,
+        marcadores: markers.filter((m) => m.sequence_id === s.id).length
+      };
+    };
     return {
       id: project.id,
       nome: safeText(project.name, 80),
@@ -141,7 +161,9 @@ const project_get = {
         ...(m.duration ? { duracao_s: Math.round(m.duration * 10) / 10 } : {}),
         pasta: m.bin_id ? (binName.get(m.bin_id) || null) : null
       })),
-      sequencias: sequences.slice(0, 10).map((s) => ({ id: s.id, nome: safeText(s.name, 60), largura: s.width || null, altura: s.height || null }))
+      sequencias: sequences.slice(0, 10).map(sequenceSummary),
+      total_de_marcadores: markers.length,
+      marcadores: markers.slice(0, 5).map((m) => ({ tempo_s: Math.round((Number(m.time) || 0) * 10) / 10, rotulo: safeText(m.label || m.comment, 60) }))
     };
   }
 };

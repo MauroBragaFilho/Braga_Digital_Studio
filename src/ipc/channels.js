@@ -354,16 +354,27 @@ define('luts', 'throw', {
 
 // --- IA e módulos opcionais (padrão { ok, data }) ----------------------------------------------
 define('ai', 'wrap', {
-  'ai:getConfig': { returns: 'Configuração pública da IA (sem chave)', api: ['aiGetConfig'] },
+  // Provedores de IA: a configuração tem uma LISTA de provedores (cada um com a sua chave, nunca devolvida: só hasKey), a ordem de prioridade e o interruptor de fallback.
+  // ai:saveConfig aceita alterações por provedor (addProvider, removeProvider, provider {id,...}, order) e o atalho antigo de um servidor só (baseUrl, model, apiKey...).
+  'ai:getConfig': { returns: 'Configuração pública da IA (provedores sem chave)', api: ['aiGetConfig'] },
   'ai:saveConfig': { args: [OBJ('patch', {}, { optional: true, label: 'Configuração', maxKeys: 100 })], returns: 'Configuração pública', api: ['aiSaveConfig'] },
-  'ai:testConnection': { returns: 'Resultado do teste', api: ['aiTestConnection'] },
-  'ai:listModels': { returns: 'Modelos disponíveis', api: ['aiListModels'] },
-  // Assistente flutuante: a resposta chega por eventos (ai:chatDelta / ai:chatDone / ai:chatError, mais ai:chatStatus: linha de status das ferramentas). Não há canal para executar ferramentas nem confirmar: isso é só do main. TRAVADOS no main
-  // (AI_DISABLED fora do desenvolvimento, com o módulo ou o interruptor desligados). O histórico mora no main.
+  'ai:testConnection': { args: [STR('providerId', 100, { optional: true, label: 'Provedor' })], returns: 'Resultado do teste (do provedor indicado ou do principal)', api: ['aiTestConnection'] },
+  'ai:listModels': { args: [STR('providerId', 100, { optional: true, label: 'Provedor' })], returns: 'Modelos disponíveis (do provedor indicado ou do principal)', api: ['aiListModels'] },
+  // Assistente flutuante: a resposta chega por eventos (ai:chatDelta / ai:chatDone / ai:chatError, mais ai:chatStatus: linha de status das ferramentas, e ai:navigate: abrir uma tela). Não há canal para executar ferramentas nem confirmar: isso é só do main. TRAVADOS no main
+  // (AI_DISABLED com o build não liberado, o módulo ou o interruptor desligados; AI_NOT_CONFIGURED sem servidor; AI_REMOTE_CONSENT sem o aviso de privacidade aceito). O histórico mora no main.
+  // `context` (opcional) = contexto da tela { screen, selectedIds (até 50 ids numéricos), projectId }: o main revalida
+  // tudo (src/services/ai/context.js) e só o usa como dado não confiável no prompt.
   'ai:chatStart': {
-    args: [OBJ('payload', { text: t.string({ min: 1, max: 20000, label: 'Mensagem' }) }, { label: 'Conversa' })],
+    args: [OBJ('payload', {
+      text: t.string({ min: 1, max: 20000, label: 'Mensagem' }),
+      context: t.object({
+        screen: t.string({ max: 30, label: 'Tela' }),
+        selectedIds: t.array(t.int({ min: 1, max: 2147483647 }), { max: 50, optional: true, label: 'Seleção' }),
+        projectId: t.int({ min: 1, max: 2147483647, optional: true, label: 'Projeto' })
+      }, { optional: true, strict: true, maxKeys: 3, label: 'Contexto da tela' })
+    }, { label: 'Conversa' })],
     returns: 'Id da resposta em andamento',
-    api: [{ name: 'aiChatStart', params: 'text', call: '{ text }' }]
+    api: [{ name: 'aiChatStart', params: 'text, context', call: '{ text, context }' }]
   },
   'ai:chatCancel': { args: [STR('id', 100, { optional: true, label: 'Id da resposta' })], returns: 'true se havia resposta para cancelar', api: ['aiChatCancel'] },
   'ai:historyGet': { returns: 'Histórico guardado { messages, busy }', api: ['aiHistoryGet'] },
@@ -681,6 +692,7 @@ const EVENTS = [
   ['onAiChatDone', 'ai:chatDone'],
   ['onAiChatError', 'ai:chatError'],
   ['onAiChatStatus', 'ai:chatStatus'],
+  ['onAiNavigate', 'ai:navigate'],
   ['onModulesChanged', 'modules:changed'],
   ['onModulesProgress', 'modules:progress'],
   ['onModulesStatus', 'modules:status'],

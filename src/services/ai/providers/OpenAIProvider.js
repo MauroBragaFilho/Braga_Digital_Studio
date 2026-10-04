@@ -25,6 +25,15 @@ function normalizeBaseUrl(raw) {
   return url.origin + pathname;
 }
 
+/** Retry-After (segundos ou data HTTP) de uma resposta -> segundos (inteiro >= 0) ou null. */
+function parseRetryAfter(res) {
+  const raw = res && res.headers && typeof res.headers.get === 'function' ? res.headers.get('retry-after') : null;
+  if (!raw) return null;
+  if (/^\d+$/.test(String(raw).trim())) return Number(String(raw).trim());
+  const when = Date.parse(raw);
+  return Number.isFinite(when) ? Math.max(0, Math.round((when - Date.now()) / 1000)) : null;
+}
+
 const NO_TOOLS_STATUS = [400, 404, 405, 415, 422, 501];
 const MAX_TOOL_ARGS_CHARS = 100000;
 
@@ -65,11 +74,11 @@ class OpenAIProvider {
     const headers = { 'content-type': 'application/json' };
     if (key) {
       if (url.protocol === 'http:' && !isLocalHost(url.hostname)) {
-        throw new Error('Por segurança, a chave de API não é enviada por http:// a servidores remotos. Use https://.');
+        throw Object.assign(new Error('Por segurança, a chave de API não é enviada por http:// a servidores remotos. Use https://.'), { code: 'KEY_INSECURE' });
       }
       headers.authorization = `Bearer ${key}`;
     } else if (url.hostname === OPENAI_HOST) {
-      throw new Error('Chave de API da OpenAI não configurada.');
+      throw Object.assign(new Error('Chave de API da OpenAI não configurada.'), { code: 'AI_NOT_CONFIGURED' });
     }
     return headers;
   }
@@ -89,16 +98,16 @@ class OpenAIProvider {
       try { data = text ? JSON.parse(text) : null; } catch (_) { /* resposta não-JSON */ }
       if (!res.ok) {
         const detail = data?.error?.message || (typeof data?.error === 'string' ? data.error : '') || text.slice(0, 200) || res.statusText;
-        throw Object.assign(new Error(`Servidor (${res.status}): ${detail}`), { status: res.status, body: text.slice(0, 500) });
+        throw Object.assign(new Error(`Servidor (${res.status}): ${detail}`), { status: res.status, body: text.slice(0, 500), retryAfter: parseRetryAfter(res) });
       }
       return data;
     } catch (err) {
       if (err.name === 'AbortError') {
         if (signal && signal.aborted) throw cancelled();
-        throw new Error('Tempo esgotado ao falar com o servidor de IA.');
+        throw Object.assign(new Error('Tempo esgotado ao falar com o servidor de IA.'), { code: 'TIMEOUT' });
       }
       if (err.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(err.message)) {
-        throw new Error('Não foi possível conectar ao servidor de IA. Confira a URL e se ele está em execução.');
+        throw Object.assign(new Error('Não foi possível conectar ao servidor de IA. Confira a URL e se ele está em execução.'), { code: 'AI_UNREACHABLE' });
       }
       throw err;
     } finally {
@@ -209,7 +218,7 @@ class OpenAIProvider {
         let data = null;
         try { data = text ? JSON.parse(text) : null; } catch (_) { /* não-JSON */ }
         const detail = data?.error?.message || (typeof data?.error === 'string' ? data.error : '') || text.slice(0, 200) || res.statusText;
-        throw new Error(`Servidor (${res.status}): ${detail}`);
+        throw Object.assign(new Error(`Servidor (${res.status}): ${detail}`), { status: res.status, body: text.slice(0, 500), retryAfter: parseRetryAfter(res) });
       }
 
       const type = String((res.headers && res.headers.get && res.headers.get('content-type')) || '').toLowerCase();
@@ -242,7 +251,7 @@ class OpenAIProvider {
           try { json = JSON.parse(payload); } catch (_) { continue; }
           if (json && json.error) {
             const msg = json.error.message || (typeof json.error === 'string' ? json.error : 'erro desconhecido');
-            throw new Error(`Servidor: ${msg}`);
+            throw Object.assign(new Error(`Servidor: ${msg}`), { code: 'STREAM_ERROR' });
           }
           if (json && json.usage) usage = json.usage;
           const choice = json && json.choices && json.choices[0];
@@ -301,7 +310,7 @@ class OpenAIProvider {
       if (timedOut) return Object.assign(new Error('Tempo esgotado: o servidor de IA parou de responder.'), { code: 'TIMEOUT' });
     }
     if (err && (err.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(String(err.message)))) {
-      return new Error('Não foi possível conectar ao servidor de IA. Confira a URL e se ele está em execução.');
+      return Object.assign(new Error('Não foi possível conectar ao servidor de IA. Confira a URL e se ele está em execução.'), { code: 'AI_UNREACHABLE' });
     }
     if (err && (/terminated|other side closed|ECONNRESET/i.test(String(err.message)) || err.cause?.code === 'UND_ERR_SOCKET')) {
       return Object.assign(new Error('A conexão com o servidor de IA foi interrompida.'), { code: 'INTERRUPTED' });

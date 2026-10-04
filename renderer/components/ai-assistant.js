@@ -2,17 +2,24 @@
  * Assistente de IA flutuante: botão no canto da janela (arrastável, em todas as telas) que abre um painel só com o
  * chat. A configuração (servidor, modelo, chave, interruptor) fica em Configurações → Inteligência Artificial.
  *
- * - Só existe com o módulo "Assistente de IA" ligado E o interruptor "Ativar assistente" ligado (e fora do app final).
+ * - Só existe com o módulo "Assistente de IA" ligado (vem ligado por padrão) E o interruptor "Ativar assistente" ligado.
  *   A trava de verdade está no processo principal (ai:* devolve AI_DISABLED); aqui só se esconde o que não funciona.
+ * - Cada mensagem leva o contexto da tela (utils/assistantContext.js). Ctrl + J abre/fecha o painel. O evento ai:navigate
+ *   abre telas da lista fixa. Única exceção ao "só chat": a mensagem do primeiro uso (sem servidor, servidor fora do ar)
+ *   com UM botão "Abrir configurações da IA", e o aviso de privacidade de servidor remoto com "Entendi, continuar".
  * - A conversa mora no processo principal (histórico local): o renderer manda só o texto novo e recebe a resposta
  *   em pedaços (ai:chatDelta / ai:chatDone / ai:chatError).
  * - Quando o assistente consulta ou age no app, o main manda linhas de status (ai:chatStatus): "Consultando a
  *   Biblioteca…", "Aguardando sua confirmação…", "Transcrevendo… 40%". A linha some quando a resposta chega; avisos
  *   (kind 'notice') ficam na conversa. As confirmações NÃO acontecem aqui: são diálogos nativos do app.
+ * - Vários provedores de IA com fallback: o nome do provedor em uso aparece em texto pequeno no cabeçalho (kind
+ *   'provider'), a troca vira uma linha discreta na conversa ("Usando Qwen (Groq indisponível)", kind 'fallback') e,
+ *   se o provedor que falhou já tinha mostrado texto parcial, o texto é substituído (kind 'reset').
  * - SEGURANÇA: texto do usuário e do modelo entra SEMPRE por textContent / nós de texto. Nunca innerHTML.
  *   Formatação mínima (parágrafos, listas, `código`, **negrito**, blocos de código) montada com createElement.
  */
 import { friendlyError } from '../utils/friendlyError.js';
+import { currentContext, AI_SCREENS } from '../utils/assistantContext.js';
 
 const STORE_KEY = 'bds.aiFab.pos';
 const FAB_SIZE = 52;
@@ -32,6 +39,7 @@ let input = null;
 let sendBtn = null;
 let clearBtn = null;
 let closeBtn = null;
+let providerEl = null;          // texto pequeno do cabeçalho: qual provedor de IA está em uso
 let live = null;
 let pos = { ...DEFAULT_POS };   // posição DESEJADA (canto inferior direito); a exibida é ajustada à janela
 let isOpen = false;
@@ -206,11 +214,22 @@ export function renderRichText(target, text) {
 
 // --------------------------------------------------------------------- mensagens
 
+/** Exemplos de pedidos do estado vazio: texto simples (não são botões). */
+export const EMPTY_EXAMPLES = Object.freeze([
+  'Quais vídeos de aula eu tenho?',
+  'Converta o que está selecionado para MP3.',
+  'O que tem neste projeto?'
+]);
+
 function showEmpty() {
   if (!list || list.children.length) return;
   const empty = el('div', 'aia-empty');
+  const examples = el('ul', 'aia-examples');
+  examples.setAttribute('aria-label', 'Exemplos de pedidos');
+  EMPTY_EXAMPLES.forEach((text) => examples.append(el('li', '', `“${text}”`)));
   empty.append(icon('forum'), el('strong', '', 'Como posso ajudar?'),
-    el('span', '', 'Pergunte sobre suas mídias e projetos, peça uma transcrição ou a montagem de um projeto. Antes de mudar algo, o app sempre pede a sua confirmação.'));
+    el('span', '', 'Pergunte sobre suas mídias e projetos ou peça uma tarefa. Antes de mudar algo, o app sempre pede a sua confirmação. Por exemplo:'),
+    examples);
   list.append(empty);
 }
 
@@ -279,6 +298,33 @@ function onStatus(payload) {
   if (activeId && payload.id !== activeId) return;
   activeId = activeId || payload.id;
   const text = String(payload.text || '').trim();
+  if (payload.kind === 'provider') { setProviderName(text); return; }
+  if (payload.kind === 'reset') {
+    // O provedor que falhou no meio da resposta tinha entregue texto parcial: o que fica na tela é só `payload.text`
+    if (renderTimer) { window.cancelAnimationFrame(renderTimer); renderTimer = null; }
+    pending.text = String(payload.text || '');
+    const row = pending.bubble.parentElement;
+    if (pending.text.trim()) {
+      renderRichText(pending.bubble, partialSafe(pending.text));
+    } else {
+      pending.bubble.textContent = 'Pensando…';
+      row.classList.add('aia-msg-pending');
+      row.hidden = false;
+    }
+    list.scrollTop = list.scrollHeight;
+    return;
+  }
+  if (payload.kind === 'fallback') {
+    if (!text) return;
+    announce(text);
+    // UMA linha por resposta: se o fallback trocar de novo (A falhou, B também, vai para C), a linha é atualizada
+    const existing = pending.fallbackRows && pending.fallbackRows[0];
+    if (existing) { existing.querySelector('.aia-bubble').textContent = text; return; }
+    const note = addMessage('assistant', text, 'aia-msg-note aia-msg-fallback');
+    pending.bubble.parentElement.before(note.row); // a troca fica registrada na conversa, antes da resposta
+    pending.fallbackRows = [note.row]; // some junto se a resposta falhar de vez
+    return;
+  }
   if (payload.kind === 'notice') {
     if (!text) return;
     const note = addMessage('assistant', text, 'aia-msg-note');
@@ -307,6 +353,73 @@ function notifyFinished(message, type = 'info') {
   }
 }
 
+// ------------------------------------------- primeiro uso e aviso de privacidade (mensagens com botão)
+
+/** Abre Configurações → Inteligência Artificial (a única navegação que o próprio painel faz). */
+export function openAiSettings() {
+  closePanel({ restoreFocus: false });
+  document.querySelector('.sidebar .tab-button[data-view="settings"]')?.click();
+  let tries = 0;
+  const timer = window.setInterval(() => {
+    const tab = document.querySelector('.settings-tab[data-tab="settingsAiView"]');
+    if (tab && !tab.classList.contains('st-devhidden')) { window.clearInterval(timer); tab.click(); return; }
+    if (++tries > 30) window.clearInterval(timer); // a tela de Configurações não abriu: desiste sem barulho
+  }, 100);
+}
+
+const GUIDES = {
+  AI_NOT_CONFIGURED: {
+    text: 'Ainda não há um servidor de IA configurado. Escolha um nas configurações da IA (pode ser um servidor no seu computador, como o LM Studio, ou a OpenAI) e volte aqui.',
+    button: 'Abrir configurações da IA'
+  },
+  AI_UNREACHABLE: {
+    text: 'Não consegui falar com o servidor de IA. Confira nas configurações se ele está ligado e se o endereço está certo.',
+    button: 'Abrir configurações da IA'
+  },
+  TIMEOUT: {
+    text: 'O servidor de IA demorou demais para responder. Confira nas configurações se ele está ligado e se o modelo escolhido está carregado.',
+    button: 'Abrir configurações da IA'
+  },
+  // Todos os provedores falharam (ou os que sobraram não têm chave/aviso aceito): o main manda a mensagem pronta
+  AI_ALL_FAILED: {
+    text: 'Não consegui falar com nenhum servidor de IA agora. Confira as configurações da IA.',
+    button: 'Abrir configurações da IA'
+  },
+  AI_REMOTE_CONSENT: { text: '', button: 'Entendi, continuar' }
+};
+
+/** Mensagem do assistente com UM botão dentro dela (única exceção à regra "o painel mostra só o chat"). */
+function showGuide(code, serverText, userText) {
+  const guide = GUIDES[code];
+  const body = code === 'AI_REMOTE_CONSENT'
+    ? (serverText || 'Antes de começar: o que você escrever aqui e o que eu consultar na sua biblioteca será enviado ao servidor de IA escolhido.')
+    : (code === 'AI_ALL_FAILED' && serverText ? serverText : guide.text);
+  const { row, bubble } = addMessage('assistant', body, 'aia-msg-note aia-msg-guide');
+  const btn = el('button', 'aia-action-btn', guide.button);
+  btn.type = 'button';
+  btn.addEventListener('click', async () => {
+    if (code === 'AI_REMOTE_CONSENT') {
+      btn.disabled = true;
+      try {
+        const r = await bds().aiSaveConfig?.({ acceptRemoteServer: true });
+        if (r && r.ok === false) throw new Error(r.error || 'Não foi possível guardar a escolha.');
+      } catch (err) {
+        btn.disabled = false;
+        addMessage('assistant', `Não foi possível guardar a sua escolha. ${friendlyError(err, 'Tente novamente.')}`, 'aia-msg-error');
+        return;
+      }
+      btn.remove();
+      if (userText && !busy) { input.value = userText; send(); }
+      return;
+    }
+    openAiSettings();
+  });
+  bubble.append(btn);
+  list.scrollTop = list.scrollHeight;
+  announce(bubble.textContent);
+  return row;
+}
+
 /** Falha da resposta: tira a pergunta sem resposta da tela (o texto volta ao campo) e mostra um erro amigável. */
 function failPending(err, code) {
   const info = pending;
@@ -316,7 +429,16 @@ function failPending(err, code) {
     info.userRow.remove();
     info.bubble.parentElement.remove();
     if (info.statusRow) info.statusRow.remove();
-    if (!input.value) input.value = info.userText;
+    (info.fallbackRows || []).forEach((row) => row.remove());
+    if (!input.value && code !== 'AI_REMOTE_CONSENT') input.value = info.userText;
+  }
+  if (GUIDES[code]) {
+    // Primeiro uso sem servidor, servidor que não responde ou aviso de privacidade: mensagem curta + um botão
+    showGuide(code, typeof err === 'string' ? err : (err && err.message) || '', info ? info.userText : '');
+    notifyFinished(GUIDES[code].text || 'O assistente precisa da sua escolha.', 'error');
+    setBusy(false);
+    refreshProvider(); // o cabeçalho volta a mostrar quem responderia agora (ou some, se nenhum)
+    return;
   }
   const friendly = friendlyError(err, code === 'AI_DISABLED' ? 'O assistente está desligado.' : 'Tente novamente.');
   const message = code === 'AI_DISABLED' || /^Não foi possível/i.test(friendly) ? friendly : `Não foi possível responder. ${friendly}`;
@@ -325,6 +447,7 @@ function failPending(err, code) {
   notifyFinished(message, 'error');
   setBusy(false);
   if (code === 'AI_DISABLED') refresh();
+  else refreshProvider();
 }
 
 function onDelta(payload) {
@@ -346,6 +469,7 @@ function onDone(payload) {
     info.userRow.remove();
     info.bubble.parentElement.remove();
     if (info.statusRow) info.statusRow.remove();
+    (info.fallbackRows || []).forEach((row) => row.remove());
     if (!input.value) input.value = info.userText;
     setBusy(false);
     showEmpty();
@@ -386,7 +510,8 @@ async function send() {
   setBusy(true);
   announce('O assistente está respondendo.');
   try {
-    const r = await bds().aiChatStart(text);
+    // A cada mensagem vai o contexto da tela (tela, ids selecionados, projeto): o main revalida e trata como dado
+    const r = await bds().aiChatStart(text, currentContext());
     if (!r || !r.ok) throw Object.assign(new Error(r?.error || 'O assistente não respondeu.'), { code: r?.code });
     if (busy && pending) activeId = activeId || r.data.id;
   } catch (err) {
@@ -422,6 +547,24 @@ async function clearChat() {
   input.focus();
 }
 
+/** Nome do provedor em uso, em texto pequeno no cabeçalho (vazio: esconde). */
+function setProviderName(name) {
+  if (!providerEl) return;
+  const text = String(name || '').trim();
+  providerEl.textContent = text;
+  providerEl.title = text ? `Provedor de IA em uso: ${text}` : '';
+  providerEl.hidden = !text;
+}
+
+/** Pergunta ao main qual provedor responderia agora (o primeiro disponível da ordem) e mostra no cabeçalho. */
+async function refreshProvider() {
+  try {
+    const r = await bds().aiGetConfig?.();
+    const active = r && r.ok && r.data ? r.data.activeProvider : null;
+    setProviderName(active && active.label ? active.label : '');
+  } catch (_) { /* o nome é só um detalhe */ }
+}
+
 async function loadHistory() {
   try {
     const r = await bds().aiHistoryGet?.();
@@ -441,6 +584,7 @@ function openPanel() {
   layoutPanel();
   list.scrollTop = list.scrollHeight;
   input.focus();
+  refreshProvider();
 }
 
 function closePanel({ restoreFocus = true } = {}) {
@@ -530,7 +674,7 @@ function build() {
   fab.setAttribute('aria-haspopup', 'dialog');
   fab.setAttribute('aria-expanded', 'false');
   fab.setAttribute('aria-controls', 'aiAssistantPanel');
-  fab.title = 'Assistente de IA (arraste para mover; Alt + setas também move)';
+  fab.title = 'Assistente de IA (Ctrl + J; arraste para mover; Alt + setas também move)';
   fab.append(icon('smart_toy'));
 
   panel = el('section', 'aia-panel');
@@ -542,6 +686,8 @@ function build() {
 
   const head = el('header', 'aia-head');
   head.append(el('h2', 'aia-title', 'Assistente'));
+  providerEl = el('span', 'aia-provider');
+  providerEl.hidden = true;
   clearBtn = el('button', 'aia-icon-btn');
   clearBtn.type = 'button';
   clearBtn.setAttribute('aria-label', 'Limpar conversa');
@@ -552,7 +698,7 @@ function build() {
   closeBtn.setAttribute('aria-label', 'Fechar assistente');
   closeBtn.title = 'Fechar (Esc)';
   closeBtn.append(icon('close'));
-  head.append(clearBtn, closeBtn);
+  head.append(providerEl, clearBtn, closeBtn);
 
   list = el('div', 'aia-messages');
   list.setAttribute('role', 'log');
@@ -597,12 +743,13 @@ function build() {
   applyPos();
   document.body.appendChild(root);
   loadHistory();
+  refreshProvider();
 }
 
 function teardown() {
   if (renderTimer) { window.cancelAnimationFrame(renderTimer); renderTimer = null; }
   if (root) root.remove();
-  root = fab = panel = list = input = sendBtn = clearBtn = closeBtn = live = null;
+  root = fab = panel = list = input = sendBtn = clearBtn = closeBtn = live = providerEl = null;
   isOpen = false;
   busy = false;
   activeId = null;
@@ -614,8 +761,8 @@ function teardown() {
 async function isAllowed() {
   try {
     if (typeof bds().modulesList !== 'function' || typeof bds().aiGetConfig !== 'function') return false;
-    // Fora do desenvolvimento o main nem lista o módulo (ModuleRegistry.devOnly) enquanto o assistente não for liberado
-    // em src/services/ai/releaseGate.js: por isso não há checagem de build aqui (uma decisão só, no main).
+    // O módulo vem ligado por padrão e está liberado no app final (src/services/ai/releaseGate.js, uma decisão só, no main):
+    // se o main não o listar, o assistente não existe nesta versão. Por isso não há checagem de build aqui.
     const mods = await bds().modulesList();
     const list = mods && mods.ok && Array.isArray(mods.data) ? mods.data : [];
     const mod = list.find((m) => m.id === 'ai');
@@ -631,15 +778,41 @@ export async function refresh() {
   const allowed = await isAllowed();
   if (seq !== refreshSeq) return; // uma checagem mais nova já está em andamento
   if (allowed && !root) build();
+  else if (allowed && root) refreshProvider(); // provedores mudaram nas Configurações
   else if (!allowed && root) {
     if (busy) { try { Promise.resolve(bds().aiChatCancel?.()).catch(() => {}); } catch (_) { /* parou de qualquer forma */ } }
     teardown();
   }
 }
 
+// ------------------------------------------------------- navegação pedida pelo assistente
+
+/**
+ * Evento ai:navigate (main → renderer): abre uma tela. O renderer NÃO confia no evento: confere a tela contra a lista
+ * fixa (a mesma do main) e se a aba existe e está visível (módulo ligado) antes de navegar.
+ */
+export function onNavigate(payload) {
+  const id = payload && typeof payload.screen === 'string' ? payload.screen : '';
+  if (!AI_SCREENS.some((s) => s.id === id)) return false;
+  const btn = document.querySelector(`.sidebar .tab-button[data-view="${id}"]`);
+  if (!btn || btn.classList.contains('hidden') || btn.style.display === 'none') return false;
+  btn.click();
+  announce(`Abrindo ${AI_SCREENS.find((s) => s.id === id).label}.`);
+  return true;
+}
+
+/** Atalho global Ctrl + J: abre ou fecha o assistente (só existe com o assistente ligado). */
+function onShortcut(e) {
+  if (!root || e.altKey || e.shiftKey || !(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== 'j') return;
+  e.preventDefault();
+  e.stopPropagation();
+  togglePanel();
+}
+
 function bindGlobal() {
   if (listenersBound) return;
   listenersBound = true;
+  window.addEventListener('keydown', onShortcut, true);
   window.addEventListener('bds:modules-changed', () => { refresh(); });
   window.addEventListener('bds:ai-assistant-changed', () => { refresh(); });
   window.addEventListener('resize', () => { if (root) applyPos(); });
@@ -648,6 +821,7 @@ function bindGlobal() {
   on('onAiChatDone', onDone);
   on('onAiChatError', onError);
   on('onAiChatStatus', onStatus);
+  on('onAiNavigate', onNavigate);
 }
 
 /** Liga o assistente ao app (idempotente). Chamado por app.js na inicialização. */
@@ -662,5 +836,6 @@ export function unmountAssistant() {
   teardown();
   unsubscribers.forEach((off) => { try { if (typeof off === 'function') off(); } catch (_) { /* já solto */ } });
   unsubscribers = [];
+  window.removeEventListener('keydown', onShortcut, true);
   listenersBound = false;
 }

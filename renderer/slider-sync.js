@@ -65,6 +65,7 @@ export function initSliderSync() {
 
   // Watchdog leve: cobre mudanças programáticas (slider.value = X) e
   // sliders criados dinamicamente (ex.: .montage-pct-slider do metadata.js).
-  setInterval(() => { if (!document.hidden) syncAllSliders(); }, POLL_INTERVAL_MS);
+  // (o teste de typeof evita erro se o documento já não existir, como no encerramento do ambiente de testes)
+  setInterval(() => { if (typeof document !== 'undefined' && !document.hidden) syncAllSliders(); }, POLL_INTERVAL_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) syncAllSliders(); });
 }
