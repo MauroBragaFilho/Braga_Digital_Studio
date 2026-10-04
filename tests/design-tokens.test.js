@@ -183,7 +183,7 @@ test('@font-face: font-display swap, arquivos locais existentes e CSP permite fo
 });
 
 test('fontes: origem e SHA-256 documentados conferem com os arquivos; licenças OFL listadas', () => {
-  const doc = read('.docs', 'FONTES_ORIGEM.md');
+  const doc = read('renderer', 'assets', 'fonts', 'FONTES_ORIGEM.md');
   for (const f of ['Inter-Regular.woff2', 'Inter-SemiBold.woff2', 'Montserrat-Bold.woff2']) {
     const buf = fs.readFileSync(path.join(R, 'assets', 'fonts', f));
     assert.equal(buf.subarray(0, 4).toString('latin1'), 'wOF2', `${f} é woff2`);

@@ -9,6 +9,8 @@ const path = require('node:path');
 const { WhisperCppRunner } = require('../src/core/modules/WhisperCppRunner');
 const { budget } = require('./helpers/timing');
 
+// Nome do motor por sistema (o código usa whisper-cli.exe só no Windows)
+const CLI_FILE = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
 const FAKE_CLI = path.join(__dirname, 'fixtures', 'fake-whisper-cli.js');
 const FAKE_FFMPEG = path.join(__dirname, 'fixtures', 'fake-ffmpeg.js');
 
@@ -20,7 +22,7 @@ function setup() {
   const engineDir = path.join(whisper, 'engine');
   for (const d of [modelDir, engineDir]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(modelDir, 'model.bin'), 'modelo');
-  fs.writeFileSync(path.join(engineDir, 'whisper-cli.exe'), 'x');
+  fs.writeFileSync(path.join(engineDir, CLI_FILE), 'x');
   const media = path.join(root, 'aula 01.mp4');
   fs.writeFileSync(media, 'SECONDS=12');
   const record = path.join(root, 'record.jsonl');
@@ -110,7 +112,7 @@ test('com a aceleração NVIDIA instalada usa a GPU; forçar a CPU liga o -ng', 
   const s = setup();
   const cudaDir = path.join(s.whisper, 'cuda');
   fs.mkdirSync(cudaDir, { recursive: true });
-  fs.writeFileSync(path.join(cudaDir, 'whisper-cli.exe'), 'x');
+  fs.writeFileSync(path.join(cudaDir, CLI_FILE), 'x');
 
   const events = [];
   const gpu = await withEnv({ FAKE_GPU: '1', FAKE_RECORD: s.record }, () => s.make({ cudaDir }).run({ files: [s.media] }, ctx(s, { onEvent: (e) => events.push(e) })));
@@ -128,7 +130,7 @@ test('se a GPU falhar, repete na CPU e não insiste nela nos próximos arquivos'
   const s = setup();
   const cudaDir = path.join(s.whisper, 'cuda');
   fs.mkdirSync(cudaDir, { recursive: true });
-  fs.writeFileSync(path.join(cudaDir, 'whisper-cli.exe'), 'x');
+  fs.writeFileSync(path.join(cudaDir, CLI_FILE), 'x');
   const second = path.join(s.root, 'aula 02.mp4');
   fs.writeFileSync(second, 'SECONDS=8');
 
@@ -203,7 +205,7 @@ test('só o motor NVIDIA instalado (sem o de CPU): a CPU roda com -ng, sem exigi
   const s = setup();
   const cudaDir = path.join(s.whisper, 'cuda');
   fs.mkdirSync(cudaDir, { recursive: true });
-  fs.writeFileSync(path.join(cudaDir, 'whisper-cli.exe'), 'x');
+  fs.writeFileSync(path.join(cudaDir, CLI_FILE), 'x');
   const runner = new WhisperCppRunner({
     engineDir: path.join(s.root, 'sem-motor-cpu'), cudaDir, tempDir: path.join(s.root, 'tmp'), workRoot: s.work,
     ffmpegPath: process.execPath, ffmpegBaseArgs: [FAKE_FFMPEG], cliCommand: process.execPath, cliBaseArgs: [FAKE_CLI]
