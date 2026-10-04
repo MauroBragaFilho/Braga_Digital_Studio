@@ -3,7 +3,7 @@
   <!-- CABEÇALHO -->
   <div class="luts-header">
     <div class="luts-tabs">
-      <div class="luts-tab active">MEUS LUTs</div>
+      <div class="luts-tab active">Minhas LUTs</div>
     </div>
     
     <div class="luts-header-actions">
@@ -43,7 +43,7 @@
       </button>
 
       <button type="button" id="btnImportLut" class="lut-btn-primary">
-        <span class="material-symbols-rounded">add</span> IMPORTAR LUT
+        <span class="material-symbols-rounded">add</span> Importar LUT
       </button>
     </div>
   </div>
@@ -68,7 +68,7 @@
         <span class="luts-empty-text" id="lutsEmptyText">Nenhuma LUT encontrada.</span>
         <span class="luts-empty-hint" id="lutsEmptyHint">Importe arquivos .cube ou arraste-os para esta tela.</span>
         <button type="button" class="lut-btn-primary" id="btnEmptyImport">
-          <span class="material-symbols-rounded">add</span> IMPORTAR LUT
+          <span class="material-symbols-rounded">add</span> Importar LUT
         </button>
       </div>
 
@@ -81,7 +81,7 @@
     <!-- INSPECTOR LATERAL -->
     <div class="luts-inspector">
       <div class="inspector-header">
-        <span class="inspector-title">INSPECTOR</span>
+        <span class="inspector-title">Detalhes</span>
         <button class="lut-icon-btn lut-icon-btn-small" id="btnCloseInspector" type="button" aria-label="Fechar inspetor">
             <span class="material-symbols-rounded">close</span>
         </button>
@@ -91,12 +91,12 @@
         <!-- COMPONENTE ANTES/DEPOIS -->
         <div class="lut-slider-container" id="lutSliderContainer">
           <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" id="lutSliderBaseImg" draggable="false">
-          <div class="lut-slider-label lut-slider-label-before">ANTES</div>
+          <div class="lut-slider-label lut-slider-label-before">Antes</div>
           
           <div class="lut-slider-overlay" id="lutSliderOverlay">
             <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-target" id="lutSliderTargetImg" draggable="false">
             <canvas id="lutSliderCanvas" class="lut-slider-canvas hidden"></canvas>
-            <div class="lut-slider-label lut-slider-label-after">DEPOIS</div>
+            <div class="lut-slider-label lut-slider-label-after">Depois</div>
           </div>
           
           <div class="lut-slider-divider" id="lutSliderDivider">
@@ -119,7 +119,7 @@
 
         <!-- SEÇÃO: ARQUIVO .cube -->
         <details class="inspector-section hidden" id="insCubeSection">
-          <summary class="inspector-section-title">ARQUIVO .CUBE</summary>
+          <summary class="inspector-section-title">Arquivo .cube</summary>
 
           <!-- Metadados do cabeçalho -->
           <div class="cube-header-block" id="insCubeHeader">
@@ -137,7 +137,7 @@
 
           <!-- Botão para ver o arquivo completo -->
           <button class="lut-btn-outline lut-btn-full-width" id="btnViewCubeRaw">
-            VER ARQUIVO .CUBE COMPLETO <span class="material-symbols-rounded">code</span>
+            Ver arquivo .cube completo <span class="material-symbols-rounded">code</span>
           </button>
         </details>
 
@@ -146,17 +146,17 @@
       <!-- AÇÕES (fixas no rodapé do inspetor) -->
       <div class="inspector-footer">
         <button class="lut-btn-primary lut-btn-full-width" id="btnFullscreenLut">
-          <span class="material-symbols-rounded">open_in_full</span> VISUALIZAR EM TELA CHEIA
+          <span class="material-symbols-rounded">open_in_full</span> Tela cheia
         </button>
         <div class="inspector-footer-row">
           <button class="lut-btn-outline" id="btnRevealLut" title="Mostrar na pasta">
-            <span class="material-symbols-rounded">folder_open</span> PASTA
+            <span class="material-symbols-rounded">folder_open</span> Pasta
           </button>
           <button class="lut-btn-outline" id="btnRenameLut" title="Renomear (F2)">
-            <span class="material-symbols-rounded">edit</span> RENOMEAR
+            <span class="material-symbols-rounded">edit</span> Renomear
           </button>
           <button class="lut-btn-outline lut-btn-danger" id="btnDeleteLut" title="Excluir (Delete)">
-            <span class="material-symbols-rounded">delete</span> EXCLUIR
+            <span class="material-symbols-rounded">delete</span> Excluir
           </button>
         </div>
       </div>
@@ -195,12 +195,12 @@
     
     <div class="lut-slider-container lut-slider-fullscreen" id="fsSliderContainer">
       <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" id="fsSliderBaseImg" draggable="false">
-      <div class="lut-slider-label lut-slider-label-before">ANTES</div>
+      <div class="lut-slider-label lut-slider-label-before">Antes</div>
       
       <div class="lut-slider-overlay" id="fsSliderOverlay">
         <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-target" id="fsSliderTargetImg" draggable="false">
         <canvas id="fsSliderCanvas" class="lut-slider-canvas hidden"></canvas>
-        <div class="lut-slider-label lut-slider-label-after">DEPOIS</div>
+        <div class="lut-slider-label lut-slider-label-after">Depois</div>
       </div>
       
       <div class="lut-slider-divider" id="fsSliderDivider">

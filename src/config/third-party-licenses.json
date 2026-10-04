@@ -274,13 +274,6 @@
       "url": "https://github.com/TooTallNate/util-deprecate"
     },
     {
-      "id": "npm-uuid-14.0.1",
-      "name": "uuid",
-      "version": "14.0.1",
-      "license": "MIT",
-      "url": "https://github.com/uuidjs/uuid"
-    },
-    {
       "id": "npm-winston-3.19.0",
       "name": "winston",
       "version": "3.19.0",

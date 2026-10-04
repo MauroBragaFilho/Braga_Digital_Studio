@@ -63,3 +63,6 @@ desktop.ini
 
 # Caches de build restaurados pelos workflows (electron-builder/Electron)
 /.cache/
+
+# Gerado no build (licença do instalador (UTF-16), gerada do LICENSE)
+installer/license-nsis.txt

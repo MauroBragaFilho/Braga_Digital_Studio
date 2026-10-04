@@ -32,8 +32,12 @@ if (!app.isPackaged && debugPort && /^\d{2,5}$/.test(debugPort) && Number(debugP
 // Instância única: duas instâncias carregariam o banco inteiro em memória e a última a gravar venceria.
 // A segunda instância apenas foca a janela da primeira e sai antes de tocar em qualquer dado.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+// Modo de componentes do instalador (--setup-components=basic|full): sem janela, só baixa e confere os
+// componentes e sai com um código (ver src/setup/ComponentsSetup.js). null = abertura normal do app.
+const setupArgs = require('./src/setup/setupArgs').parseSetupArgs(process.argv);
 if (!gotSingleInstanceLock) {
-  app.exit(0);
+  app.exit(setupArgs ? 4 : 0); // 4 = o app já está aberto (o instalador deixa para a primeira abertura)
 }
 
 const { appPaths } = require('./src/infrastructure/filesystem/AppPaths');
@@ -104,7 +108,7 @@ let lastErrorDialogAt = 0;
 
 function notifyUncaught(err) {
   try {
-    if (!app.isReady()) return;
+    if (!app.isReady() || setupArgs) return; // o modo do instalador nunca mostra diálogo
     const code = err && err.code;
     if (BENIGN_ERROR_CODES.has(code)) return;
 
@@ -486,6 +490,48 @@ function flushPersistenceSync(reason) {
   } catch (_) { /* nunca lançar durante o encerramento */ }
 }
 
+/** Executa o modo de componentes do instalador e devolve o código de saída (2 = parâmetros inválidos). */
+async function runComponentsMode(args) {
+  if (!args.ok) {
+    logger.warn('[Setup] Parâmetros inválidos:', { error: args.error });
+    return 2;
+  }
+  try {
+    return await require('./src/setup/runSetupMode').runSetupMode({
+      args, appPaths, appVersion: app.getVersion(), log: (m) => logger.info(`[Setup] ${m}`)
+    });
+  } catch (err) {
+    logger.error('[Setup] Falha no modo de componentes:', { message: err && err.message, stack: err && err.stack });
+    return 1;
+  }
+}
+
+/** Primeira abertura: conclui a transcrição pendente do instalador e avisa com um toast discreto. */
+function finishPendingSetup() {
+  if (quitting || !bootstrap || !bootstrap.moduleManager) return Promise.resolve();
+  const toast = (type, text) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.executeJavaScript(
+          `window.bdsToast && window.bdsToast(${JSON.stringify(text)}, { type: ${JSON.stringify(type)}, duration: 9000 })`
+        ).catch(() => {});
+      }
+    } catch (_) { /* aviso é opcional */ }
+  };
+  return require('./src/setup/firstRunCompletion').completePendingSetup({
+    recordPath: require('./src/setup/runSetupMode').recordPathFor(appPaths),
+    moduleManager: bootstrap.moduleManager,
+    enableTranscription: () => {
+      require('./src/setup/enableTranscription').enableTranscriptionModule(bootstrap.settingsManager);
+      // o menu e a Home aparecem/somem na hora (mesmo evento do botão em Configurações > Módulos)
+      const enabled = require('./src/core/modules/ModuleRegistry').resolveEnabled(bootstrap.settingsManager.load(), { isDev: !isPackaged });
+      bootstrap.bridge.send('modules:changed', enabled);
+    },
+    notify: toast,
+    log: (m) => logger.info(`[Setup] ${m}`)
+  }).catch((err) => logger.warn('[Setup] Conclusão na primeira abertura falhou:', { message: err && err.message }));
+}
+
 // Segunda instância: foca a janela da primeira.
 app.on('second-instance', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -496,6 +542,12 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return; // outra instância já está aberta
+  if (setupArgs) { // modo do instalador: nenhuma janela, nenhum serviço do app
+    const code = await runComponentsMode(setupArgs);
+    try { require('./src/services/logService').flushSoon(0); } catch (_) { /* log é opcional */ }
+    setTimeout(() => app.exit(code), 400); // dá tempo de o log chegar ao disco
+    return;
+  }
   perf.mark('app:ready');
   perf.expect(['watchers', 'reconcile', 'regen', 'discovery', 'deadline', 'cache', 'deps']);
   // Permissões negadas por padrão em toda sessão (a padrão e as de partições persist:*).
@@ -554,7 +606,11 @@ app.whenReady().then(async () => {
   }, 400);
 
   // Verificação em background de ferramentas/atualizações (sem rede no caminho crítico da abertura)
-  setTimeout(() => { if (!quitting) bootstrap.checkInitialDependencies(); }, 1000);
+  // Depois disso, conclui a transcrição que o instalador não conseguiu baixar (se for o caso; ver src/setup/firstRunCompletion.js).
+  setTimeout(() => {
+    if (quitting) return;
+    Promise.resolve(bootstrap.checkInitialDependencies()).catch(() => {}).then(() => finishPendingSetup());
+  }, 1000);
 
   // Registrado uma única vez (whenReady roda uma vez); createWindow() reaproveita janela existente.
   app.on('activate', () => {

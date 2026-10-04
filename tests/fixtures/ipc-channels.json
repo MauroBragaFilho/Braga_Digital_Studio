@@ -279,6 +279,7 @@
     "downloads:wait",
     "metadata:log",
     "metadata:progress",
+    "modules:changed",
     "montage:finished",
     "montage:log",
     "montage:progress",

@@ -1,9 +1,65 @@
-﻿Proprietary License
+Braga Digital Studio — Licença de Uso Gratuito (Freeware)
+Copyright (c) 2026 Mauro Braga. Todos os direitos reservados.
 
-Copyright (c) 2026 Mauro Braga. All rights reserved.
+Esta licença vale para o programa "Braga Digital Studio" (o "Programa"), distribuído em forma
+de instalador e executável. O código-fonte do Programa NÃO é cedido por esta licença e continua
+reservado ao autor.
 
-This software and associated documentation files (the "Software") are proprietary and confidential.
-Unauthorized copying, modification, distribution, sublicensing, or disclosure of this Software,
-via any medium, is strictly prohibited.
+1. USO GRATUITO
+   Você pode instalar e usar o Programa, sem custo, em quantos computadores quiser, para uso pessoal
+   ou profissional (por exemplo, para produzir e organizar o seu próprio conteúdo).
 
-The Software is provided "as is", without warranty of any kind, express or implied.
+2. REDISTRIBUIÇÃO
+   Você pode compartilhar o instalador original, sem alterações, desde que seja gratuito (sem cobrança,
+   sem pacote pago e sem anúncios no download) e acompanhado desta licença. É proibido vender o
+   Programa ou incluí-lo em produtos ou serviços pagos.
+
+3. O QUE NÃO É PERMITIDO
+   É proibido, salvo quando a lei permitir expressamente apesar desta cláusula: (a) alterar, descompilar,
+   desmontar ou fazer engenharia reversa do Programa; (b) remover avisos de direitos autorais ou de
+   licença; (c) sublicenciar, alugar ou emprestar o Programa a terceiros como serviço; (d) apresentar o
+   Programa como se fosse de outra pessoa.
+
+4. COMPONENTES DE TERCEIROS
+   O Programa usa e baixa componentes de código aberto e de terceiros (por exemplo, FFmpeg, yt-dlp,
+   whisper.cpp, Electron e fontes). Cada um segue a sua própria licença, listada em "Configurações > Sobre
+   e licenças" e no arquivo de avisos que acompanha o Programa. Nada nesta licença limita os direitos
+   que você já tem sobre esses componentes. Os programas baixados durante ou depois da instalação são
+   programas separados, obtidos das fontes oficiais de cada projeto.
+
+5. SEU CONTEÚDO E AS REGRAS DOS SERVIÇOS
+   O Programa é uma ferramenta. Você é o único responsável pelo conteúdo que baixa, converte, transcreve ou
+   publica, por ter os direitos necessários e por cumprir a lei e os termos dos serviços que usar (por
+   exemplo, plataformas de vídeo e provedores de inteligência artificial). Recursos de inteligência
+   artificial podem enviar o que você escolher a um servidor que você mesmo configura.
+
+6. PRIVACIDADE
+   O Programa funciona no seu computador e não envia dados automaticamente ao autor. Veja o resumo em
+   "Termos de uso e privacidade", disponível com o Programa.
+
+7. SEM GARANTIA
+   O Programa é fornecido "como está", sem garantia de qualquer tipo, expressa ou implícita, incluindo
+   adequação a um fim específico e ausência de defeitos. Faça cópias de segurança dos seus arquivos.
+
+8. LIMITAÇÃO DE RESPONSABILIDADE
+   Na máxima extensão permitida pela lei, o autor não responde por perdas ou danos decorrentes do uso ou da
+   impossibilidade de uso do Programa, incluindo perda de dados, lucros cessantes ou danos indiretos.
+
+9. ENCERRAMENTO
+   Esta licença termina automaticamente se você descumprir qualquer item acima. Nesse caso, pare de usar o
+   Programa e apague as cópias. As cláusulas 4, 5, 7 e 8 continuam valendo.
+
+10. LEI APLICÁVEL
+    Esta licença é regida pelas leis da República Federativa do Brasil.
+
+Contato: obragafilho00@gmail.com
+
+------------------------------------------------------------------------------------------------------
+
+English summary (the Portuguese text above prevails):
+Braga Digital Studio is free to use, for personal or professional work, on any number of computers.
+You may redistribute the original, unmodified installer for free, together with this license. You may not
+sell it, modify it, reverse engineer it, or remove notices. The source code is not licensed and remains
+proprietary. Third-party components keep their own licenses (see Settings > About and licenses). You are
+responsible for your content and for following the law and the terms of the services you use. The program
+is provided "as is" without warranty, and the author is not liable for damages. Brazilian law applies.

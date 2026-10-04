@@ -1,6 +1,7 @@
 /* ==========================================================================
    BDS Professional Photo Preview Styles
    Dark, graphite, minimalist, professional, image-first.
+   exceção: visualizador de mídia é sempre escuro e independe do tema; cores fixas (branco/cinza/vermelho) sobre fundo de foto/vídeo. O acento só aparece em barras de progresso e indicadores.
    ========================================================================== */
 
 .photo-preview-overlay {
@@ -113,8 +114,8 @@
 }
 
 .photo-tool-btn.active {
-  color: var(--accent, #e53935);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .photo-tool-btn .material-symbols-rounded {
@@ -338,7 +339,7 @@
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--accent, #e53935);
+  color: #d4d4d8;
   letter-spacing: 0.6px;
   margin-bottom: 2px;
 }
@@ -499,8 +500,7 @@
 }
 
 .photo-filmstrip-item.active {
-  border-color: var(--accent, #e53935);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: var(--accent);
 }
 
 /* Progressive Loading Spinner */
@@ -524,7 +524,7 @@
   width: 32px;
   height: 32px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: var(--accent, #e53935);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: photoSpin 0.7s linear infinite;
 }

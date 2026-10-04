@@ -10,6 +10,7 @@
 
 // Agora sim, importa as dependências
 import { setAppStatus } from '../app.js';
+import { setContextProvider } from '../utils/assistantContext.js';
 import { escapeHtml, escapeAttr } from '../utils/escape.js';
 import { enhanceModals } from '../utils/modal.js';
 import { friendlyError } from '../utils/friendlyError.js';
@@ -54,6 +55,8 @@ export async function initScreen() {
     const app = await import('../app.js');
     projectId = app.state.currentProjectId;
     if (!projectId) return goBack();
+    // Assistente de IA: o projeto aberto entra no contexto da tela (só o id); removido em onLeave
+    setContextProvider('workspaceProject', () => projectId);
 
     try { thumbsBase = toFileUrl(await window.bds.getThumbDir()); } catch (_) { thumbsBase = ''; }
     await loadInitialData();
@@ -1067,7 +1070,7 @@ function createBinNode(bin) {
   const header = document.createElement('div');
   header.className = `ws-bin-header ${selectedItem?.type === 'bin' && selectedItem.id === bin.id ? 'selected' : ''}`;
   header.innerHTML = `
-    <span class="material-symbols-rounded" style="color: #ecc055; font-size: 18px;">folder</span>
+    <span class="material-symbols-rounded ws-bin-icon">folder</span>
     <span>${escapeHtml(bin.name)}</span>
   `;
   header.draggable = true;
@@ -1457,7 +1460,6 @@ async function loadWaveformForMonitor(pm) {
       muteBtn.type = 'button';
       muteBtn.className = 'ws-track-mute-btn';
       muteBtn.title = `Silenciar linha ${i + 1}`;
-      muteBtn.style.cssText = 'background:none; border:0.5px solid var(--border, #444); border-radius:4px; width:20px; height:18px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:#22c55e;';
       muteBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:13px;">volume_up</span>';
 
       let isMuted = false;
@@ -1469,20 +1471,20 @@ async function loadWaveformForMonitor(pm) {
           const trackEl = monitorTrackAudioEls[i];
           if (trackEl) trackEl.muted = isMuted;
         }
-        muteBtn.style.color = isMuted ? 'var(--danger, #ef4444)' : '#22c55e';
+        muteBtn.classList.toggle('is-muted', isMuted);
         muteBtn.title = isMuted ? `Ativar linha ${i + 1}` : `Silenciar linha ${i + 1}`;
         muteBtn.querySelector('span').textContent = isMuted ? 'volume_off' : 'volume_up';
       };
       muteBtn.addEventListener('click', () => { isMuted = !isMuted; applyMute(); });
 
-      label.innerHTML = `<span><span style="color:#22c55e;">A${i+1}</span> (${escapeHtml(stream.codec_name || 'audio')})</span><span>${escapeHtml(stream.title || '')}</span>`;
+      label.innerHTML = `<span><span class="ws-track-tag">A${i+1}</span> (${escapeHtml(stream.codec_name || 'audio')})</span><span>${escapeHtml(stream.title || '')}</span>`;
       label.appendChild(muteBtn);
       trackWrap.appendChild(label);
 
       const canvas = document.createElement('canvas');
       canvas.className = 'ws-waveform-canvas';
       canvas.height = 36;
-      canvas.style.cssText = 'width:100%; height:36px; background:rgba(0,0,0,0.3); border-radius:4px; display:block;';
+      canvas.style.cssText = 'width:100%; height:36px; background:var(--card-2); border-radius:8px; display:block;';
       trackWrap.appendChild(canvas);
 
       container.appendChild(trackWrap);
@@ -1591,6 +1593,7 @@ function monitorStepFrame(dir) {
 let wsCleanups = [];
 
 export function onLeave() {
+  setContextProvider('workspaceProject', null);
   wsCleanups.forEach((fn) => { try { fn(); } catch (_) { /* noop */ } });
   wsCleanups = [];
   try { teardownMonitorTrackAudio(); } catch (_) { /* noop */ }

@@ -6,8 +6,9 @@
  * telas: o módulo controla visibilidade/registro e, quando há (`hasEngine`), o motor pesado.
  *
  * Campos: id, title, description, screens[] (data-view das telas; vazio = o módulo não tem tela, como o Assistente de IA, que é um botão flutuante), devOnly (só aparece em
- * desenvolvimento e fica desligado fora dele), defaultEnabled (todos false: instalação nova começa com
- * tudo desligado; quem já usava o app é migrado pelo SettingsManager), hasEngine, engine ('whisper' =
+ * desenvolvimento e fica desligado fora dele), defaultEnabled (false em todos, EXCETO o Assistente de IA, que
+ * vem ligado: instalação nova começa com os recursos pesados desligados; quem já usava o app é migrado pelo
+ * SettingsManager), hasEngine, engine ('whisper' =
  * painel do motor em Configurações → Transcrição; 'tool:<ferramenta>' = componente baixado sob demanda
  * pelo DependencyManager), order.
  *
@@ -77,7 +78,7 @@ const BASE_MODULES = [
     description: 'Botão flutuante com um chat de IA para ajudar nas tarefas do BDS. Não é uma tela do menu.',
     screens: [],
     devOnly: !ASSISTANT_ALLOWED_IN_PACKAGED_APP, // a liberação no app final é uma só: src/services/ai/releaseGate.js
-    defaultEnabled: false,
+    defaultEnabled: true,   // o assistente vem LIGADO (único módulo assim); quem desligar em Configurações → Módulos continua desligado
     hasEngine: false,
     order: 60
   }
@@ -106,8 +107,8 @@ function moduleForScreen(screen) {
 }
 
 /**
- * Estado efetivo de todos os módulos. Chave ausente em `enabledModules` = padrão do módulo (desligado;
- * a migração de quem já usava o app grava as escolhas em `enabledModules`, ver SettingsManager).
+ * Estado efetivo de todos os módulos. Chave ausente em `enabledModules` = padrão do módulo (desligado, menos o
+ * Assistente de IA, que é ligado; a migração de quem já usava o app grava as escolhas em `enabledModules`, ver SettingsManager).
  * Módulo devOnly fora do desenvolvimento nunca fica ligado.
  * @param {{enabledModules?: object}} [settings]
  * @param {{isDev?: boolean}} [opts]

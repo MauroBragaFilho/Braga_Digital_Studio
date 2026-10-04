@@ -1,5 +1,6 @@
 // --- MÚLTIPLOS LINKS LOGIC ---
 function showMultipleLinksModal() {
+  const opener = document.activeElement;
   const overlay = document.createElement('div');
   overlay.className = 'multiple-links-overlay';
   overlay.id = 'multipleLinksOverlay';
@@ -7,8 +8,8 @@ function showMultipleLinksModal() {
   overlay.innerHTML = `
     <div class="multiple-links-modal">
       <div class="multiple-links-header">
-        <span class="material-symbols-rounded">list_alt</span>
-        <h3>Adição de Múltiplos Links</h3>
+        <span class="material-symbols-rounded" aria-hidden="true">list_alt</span>
+        <h3 id="multipleLinksTitle">Adição de Múltiplos Links</h3>
       </div>
       <div class="multiple-links-body">
         <p class="multiple-links-hint">
@@ -35,13 +36,28 @@ function showMultipleLinksModal() {
   const modalBox = overlay.querySelector('.multiple-links-modal');
   modalBox.setAttribute('role', 'dialog');
   modalBox.setAttribute('aria-modal', 'true');
-  modalBox.setAttribute('aria-label', 'Adição de múltiplos links');
+  modalBox.setAttribute('aria-labelledby', 'multipleLinksTitle');
   const textarea = overlay.querySelector('#multipleLinksInput');
   textarea.focus();
-  // Esc fecha; Ctrl+Enter adiciona; clique fora fecha
+  // Ao fechar, devolve o foco ao botão que abriu o diálogo
+  const closeOverlay = overlay.remove.bind(overlay);
+  overlay.remove = () => {
+    closeOverlay();
+    if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+  };
+  // Esc fecha; Ctrl+Enter adiciona; Tab fica preso dentro do diálogo; clique fora fecha
   const onKey = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); overlay.remove(); }
     else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); overlay.querySelector('#confirmLinks')?.click(); }
+    else if (e.key === 'Tab') {
+      const items = Array.from(overlay.querySelectorAll('textarea, button:not([disabled]), input:not([disabled])'))
+        .filter((n) => n.getClientRects().length > 0);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   };
   overlay.addEventListener('keydown', onKey);
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) overlay.remove(); });

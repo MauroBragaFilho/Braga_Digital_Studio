@@ -11,22 +11,12 @@
  */
 
 const path = require('node:path');
-const { ToolError, resolveMediaList } = require('./common');
+const { ToolError, resolveMediaList, listNames, plural } = require('./common');
 const { safeText, HIDDEN_PATH } = require('./results');
 
 const MAX_TRANSCRIBE = 5;
 const MAX_PROJECT_MEDIA = 50;
 const MAX_FOLDERS = 10;
-const NAME_LIST_LIMIT = 12;
-
-const listNames = (items, limit = NAME_LIST_LIMIT) => {
-  const lines = items.slice(0, limit).map((n) => `  • ${n}`);
-  if (items.length > limit) lines.push(`  … e mais ${items.length - limit}`);
-  return lines.join('\n');
-};
-
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-
 const transcribe_media = {
   name: 'transcribe_media',
   kind: 'action',

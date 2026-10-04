@@ -1318,7 +1318,7 @@ let modulesListenerBound = false;
 
 /**
  * A seção Inteligência Artificial e as telas da "Tela inicial" seguem os módulos ligados (o Assistente
- * de IA só existe em desenvolvimento e já vem fora da lista no app final). Reaplica quando o main avisa.
+ * de IA vem ligado por padrão e pode ser desligado em Módulos). Reaplica quando o main avisa.
  */
 function setupModuleDependentUi() {
   refreshModuleDependentUi();

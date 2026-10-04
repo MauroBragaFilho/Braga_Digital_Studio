@@ -190,7 +190,8 @@ test('Enter envia, Shift+Enter não envia (quebra linha); texto vazio não envia
     const enter = key(h, input(h), 'Enter');
     assert.equal(enter.defaultPrevented, true);
     await settle(10);
-    assert.deepEqual(h.bds.calls.aiChatStart, [['Oi, assistente']]);
+    // o 2º argumento é o contexto da tela (sem menu lateral no teste, a tela é a Home)
+    assert.deepEqual(h.bds.calls.aiChatStart, [['Oi, assistente', { screen: 'home' }]]);
     assert.equal(input(h).value, '', 'campo limpo depois de enviar');
     assert.equal(h.document.querySelectorAll('.aia-msg-user').length, 1);
     assert.equal(h.document.querySelector('.aia-msg-user .aia-bubble').textContent, 'Oi, assistente');
@@ -296,9 +297,9 @@ test('erro durante a resposta (ai:chatError) e AI_DISABLED: erro amigável; AI_D
     input(h).value = 'oi';
     key(h, input(h), 'Enter');
     await settle(10);
-    h.bds.emit('onAiChatError', { id: 'c1', error: 'Tempo esgotado: o servidor de IA parou de responder.', code: 'TIMEOUT' });
+    h.bds.emit('onAiChatError', { id: 'c1', error: 'A conexão com o servidor de IA foi interrompida.', code: 'INTERRUPTED' });
     await settle(10);
-    assert.match(q(h, '.aia-msg-error .aia-bubble').textContent, /Tempo esgotado/);
+    assert.match(q(h, '.aia-msg-error .aia-bubble').textContent, /interrompida/);
     assert.equal(input(h).value, 'oi');
   } finally { await finish(h); }
 
@@ -455,7 +456,7 @@ test('CSS: botão some sob visualizadores em tela cheia, respeita movimento redu
     assert.ok(css.includes(`body:has(${sel}:not(.hidden)) .aia-root`), sel);
   }
   assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.match(css, /var\(--accent-solid\)/);
+  assert.match(css, /var\(--btn-bg\)/);
   // os nomes das classes dos visualizadores existem de verdade
   for (const f of ['photo-preview.css', 'video-preview.css', 'audio-preview.css', 'preview-popup.css']) {
     const txt = fs.readFileSync(path.join(ROOT, 'renderer', 'components', 'preview', f), 'utf8');
@@ -607,7 +608,8 @@ test('painel continua só com chat durante ações: sem cartões, botões de con
     // o renderer não tem nenhum canal para acionar ferramentas ou confirmar: só fala o texto e cancela
     const src = fs.readFileSync(path.join(ROOT, 'renderer', 'components', 'ai-assistant.js'), 'utf8');
     const used = [...src.matchAll(/bds\(\)\.(\w+)/g)].map((m) => m[1]).filter((n) => /^ai[A-Z]/.test(n));
-    assert.deepEqual([...new Set(used)].sort(), ['aiChatCancel', 'aiChatStart', 'aiGetConfig', 'aiHistoryClear', 'aiHistoryGet']);
+    // aiSaveConfig: só o botão "Entendi, continuar" do aviso de privacidade (grava o aceite do servidor atual)
+    assert.deepEqual([...new Set(used)].sort(), ['aiChatCancel', 'aiChatStart', 'aiGetConfig', 'aiHistoryClear', 'aiHistoryGet', 'aiSaveConfig']);
   } finally { await finish(h); }
 });
 

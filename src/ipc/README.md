@@ -96,18 +96,30 @@ handler; só foi removida a validação de tipo/limite/caminho que o esquema já
 
 Esquema e remetente não bastam quando um recurso só pode existir em certas condições. O assistente de IA (`ai:chatStart`,
 `ai:chatCancel`, `ai:historyGet`, `ai:historyClear`) confere em CADA chamada, no handler (`assistantBlock` em
-`aiHandlers.js`): app não empacotado + módulo `ai` ligado + interruptor "Ativar assistente" ligado. Se faltar algo, o canal
-devolve `{ ok:false, code:'AI_DISABLED' }` (estratégia `wrap`). Esconder o botão no renderer é só conforto; a trava real é esta.
-Respostas em streaming chegam por eventos (`ai:chatDelta`, `ai:chatDone`, `ai:chatError`), listados em `EVENTS`.
-A "liberação no app final" é uma única constante (`ASSISTANT_ALLOWED_IN_PACKAGED_APP` em `src/services/ai/releaseGate.js`).
+`aiHandlers.js`): build liberado (`releaseGate.js`; hoje liberado no app final) + módulo `ai` ligado (vem LIGADO por padrão)
++ interruptor "Ativar assistente" ligado. Se faltar algo, o canal devolve `{ ok:false, code:'AI_DISABLED' }` (estratégia `wrap`).
+Esconder o botão no renderer é só conforto; a trava real é esta. `ai:chatStart` ainda recusa, com códigos estáveis, o primeiro
+uso sem servidor (`AI_NOT_CONFIGURED`) e o servidor fora da máquina e da rede local sem o aviso de privacidade aceito
+(`AI_REMOTE_CONSENT`; o aceite é gravado por `ai:saveConfig({ acceptRemoteServer: true })`). Respostas em streaming chegam por
+eventos (`ai:chatDelta`, `ai:chatDone`, `ai:chatError`), listados em `EVENTS`. A "liberação no app final" é uma única constante
+(`ASSISTANT_ALLOWED_IN_PACKAGED_APP` em `src/services/ai/releaseGate.js`).
+
+**`ai:chatStart` e o contexto da tela:** além de `text`, o payload aceita `context` OPCIONAL `{ screen, selectedIds?, projectId? }`
+(esquema fechado: `strict`, até 50 ids inteiros). O main revalida (`src/services/ai/context.js`: telas conhecidas, tipos e limites;
+`BAD_CONTEXT` se fugir) e só o usa como dado NÃO confiável no prompt. O preload gerado é `aiChatStart(text, context)`.
 
 **Ferramentas do assistente: NÃO existe canal para elas.** O modelo pede ferramentas ao processo principal pelo laço do
-chat (`AssistantChat` → `ToolBox`, ver `.docs/ASSISTENTE_IA_FERRAMENTAS.md`); o renderer só envia texto (`ai:chatStart`) e
-cancela (`ai:chatCancel`). A confirmação das ações (transcrever, criar projeto) é um diálogo nativo do main
-(`dialog.showMessageBox`), que o renderer não consegue acionar nem pular. A única adição de superfície para isso é o evento
-`ai:chatStatus` (main para renderer): `{ id, text, kind }` com `kind` = `tool`, `confirm`, `notice` ou `clear`, mostrado como
-linha de status no chat. Por isso um canal novo do tipo "executar ferramenta" ou "confirmar" nunca deve ser criado:
-`tests/ai-assistant-tools.test.js` falha se aparecer qualquer canal `ai:*` com "tool" ou "confirm" no nome.
+chat (`AssistantChat` → `ToolBox`, ver `.docs/ASSISTENTE_IA_FERRAMENTAS.md`: 22 ferramentas de leitura, interface e ação); o
+renderer só envia texto (`ai:chatStart`) e cancela (`ai:chatCancel`). A confirmação das ações (baixar, converter, remover
+silêncio, transcrever, criar/adicionar a projeto, etiquetar, favoritar, exportar) é um diálogo nativo do main
+(`dialog.showMessageBox`), que o renderer não consegue acionar nem pular; o destino de `export_project` é o diálogo de salvar do
+sistema. As ferramentas reaproveitam os serviços das telas (`downloadService`, `converterService`, `silenceService`,
+`ProjectService`, exportadores), ligados em `src/ipc/index.js`, sem canal novo. A superfície main → renderer do assistente é:
+`ai:chatStatus` (`{ id, text, kind }`, `kind` = `tool`, `confirm`, `progress`, `notice` ou `clear`, mostrado como linha de status
+no chat) e `ai:navigate` (`{ screen }`, pedido do `open_screen`: o renderer valida a tela contra a lista fixa e confere se o menu
+está visível antes de navegar). Por isso um canal novo do tipo "executar ferramenta" ou "confirmar" nunca deve ser criado:
+`tests/ai-assistant-tools.test.js` e `tests/ai-assistant-integration.test.js` falham se aparecer qualquer canal `ai:*` com "tool" ou
+"confirm" no nome. (Etiquetas e favoritos aplicados pelo assistente avisam a Biblioteca pelo evento que já existia, `bds:media-updated`.)
 
 ## Remetente confiável (detalhes)
 

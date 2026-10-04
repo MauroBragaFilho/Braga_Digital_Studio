@@ -75,4 +75,38 @@ function resolveMediaList(db, ids, opts) {
   return items;
 }
 
-module.exports = { ToolError, summarizeMedia, resolveMedia, resolveMediaList, READY_SQL, TYPE_TO_DB, TYPE_LABEL, round };
+const NAME_LIST_LIMIT = 12;
+
+/** Lista com marcadores para o texto dos diálogos de confirmação (mostra os primeiros e conta o resto). */
+const listNames = (items, limit = NAME_LIST_LIMIT) => {
+  const lines = items.slice(0, limit).map((n) => `  • ${n}`);
+  if (items.length > limit) lines.push(`  … e mais ${items.length - limit}`);
+  return lines.join('\n');
+};
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/** Módulos ligados agora ({ id: boolean }); vazio se o app não informou. */
+const enabledModules = (ctx) => {
+  try { return (ctx && typeof ctx.getEnabledModules === 'function' ? ctx.getEnabledModules() : null) || {}; } catch (_) { return {}; }
+};
+
+/** Exige que um módulo esteja ligado em Configurações → Módulos (se o app informou o estado dos módulos). */
+function requireModule(ctx, id, label) {
+  const mods = enabledModules(ctx);
+  if (Object.keys(mods).length && mods[id] !== true) {
+    throw new ToolError(`O recurso "${label}" está desligado. O usuário pode ligá-lo em Configurações → Módulos.`, 'MODULE_OFF');
+  }
+}
+
+/** Serviço opcional do app (downloads, conversor...): erro curto para o modelo se não estiver disponível. */
+function requireService(ctx, name, label) {
+  const svc = ctx && ctx.services ? ctx.services[name] : null;
+  if (!svc) throw new ToolError(`O recurso "${label}" não está disponível agora.`, 'NO_SERVICE');
+  return svc;
+}
+
+module.exports = {
+  ToolError, summarizeMedia, resolveMedia, resolveMediaList, READY_SQL, TYPE_TO_DB, TYPE_LABEL, round,
+  listNames, plural, enabledModules, requireModule, requireService, NAME_LIST_LIMIT
+};

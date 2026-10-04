@@ -51,7 +51,15 @@ function registerIpcHandlers(ctx) {
     isDev: !app.isPackaged,
     projectService,
     getModuleManager: () => moduleManager,
-    getMainWindow
+    getMainWindow,
+    // Serviços que as ferramentas do assistente reaproveitam (as mesmas instâncias das telas)
+    downloadService,
+    converterService,
+    silenceService,
+    deviceDiscovery: require('../core/devices/DeviceDiscoveryService'),
+    premiereExporter,
+    bdsproPackageService,
+    thumbnailsDir: appPaths.thumbnailsDir
   });
   // O ModuleManager é devolvido para ser cancelado no encerramento do app.
   moduleManager = require('./moduleHandlers')(paths, {

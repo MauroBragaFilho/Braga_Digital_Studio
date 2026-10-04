@@ -1,8 +1,19 @@
 {
-  "baseUrl": "http://localhost:1234/v1",
-  "apiKeyEnc": "",
-  "model": "gpt-4o-mini",
+  "providers": [
+    {
+      "id": "p-lmstudio",
+      "preset": "lmstudio",
+      "label": "LM Studio (local)",
+      "baseUrl": "http://localhost:1234/v1",
+      "apiKeyEnc": "",
+      "model": "",
+      "enabled": true
+    }
+  ],
+  "order": ["p-lmstudio"],
+  "fallbackEnabled": true,
   "maxTokens": 1024,
   "customInstructions": "",
-  "assistantEnabled": true
+  "assistantEnabled": true,
+  "remoteAccepted": []
 }
