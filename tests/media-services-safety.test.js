@@ -233,7 +233,11 @@ test('conversor: ETA do lote usa só pendentes e erros não travam o geral (RK-1
   assert.ok(Math.abs(p.remainingSeconds - 180) < 2, `ETA ${p.remainingSeconds}`);
 });
 
-test('conversor: nunca sobrescreve e a saída nunca é a origem (RK-017) + erro por arquivo não derruba a fila', async () => {
+test('conversor: nunca sobrescreve e a saída nunca é a origem (RK-017) + erro por arquivo não derruba a fila', async (t) => {
+  // O teste troca a codificação por um simulador: não precisa do programa real (nem de data/ configurado).
+  const resolveOriginal = ffmpegTool.resolve;
+  ffmpegTool.resolve = () => ffmpegExe || 'ffmpeg';
+  t.after(() => { ffmpegTool.resolve = resolveOriginal; });
   const d = mkdir('conv-out');
   const svc = makeConverter();
   svc._prefetchDurations = () => {};

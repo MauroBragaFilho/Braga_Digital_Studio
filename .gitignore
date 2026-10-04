@@ -60,3 +60,6 @@ desktop.ini
 *.CR2
 .Teste imagem corrompida/
 .tmp-clone-check/
+
+# Caches de build restaurados pelos workflows (electron-builder/Electron)
+/.cache/

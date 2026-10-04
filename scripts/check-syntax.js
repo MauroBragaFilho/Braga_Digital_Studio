@@ -15,7 +15,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const EXCLUDED_DIRS = new Set(['node_modules', 'dist', '.git', '_Archives', 'data', 'logs', '.freebuff']);
+const EXCLUDED_DIRS = new Set(['node_modules', 'dist', '.git', '_Archives', 'data', 'logs', '.freebuff', '.cache']);
 const isExcluded = (name) => EXCLUDED_DIRS.has(name) || name.startsWith('.Teste');
 const ES_MODULE_RE = /^\s*(import\s[^('"]*?from\s|import\s*['"{*]|export\s)/m;
 
