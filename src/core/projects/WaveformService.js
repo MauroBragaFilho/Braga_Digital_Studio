@@ -12,6 +12,10 @@ const STDERR_TAIL_BYTES = 4096;
 const WFM_MAGIC = 'BWF1';
 const WFM_HEADER_BYTES = 24;
 
+// Resolução-mestre: toda geração é feita (e cacheada) em, no mínimo, esta taxa; as telas pedem
+// taxas menores (30-100) e recebem uma redução por max-pooling, sem rodar o ffmpeg de novo (RK-036).
+const MASTER_PEAKS_PER_SECOND = 100;
+
 /** Atualiza atime/mtime de um item de cache lido (LRU real do CacheService), sem bloquear. */
 function touch(p) {
     const now = new Date();
@@ -41,6 +45,28 @@ function decodeWfm(buf) {
         streamIndex: buf.readUInt32LE(20),
         quantized: new Uint8Array(buf.buffer, buf.byteOffset + WFM_HEADER_BYTES, count)
     };
+}
+
+/**
+ * Reduz a resolução dos picos por max-pooling (preserva os máximos, ao contrário de uma média).
+ * @param {Uint8Array} quantized picos na taxa `fromPps`
+ * @param {number} fromPps taxa de origem (picos por segundo)
+ * @param {number} toPps taxa desejada (se >= fromPps devolve os picos como estão)
+ * @returns {Uint8Array}
+ */
+function reducePeaks(quantized, fromPps, toPps) {
+    if (!(toPps > 0) || toPps >= fromPps || quantized.length === 0) return quantized;
+    const ratio = fromPps / toPps;
+    const outLen = Math.max(1, Math.ceil(quantized.length / ratio));
+    const out = new Uint8Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+        const start = Math.floor(i * ratio);
+        const end = Math.min(quantized.length, Math.max(start + 1, Math.ceil((i + 1) * ratio)));
+        let max = 0;
+        for (let j = start; j < end; j++) if (quantized[j] > max) max = quantized[j];
+        out[i] = max;
+    }
+    return out;
 }
 
 /** Uint8Array (0..255) -> array de amplitudes 0.0..1.0 (formato entregue ao renderer, igual ao antigo). */
@@ -80,7 +106,7 @@ class WaveformService {
     constructor({ ffmpegPath, cacheDir }) {
         this.ffmpegPath = ffmpegPath;
         this.cacheDir = cacheDir;
-        this._inflight = new Map(); // chave uuid:stream -> Promise (dedup de gerações simultâneas)
+        this._inflight = new Map(); // chave uuid:stream:resolução -> Promise (dedup de gerações simultâneas)
         this._inflightTracks = new Map();
 
         if (!fs.existsSync(this.cacheDir)) {
@@ -111,19 +137,20 @@ class WaveformService {
      * Lê o cache (assíncrono, sem bloquear o main thread). Retorna o objeto de waveform ou null.
      * Se só existir o JSON legado, migra para o formato binário.
      */
-    async readCache(uuid, streamIndex = 0) {
+    async readCache(uuid, streamIndex = 0, targetPps = null) {
         const cachePath = this.getCachePath(uuid, streamIndex);
         try {
             const decoded = decodeWfm(await fs.promises.readFile(cachePath));
             if (decoded) {
                 touch(cachePath);
+                const wanted = targetPps && targetPps < decoded.peaksPerSecond ? targetPps : decoded.peaksPerSecond;
                 return {
                     version: 1,
                     uuid,
                     stream_index: decoded.streamIndex,
                     duration: decoded.duration,
-                    peaks_per_second: decoded.peaksPerSecond,
-                    peaks: dequantize(decoded.quantized)
+                    peaks_per_second: wanted,
+                    peaks: dequantize(reducePeaks(decoded.quantized, decoded.peaksPerSecond, wanted))
                 };
             }
             logger.warn(`[WaveformService] Cache binário inválido para ${uuid} (stream ${streamIndex}), será regenerado.`);
@@ -259,17 +286,25 @@ class WaveformService {
     async getOrGenerate({ uuid, filePath, duration = 0, peaksPerSecond = 100, streamIndex = 0, force = false, priority = PRIORITY.HIGH }) {
         if (!uuid || !filePath) throw new Error('uuid e filePath são obrigatórios.');
 
+        // O cache guarda a resolução-mestre (ou maior): pedidos de taxa menor saem dele por redução
         if (!force) {
-            const cached = await this.readCache(uuid, streamIndex);
-            if (cached && cached.peaks_per_second === peaksPerSecond) return cached;
+            const cached = await this.readCache(uuid, streamIndex, peaksPerSecond);
+            if (cached && cached.peaks_per_second >= peaksPerSecond) return cached;
         }
 
-        const key = `${uuid}:${streamIndex}`;
-        if (this._inflight.has(key)) return this._inflight.get(key);
-        const promise = this._generate({ uuid, filePath, duration, peaksPerSecond, streamIndex, priority })
-            .finally(() => this._inflight.delete(key));
-        this._inflight.set(key, promise);
-        return promise;
+        // Gera sempre na resolução-mestre (ou na pedida, se maior) e entrega reduzida à taxa pedida
+        const genPps = Math.max(peaksPerSecond, MASTER_PEAKS_PER_SECOND);
+        const key = `${uuid}:${streamIndex}:${genPps}`;
+        let promise = this._inflight.get(key);
+        if (!promise) {
+            promise = this._generate({ uuid, filePath, duration, peaksPerSecond: genPps, streamIndex, priority })
+                .finally(() => this._inflight.delete(key));
+            this._inflight.set(key, promise);
+        }
+        const master = await promise;
+        if (genPps === peaksPerSecond) return master;
+        const reduced = reducePeaks(Uint8Array.from(master.peaks, (p) => Math.round(p * 255)), genPps, peaksPerSecond);
+        return { ...master, peaks_per_second: peaksPerSecond, peaks: dequantize(reduced) };
     }
 
     async _generate({ uuid, filePath, duration, peaksPerSecond, streamIndex, priority = PRIORITY.HIGH }) {
@@ -382,5 +417,8 @@ class WaveformService {
         });
     }
 }
+
+WaveformService.reducePeaks = reducePeaks;
+WaveformService.MASTER_PEAKS_PER_SECOND = MASTER_PEAKS_PER_SECOND;
 
 module.exports = WaveformService;

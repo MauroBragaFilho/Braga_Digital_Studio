@@ -85,6 +85,11 @@ async function extractZip(zipPath, destDir, { include = [], signal = null, timeo
     ? ['-xf', zipPath, '-C', destDir, ...include.flatMap((p) => ['--include', p])]
     : ['-o', zipPath, ...include, '-d', destDir];
 
+  return runExtract(command, args, { signal, timeoutMs });
+}
+
+/** Executa o descompactador (cancelável, com limite de tempo). */
+function runExtract(command, args, { signal = null, timeoutMs = 30 * 60 * 1000 } = {}) {
   return new Promise((resolve, reject) => {
     let child;
     try {
@@ -118,6 +123,22 @@ async function extractZip(zipPath, destDir, { include = [], signal = null, timeo
   });
 }
 
+/**
+ * Extrai um .tar.gz/.tgz (ex.: motores oficiais para Linux) com o tar do sistema, com a mesma validação
+ * anti zip-slip e o mesmo cancelamento/limite de tempo de extractZip.
+ */
+async function extractTarball(tarPath, destDir, { signal = null, timeoutMs = 30 * 60 * 1000 } = {}) {
+  fs.mkdirSync(destDir, { recursive: true });
+  const tar = tarExecutable() || 'tar';
+  try {
+    assertSafeEntries((await runCapture(tar, ['-tzf', tarPath])).split('\n'), destDir);
+  } catch (err) {
+    if (/inseguro/.test(err.message)) throw err;
+    throw new Error(`Não foi possível validar o arquivo compactado: ${err.message}`);
+  }
+  return runExtract(tar, ['-xzf', tarPath, '-C', destDir], { signal, timeoutMs });
+}
+
 /** Lista recursivamente os arquivos de uma pasta (caminhos completos). */
 function walkFiles(root) {
   const out = [];
@@ -134,4 +155,4 @@ function walkFiles(root) {
   return out;
 }
 
-module.exports = { extractZip, walkFiles, assertSafeEntries, captureOutput: runCapture };
+module.exports = { extractZip, extractTarball, walkFiles, assertSafeEntries, captureOutput: runCapture };

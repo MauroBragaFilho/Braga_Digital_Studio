@@ -40,6 +40,7 @@
 .mod-head-text { flex: 1; min-width: 240px; }
 .mod-head-text h3 { margin: 0; font-size: 16px; }
 .mod-head-text p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.mod-head-text p.mod-head-lead { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
 .mod-state { font-size: 11px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; padding: 5px 11px; border-radius: 999px; white-space: nowrap; }
 .mod-state-ok { color: var(--success); background: rgba(76, 175, 80, 0.14); }
 .mod-state-warn { color: #ffb300; background: rgba(255, 179, 0, 0.14); }
@@ -161,3 +162,59 @@
 /* ----- Painel embutido nas Configurações ----- */
 .mod-embedded { height: auto; overflow: visible; padding-right: 0; }
 .mod-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 12px; }
+
+/* --- Contraste AA (medido nos dois temas) --- */
+.mod-btn-primary { background: color-mix(in srgb, var(--accent-solid, #c62828) 88%, #000); }
+.mod-badge-accent, .mod-links a { color: var(--accent-text, var(--accent)); }
+.mod-btn-danger { color: var(--st-danger-text, var(--danger-fg)); }
+[data-theme="light"] .mod-badge-accent { color: color-mix(in srgb, var(--accent-text, #c62828) 80%, #000); }
+
+/* ----- Tabela de modelos (Configurações → Transcrição) ----- */
+.mod-table-wrap { overflow-x: auto; container-type: inline-size; }
+.mod-table { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-size: 12.5px; }
+.mod-table thead th { text-align: left; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: var(--st-muted-text, var(--muted)); padding: 0 12px 2px; white-space: nowrap; }
+.mod-trow > * { padding: 10px 12px; background: var(--bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.mod-trow > :first-child { border-left: 1px solid var(--line); border-radius: 12px 0 0 12px; text-align: left; }
+.mod-trow > :last-child { border-right: 1px solid var(--line); border-radius: 0 12px 12px 0; }
+.mod-trow.installed > * { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.mod-trow.active > * { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
+.mod-tcell-name { font-weight: 400; min-width: 180px; text-transform: none; letter-spacing: 0; }
+.mod-tcell-name strong { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: 0.4px; }
+.mod-tcell-name .mod-muted { display: block; font-size: 11.5px; margin-top: 2px; }
+.mod-tcell-stars, .mod-tcell-size { white-space: nowrap; }
+.mod-tcell-size { color: var(--st-muted-text, var(--muted)); font-variant-numeric: tabular-nums; }
+.mod-tcell-actions .mod-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.mod-stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; }
+.mod-stars-on { color: #e9a800; }
+.mod-stars-off { color: color-mix(in srgb, var(--text) 22%, transparent); }
+[data-theme="light"] .mod-stars-on { color: #b57d00; }
+.mod-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mod-icon-danger { padding: 6px; border-radius: 8px; }
+.mod-icon-danger .material-symbols-rounded { font-size: 19px; }
+.mod-icon-danger:hover:not(:disabled) { color: var(--st-danger-text, var(--danger-fg)); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.mod-icon-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+.mod-btn-link { background: none; border: none; color: var(--accent-text, var(--accent)); padding: 6px 4px; text-decoration: underline; font-weight: 600; }
+.mod-btn-link:hover:not(:disabled) { filter: brightness(1.15); }
+
+/* Janela estreita: cada modelo vira um cartão (nome em cima, estrelas e tamanho embaixo) */
+@container (max-width: 680px) {
+  .mod-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .mod-table, .mod-table tbody { display: block; }
+  .mod-trow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px 12px; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .mod-trow.active { border-color: var(--accent); }
+  .mod-trow > * { background: none; border: 0 !important; border-radius: 0 !important; padding: 0; }
+  .mod-tcell-name { grid-column: 1 / -1; }
+  .mod-tcell-stars::before, .mod-tcell-size::before { content: attr(data-label) ' '; font-size: 11px; color: var(--st-muted-text, var(--muted)); display: block; }
+  .mod-tcell-actions { grid-column: 1 / -1; }
+  .mod-tcell-actions .mod-actions { justify-content: flex-start; }
+}
+
+/* ----- Pergunta da aceleração NVIDIA ----- */
+.mod-dialog { max-width: 440px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--text); padding: 20px 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.mod-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.mod-dialog h4 { margin: 0 0 10px; font-size: 16px; }
+.mod-dialog p { margin: 0 0 12px; font-size: 13px; line-height: 1.55; }
+.mod-dialog-terms { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: rgba(255, 179, 0, 0.09); border: 1px solid rgba(255, 179, 0, 0.35); }
+.mod-dialog-terms .material-symbols-rounded { font-size: 18px; color: #ffb300; flex-shrink: 0; }
+.mod-dialog-terms a { color: var(--accent-text, var(--accent)); }
+.mod-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }

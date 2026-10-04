@@ -10,6 +10,22 @@ const args = process.argv.slice(2);
 const input = args[args.indexOf('-i') + 1];
 const output = args[args.length - 1];
 
+// Detecção de silêncio (-af silencedetect): imprime os silêncios de FAKE_SILENCES (JSON [[início, fim|null], ...]).
+// FAKE_DETECT_FAIL=1 falha; FAKE_DETECT_SLEEP=ms demora (testa o cancelamento).
+if (args.some((a) => /^silencedetect/.test(a))) {
+  if (process.env.FAKE_DETECT_FAIL === '1') { console.error('Error initializing filter silencedetect'); process.exit(1); }
+  const run = () => {
+    for (const [start, end] of JSON.parse(process.env.FAKE_SILENCES || '[]')) {
+      console.error(`[silencedetect @ 0000] silence_start: ${start}`);
+      if (end !== null && end !== undefined) console.error(`[silencedetect @ 0000] silence_end: ${end} | silence_duration: ${end - start}`);
+    }
+    process.exit(0);
+  };
+  const wait = Number(process.env.FAKE_DETECT_SLEEP) || 0;
+  if (wait) setTimeout(run, wait); else run();
+  return;
+}
+
 let text = '';
 try { text = fs.readFileSync(input, 'utf8').slice(0, 200); } catch (_) {
   console.error(`${input}: No such file or directory`);

@@ -1,4 +1,6 @@
 import { escapeHtml } from '../../utils/escape.js';
+import { friendlyError } from '../../utils/friendlyError.js';
+import { toFileUrl, joinFileUrl } from '../../utils/fileUrl.js';
 /**
  * PhotoPreview — Visualizador fotográfico profissional para o BDS.
  * Suporta: RAW (CR2, CR3, ARW, NEF, DNG, RAF, ORF, RW2), JPG, PNG, TIFF, WEBP.
@@ -45,8 +47,12 @@ export class PhotoPreview {
     this.idleTimer = null;
     this.isIdle = false;
 
-    // Image cache
+    // Image cache (LRU limitado: sem teto, navegar por uma coleção grande acumulava imagens decodificadas)
     this.imageCache = new Map(); // path -> Image
+    this._imageCacheMax = 12;
+    this._loadSeq = 0;           // token de sequência dos carregamentos (descarta respostas obsoletas)
+    this._filmstripSeq = 0;
+    this._filmRange = { start: 0, end: 0 }; // janela da coleção desenhada no filmstrip (coleções grandes)
 
     this._boundKeyHandler = this._handleKeyDown.bind(this);
     this._boundMouseMove = this._handleMouseMove.bind(this);
@@ -543,8 +549,21 @@ export class PhotoPreview {
     this.buildFilmstrip();
   }
 
+  /** Guarda a imagem no cache respeitando o teto (descarta as mais antigas). */
+  _cachePut(p, img) {
+    this.imageCache.delete(p);
+    this.imageCache.set(p, img);
+    while (this.imageCache.size > this._imageCacheMax) {
+      const oldest = this.imageCache.keys().next().value;
+      const old = this.imageCache.get(oldest);
+      if (old) old.src = '';
+      this.imageCache.delete(oldest);
+    }
+  }
+
   async loadMedia(media) {
     if (!media) return;
+    const seq = ++this._loadSeq;
     this.currentMedia = media;
 
     const filePath = typeof media === 'string' ? media : (media.filepath || media.path);
@@ -571,7 +590,7 @@ export class PhotoPreview {
     this.showLoading(true, 'Carregando...');
 
     if (isVideo) {
-      await this._loadVideoPoster(media);
+      await this._loadVideoPoster(media, seq);
       return;
     }
 
@@ -581,12 +600,14 @@ export class PhotoPreview {
       // 1. Tenta obter caminho renderizável do backend
       if (window.bds && window.bds.photoGetRenderablePath) {
         const res = await window.bds.photoGetRenderablePath(filePath);
-        renderSrc = 'file:///' + res.renderablePath.replace(/\\/g, '/');
+        if (seq !== this._loadSeq) return; // outra foto foi pedida enquanto esta carregava
+        renderSrc = toFileUrl(res.renderablePath);
       } else {
-        renderSrc = 'file:///' + filePath.replace(/\\/g, '/');
+        renderSrc = toFileUrl(filePath);
       }
 
       await this._setImageSrc(renderSrc);
+      if (seq !== this._loadSeq) return;
       this.showLoading(false);
 
       // Carregar metadados se o painel estiver aberto
@@ -605,6 +626,7 @@ export class PhotoPreview {
       // Destaque no filmstrip
       this.updateFilmstripActive();
     } catch (err) {
+      if (seq !== this._loadSeq) return;
       console.error('[PhotoPreview] Erro ao carregar imagem:', err);
       this.showLoading(false);
       this.dom.title.textContent = `${fileName} (Erro na decodificação)`;
@@ -621,13 +643,13 @@ export class PhotoPreview {
     if (!this._thumbsBase && window.bds && typeof window.bds.getThumbDir === 'function') {
       try {
         const rawDir = await window.bds.getThumbDir();
-        this._thumbsBase = 'file:///' + String(rawDir).replace(/\\/g, '/');
+        this._thumbsBase = toFileUrl(rawDir);
       } catch (_) { /* sem thumbnails */ }
     }
     return this._thumbsBase || '';
   }
 
-  async _loadVideoPoster(media) {
+  async _loadVideoPoster(media, seq = this._loadSeq) {
     const img = this.dom.image;
     try {
       const thumb = media && typeof media === 'object' ? media.thumbnail : '';
@@ -638,11 +660,14 @@ export class PhotoPreview {
       if (src) await this._setImageSrc(src);
       else img.removeAttribute('src');
     } catch (err) {
+      if (seq !== this._loadSeq) return;
       console.warn('[PhotoPreview] Miniatura do vídeo indisponível:', err);
       img.removeAttribute('src');
     } finally {
-      this.showLoading(false);
-      this.updateFilmstripActive();
+      if (seq === this._loadSeq) {
+        this.showLoading(false);
+        this.updateFilmstripActive();
+      }
     }
   }
 
@@ -653,12 +678,16 @@ export class PhotoPreview {
   _setImageSrc(src) {
     return new Promise((resolve, reject) => {
       const img = this.dom.image;
+      // Um novo carregamento substitui o anterior: rejeita o pendente (o chamador obsoleto descarta o resultado)
+      if (this._rejectPendingImage) this._rejectPendingImage(new Error('substituído'));
+      this._rejectPendingImage = reject;
       img.onload = () => {
+        this._rejectPendingImage = null;
         this._calculateFitScale();
         this.resetToFit();
         resolve();
       };
-      img.onerror = (e) => reject(e);
+      img.onerror = (e) => { this._rejectPendingImage = null; reject(e); };
       img.src = src;
     });
   }
@@ -758,14 +787,14 @@ export class PhotoPreview {
       const isRaw = !!p.match(/\.(cr2|cr3|arw|nef|dng|raf|orf|rw2)$/i);
       if (!isRaw) {
         const preImg = new Image();
-        preImg.src = 'file:///' + p.replace(/\\/g, '/');
-        this.imageCache.set(p, preImg);
+        preImg.src = toFileUrl(p);
+        this._cachePut(p, preImg);
       } else if (window.bds && window.bds.photoGetRenderablePath) {
         // Pré-gera o cache em background para o RAW vizinho
         window.bds.photoGetRenderablePath(p).then(res => {
           const preImg = new Image();
-          preImg.src = 'file:///' + res.renderablePath.replace(/\\/g, '/');
-          this.imageCache.set(p, preImg);
+          preImg.src = toFileUrl(res.renderablePath);
+          this._cachePut(p, preImg);
         }).catch(() => {});
       }
     });
@@ -774,6 +803,8 @@ export class PhotoPreview {
   // --- Filmstrip ---
   async buildFilmstrip() {
     const fs = this.dom.filmstrip;
+    const buildSeq = ++this._filmstripSeq;
+    if (this._filmObserver) { this._filmObserver.disconnect(); this._filmObserver = null; }
     fs.innerHTML = '';
 
     // Diretorio de thumbnails do BDS (cacheado apos a 1a chamada)
@@ -781,17 +812,39 @@ export class PhotoPreview {
     if (!thumbsBase && window.bds && typeof window.bds.getThumbDir === 'function') {
       try {
         const rawDir = await window.bds.getThumbDir();
-        thumbsBase = 'file:///' + String(rawDir).replace(/\\/g, '/');
+        thumbsBase = toFileUrl(rawDir);
         this._thumbsBase = thumbsBase;
       } catch (_) {
         thumbsBase = '';
       }
     }
 
-    this.collection.forEach((item, index) => {
+    if (buildSeq !== this._filmstripSeq) return; // outra coleção foi aberta enquanto o diretório era resolvido
+
+    // Miniaturas sem thumbnail pré-computado (RAW/fontes externas) só são pedidas ao backend quando o
+    // item entra na área visível — antes toda a coleção disparava a geração de uma vez.
+    const lazyLoaders = new Map();
+    if (typeof IntersectionObserver === 'function') {
+      this._filmObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const run = lazyLoaders.get(entry.target);
+          if (run) { lazyLoaders.delete(entry.target); this._filmObserver.unobserve(entry.target); run(); }
+        }
+      }, { root: fs, rootMargin: '200px' });
+    }
+
+    // Só uma janela em torno do item atual vai para o DOM (a Biblioteca pode passar milhares de itens);
+    // ao navegar perto da borda da janela, updateFilmstripActive() reconstrói em volta do novo item.
+    const half = PhotoPreview.FILMSTRIP_WINDOW;
+    const start = Math.max(0, this.currentIndex - half);
+    const end = Math.min(this.collection.length, this.currentIndex + half + 1);
+    this._filmRange = { start, end };
+    for (let index = start; index < end; index++) {
+      const item = this.collection[index];
       const p = typeof item === 'string' ? item : (item.filepath || item.path);
       const name = typeof item === 'string' ? p.split(/[/\\]/).pop() : (item.filename || p.split(/[/\\]/).pop());
-      
+
       const thumbEl = document.createElement('div');
       thumbEl.className = `photo-filmstrip-item ${index === this.currentIndex ? 'active' : ''}`;
       thumbEl.dataset.index = index;
@@ -806,36 +859,56 @@ export class PhotoPreview {
         if (item.thumbnail.startsWith('file:') || item.thumbnail.startsWith('http') || item.thumbnail.startsWith('/')) {
           img.src = item.thumbnail;
         } else if (thumbsBase) {
-          img.src = `${thumbsBase}/${item.thumbnail}`;
+          img.src = joinFileUrl(thumbsBase, item.thumbnail);
         }
       }
 
       // Fallback: caminho renderizavel (RAW sem thumbnail / fontes externas)
       if (!img.src && !isVid) {
-        if (window.bds && window.bds.photoGetRenderablePath) {
-          window.bds.photoGetRenderablePath(p).then(res => {
-            if (res && res.renderablePath) {
-              img.src = 'file:///' + String(res.renderablePath).replace(/\\/g, '/');
-            }
-          }).catch(() => {});
+        const loadFallback = () => {
+          if (window.bds && window.bds.photoGetRenderablePath) {
+            window.bds.photoGetRenderablePath(p, { thumbnailOnly: true }).then(res => {
+              if (res && res.renderablePath) {
+                img.src = toFileUrl(res.renderablePath);
+              }
+            }).catch(() => {});
+          } else {
+            img.src = toFileUrl(p);
+          }
+        };
+        if (this._filmObserver) {
+          lazyLoaders.set(thumbEl, loadFallback);
+          this._filmObserver.observe(thumbEl);
         } else {
-          img.src = 'file:///' + p.replace(/\\/g, '/');
+          loadFallback();
         }
       }
 
       thumbEl.appendChild(img);
       thumbEl.addEventListener('click', () => this.goToIndex(index));
       fs.appendChild(thumbEl);
-    });
+    }
+    const activeEl = fs.querySelector('.photo-filmstrip-item.active');
+    if (activeEl && activeEl.scrollIntoView) activeEl.scrollIntoView({ block: 'nearest', inline: 'center' });
   }
 
   updateFilmstripActive() {
+    // Perto da borda da janela desenhada (e ainda há coleção além dela): reconstrói em volta do item atual
+    const { start, end } = this._filmRange;
+    const margin = PhotoPreview.FILMSTRIP_EDGE;
+    const nearStart = start > 0 && this.currentIndex < start + margin;
+    const nearEnd = end < this.collection.length && this.currentIndex >= end - margin;
+    if (this.currentIndex < start || this.currentIndex >= end || nearStart || nearEnd) {
+      this.buildFilmstrip();
+      return;
+    }
     const items = this.dom.filmstrip.querySelectorAll('.photo-filmstrip-item');
-    items.forEach((it, idx) => {
-      const isActive = idx === this.currentIndex;
+    items.forEach((it) => {
+      const isActive = Number(it.dataset.index) === this.currentIndex;
       it.classList.toggle('active', isActive);
       if (isActive) {
-        it.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        const calmo = document.documentElement.classList.contains('reduce-motion') || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        it.scrollIntoView({ behavior: calmo ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
       }
     });
   }
@@ -929,7 +1002,7 @@ export class PhotoPreview {
 
       body.innerHTML = html || '<div style="color: #8e8e93;">Nenhum metadado EXIF detalhado encontrado.</div>';
     } catch (err) {
-      body.innerHTML = `<div style="color: #ef4444;">Erro ao extrair metadados: ${escapeHtml(err.message)}</div>`;
+      body.innerHTML = `<div style="color: #ef4444;">Não foi possível ler os metadados: ${escapeHtml(friendlyError(err))}</div>`;
     }
   }
 
@@ -1084,8 +1157,15 @@ export class PhotoPreview {
     if (document.fullscreenElement) {
       try { document.exitFullscreen(); } catch (_) {}
     }
+    this._loadSeq++; // invalida carregamentos em andamento
+    if (this._filmObserver) { this._filmObserver.disconnect(); this._filmObserver = null; }
+    this.imageCache.clear();
     this.dom.image.src = '';
     this.dom.root.classList.add('hidden');
     if (this.onClose) this.onClose();
   }
 }
+
+// Filmstrip: itens de cada lado do atual que ficam no DOM e margem da borda que dispara a reconstrução
+PhotoPreview.FILMSTRIP_WINDOW = 150;
+PhotoPreview.FILMSTRIP_EDGE = 20;

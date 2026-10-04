@@ -3,13 +3,13 @@
 /**
  * settingsSecrets.js — Mascara segredos das configurações antes de enviá-los ao renderer.
  *
- * O renderer nunca recebe o token do Telegram em texto puro: recebe "••••" + últimos 4
+ * O renderer nunca recebe segredos em texto puro (chaves em SECRET_KEYS; hoje nenhuma): recebe "••••" + últimos 4
  * caracteres. Ao salvar, se o campo voltar ainda mascarado (usuário não alterou), o valor
  * real guardado no main é preservado; se vier vazio, o segredo é apagado; se vier um valor
  * novo, ele substitui o antigo.
  */
 
-const SECRET_KEYS = ['telegramBotToken'];
+const SECRET_KEYS = [];
 const MASK = '••••'; // ••••
 
 function isMasked(value) {

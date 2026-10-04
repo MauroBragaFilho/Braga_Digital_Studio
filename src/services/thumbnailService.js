@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const logger = require('./logService');
 const { assertHttpUrl, redactUrl } = require('./urlValidator');
+const { cookiesFileFor } = require('./youtubeCookies');
 const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ytDlpTool } = require('../infrastructure/external-tools/adapters/YtDlpTool');
@@ -162,15 +163,16 @@ class ThumbnailService {
       return {
         isPlaylist,
         source: 'spotify',
-        title: isPlaylist ? 'Spotify Playlist' : 'Spotify Track',
+        title: isPlaylist ? 'Playlist de músicas' : 'Música',
         itemCount: null
       };
     }
 
-    const json = await this.runYtDlpJson(
-      url,
-      ['--dump-single-json', '--flat-playlist', '--no-warnings']
-    );
+    // Link de vídeo com "&list=" (watch?v=ID&list=...) é um item único: sem --no-playlist o
+    // yt-dlp o trataria como playlist inteira e a UI expandiria dezenas de itens.
+    const ytArgs = ['--dump-single-json', '--flat-playlist', '--no-warnings'];
+    if (this.isVideoWithPlaylistParam(url)) ytArgs.push('--no-playlist');
+    const json = await this.runYtDlpJson(url, ytArgs);
 
     return {
       isPlaylist: json._type === 'playlist' || Array.isArray(json.entries),
@@ -179,6 +181,16 @@ class ThumbnailService {
         ? json.entries.length
         : json.playlist_count || 0
     };
+  }
+
+  /** true se a URL tem um vídeo específico (v=ID) junto de um parâmetro de playlist (list=). */
+  isVideoWithPlaylistParam(url) {
+    try {
+      const u = new URL(url);
+      return u.searchParams.has('v') && u.searchParams.has('list');
+    } catch (_) {
+      return false;
+    }
   }
 
   async expandPlaylist(url) {
@@ -191,7 +203,7 @@ class ThumbnailService {
         if (Array.isArray(meta)) {
           return meta.map(track => ({
             url: track.url || url,
-            title: track.name ? `${track.name} - ${track.artist}` : 'Spotify Track',
+            title: track.name ? `${track.name} - ${track.artist}` : 'Música',
             thumbnail: track.cover_url || ''
           }));
         }
@@ -199,14 +211,14 @@ class ThumbnailService {
         if (meta) {
           return [{
             url: meta.url || url,
-            title: meta.name ? `${meta.name} - ${meta.artist}` : 'Spotify Track',
+            title: meta.name ? `${meta.name} - ${meta.artist}` : 'Música',
             thumbnail: meta.cover_url || ''
           }];
         }
       } catch (e) {
         logger.warn('[ThumbnailService] Falha ao expandir playlist Spotify:', e.message);
       }
-      return [{ url, title: 'Spotify Track', thumbnail: '' }];
+      return [{ url, title: 'Música', thumbnail: '' }];
     }
 
     const json = await this.runYtDlpJson(
@@ -326,7 +338,7 @@ class ThumbnailService {
         env: { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
       });
     } catch (err) {
-      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao analisar metadados do Spotify.');
+      if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao analisar o link de música.');
       throw err;
     }
     if (result.code !== 0) {
@@ -339,7 +351,7 @@ class ThumbnailService {
       }
       return JSON.parse(jsonMatch[0]);
     } catch (err) {
-      throw new Error(`Erro ao interpretar JSON Spotify: ${err.message}`);
+      throw new Error('Não foi possível ler as informações deste link de música.');
     }
   }
 
@@ -347,8 +359,9 @@ class ThumbnailService {
     const exe = ytDlpTool.resolve();
 
     const finalArgs = [...args];
-    const cookiesFile = this.getSettings().cookiesFile;
-    if (cookiesFile && fs.existsSync(cookiesFile)) {
+    // Só links do YouTube recebem a sessão da conta, e só se ela ainda estiver válida
+    const cookiesFile = cookiesFileFor(url, this.getSettings().cookiesFile);
+    if (cookiesFile) {
       finalArgs.push('--cookies', cookiesFile);
     }
     // '--' encerra as opções: a URL nunca é interpretada como flag do yt-dlp.

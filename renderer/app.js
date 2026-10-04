@@ -1,8 +1,18 @@
+performance.mark('bds:app-module-start');
 import { mediaPreviewSystem } from './components/preview/MediaPreviewSystem.js';
 import { escapeHtml } from './utils/escape.js';
 import { maskEngineNames } from './utils/engineNames.js';
 import { t } from './strings.js';
 import { initSliderSync } from './slider-sync.js';
+import './utils/toast.js';
+import { accentTokens, normalizeAccentHex } from './utils/accent-palette.js';
+import { initShortcutsHelp } from './utils/shortcutsHelp.js';
+
+// [PERF] Portão de inicialização (renderer/boot-gate.js): o HTML, o CSS e estes módulos carregam em
+// paralelo com a abertura do banco no processo principal; a partir daqui (que usa IPC) só depois que
+// o main libera o portão. Sem o portão (ex.: testes), segue direto.
+if (window.__bdsGate) await window.__bdsGate.promise;
+performance.mark('bds:gate-opened');
 
 // Expõe openPreview e mediaPreviewSystem globalmente
 window.mediaPreviewSystem = mediaPreviewSystem;
@@ -88,53 +98,23 @@ export { escapeHtml };
    ========================================================================== */
 
 /**
- * Converte um hex (#rrggbb) para rgba() com a opacidade fornecida.
- * @param {string} hex
- * @param {number} alpha  — 0 a 1
+ * Injeta as variáveis CSS de cor de destaque no :root a partir da paleta fixa (renderer/utils/accent-palette.js).
+ * Qualquer valor fora da paleta (inclui o antigo #e53935) vira a opção mais próxima; inválido volta ao Vermelho.
+ * Os tons (acento, texto em destaque, fundo de botão colorido, translúcido) já vêm por tema, com contraste AA conferido.
+ * @param {string} value — hex salvo, ex: "#ff0000"
  */
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/**
- * Clareia (amount > 0) ou escurece (amount < 0) uma cor hex.
- * Retorna um hex novo.
- * @param {string} hex
- * @param {number} amount  — ex: 15 = +15 em cada canal RGB
- */
-function shiftHex(hex, amount) {
-  const clamp = (v) => Math.max(0, Math.min(255, v));
-  const r = clamp(parseInt(hex.slice(1, 3), 16) + amount);
-  const g = clamp(parseInt(hex.slice(3, 5), 16) + amount);
-  const b = clamp(parseInt(hex.slice(5, 7), 16) + amount);
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
-/**
- * Injeta as variáveis CSS de cor de destaque no :root.
- * Calcula automaticamente as variantes hover e light.
- * @param {string} hex  — ex: "#e53935"
- */
-export function applyAccentColor(hex) {
-  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+export function applyAccentColor(value) {
   const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-  // No tema escuro o hover clareia; no tema claro o hover escurece
-  const hoverHex = isDark ? shiftHex(hex, 20) : shiftHex(hex, -30);
+  const tone = accentTokens(value, isDark ? 'dark' : 'light');
   const root = document.documentElement;
-  root.style.setProperty('--accent', hex);
-  root.style.setProperty('--accent-hover', hoverHex);
-  root.style.setProperty('--accent-light', hexToRgba(hex, 0.15));
-  root.style.setProperty('--danger', hex);
+  root.style.setProperty('--accent', tone.accent);
+  root.style.setProperty('--accent-hover', tone.hover);
+  root.style.setProperty('--accent-light', tone.light);
+  root.style.setProperty('--accent-solid', tone.solid);
+  root.style.setProperty('--accent-solid-hover', tone.solidHover);
+  root.style.setProperty('--accent-text', tone.text);
 }
 
-/**
- * Aplica o tema ao documento e a cor de destaque.
- * @param {string} theme       — 'dark' | 'light'
- * @param {string} accentColor — hex, ex: "#e53935"
- */
 /**
  * Preferências de interface que não são tema/cor: hoje, "reduzir animações".
  * Chamada ao iniciar o app e depois de salvar as Configurações.
@@ -146,9 +126,9 @@ export function applyUiPreferences(settings = {}) {
   if (Array.isArray(settings.sidebarOrder)) applySidebarOrder(settings.sidebarOrder);
 }
 
-export function applyTheme(theme = 'dark', accentColor = '#e53935') {
-  document.documentElement.setAttribute('data-theme', theme);
-  applyAccentColor(accentColor);
+export function applyTheme(theme = 'dark', accentColor = '#ff0000') {
+  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+  applyAccentColor(normalizeAccentHex(accentColor));
 }
 
 /* ==========================================================================
@@ -268,7 +248,7 @@ function applySidebarCollapsed(collapsed) {
   const toggleBtn = document.getElementById('sidebarToggleBtn');
   if (toggleBtn) {
     toggleBtn.setAttribute('aria-expanded', String(!collapsed));
-    toggleBtn.title = collapsed ? 'Expandir menu' : 'Recolher menu';
+    toggleBtn.title = collapsed ? 'Expandir menu (Ctrl+B)' : 'Recolher menu (Ctrl+B)';
     const icon = toggleBtn.querySelector('.material-symbols-rounded');
     if (icon) icon.textContent = collapsed ? 'menu' : 'menu_open';
   }
@@ -369,9 +349,13 @@ window.bdsModal = {
 };
 // ------------------------
 
-document.addEventListener('DOMContentLoaded', () => {
+// Roda no DOMContentLoaded ou, se ele já passou (o módulo esperou o portão acima), imediatamente — a chamada
+// fica no fim do arquivo para que tudo que o corpo usa já esteja declarado.
+const startApp = () => {
+  performance.mark('bds:domcontentloaded-handler');
   // Inicializa o componente global de range sliders (sync --slider-value)
   initSliderSync();
+  initShortcutsHelp();
 
   const contentContainer = document.getElementById('dynamic-content');
   const tabButtons = document.querySelectorAll('.tab-button');
@@ -380,14 +364,29 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recuperação e Montagem Automática ainda estão em otimização; ficam disponíveis apenas
   // quando o BDS roda a partir do código-fonte (não empacotado). Assume-se "empacotado" por
   // padrão (fail-safe) até a checagem real do processo principal responder.
-  const DEV_ONLY_SCREENS = ['recovery', 'montage', 'ai'];
+  const DEV_ONLY_SCREENS = ['recovery', 'montage'];
   let isPackagedApp = true;
 
+  // Módulos (Configurações → Módulos): a lista e o estado vêm do processo principal (fonte da
+  // verdade). screen → ligado. Antes da primeira resposta, telas sem módulo ficam como estão e as
+  // telas de desenvolvimento permanecem ocultas (fail-safe).
+  const moduleScreens = new Map();
+  let modulesLoaded = false;
+
+  function isScreenAllowed(screenName) {
+    if (DEV_ONLY_SCREENS.includes(screenName)) {
+      if (isPackagedApp || !modulesLoaded) return false;
+      return moduleScreens.get(screenName) === true;
+    }
+    return moduleScreens.has(screenName) ? moduleScreens.get(screenName) : true;
+  }
+
   function applyDevOnlyVisibility() {
-    DEV_ONLY_SCREENS.forEach((screenName) => {
+    const managed = new Set([...DEV_ONLY_SCREENS, ...moduleScreens.keys()]);
+    managed.forEach((screenName) => {
       const btn = document.querySelector(`.tab-button[data-view="${screenName}"]`);
       if (!btn) return;
-      if (isPackagedApp) {
+      if (!isScreenAllowed(screenName)) {
         btn.classList.add('hidden');
         btn.style.display = 'none';
       } else {
@@ -396,6 +395,29 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
     updateTabShortcuts(); // abas ocultas não ocupam número de atalho
+    window.dispatchEvent(new CustomEvent('bds:modules-changed'));
+  }
+
+  // Aplica a lista de módulos recebida do main e, se a tela aberta foi desligada, volta à Home.
+  function applyModules(list) {
+    if (!Array.isArray(list)) return;
+    moduleScreens.clear();
+    list.forEach((m) => (m.screens || []).forEach((s) => moduleScreens.set(s, m.enabled === true)));
+    modulesLoaded = true;
+    applyDevOnlyVisibility();
+    const active = document.querySelector('.sidebar .tab-button.active')?.getAttribute('data-view');
+    if (active && !isScreenAllowed(active)) {
+      document.querySelector('.sidebar .tab-button[data-view="home"]')?.click();
+    }
+  }
+
+  async function refreshModules() {
+    try {
+      const r = await window.bds.modulesList();
+      if (r && r.ok) applyModules(r.data);
+    } catch (err) {
+      console.warn('[APP] Falha ao ler módulos:', err);
+    }
   }
 
   getDefaultTabOrder(); // captura a ordem original do menu antes de qualquer reordenação
@@ -411,6 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
       window.bds.isPackaged().then((packaged) => {
         isPackagedApp = Boolean(packaged);
         applyDevOnlyVisibility();
+        if (typeof window.bds.modulesList === 'function') refreshModules();
       }).catch((err) => {
         console.error('[APP] Falha ao verificar isPackaged (mantendo módulos dev ocultos):', err);
       });
@@ -424,10 +447,18 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeModule = null;
   let activeModuleName = null;
 
-  async function loadScreen(screenName) {
+  // Navegações em série: dois cliques rápidos (ou o clique do usuário durante a abertura inicial)
+  // não podem criar a mesma tela duas vezes nem deixar a tela errada visível.
+  let navQueue = Promise.resolve();
+  function loadScreen(screenName) {
+    navQueue = navQueue.then(() => loadScreenNow(screenName)).catch(() => {});
+    return navQueue;
+  }
+
+  async function loadScreenNow(screenName) {
     // Defesa extra: mesmo que a aba tenha sido acionada por outro caminho (não pelo clique
     // visível do botão), builds empacotadas nunca carregam os módulos restritos.
-    if (DEV_ONLY_SCREENS.includes(screenName) && isPackagedApp) {
+    if (!isScreenAllowed(screenName)) {
       screenName = 'home';
     }
 
@@ -497,9 +528,13 @@ document.addEventListener('DOMContentLoaded', () => {
           const screenModule = await getScreenModule(screenName);
           activeModule = screenModule;
           activeModuleName = screenName;
+          performance.mark(`bds:screen-module-loaded:${screenName}`);
           if (screenModule.initScreen) {
             screenModule.initScreen();
           }
+          performance.mark(`bds:screen-init-done:${screenName}`);
+          // Marco de diagnóstico: pintura efetiva da tela (2 frames depois do init)
+          requestAnimationFrame(() => requestAnimationFrame(() => performance.mark(`bds:${screenName}-painted`)));
         } catch (jsError) {
           console.log(`A tela ${screenName} não possui um arquivo JS dedicado ou ele falhou.`, jsError);
           if (screenName === 'home') {
@@ -582,18 +617,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Storage Polling
   const storageIndicators = document.getElementById('storageIndicators');
   if (storageIndicators) {
-    storageIndicators.innerHTML = '<span style="color:yellow">Iniciando monitoramento...</span>';
+    storageIndicators.innerHTML = '<span class="storage-note">Verificando espaço em disco…</span>';
     storageIndicators.classList.add('active');
 
     if (!window.bds || !window.bds.getStorageInfo) {
-      storageIndicators.innerHTML = '<span style="color:red">IPC getStorageInfo não encontrado. Você reiniciou o app?</span>';
+      storageIndicators.innerHTML = '<span class="storage-note storage-note-error">Não foi possível ler o espaço em disco. Reinicie o aplicativo.</span>';
       storageIndicators.classList.add('active');
     } else {
       const updateStorage = async () => {
         try {
           const info = await window.bds.getStorageInfo();
           if (!info) {
-            storageIndicators.innerHTML = '<span style="color:red">Erro ao ler armazenamento. (Retornou null)</span>';
+            storageIndicators.innerHTML = '<span class="storage-note storage-note-error">Não foi possível ler o espaço em disco.</span>';
             storageIndicators.classList.add('active');
             return;
           }
@@ -625,12 +660,14 @@ document.addEventListener('DOMContentLoaded', () => {
           storageIndicators.innerHTML = html;
           storageIndicators.classList.add('active');
         } catch(e) {
-          storageIndicators.innerHTML = `<span style="color:red">Erro IPC: ${escapeHtml(e.message)}</span>`;
+          storageIndicators.innerHTML = '<span class="storage-note storage-note-error">Não foi possível ler o espaço em disco.</span>';
           storageIndicators.classList.add('active');
         }
       };
       
-      updateStorage();
+      // [PERF] A primeira leitura (dispara a enumeração de dispositivos via PowerShell) espera a Home
+      // aparecer; antes ela disputava CPU/IPC com a abertura. O texto "Verificando..." cobre o intervalo.
+      setTimeout(updateStorage, 1500);
       // [PERF] Atualização de storage — pausa quando a aba está oculta
       // e usa intervalo mais longo (30s) pois espaço em disco muda lentamente
       let _storageInterval = setInterval(updateStorage, 30000);
@@ -696,6 +733,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Configuração dos cliques de navegação da Sidebar
   tabButtons.forEach(button => {
     button.addEventListener('click', () => {
+      // Tela de módulo desligado (atalho, notificação, cartão): volta à Home.
+      if (!isScreenAllowed(button.getAttribute('data-view'))) {
+        document.querySelector('.sidebar .tab-button[data-view="home"]')?.click();
+        return;
+      }
       tabButtons.forEach(btn => btn.classList.remove('active'));
       button.classList.add('active');
       
@@ -841,6 +883,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (window.bds?.onModulesChanged) window.bds.onModulesChanged(() => refreshModules());
+
+  // Assistente de IA: botão flutuante em todas as telas (só existe com o módulo e o interruptor ligados, fora do app final).
+  // Um erro aqui nunca pode afetar o restante do app.
+  import('./components/ai-assistant.js')
+    .then((m) => m.mountAssistant())
+    .catch((err) => console.warn('[APP] Assistente de IA indisponível:', err));
+
   // Inicializa escutas globais do Electron (IPC)
   initGlobalElectronListeners();
   
@@ -854,25 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (startTab) startTab.click();
   else loadScreen('home');
-});
-
-// Em algum lugar do seu backend (ex: src/core/library/lutParser.js)
-function parseCubeResolution(filePath) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n');
-    for (let line of lines) {
-      if (line.startsWith('LUT_3D_SIZE')) {
-        const size = line.split(/\s+/)[1]; // ex: "33"
-        return `${size} x ${size} x ${size}`;
-      }
-    }
-    return null; // Não encontrou
-  } catch (e) {
-    console.warn('Erro ao ler resolução do LUT:', filePath, e);
-    return null;
-  }
-}
+};
 
 // Módulos de tela já importados (evita import() dinâmico a cada navegação/tick de progresso)
 const screenModules = {};
@@ -1112,3 +1144,6 @@ async function initGlobalElectronListeners() {
     } catch (_) {}
   });
 }
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startApp);
+else startApp();

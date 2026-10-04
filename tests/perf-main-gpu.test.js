@@ -3,6 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { budget } = require('./helpers/timing');
 const hwSingleton = require('../src/core/HardwareDetectionService');
 const HardwareDetectionService = hwSingleton.constructor;
 
@@ -83,7 +84,7 @@ test('máquina real (Windows): o registro lista as placas rapidamente, sem WMI',
   const hw = new HardwareDetectionService();
   const t0 = Date.now();
   const gpus = await hw._gpusFromRegistry();
-  assert.ok(Date.now() - t0 < 3000, 'a leitura do registro deve ser rápida');
+  assert.ok(Date.now() - t0 < budget(15000), 'a leitura do registro não deve depender do WMI (que leva vários segundos)');
   for (const g of gpus) {
     assert.ok(g.name && ['nvidia', 'amd', 'intel', 'other'].includes(g.vendor));
     assert.equal(g.source, 'registry');

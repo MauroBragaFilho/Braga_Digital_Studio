@@ -8,6 +8,7 @@ const { ffprobeTool } = require('../infrastructure/external-tools/adapters/Ffpro
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
 const probeCache = require('../core/ffmpeg/ProbeCache');
+const { uniqueOutputPath, isSamePath } = require('./uniquePath');
 
 // Progresso/log para a UI no máximo a cada 250 ms; stderr guarda só o final (~8 KB)
 const EMIT_THROTTLE_MS = 250;
@@ -119,7 +120,14 @@ class MontageService extends EventEmitter {
         const outputFileName = `${baseName} - ${pct}%.${ext}`;
         const outputPath = path.join(destFolder, outputFileName);
 
-        const mainCutDuration = item.finalDurationSeconds || Math.round(((item.durationSeconds || 1800) * pct) / 100);
+        // Sem duração informada, mede com o ffprobe: nada de assumir 1800 s
+        let knownDuration = Number(item.durationSeconds) > 0 ? Number(item.durationSeconds) : 0;
+        if (!item.finalDurationSeconds && !knownDuration) {
+          const probed = await this.probeFile(item.path);
+          knownDuration = probed && probed.duration > 0 ? probed.duration : 0;
+          if (!knownDuration) throw new Error(`Duração desconhecida no vídeo principal: ${baseName}`);
+        }
+        const mainCutDuration = item.finalDurationSeconds || Math.max(1, Math.round((knownDuration * pct) / 100));
 
         const singleConfig = {
           introPath: config.introPath,
@@ -187,7 +195,15 @@ class MontageService extends EventEmitter {
   async runSingleRender(config) {
     const ffmpeg = ffmpegTool.resolve();
 
-    const { introPath, mainPath, outroPath, mainCutStart, mainCutDuration, resolution, fps, codec, quality, outputPath, totalDuration } = config;
+    const { introPath, mainPath, outroPath, mainCutStart, mainCutDuration, resolution, fps, codec, quality, totalDuration } = config;
+    if (!config.outputPath) throw new Error('Arquivo de saída não informado.');
+    // Nunca sobrescreve: se já existir (ou for um dos arquivos de entrada) usa "nome (2).ext"
+    const outputPath = uniqueOutputPath(path.dirname(config.outputPath), path.basename(config.outputPath), {
+      avoid: [introPath, mainPath, outroPath].filter(Boolean)
+    });
+    if ([introPath, mainPath, outroPath].some((p) => p && isSamePath(p, outputPath))) {
+      throw new Error('O arquivo de saída coincide com um arquivo de entrada.');
+    }
 
     const resMap = {
         '720p': { w: 1280, h: 720 },
@@ -211,9 +227,37 @@ class MontageService extends EventEmitter {
     let inputFiles = [];
     let inputIndex = 0;
 
+    // Antes de montar o grafo: todo arquivo informado precisa existir e ter duração conhecida (> 0).
+    // Nada de ignorar silenciosamente um arquivo ausente nem de assumir duração padrão.
+    const probes = new Map();
+    let effectiveTotal = 0;
+    for (const [label, filePath, isMain] of [['abertura', introPath, false], ['vídeo principal', mainPath, true], ['finalização', outroPath, false]]) {
+        if (!filePath) continue;
+        if (!fs.existsSync(filePath)) throw new Error(`Arquivo de ${label} não encontrado: ${filePath}`);
+        let info;
+        try {
+            info = await this.probeFile(filePath);
+        } catch (err) {
+            throw new Error(`Não foi possível ler o arquivo de ${label} (${path.basename(filePath)}): ${err.message}`);
+        }
+        if (!(info && info.duration > 0)) throw new Error(`Duração desconhecida no arquivo de ${label}: ${path.basename(filePath)}`);
+        let effDur = info.duration;
+        if (isMain) {
+            const start = Number(mainCutStart) > 0 ? Number(mainCutStart) : 0;
+            const avail = info.duration - start;
+            if (avail <= 0) throw new Error(`O início do corte (${start}s) está além do fim do vídeo principal (${info.duration.toFixed(1)}s).`);
+            effDur = Number(mainCutDuration) > 0 ? Math.min(Number(mainCutDuration), avail) : avail;
+        }
+        probes.set(filePath, { hasAudio: info.hasAudio !== false, effDur });
+        effectiveTotal += effDur;
+    }
+    if (!mainPath) throw new Error('Vídeo principal não informado.');
+    const progressTotal = effectiveTotal > 0 ? effectiveTotal : totalDuration;
+
     const processInput = (filePath, isMain) => {
-        if (!filePath || !fs.existsSync(filePath)) return;
-        
+        if (!filePath) return;
+        const probe = probes.get(filePath);
+
         const currentIdx = inputIndex;
         // Corte do vídeo principal (início/duração) aplicado na ENTRADA (-ss/-t): o ffmpeg busca o ponto
         // e decodifica só o trecho, em vez de decodificar tudo e descartar frames com trim.
@@ -226,8 +270,9 @@ class MontageService extends EventEmitter {
         inputIndex++;
 
         let vFilter = `[${currentIdx}:v]`;
-        let aFilter = `[${currentIdx}:a]`;
-        
+        // Entrada sem trilha de áudio: gera silêncio com a mesma duração (o concat exige áudio em todas)
+        let aFilter = probe.hasAudio ? `[${currentIdx}:a]` : `anullsrc=r=48000:cl=stereo,atrim=duration=${probe.effDur.toFixed(3)},asetpts=PTS-STARTPTS,`;
+
         vFilter += `scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=decrease,pad=${targetRes.w}:${targetRes.h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
         if (fps !== 'Manter original') {
             vFilter += `,fps=${fps}`;
@@ -310,10 +355,11 @@ class MontageService extends EventEmitter {
             }
 
             const now = Date.now();
-            if (outTimeUs !== null && totalDuration > 0 && now - lastEmit >= EMIT_THROTTLE_MS) {
+            if (outTimeUs !== null && progressTotal > 0 && now - lastEmit >= EMIT_THROTTLE_MS) {
                 lastEmit = now;
                 const currentSec = outTimeUs / 1000000;
-                const percent = Math.min(100, (currentSec / totalDuration) * 100);
+                // 99% no máximo até o ffmpeg encerrar de fato (evita "100%" antes de gravar o final)
+                const percent = Math.min(99, (currentSec / progressTotal) * 100);
 
                 this.emit('progress', {
                     percent,

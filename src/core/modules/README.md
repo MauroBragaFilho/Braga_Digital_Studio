@@ -61,6 +61,26 @@ modelos (`whisper/work`), de modo que o trecho com o nome do usuário do Windows
 Se o modelo estiver em outro disco, o executor cria um atalho (hard link) ou, no pior caso, uma cópia.
 Os caminhos reais (vídeo de origem, destino das legendas) ficam com o ffmpeg e o Node, que lidam bem com Unicode.
 
+## Filtro de silêncio (`skipSilence`, ligado por padrão)
+
+Antes do whisper, o ffmpeg (`silencedetect`: -35 dB, silêncios de 1,5 s ou mais) marca os trechos sem fala e o
+BDS monta um WAV só com a fala (`src/core/transcription/silenceTrim.js`). Isso acelera a transcrição e evita
+frases inventadas em trecho mudo. Os tempos finais **não mudam**: depois do whisper, segmentos e palavras voltam
+ao tempo do arquivo original por um mapa de tempo (`remapResult`).
+
+- Cada trecho de fala ganha 0,3 s de folga nos dois lados; trechos vizinhos são mesclados.
+- Só é usado se tirar pelo menos 10% do áudio ou 20 s; senão o WAV original segue. Áudio todo "silencioso" também
+  segue inteiro (o limiar pode estar errado para uma gravação muito baixa).
+- O corte copia as amostras PCM do WAV de trabalho em Node (exato por amostra, sem decodificar de novo e sem o
+  limite de tamanho de comando do `filter_complex` com centenas de trechos).
+- Falha na detecção ou no corte: aviso discreto ("Não foi possível ignorar os silêncios…") e a transcrição segue
+  com o áudio inteiro. Cancelar vale também durante a detecção. O whisper-cli continua só com nomes relativos ASCII
+  (`audio_fala.wav` na pasta de trabalho, apagada ao fim). O progresso do whisper é relativo ao áudio cortado.
+- Na tela: Avançado → "Ignorar trechos sem fala". Pela API: `skipSilence: false` desliga.
+- Medição real (motor b5130 na CPU, modelo base, 110 s com 74 s mudos): 104 s sem o filtro (e uma frase perdida
+  mais um "[MÚSICA DE FUNDO]" inventado no silêncio) contra 16,5 s com o filtro; os inícios das legendas em comum
+  diferem menos de 0,4 s.
+
 ## O que é baixado, e de onde
 
 | Parte | Fonte | Tamanho |
@@ -79,7 +99,11 @@ Os caminhos reais (vídeo de origem, destino das legendas) ficam com o ffmpeg e 
 ### Atualizar a versão do whisper.cpp
 
 1. Em <https://github.com/ggml-org/whisper.cpp/releases> escolha uma tag **`bNNNN`** (as tags `vX.Y.Z` não trazem binários).
-2. Copie o `sha256:` e o tamanho de `whisper-bin-x64.zip` e de `whisper-cublas-12.4.0-bin-x64.zip` (ou da versão de CUDA nova).
+2. Copie o `sha256:` e o tamanho de cada pacote da tabela em `sources.js` (`whisper-bin-x64.zip`, `whisper-bin-win-cpu-arm64.zip`,
+   `whisper-bin-ubuntu-x64.tar.gz`, `whisper-bin-ubuntu-arm64.tar.gz` e `whisper-cublas-12.4.0-bin-x64.zip`, ou a versão de CUDA nova).
+   Por sistema: Windows x64/arm64 e Linux x64/arm64 têm motor (CPU); a aceleração NVIDIA só existe para Windows x64; **macOS não tem
+   pacote oficial** (a release só traz um xcframework) e aparece como "indisponível neste sistema" (`engine.available:false` +
+   `unavailableReason` em `getStatus()`). Combinação sem entrada na tabela = indisponível, nunca binário errado.
 3. Troque `WHISPER_CPP_RELEASE` em `src/core/modules/sources.js` e rode a validação de precisão (os flags acima
    dependem da versão: confira `whisper-cli -h`).
 
@@ -108,7 +132,7 @@ Instalar de um `.zip` local também é possível (Configurações → Motor → 
   principais assuntos, pontos importantes e trechos relevantes (mesmo prompt do projeto "Whisper + LM Studio").
   Transcrição longa é dividida por tempo (~8 mil caracteres por parte), cada parte é analisada e as análises são
   unidas em grupos até sobrar uma. Usa o servidor de IA configurado (LM Studio, Ollama, OpenAI…) em
-  Configurações → Transcrição → *Análise com IA*; é **opcional e vem desligada** na tela de Transcrição, e a
+  Configurações → Inteligência Artificial → *Servidor de IA*; é **opcional e vem desligada** na tela de Transcrição, e a
   tela avisa quando o texto sairia do computador. IPC: `ai:analyzeTranscript` / `ai:cancelAnalysis` e o evento
   `ai:analysisProgress` (uma análise por vez; cancelar derruba a requisição ao servidor).
 
@@ -116,3 +140,29 @@ Instalar de um `.zip` local também é possível (Configurações → Motor → 
 
 Cada módulo teria seu próprio gerenciador de estado/instalação (como `ModuleManager` para o Whisper),
 reutilizando `FileDownloader` (retomada, SHA-256, cancelamento), `ZipExtractor` e `sources`.
+
+## Sistema de módulos (ligar/desligar recursos)
+
+Em Configurações → Módulos o usuário liga/desliga recursos; desligado, o recurso some do menu lateral,
+dos cartões da Home e dos atalhos (Ctrl+N) e qualquer navegação a ele volta para a Home. **Não se baixa
+código de telas**: o módulo controla visibilidade e, quando há (`hasEngine`), o motor pesado.
+
+- `ModuleRegistry.js`: definições (`id`, `title`, `description`, `screens[]`, `devOnly`, `defaultEnabled`,
+  `hasEngine`, `order`) e funções puras `resolveEnabled(settings, { isDev })`, `isEnabled`, `sanitizeEnabledModules`.
+  O slot `EXTRA_MODULES` (vazio) é onde entram módulos futuros; vazio, nada aparece na interface.
+- Estado em `settings.enabledModules` (`{ id: boolean }`). Chave ausente = padrão do módulo = **desligado**
+  (instalação nova começa com tudo desligado). Migração única em `SettingsManager._migrateModules`, controlada
+  por `modulesMigrated`: se não havia `enabledModules` e já existia um `settings.json` (instalação anterior),
+  grava Transcrição, Metadados e Remover Silêncios ligados para ninguém perder recursos; instalação nova
+  (sem `settings.json`) grava a flag sem ligar nada; depois disso a escolha do usuário nunca é sobrescrita.
+  Módulos `devOnly` (Assistente de IA, Montagem, Recuperar) só existem em desenvolvimento. O módulo `ai` não tem tela (`screens: []`): ele controla o botão flutuante do assistente (`renderer/components/ai-assistant.js`).
+- Motor sob demanda: o que é pesado é o motor/binário, baixado na ativação. Ao ligar um módulo com
+  `hasEngine` e motor ausente, Configurações → Módulos pergunta antes de instalar: Transcrição abre o painel do
+  motor Whisper (`engine: 'whisper'`); Recuperar (`engine: 'tool:untrunc'`) baixa o motor de recuperação via
+  `updates:updateTool`. Untrunc, Deno e spotDL são `onDemand` no `DependencyManager`: ausentes, não entram em
+  `hasUpdates` nem em "Atualizar tudo"; instalados, continuam sendo atualizados.
+- Configurações → Inteligência Artificial (servidor de IA: endereço, modelo, chave, teste de conexão) aparece
+  quando Transcrição OU Assistente de IA está ligado; a tela de Transcrição só lê essa configuração.
+- IPC (`moduleHandlers.js`): `modules:list` (estado, `installed`, `available`), `modules:setEnabled(id, enabled)`
+  e evento `modules:changed`. Desligar um módulo com tarefa em andamento a cancela (transcrição, silêncios,
+  metadados). O main é a fonte da verdade; `renderer/app.js` aplica o resultado.

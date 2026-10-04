@@ -1,7 +1,17 @@
 name: CI
 
-# Verificações rápidas em todo push/PR: sintaxe, lint e testes unitários.
+# Verificações em todo push/PR: sintaxe, lint, testes (Linux + Windows) e auditoria de dependências.
 # Não gera instalador (isso é feito pelos workflows de release).
+#
+# FFmpeg: vários testes de mídia (miniaturas, silêncio, waveform, remoção de silêncio) são pulados quando
+# não há ffmpeg/ffprobe. Aqui o ffmpeg é instalado de forma verificável e ligado em data/ (onde os testes
+# procuram) e em BDS_TEST_FFMPEG/BDS_TEST_FFPROBE:
+#   - Linux:   pacote ffmpeg do repositório oficial da distribuição (apt, índices assinados);
+#   - Windows: build BtbN (a mesma fonte que o app usa em ToolSources.js), conferida pelo SHA-256 que a
+#              API do GitHub publica para o asset (digest) — se não bater, o job falha.
+#
+# Actions fixadas por SHA de commit (a tag fica no comentário). Para atualizar: resolver a tag nova com
+#   curl -s https://api.github.com/repos/<dono>/<repo>/commits/<tag>   e trocar o SHA.
 
 on:
   push:
@@ -11,21 +21,75 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Os testes não usam o Electron: evita baixar ~100 MB do binário no npm ci
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    name: Qualidade (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout do repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Configurar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Instalar dependências
         run: npm ci
+
+      - name: Instalar FFmpeg (Linux, repositório oficial da distro)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          mkdir -p data
+          ln -sf "$(command -v ffmpeg)" data/ffmpeg
+          ln -sf "$(command -v ffprobe)" data/ffprobe
+          ffmpeg -version | head -n 1
+          echo "BDS_TEST_FFMPEG=$PWD/data/ffmpeg" >> "$GITHUB_ENV"
+          echo "BDS_TEST_FFPROBE=$PWD/data/ffprobe" >> "$GITHUB_ENV"
+
+      - name: Instalar FFmpeg (Windows, BtbN com SHA-256 conferido)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $asset = 'ffmpeg-master-latest-win64-gpl.zip'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          $release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest'
+          $meta = $release.assets | Where-Object { $_.name -eq $asset } | Select-Object -First 1
+          if (-not $meta) { throw "Asset $asset não encontrado na release" }
+          if (-not $meta.digest -or $meta.digest -notmatch '^sha256:([0-9a-fA-F]{64})$') { throw "Digest SHA-256 ausente na API para $asset" }
+          $expected = $Matches[1].ToLower()
+          $zip = Join-Path $env:RUNNER_TEMP $asset
+          Invoke-WebRequest -Uri $meta.browser_download_url -OutFile $zip
+          $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+          if ($actual -ne $expected) { throw "SHA-256 diferente: esperado $expected, obtido $actual" }
+          $dir = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          New-Item -ItemType Directory -Force -Path data | Out-Null
+          $bin = Get-ChildItem -Path $dir -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $bin.FullName data\ffmpeg.exe
+          Copy-Item (Join-Path $bin.DirectoryName 'ffprobe.exe') data\ffprobe.exe
+          & data\ffmpeg.exe -version | Select-Object -First 1
+          "BDS_TEST_FFMPEG=$((Resolve-Path data\ffmpeg.exe).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BDS_TEST_FFPROBE=$((Resolve-Path data\ffprobe.exe).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Sintaxe
         run: npm run check
@@ -35,3 +99,20 @@ jobs:
 
       - name: Testes
         run: npm test
+
+  audit:
+    name: Auditoria de dependências
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: npm audit (dependências de produção, severidade alta ou maior)
+        run: npm audit --omit=dev --audit-level=high

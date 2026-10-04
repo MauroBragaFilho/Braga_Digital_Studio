@@ -114,18 +114,18 @@ class MetadataService extends EventEmitter {
     }
   }
 
+  /** Escapa um valor do formato FFMETADATA: \ = ; # e quebra de linha. */
+  _escapeFfmeta(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/#/g, '\\#').replace(/=/g, '\\=').replace(/\r?\n/g, '\\\n');
+  }
+
   buildFfmetadataContent(tags, chapters) {
     let content = ';FFMETADATA1\n';
-    
-    // Global tags
-    for (const [key, value] of Object.entries(tags)) {
-      if (value) {
-        // Escape characters: = ; # \ \n
-        let safeVal = String(value).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/#/g, '\\#').replace(/=/g, '\\=');
-        content += `${key}=${safeVal}\n`;
-      }
+
+    for (const [key, value] of Object.entries(tags || {})) {
+      if (value) content += `${key}=${this._escapeFfmeta(value)}\n`;
     }
-    
+
     // Chapters
     if (chapters && chapters.length > 0) {
       for (const ch of chapters) {
@@ -134,8 +134,7 @@ class MetadataService extends EventEmitter {
         content += `START=${Math.round(ch.start * 1000)}\n`;
         content += `END=${Math.round(ch.end * 1000)}\n`;
         if (ch.title) {
-          let safeTitle = String(ch.title).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/#/g, '\\#').replace(/=/g, '\\=');
-          content += `title=${safeTitle}\n`;
+          content += `title=${this._escapeFfmeta(ch.title)}\n`;
         }
       }
     }
@@ -150,55 +149,73 @@ class MetadataService extends EventEmitter {
 
     // Se o modo for overwrite, usaremos arquivo temporário na mesma pasta
     const finalDest = outMode === 'overwrite' ? filePath : outputPath;
+    if (!finalDest) throw new Error('Destino do arquivo não informado.');
+    if (outMode !== 'overwrite') {
+      if (path.resolve(outputPath).toLowerCase() === path.resolve(filePath).toLowerCase()) {
+        throw new Error('O arquivo de saída não pode ser o mesmo arquivo de origem.');
+      }
+      if (fs.existsSync(outputPath)) throw new Error('Já existe um arquivo com esse nome na pasta escolhida.');
+    }
+    const ext = (path.extname(filePath) || '.mp4').toLowerCase();
     // O temporário mantém a extensão original (o ffmpeg escolhe o contêiner pela extensão)
     const workingDest = outMode === 'overwrite'
-      ? path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}.bds-tmp${path.extname(filePath) || '.mp4'}`)
+      ? path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}.bds-tmp${ext}`)
       : outputPath;
-    
-    // Gera arquivo de texto FFMETADATA
-    const metaTxtPath = path.join(this.paths.dataDir, `meta_${Date.now()}.txt`);
-    fs.writeFileSync(metaTxtPath, this.buildFfmetadataContent(tags, chapters), 'utf8');
 
-    let args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-i', filePath, '-i', metaTxtPath];
-    let inputsCount = 2;
+    // `tags` traz só as tags alteradas (valor vazio remove a tag); as demais são preservadas por -map_metadata 0.
+    // `chapters` só vem quando os capítulos foram editados; senão o ffmpeg copia os originais.
+    const hasChapters = Array.isArray(chapters);
+    let metaTxtPath = null;
+    const args = ['-y', '-nostdin', '-hide_banner', '-loglevel', 'error', '-i', filePath];
+    let nextInput = 1;
+    if (hasChapters) {
+      metaTxtPath = path.join(this.paths.dataDir, `meta_${Date.now()}.txt`);
+      fs.writeFileSync(metaTxtPath, this.buildFfmetadataContent({}, chapters), 'utf8');
+      args.push('-i', metaTxtPath);
+      nextInput++;
+    }
+    const chaptersInput = hasChapters ? 1 : 0;
 
-    if (thumbnailAction === 'add' || thumbnailAction === 'replace') {
-      if (fs.existsSync(newThumbnailPath)) {
-        args.push('-i', newThumbnailPath);
-        inputsCount = 3;
-      }
+    let coverInput = -1;
+    if ((thumbnailAction === 'add' || thumbnailAction === 'replace') && newThumbnailPath && fs.existsSync(newThumbnailPath)) {
+      args.push('-i', newThumbnailPath);
+      coverInput = nextInput++;
     }
 
-    // Configurando mapas e cópia de streams
-    args.push('-map', '0'); // Mapeia todas as streams originais do arquivo 1 (índice 0)
-    args.push('-map_metadata', '1'); // Metadados globais vêm do arquivo txt (índice 1)
-    args.push('-map_chapters', '1'); // Capítulos vêm do arquivo txt (índice 1)
-    args.push('-c', 'copy'); // Cópia direta sem reencodar
+    args.push('-map', '0'); // todas as streams originais
+    args.push('-map_metadata', '0'); // metadados globais originais; as alterações vêm abaixo
+    args.push('-map_chapters', String(chaptersInput));
+    args.push('-c', 'copy'); // cópia direta, sem reencodar
 
-    // Se o usuário pediu para remover a capa, nós precisamos ignorar o mapeamento da stream de vídeo específica
-    if (thumbnailAction === 'remove') {
-      // Removeremos todas as covers usando a tag de mapeamento negativo
-      args.push('-map', '-0:v:attached_pic?'); 
-    } 
-    else if ((thumbnailAction === 'add' || thumbnailAction === 'replace') && inputsCount === 3) {
-      // Se for replace, a capa antiga do map 0 ainda existe, devemos removê-la e mapear a nova
-      if (thumbnailAction === 'replace') {
-         args.push('-map', '-0:v:attached_pic?'); 
-      }
-      args.push('-map', '2'); // Mapeia a nova imagem (índice 2)
-      args.push('-c:v:1', 'copy', '-disposition:v:1', 'attached_pic'); // Define como attached_pic
+    let info = null;
+    try { info = await this.probeFile(filePath); } catch (_) { /* sem sondagem: segue com padrões */ }
+    const isCover = (st) => st.disposition && st.disposition.attached_pic === 1;
+    const removeOldCover = thumbnailAction === 'remove' || (thumbnailAction === 'replace' && coverInput >= 0);
+    if (removeOldCover) args.push('-map', '-0:disp:attached_pic');
+    if (coverInput >= 0) {
+      // A nova imagem vira a última stream de vídeo da saída: índice = vídeos que ficaram.
+      const videoOut = (info?.streams || []).filter(st => st.codec_type === 'video' && !(removeOldCover && isCover(st))).length;
+      args.push('-map', String(coverInput));
+      args.push(`-disposition:v:${videoOut}`, 'attached_pic');
     }
 
-    // Atualiza metadados individuais de streams (ex: idioma)
-    if (streams && streams.length > 0) {
-      for (const s of streams) {
-        if (s.language) {
-          args.push(`-metadata:s:${s.type}:${s.typeIndex}`, `language=${s.language}`);
-        }
-        if (s.title) {
-          args.push(`-metadata:s:${s.type}:${s.typeIndex}`, `title=${s.title}`);
-        }
-      }
+    for (const [key, value] of Object.entries(tags || {})) {
+      if (!/^[A-Za-z0-9_.-]+$/.test(key)) continue;
+      args.push('-metadata', `${key}=${value == null ? '' : value}`);
+    }
+
+    // Metadados por stream, pelo índice absoluto (igual na entrada e na saída com -map 0)
+    for (const s of streams || []) {
+      const sel = Number.isInteger(s.index) ? `-metadata:s:${s.index}` : `-metadata:s:${s.type}:${s.typeIndex}`;
+      if (s.language) args.push(sel, `language=${s.language}`);
+      if (s.title !== undefined && s.title !== null) args.push(sel, `title=${s.title}`);
+    }
+
+    // MP4/MOV: faststart mantém o início do arquivo leve. use_metadata_tags preserva tags livres, mas faz o
+    // muxer descartar a capa embutida; por isso só entra quando a saída não terá capa.
+    if (['.mp4', '.m4v', '.mov', '.m4a', '.3gp'].includes(ext)) {
+      const keepsCover = coverInput >= 0 || (!removeOldCover && (info?.streams || []).some(isCover));
+      args.push('-movflags', keepsCover ? '+faststart' : '+use_metadata_tags+faststart');
     }
 
     args.push('-progress', 'pipe:1', '-nostats', workingDest);
@@ -225,14 +242,14 @@ class MetadataService extends EventEmitter {
 
       child.on('error', err => {
         this.currentProcess = null;
-        try { if (fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath); } catch (_) {}
+        try { if (metaTxtPath && fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath); } catch (_) {}
         reject(new Error(`Falha ao executar o motor de mídia: ${err.message}`));
       });
 
       child.on('close', code => {
         this.currentProcess = null;
         // Limpar temporários
-        try { if (fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath); } catch (_) {}
+        try { if (metaTxtPath && fs.existsSync(metaTxtPath)) fs.unlinkSync(metaTxtPath); } catch (_) {}
 
         if (this.cancelRequested) {
           try { if (fs.existsSync(workingDest)) fs.unlinkSync(workingDest); } catch (_) {}

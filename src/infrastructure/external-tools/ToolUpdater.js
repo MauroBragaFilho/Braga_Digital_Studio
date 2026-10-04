@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { getExecutableName, resolveCanonicalToolKey } = require('./ToolManifest');
+const { hasSource, resolveDownloadUrl, unavailableReason, ToolUnavailableError } = require('./ToolSources');
 const { toolResolver } = require('./ToolResolver');
 const logger = require('../../services/logService');
 const { downloadFile, sha256File, fetchJson } = require('../../core/modules/FileDownloader');
@@ -15,16 +16,12 @@ const BACKUPS_DIRNAME = '.component-backups';
 const MANIFEST_DIRNAME = '.component-manifests';
 
 /**
- * Registra eventos específicos do atualizador em logs/updater.log
+ * Registra eventos específicos do atualizador no logger central (com redação de dados
+ * pessoais, rotação diária e poda), em vez de um updater.log solto sem redação nem rotação.
  */
 function logUpdater(message, data = null) {
   try {
-    const logsDir = process.env.BMD_LOGS_DIR || path.join(process.cwd(), 'logs');
-    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
-    const logPath = path.join(logsDir, 'updater.log');
-    const timestamp = new Date().toISOString();
-    const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
-    fs.appendFileSync(logPath, `[${timestamp}] ${message}${dataStr}\n`, 'utf8');
+    logger.info(`[updater] ${message}`, data && typeof data === 'object' ? data : (data ? { data } : undefined));
   } catch (_) {}
 }
 
@@ -42,6 +39,36 @@ class ToolUpdater {
     this._manifestDir = path.join(toolsDir, MANIFEST_DIRNAME);
     try { fs.mkdirSync(this._backupsDir, { recursive: true }); } catch (_) {}
     try { fs.mkdirSync(this._manifestDir, { recursive: true }); } catch (_) {}
+    // RK-073: resíduos de atualizações interrompidas/antigas (sem bloquear a inicialização).
+    this.cleanupStaleResidue().catch(() => {});
+  }
+
+  /**
+   * Remove da pasta de ferramentas os resíduos de atualizações antigas: `.staging_*`, `.preswap_*` e
+   * `*.old_*` (binário em uso renomeado pelo Windows). Ignora os recentes (uma atualização pode estar em curso).
+   * Nunca toca em `.component-backups` nem em `.component-manifests`.
+   * @param {{ maxAgeMs?: number, now?: number }} [opts]
+   * @returns {Promise<string[]>} nomes removidos
+   */
+  async cleanupStaleResidue({ maxAgeMs = 60 * 60 * 1000, now = Date.now() } = {}) {
+    const removed = [];
+    if (!this._toolsDir) return removed;
+    let entries = [];
+    try { entries = await fs.promises.readdir(this._toolsDir); } catch (_) { return removed; }
+    for (const name of entries) {
+      if (name === BACKUPS_DIRNAME || name === MANIFEST_DIRNAME) continue;
+      const isResidue = name.startsWith('.staging_') || name.startsWith('.preswap_') || /\.old_\d+$/.test(name);
+      if (!isResidue) continue;
+      const full = path.join(this._toolsDir, name);
+      try {
+        const st = await fs.promises.stat(full);
+        if (now - st.mtimeMs < maxAgeMs) continue;
+        await fs.promises.rm(full, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+        removed.push(name);
+      } catch (_) { /* em uso ou sem permissão: tenta na próxima inicialização */ }
+    }
+    if (removed.length) logUpdater(`Resíduos de atualização removidos: ${removed.length}.`, { removed });
+    return removed;
   }
 
   /**
@@ -189,6 +216,22 @@ class ToolUpdater {
     const installed = isInstalled ? await this._getVersion(exe, config.versionArgs) : null;
     const localManifest = this._readManifest(toolKey);
 
+    // Sem fonte oficial para este sistema/arquitetura: não consulta a rede nem oferece instalar (RK-075).
+    // Se já houver um binário utilizável (ex.: ffmpeg do sistema no macOS), ele continua valendo.
+    if (!hasSource(toolKey, process.platform, process.arch)) {
+      return {
+        tool: toolKey,
+        installed,
+        latest: null,
+        needsUpdate: false,
+        canUpdate: false,
+        unavailable: true,
+        unavailableReason: unavailableReason(toolKey, process.platform, process.arch),
+        hasBackup: this._hasPersistedBackup(toolKey, exeName),
+        source: isInstalled ? 'system' : 'none',
+      };
+    }
+
     // 1. Se o binário está instalado e o manifesto local informa uma versão, podemos usá-lo
     //    como base confiável para a comparação, evitando depender de parsing frágil da saída
     //    do binário e de tags de release não-semver (ex: BtbN/FFmpeg-Builds publica tag_name
@@ -199,10 +242,19 @@ class ToolUpdater {
       ? config.repoResolver(process.platform)
       : { owner: config.githubOwner, repo: config.githubRepo, useGitTags: false };
 
+    // Falha de rede / limite da API do GitHub não pode virar "tudo atualizado": é sinalizada em
+    // checkFailed para a interface mostrar "não foi possível verificar" (RK-069).
+    let checkFailed = false;
+    let checkError = null;
     const latest = await (repoInfo.useGitTags
       ? this._fetchLatestGitTagOnly(repoInfo.owner, repoInfo.repo)
       : this._fetchLatestTag(repoInfo.owner, repoInfo.repo)
-    ).catch(() => null);
+    ).catch((err) => {
+      checkFailed = true;
+      checkError = (err && err.message) || 'Falha ao consultar o GitHub.';
+      logger.warn('toolUpdater:check:remote_failed', { tool: toolKey, error: checkError });
+      return null;
+    });
 
     let needsUpdate = false;
     if (!isInstalled) {
@@ -234,6 +286,7 @@ class ToolUpdater {
       canUpdate: true,
       hasBackup: this._hasPersistedBackup(toolKey, exeName),
       source: 'github',
+      ...(checkFailed ? { checkFailed: true, error: checkError } : {}),
     };
   }
 
@@ -250,32 +303,20 @@ class ToolUpdater {
   async update(rawToolKey, onProgress, opts = {}) {
     const toolKey = resolveCanonicalToolKey(rawToolKey);
 
+    // Combinação (sistema, arquitetura) sem fonte oficial: erro explícito, nunca um binário errado.
+    if (!hasSource(toolKey, process.platform, process.arch)) {
+      throw new ToolUnavailableError(unavailableReason(toolKey, process.platform, process.arch), toolKey);
+    }
+
+    // O `-U` do yt-dlp só funciona com o binário já instalado. Na primeira instalação cai no fluxo
+    // comum (download do release oficial, com staging, checksum e smoke-test).
     if (toolKey === 'ytdlp') {
-      return this._updateYtDlpSelf(onProgress);
+      const ytPath = toolResolver.resolve('ytdlp', this._toolsDir, { mustExist: false });
+      if (ytPath && fs.existsSync(ytPath)) return this._updateYtDlpSelf(onProgress);
     }
 
     const config = this._getConfig(toolKey);
     const exeName = getExecutableName(toolKey);
-
-    // Short-circuit: se o binário já está instalado e o manifesto local confirma a versão
-    // atual, não há necessidade de re-baixar/reinstalar. Isso evita o loop de atualizações
-    // falsas para componentes cuja release remota não expõe versão semver comparável
-    // (ex: BtbN/FFmpeg-Builds usa tag_name "latest").
-    const localManifest = this._readManifest(toolKey);
-    if (localManifest?.version) {
-      const exePath = toolResolver.resolve(toolKey, this._toolsDir, { mustExist: false });
-      if (fs.existsSync(exePath)) {
-        const installedVersion = await this._getVersion(exePath, config.versionArgs);
-        const installedNorm = this._extractVersion(installedVersion) || this._extractVersion(localManifest.version);
-        const manifestNorm = this._extractVersion(localManifest.version);
-        if (installedNorm && manifestNorm && installedNorm === manifestNorm) {
-          logUpdater(`Componente ja esta atualizado, ignorando atualizacao: ${toolKey} (${localManifest.version})`);
-          logger.info('toolUpdater:update:skipped', { tool: toolKey, version: localManifest.version });
-          if (onProgress) onProgress(100);
-          return { tool: toolKey, skipped: true, version: localManifest.version };
-        }
-      }
-    }
 
     logUpdater(`Iniciando atualização de componente: ${toolKey}`);
     logger.info(`toolUpdater:update:start`, { tool: toolKey });
@@ -297,6 +338,27 @@ class ToolUpdater {
       latestTag = release.tag_name || release.name;
     }
 
+    // Já está na versão publicada? Só pula quando as duas versões são comparáveis e iguais (ou quando a release
+    // não expõe versão comparável, ex.: "latest" do BtbN, e o manifesto local confirma a instalação).
+    // Comparar só com o manifesto local fazia a atualização ser ignorada mesmo havendo versão nova.
+    const localManifest = this._readManifest(toolKey);
+    const exePath = toolResolver.resolve(toolKey, this._toolsDir, { mustExist: false });
+    if (exePath && fs.existsSync(exePath) && localManifest?.version) {
+      const latestNorm = this._extractVersion(latestTag);
+      const installedVersion = await this._getVersion(exePath, config.versionArgs);
+      const installedNorm = this._extractVersion(installedVersion) || this._extractVersion(localManifest.version);
+      const manifestNorm = this._extractVersion(localManifest.version);
+      const upToDate = latestNorm
+        ? installedNorm === latestNorm
+        : Boolean(installedNorm && manifestNorm && installedNorm === manifestNorm);
+      if (upToDate) {
+        logUpdater(`Componente ja esta atualizado, ignorando atualizacao: ${toolKey} (${localManifest.version})`);
+        logger.info('toolUpdater:update:skipped', { tool: toolKey, version: localManifest.version });
+        if (onProgress) onProgress(100);
+        return { tool: toolKey, skipped: true, version: localManifest.version };
+      }
+    }
+
     const downloadUrl = config.downloadUrl(latestTag, process.platform);
     const archiveType = this._detectArchiveType(downloadUrl);
     const expectedDigest = release ? this._findAssetDigest(release, downloadUrl) : null;
@@ -314,7 +376,7 @@ class ToolUpdater {
           needsConfirmation: true,
           reason: 'NO_CHECKSUM',
           version: latestTag,
-          message: `A fonte de ${toolKey} não publica checksum (SHA-256); a integridade do download não pode ser verificada. Confirme para instalar mesmo assim.`
+          message: 'A fonte deste componente não publica dados de verificação de integridade, então não é possível conferir o download. Confirme se quiser instalar mesmo assim.'
         };
       }
       logUpdater(`Instalação sem checksum de ${toolKey} confirmada explicitamente (allowUnverified).`);
@@ -347,7 +409,7 @@ class ToolUpdater {
     const exeName = getExecutableName(toolKey);
 
     if (!manifestEntry || !manifestEntry.url || !manifestEntry.sha256) {
-      throw new Error(`Manifesto do Update Server incompleto para o componente '${toolKey}' (faltam url/sha256).`);
+      throw new Error('O servidor de atualizações respondeu com dados incompletos para este componente. Tente novamente mais tarde.');
     }
 
     logUpdater(`Iniciando atualização via Update Server: ${toolKey}`, { version: manifestEntry.version });
@@ -399,7 +461,7 @@ class ToolUpdater {
       if (expectedSha256) {
         const gotDigest = downloaded.sha256;
         if (gotDigest.toLowerCase() !== expectedSha256.toLowerCase()) {
-          throw new Error(`Falha de integridade: checksum do download não confere para ${exeName} (esperado ${expectedSha256.slice(0, 12)}..., obtido ${gotDigest.slice(0, 12)}...).`);
+          throw new Error('O arquivo baixado não passou na verificação de integridade e foi descartado. Tente novamente; se continuar, verifique sua conexão.');
         }
         logUpdater(`Checksum verificado com sucesso para ${toolKey}.`, { sha256: gotDigest, source });
       } else {
@@ -410,6 +472,7 @@ class ToolUpdater {
 
       let stagedExe = downloadDest;
       let siblingSourceDir = null;
+      let pairMember = null;
 
       // 3. Se for um arquivo compactado (zip ou tar/.tar.xz/.tar.gz), extrair para staging
       //    e localizar o executável dentro do conteúdo extraído.
@@ -445,9 +508,9 @@ class ToolUpdater {
           const otherKey = toolKey === 'ffmpeg' ? 'ffprobe' : 'ffmpeg';
           const otherExe = getExecutableName(otherKey);
           const otherFound = this._findFile(extractDir, otherExe);
-          if (otherFound) {
-            this._atomicInstallPair(otherFound, path.join(this._toolsDir, otherExe), otherKey);
-          }
+          // RK-074: o par vem no mesmo pacote (um único download); só é instalado depois que o
+          // principal passar por toda a validação (ver "7b" abaixo).
+          if (otherFound) pairMember = { key: otherKey, exe: otherExe, source: otherFound };
         }
 
         // Componentes cujo executável depende de DLLs/arquivos irmãos na mesma pasta do zip
@@ -474,7 +537,10 @@ class ToolUpdater {
       const stagedSha256 = await this._computeSha256(stagedExe);
 
       // 5. Backup temporário da versão atual instalada (para rollback imediato em caso de falha na troca)
-      if (fs.existsSync(target)) {
+      const hadPrevious = fs.existsSync(target);
+      const persistedBackup = this._backupPathFor(toolKey, exeName);
+      const previousManifest = hadPrevious ? this._readManifest(toolKey) : null;
+      if (hadPrevious) {
         try {
           fs.copyFileSync(target, preSwapBackup);
         } catch (bkErr) {
@@ -499,7 +565,7 @@ class ToolUpdater {
         }
       } catch (swapErr) {
         logUpdater(`Falha na substituição de ${exeName}, iniciando rollback...`, { error: swapErr.message });
-        this._restorePreSwap(preSwapBackup, target);
+        this._restorePreSwap(preSwapBackup, target, persistedBackup);
         throw new Error(`Não foi possível instalar o componente ${exeName}: ${swapErr.message}`);
       }
 
@@ -526,15 +592,21 @@ class ToolUpdater {
 
       if (!copyIntact || !executes) {
         logUpdater(`Validação pós-instalação falhou para ${toolKey} (copyIntact=${copyIntact}, executes=${executes}). Revertendo...`);
-        this._restorePreSwap(preSwapBackup, target);
-        throw new Error(`A instalação de ${exeName} falhou na validação pós-cópia. A versão anterior foi restaurada automaticamente.`);
+        this._restorePreSwap(preSwapBackup, target, persistedBackup);
+        throw new Error(`A instalação de ${exeName} falhou na validação pós-cópia. ${hadPrevious ? 'A versão anterior foi restaurada automaticamente.' : 'O arquivo inválido foi removido; nada ficou instalado.'}`);
       }
 
       logUpdater(`Componente ${toolKey} atualizado e validado com sucesso para versão ${versionLabel} (fonte: ${source}).`);
 
-      // 8. Só agora, com a nova versão validada e funcionando, persistimos o backup de rollback
-      //    de longo prazo (substituindo o anterior) e o manifesto de versão/checksum do componente.
-      this._persistBackup(toolKey, exeName, target, versionLabel, installedSha256);
+      // 7b. O par do pacote (ffmpeg <-> ffprobe) é instalado, validado e registrado aqui (RK-074).
+      if (pairMember) {
+        await this._installPairMember(pairMember, { versionLabel, versionArgs, source });
+      }
+
+      // 8. Só agora, com a nova versão validada e funcionando, o backup de rollback passa a guardar a
+      //    versão ANTERIOR (RK-072: antes guardava a nova, o que dobrava o disco e não revertia nada) e
+      //    gravamos o manifesto de versão/checksum do componente.
+      this._persistPreviousAsBackup(toolKey, exeName, preSwapBackup, previousManifest);
       toolResolver.invalidate();
       this._writeManifest(toolKey, {
         name: toolKey,
@@ -570,13 +642,91 @@ class ToolUpdater {
     }
   }
 
-  _restorePreSwap(preSwapBackup, target) {
-    if (!fs.existsSync(preSwapBackup)) return;
+  /**
+   * Guarda como backup de rollback a versão que estava instalada ANTES desta atualização (o arquivo
+   * preswap é movido, sem cópia extra). Na primeira instalação não há versão anterior e o backup
+   * existente, se houver, é preservado.
+   */
+  _persistPreviousAsBackup(toolKey, exeName, preSwapBackup, previousManifest) {
     try {
-      if (fs.existsSync(target)) fs.rmSync(target, { force: true });
-      fs.copyFileSync(preSwapBackup, target);
+      if (!fs.existsSync(preSwapBackup)) return;
+      const dir = path.join(this._backupsDir, toolKey);
+      fs.mkdirSync(dir, { recursive: true });
+      const dest = this._backupPathFor(toolKey, exeName);
+      try { fs.rmSync(dest, { force: true }); } catch (_) {}
+      try { fs.renameSync(preSwapBackup, dest); } catch (_) { fs.copyFileSync(preSwapBackup, dest); }
+      fs.writeFileSync(path.join(dir, '.info.json'), JSON.stringify({
+        version: previousManifest?.version || null,
+        sha256: previousManifest?.sha256 || null,
+        savedAt: new Date().toISOString(),
+      }, null, 2), 'utf8');
+      logUpdater(`Backup de rollback de ${toolKey} agora guarda a versão anterior (${previousManifest?.version || 'desconhecida'}).`);
+    } catch (err) {
+      logUpdater(`Aviso: falha ao guardar a versão anterior de ${toolKey} como backup: ${err.message}`);
+    }
+  }
+
+  /**
+   * Instala o segundo executável de um pacote que traz um par (ffmpeg + ffprobe) com a mesma
+   * disciplina do principal: smoke-test do arquivo, backup da versão anterior, restauração/remoção se
+   * falhar, manifesto de versão. Falha aqui não derruba o principal (já validado); fica no log.
+   */
+  async _installPairMember({ key, exe, source: sourceExe }, { versionLabel, versionArgs, source }) {
+    const target = path.join(this._toolsDir, exe);
+    const preSwap = path.join(this._toolsDir, `.preswap_${exe}_${Date.now()}`);
+    const hadPrevious = fs.existsSync(target);
+    const previousManifest = hadPrevious ? this._readManifest(key) : null;
+    try {
+      if (process.platform !== 'win32') { try { fs.chmodSync(sourceExe, 0o755); } catch (_) {} }
+      const staged = await this._getVersion(sourceExe, versionArgs);
+      if (!staged && versionArgs.length > 0) throw new Error('o executável do pacote não respondeu ao teste de versão.');
+      const stagedSha = await this._computeSha256(sourceExe);
+      if (hadPrevious) { try { fs.copyFileSync(target, preSwap); } catch (_) {} }
+      try {
+        if (hadPrevious) { try { fs.unlinkSync(target); } catch (_) { fs.renameSync(target, `${target}.old_${Date.now()}`); } }
+        fs.copyFileSync(sourceExe, target);
+        if (process.platform !== 'win32') { try { fs.chmodSync(target, 0o755); } catch (_) {} }
+      } catch (swapErr) {
+        this._restorePreSwap(preSwap, target, this._backupPathFor(key, exe));
+        throw swapErr;
+      }
+      const sha = await this._computeSha256(target);
+      const runs = versionArgs.length === 0 || Boolean(await this._getVersion(target, versionArgs));
+      if (sha !== stagedSha || !runs) {
+        this._restorePreSwap(preSwap, target, this._backupPathFor(key, exe));
+        throw new Error('validação pós-cópia falhou.');
+      }
+      this._persistPreviousAsBackup(key, exe, preSwap, previousManifest);
       toolResolver.invalidate();
-      logUpdater(`Rollback imediato concluído para ${path.basename(target)}.`);
+      this._writeManifest(key, {
+        name: key, version: versionLabel, platform: process.platform, architecture: process.arch,
+        sha256: sha, source, updatedAt: new Date().toISOString(),
+      });
+      logUpdater(`Componente ${key} instalado junto de ${exe === getExecutableName('ffmpeg') ? 'ffprobe' : 'ffmpeg'} (mesmo pacote, um único download).`);
+    } catch (err) {
+      logUpdater(`Falha ao instalar o par do pacote (${key}): ${err.message}`);
+    } finally {
+      try { if (fs.existsSync(preSwap)) fs.rmSync(preSwap, { force: true }); } catch (_) {}
+    }
+  }
+
+  /**
+   * Desfaz uma troca que falhou. Com backup (temporário ou o de rollback persistido) restaura o binário
+   * anterior; SEM backup, remove o destino — um binário inválido/parcial nunca fica instalado (RK-075).
+   */
+  _restorePreSwap(preSwapBackup, target, fallbackBackup = null) {
+    try {
+      const source = fs.existsSync(preSwapBackup) ? preSwapBackup
+        : (fallbackBackup && fs.existsSync(fallbackBackup) ? fallbackBackup : null);
+      if (fs.existsSync(target)) fs.rmSync(target, { force: true });
+      if (source) {
+        fs.copyFileSync(source, target);
+        if (process.platform !== 'win32') { try { fs.chmodSync(target, 0o755); } catch (_) {} }
+        logUpdater(`Rollback imediato concluído para ${path.basename(target)}.`);
+      } else {
+        logUpdater(`Instalação inválida de ${path.basename(target)} removida (não havia versão anterior).`);
+      }
+      toolResolver.invalidate();
     } catch (rbErr) {
       logUpdater(`Falha crítica no rollback imediato de ${path.basename(target)}: ${rbErr.message}`);
     }
@@ -627,19 +777,6 @@ class ToolUpdater {
     }
   }
 
-  _atomicInstallPair(sourceExe, targetExe, key) {
-    try {
-      if (fs.existsSync(targetExe)) {
-        try { fs.unlinkSync(targetExe); } catch (_) { fs.renameSync(targetExe, `${targetExe}.old_${Date.now()}`); }
-      }
-      fs.copyFileSync(sourceExe, targetExe);
-      toolResolver.invalidate();
-      logUpdater(`Componente auxiliar empacotado (${key}) instalado com sucesso.`);
-    } catch (e) {
-      logUpdater(`Falha ao instalar componente empacotado ${key}: ${e.message}`);
-    }
-  }
-
   async _updateYtDlpSelf(onProgress) {
     const { ytDlpTool } = require('./adapters/YtDlpTool');
     logUpdater('Iniciando atualização de motor de download...');
@@ -668,60 +805,31 @@ class ToolUpdater {
         githubOwner: 'yt-dlp',
         githubRepo: 'yt-dlp',
         versionArgs: ['--version'],
-        downloadUrl: (tag, platform) => {
-          if (platform === 'win32') return `https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe`;
-          return `https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp`;
-        },
       },
       ffmpeg: {
         githubOwner: 'BtbN',
         githubRepo: 'FFmpeg-Builds',
         versionArgs: ['-version'],
-        downloadUrl: (tag, platform) => {
-          if (platform === 'win32') return 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip';
-          return 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz';
-        },
       },
       ffprobe: {
         githubOwner: 'BtbN',
         githubRepo: 'FFmpeg-Builds',
         versionArgs: ['-version'],
-        downloadUrl: (tag, platform) => {
-          if (platform === 'win32') return 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip';
-          return 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz';
-        },
       },
       spotdl: {
         githubOwner: 'spotDL',
         githubRepo: 'spotify-downloader',
         versionArgs: ['--version'],
-        downloadUrl: (tag, platform) => {
-          const versionNum = (tag || '').replace(/^v/, '');
-          if (platform === 'win32') return `https://github.com/spotDL/spotify-downloader/releases/download/${tag}/spotdl-${versionNum}-win32.exe`;
-          return `https://github.com/spotDL/spotify-downloader/releases/download/${tag}/spotdl-${versionNum}-linux`;
-        },
       },
       deno: {
         githubOwner: 'denoland',
         githubRepo: 'deno',
         versionArgs: ['--version'],
-        downloadUrl: (tag, platform) => {
-          if (platform === 'win32') return 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip';
-          if (platform === 'darwin') return 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-apple-darwin.zip';
-          return 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip';
-        },
       },
       untrunc: {
         githubOwner: 'anthwlock',
         githubRepo: 'untrunc',
         versionArgs: ['-h'],
-        downloadUrl: (tag, platform) => {
-          if (platform !== 'win32') {
-            throw new Error('O download automático do motor de recuperação está disponível apenas para Windows nesta versão. A recuperação de vídeo, por enquanto, é uma funcionalidade exclusiva do Windows.');
-          }
-          // Releases do anthwlock/untrunc para Windows contêm untrunc_x64.zip
-          return 'https://github.com/anthwlock/untrunc/releases/latest/download/untrunc_x64.zip';
-        },
         // O untrunc.exe é vinculado dinamicamente a várias DLLs que ficam na mesma pasta
         // dentro do zip (AVFORMAT-57.DLL, AVUTIL-55.DLL, AVCODEC-57.DLL, SWRESAMPLE-2.DLL,
         // LIBGCC_S_SEH-1.DLL, LIBWINPTHREAD-1.DLL, LIBSTDC++-6.DLL) — sem elas o executável
@@ -739,15 +847,6 @@ class ToolUpdater {
           ? { owner: 'ShareX', repo: 'ExifTool', useGitTags: false }
           : { owner: 'exiftool', repo: 'exiftool', useGitTags: true },
         versionArgs: ['-ver'],
-        downloadUrl: (tag, platform) => {
-          if (platform === 'win32') {
-            const version = tag.replace(/^v/, '');
-            return `https://github.com/ShareX/ExifTool/releases/download/${tag}/exiftool-${version}-win64.zip`;
-          }
-          // Código-fonte do exiftool/exiftool para a tag — é um script Perl puro, roda com o
-          // Perl já presente por padrão em praticamente qualquer instalação Linux/macOS.
-          return `https://github.com/exiftool/exiftool/archive/refs/tags/${tag}.tar.gz`;
-        },
         // O build do ShareX/ExifTool pode empacotar o binário como "exiftool(-k).exe"
         // (nome padrão upstream) em vez de "exiftool.exe" — tentamos ambos os nomes.
         alternateFileNames: ['exiftool(-k).exe'],
@@ -762,7 +861,9 @@ class ToolUpdater {
       if (optional) return null;
       throw new Error(`ToolUpdater: componente desconhecido '${toolKey}'`);
     }
-    return config;
+    // A URL vem da tabela (plataforma, arquitetura) -> fonte oficial de ToolSources.js; lança
+    // ToolUnavailableError quando o projeto oficial não publica o programa para este sistema.
+    return { ...config, downloadUrl: (tag) => resolveDownloadUrl(toolKey, tag, process.platform, process.arch) };
   }
 
   /**

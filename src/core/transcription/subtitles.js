@@ -166,7 +166,7 @@ function formatStamp(seconds) {
  * @param {{title:string, model?:string, duration?:number, segments:Array<{start:number,text:string}>}} p
  */
 function buildMarkdown({ title, model = 'whisper', duration = 0, segments = [] }) {
-  let out = `# ${title}\n\nTranscrição automática (Whisper ${model}). Duração: ${formatStamp(duration)}\n\n`;
+  let out = `# ${title}\n\nTranscrição automática (modelo ${model}). Duração: ${formatStamp(duration)}\n\n`;
   for (const seg of segments) {
     const text = String(seg.text || '').trim();
     if (text) out += `**[${formatStamp(seg.start)}]** ${text}\n\n`;
@@ -174,7 +174,20 @@ function buildMarkdown({ title, model = 'whisper', duration = 0, segments = [] }
   return out;
 }
 
+/**
+ * Texto corrido (.txt): só a fala, sem tempos, uma frase/trecho por linha. Serve para colar em outros programas.
+ * @param {{segments:Array<{text:string}>}} p
+ */
+function buildText({ segments = [] } = {}) {
+  const lines = [];
+  for (const seg of segments) {
+    const text = String(seg.text || '').replace(/\s+/g, ' ').trim();
+    if (text) lines.push(text);
+  }
+  return lines.length ? `${lines.join('\n')}\n` : '';
+}
+
 module.exports = {
   MIN_DURATION, MAX_GAP, MAX_DURATION, DEFAULT_MAX_CHARS, WEAK_ENDINGS,
-  formatSrtTime, formatStamp, wrapLines, buildCues, cuesToSrt, buildSrt, buildMarkdown
+  formatSrtTime, formatStamp, wrapLines, buildCues, cuesToSrt, buildSrt, buildMarkdown, buildText
 };

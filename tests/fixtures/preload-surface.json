@@ -1,0 +1,8793 @@
+{
+  "addCustomSource": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:addCustomSource",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:addCustomSource",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "addMediaTag": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:addMediaTag",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:addMediaTag",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "addMediaTagBulk": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:addMediaTagBulk",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:addMediaTagBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "addProjectClip": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addClip",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addClip",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "addProjectMarker": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addMarker",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addMarker",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "addProjectMedia": {
+    "type": "function",
+    "length": 4,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addMedia",
+          "args": [
+            "@1",
+            "@2",
+            "@3",
+            "@4"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addMedia",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "addProjectMediaBulk": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addMediaBulk",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addMediaBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiAnalyzeTranscript": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:analyzeTranscript",
+          "args": [
+            {
+              "path": "@1"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:analyzeTranscript",
+          "args": [
+            {
+              "path": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiCancelAnalysis": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:cancelAnalysis",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:cancelAnalysis",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiChatCancel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:chatCancel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:chatCancel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiChatStart": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:chatStart",
+          "args": [
+            {
+              "text": "@1"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:chatStart",
+          "args": [
+            {
+              "text": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiGetConfig": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:getConfig",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:getConfig",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiHistoryClear": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:historyClear",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:historyClear",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiHistoryGet": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:historyGet",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:historyGet",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiListModels": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:listModels",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:listModels",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiSaveConfig": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:saveConfig",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:saveConfig",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiTestConnection": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:testConnection",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:testConnection",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "analyzeBdsmLutSync": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:analyzeLutSync",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:analyzeLutSync",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "analyzeSilence": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:analyze",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:analyze",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "cancelBdsmPairing": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairCancel",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairCancel",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "cancelMetadata": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "cancelMontageJob": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:cancelJob",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:cancelJob",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "cancelSilence": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "checkEncoders": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:checkEncoders",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:checkEncoders",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "checkEverything": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:checkAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:checkAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "checkForAppUpdate": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "app:checkForUpdate",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "app:checkForUpdate",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "checkUpdates": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:checkSystem",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:checkSystem",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "clearCache": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:clearCache",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:clearCache",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "clearConversions": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "conversions:clear",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "conversions:clear",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "clearCrashReports": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:clearCrashReports",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:clearCrashReports",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "clearHistory": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "history:clear",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "history:clear",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "clearLibraryDatabase": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:clearDatabase",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:clearDatabase",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "clearMontageQueue": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:clearQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:clearQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "closeWindow": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:close",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:close",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "converterAddFiles": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:addFiles",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:addFiles",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "converterCancel": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "converterClearQueue": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:clearQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:clearQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "converterRemoveFile": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:removeFile",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:removeFile",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "converterStart": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:start",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:start",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "createProject": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:create",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:create",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "createProjectBin": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createBin",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createBin",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "createProjectSequence": {
+    "type": "function",
+    "length": 5,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createSequence",
+          "args": [
+            "@1",
+            "@2",
+            "@3",
+            "@4",
+            "@5"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createSequence",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "createProjectSyncGroup": {
+    "type": "function",
+    "length": 4,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createSyncGroup",
+          "args": [
+            "@1",
+            "@2",
+            "@3",
+            "@4"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createSyncGroup",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "createProjectTrack": {
+    "type": "function",
+    "length": 4,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createTrack",
+          "args": [
+            "@1",
+            "@2",
+            "@3",
+            "@4"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createTrack",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteLut": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:delete",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:delete",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteMediaBulk": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:deleteMediaBulk",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:deleteMediaBulk",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProject": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:delete",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:delete",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProjectBin": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteBin",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteBin",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProjectClip": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteClip",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteClip",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProjectMarker": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteMarker",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteMarker",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProjectSequence": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteSequence",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteSequence",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProjectSyncGroup": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteSyncGroup",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteSyncGroup",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteProjectTrack": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteTrack",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteTrack",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteWaveformCache": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteWaveformCache",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:deleteWaveformCache",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloadAppUpdate": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:downloadAppUpdate",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:downloadAppUpdate",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloadClearQueue": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:clearCompleted",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:clearCompleted",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloadGetQueue": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:getQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:getQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloadRemoveJob": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:remove",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:remove",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads": {
+    "type": "object"
+  },
+  "downloads.add": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:add",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:add",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.cancel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:cancel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:cancel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.clearAll": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:clearAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:clearAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.clearCompleted": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:clearCompleted",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:clearCompleted",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.cookiesStatus": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:cookiesStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:cookiesStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.getQueue": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:getQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:getQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.getWaitState": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:waitState",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:waitState",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.onAdded": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:added"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:added"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:added"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:added"
+      }
+    ]
+  },
+  "downloads.onCompleted": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:completed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:completed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:completed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:completed"
+      }
+    ]
+  },
+  "downloads.onFailed": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:failed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:failed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:failed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:failed"
+      }
+    ]
+  },
+  "downloads.onProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:progress"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:progress"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:progress"
+      }
+    ]
+  },
+  "downloads.onQueueCompleted": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:queue-completed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:queue-completed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:queue-completed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:queue-completed"
+      }
+    ]
+  },
+  "downloads.onRemoved": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:removed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:removed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:removed"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:removed"
+      }
+    ]
+  },
+  "downloads.onUpdated": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:updated"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:updated"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:updated"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:updated"
+      }
+    ]
+  },
+  "downloads.onWait": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "downloads:wait"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "downloads:wait"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:wait"
+      },
+      {
+        "op": "off",
+        "ch": "downloads:wait"
+      }
+    ]
+  },
+  "downloads.pause": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:pause",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:pause",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.remove": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:remove",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:remove",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.reorder": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:reorder",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:reorder",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.retry": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:retry",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:retry",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.skipWait": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:skipWait",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:skipWait",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.start": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:start",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:start",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.toggleFormat": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:toggleFormat",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:toggleFormat",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "downloads.updateQuality": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:updateQuality",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "downloads:updateQuality",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "enqueueMontage": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:enqueue",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:enqueue",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "executeBdsmLutSync": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:executeLutSync",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:executeLutSync",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "expandPlaylist": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "media:expandPlaylist",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "media:expandPlaylist",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportBdspro": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportBdspro",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportBdspro",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportCookies": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:exportCookies",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:exportCookies",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportDiagnosticLogs": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "logs:export",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "logs:export",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportProjectPremiere": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportPremiere",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportPremiere",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportProjectSequencePremiere": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportSequencePremiere",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportSequencePremiere",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportYoutubeCookies": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:exportCookies",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:exportCookies",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "extractMetadataThumb": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:extractThumb",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:extractThumb",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "forgetBdsmPairing": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairForget",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairForget",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "fullscreenWindow": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:fullscreen",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:fullscreen",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "exit": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:fullscreen",
+          "args": [
+            "exit"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "generateManualMailto": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:generateManualMailto",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:generateManualMailto",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getAllDevices": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "devices:get-all",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "devices:get-all",
+          "args": [
+            false
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "force": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "devices:get-all",
+          "args": [
+            true
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getAllLibraries": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getBdsmImportHistory": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:getImportHistory",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:getImportHistory",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getBdsmMedia": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:getMedia",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:getMedia",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getBdsmPairingStatus": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairingStatus",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairingStatus",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getBdsmThumbnail": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:getThumbnail",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:getThumbnail",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getCacheInfo": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getCacheInfo",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getCacheInfo",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getCrashReports": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:getCrashReports",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:getCrashReports",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getCustomSources": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getCustomSources",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getCustomSources",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getDefaultOutputDir": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getConverterOutputDir",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getConverterOutputDir",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getDeveloperEmail": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:getDeveloperEmail",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:getDeveloperEmail",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getDownloadsPath": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getDownloadsPath",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getDownloadsPath",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getHardwareInfo": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getHardwareInfo",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getHardwareInfo",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLibraryFilterOptions": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getFilterOptions",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getFilterOptions",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLibraryFolderFiles": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getFolderFiles",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getFolderFiles",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLibraryStats": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getStats",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getStats",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLicenseText": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "licenses:getText",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "licenses:getText",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLicenses": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "licenses:getList",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "licenses:getList",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLutHeader": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:getHeader",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:getHeader",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLutRaw": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:load",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:load",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLutReferenceImage": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:getReferenceImage",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:getReferenceImage",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getLuts": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:get",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:get",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMailtoErrorLink": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:getMailtoLink",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:getMailtoLink",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMediaProjectLinks": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getMediaProjectLinks",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getMediaProjectLinks",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMediaTags": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getMediaTags",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getMediaTags",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMediaWaveform": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getWaveform",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getWaveform",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMetadata": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "media:metadata",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "media:metadata",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMissingProjectMedia": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMissingMedia",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMissingMedia",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getMontageQueue": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:getQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:getQueue",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getOrCreateDefaultSequence": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getOrCreateDefaultSequence",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getOrCreateDefaultSequence",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getPathForFile": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "webUtils",
+          "arg": "@1"
+        }
+      ],
+      "returns": "string"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "webUtils",
+          "arg": "__undefined__"
+        }
+      ],
+      "returns": "string"
+    }
+  },
+  "getProject": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:get",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:get",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectBins": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getBins",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getBins",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectClips": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getClips",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getClips",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectFullModel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getFullModel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getFullModel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectMarkers": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMarkers",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMarkers",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectMedia": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMedia",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMedia",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectMediaById": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMediaById",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMediaById",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectSequenceModel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSequenceModel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSequenceModel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectSequences": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSequences",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSequences",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectSyncGroups": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSyncGroups",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSyncGroups",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectTracks": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getTracks",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getTracks",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getRecentMedia": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getRecent",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getRecent",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getSettings": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "settings:get",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "settings:get",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getStorageInfo": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getStorageInfo",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getStorageInfo",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getThumbDir": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getThumbDir",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:getThumbDir",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getToolsPath": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getToolsPath",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getToolsPath",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getTrackAudioPath": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getTrackAudioPath",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getTrackAudioPath",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getVersion": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "app:getVersion",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "app:getVersion",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getVideosPath": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getVideosPath",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:getVideosPath",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getYoutubeAccounts": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:get-accounts",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:get-accounts",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "hasWaveformCache": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:hasWaveformCache",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:hasWaveformCache",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importBdsmMedia": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:importMedia",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:importMedia",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importBdspro": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:importBdspro",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:importBdspro",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importDroppedFilesToProjectBin": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:importDroppedFilesToBin",
+          "args": [
+            {
+              "projectId": "@1",
+              "binId": "@2",
+              "filePaths": "@3"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:importDroppedFilesToBin",
+          "args": [
+            {
+              "projectId": "__undefined__",
+              "binId": "__undefined__",
+              "filePaths": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importFilesToProjectBin": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:importFilesToBin",
+          "args": [
+            {
+              "projectId": "@1",
+              "binId": "@2"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:importFilesToBin",
+          "args": [
+            {
+              "projectId": "__undefined__",
+              "binId": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importLut": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:import",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:import",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importMtpItems": {
+    "type": "function",
+    "length": 4,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "mtp:import-items",
+          "args": [
+            "@1",
+            "@2",
+            "@3",
+            "@4"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "mtp:import-items",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "importUsbItems": {
+    "type": "function",
+    "length": 4,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "usb:import-items",
+          "args": [
+            "@1",
+            "@2",
+            "@3",
+            "@4"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "usb:import-items",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "inspectBdspro": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:inspectBdspro",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:inspectBdspro",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "inspectPlaylist": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "media:inspectPlaylist",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "media:inspectPlaylist",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "installAppUpdate": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:installAppUpdate",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:installAppUpdate",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "installUpdates": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "isPackaged": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:isPackaged",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:isPackaged",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listConversions": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "conversions:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "conversions:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listHistory": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "history:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "history:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listMtpFolder": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "mtp:list-folder",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "mtp:list-folder",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listProjects": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listUsbFolder": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "usb:list-folder",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "usb:list-folder",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "matchMissingMedia": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:matchMissingMedia",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:matchMissingMedia",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "maximizeWindow": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:maximize",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:maximize",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "minimizeWindow": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:minimize",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "window:minimize",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesCancel": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesGetStatus": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:getStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:getStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesInstallCuda": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:installCuda",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:installCuda",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesInstallEngine": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:installEngine",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:installEngine",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesInstallModel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:installModel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:installModel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesList": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesRemoveCuda": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:removeCuda",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:removeCuda",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesRemoveModel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:removeModel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:removeModel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesReveal": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:reveal",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:reveal",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesSetActiveModel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:setActiveModel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:setActiveModel",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesSetEnabled": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:setEnabled",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:setEnabled",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesTranscribe": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:transcribe",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:transcribe",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesUninstallEngine": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:uninstallEngine",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:uninstallEngine",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "moveMediaBulk": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:moveMediaBulk",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:moveMediaBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "moveProjectMedia": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:moveMedia",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:moveMedia",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "onAiAnalysisProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:analysisProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:analysisProgress"
+      },
+      {
+        "op": "off",
+        "ch": "ai:analysisProgress"
+      },
+      {
+        "op": "off",
+        "ch": "ai:analysisProgress"
+      }
+    ]
+  },
+  "onAiChatDelta": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:chatDelta"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:chatDelta"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatDelta"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatDelta"
+      }
+    ]
+  },
+  "onAiChatDone": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:chatDone"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:chatDone"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatDone"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatDone"
+      }
+    ]
+  },
+  "onAiChatError": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:chatError"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:chatError"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatError"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatError"
+      }
+    ]
+  },
+  "onAiChatStatus": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:chatStatus"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:chatStatus"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatStatus"
+      },
+      {
+        "op": "off",
+        "ch": "ai:chatStatus"
+      }
+    ]
+  },
+  "onAudioSyncProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "projects:audioSyncProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "projects:audioSyncProgress"
+      },
+      {
+        "op": "off",
+        "ch": "projects:audioSyncProgress"
+      },
+      {
+        "op": "off",
+        "ch": "projects:audioSyncProgress"
+      }
+    ]
+  },
+  "onBdsmDeviceAdded": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bdsm:device_added"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bdsm:device_added"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:device_added"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:device_added"
+      }
+    ]
+  },
+  "onBdsmDeviceRemoved": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bdsm:device_removed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bdsm:device_removed"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:device_removed"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:device_removed"
+      }
+    ]
+  },
+  "onBdsmDeviceUpdated": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bdsm:device_updated"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bdsm:device_updated"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:device_updated"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:device_updated"
+      }
+    ]
+  },
+  "onBdsmLutSyncProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bdsm:lutSyncProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bdsm:lutSyncProgress"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:lutSyncProgress"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:lutSyncProgress"
+      }
+    ]
+  },
+  "onBdsmPairing": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bdsm:pairing"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bdsm:pairing"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:pairing"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:pairing"
+      }
+    ]
+  },
+  "onBdsmProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bdsm:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bdsm:progress"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:progress"
+      },
+      {
+        "op": "off",
+        "ch": "bdsm:progress"
+      }
+    ]
+  },
+  "onConverterFileFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "converter:fileFinished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "converter:fileFinished"
+      },
+      {
+        "op": "off",
+        "ch": "converter:fileFinished"
+      },
+      {
+        "op": "off",
+        "ch": "converter:fileFinished"
+      }
+    ]
+  },
+  "onConverterFileStarted": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "converter:fileStarted"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "converter:fileStarted"
+      },
+      {
+        "op": "off",
+        "ch": "converter:fileStarted"
+      },
+      {
+        "op": "off",
+        "ch": "converter:fileStarted"
+      }
+    ]
+  },
+  "onConverterFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "converter:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "converter:finished"
+      },
+      {
+        "op": "off",
+        "ch": "converter:finished"
+      },
+      {
+        "op": "off",
+        "ch": "converter:finished"
+      }
+    ]
+  },
+  "onConverterOverallProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "converter:overallProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "converter:overallProgress"
+      },
+      {
+        "op": "off",
+        "ch": "converter:overallProgress"
+      },
+      {
+        "op": "off",
+        "ch": "converter:overallProgress"
+      }
+    ]
+  },
+  "onConverterProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "converter:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "converter:progress"
+      },
+      {
+        "op": "off",
+        "ch": "converter:progress"
+      },
+      {
+        "op": "off",
+        "ch": "converter:progress"
+      }
+    ]
+  },
+  "onConverterQueue": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "converter:queue"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "converter:queue"
+      },
+      {
+        "op": "off",
+        "ch": "converter:queue"
+      },
+      {
+        "op": "off",
+        "ch": "converter:queue"
+      }
+    ]
+  },
+  "onDependenciesDone": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "dependencies:done"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "dependencies:done"
+      },
+      {
+        "op": "off",
+        "ch": "dependencies:done"
+      },
+      {
+        "op": "off",
+        "ch": "dependencies:done"
+      }
+    ]
+  },
+  "onDependenciesDownloading": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "dependencies:downloading"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "dependencies:downloading"
+      },
+      {
+        "op": "off",
+        "ch": "dependencies:downloading"
+      },
+      {
+        "op": "off",
+        "ch": "dependencies:downloading"
+      }
+    ]
+  },
+  "onDownloadQueue": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "download:queue"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "download:queue"
+      },
+      {
+        "op": "off",
+        "ch": "download:queue"
+      },
+      {
+        "op": "off",
+        "ch": "download:queue"
+      }
+    ]
+  },
+  "onFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "download:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "download:finished"
+      },
+      {
+        "op": "off",
+        "ch": "download:finished"
+      },
+      {
+        "op": "off",
+        "ch": "download:finished"
+      }
+    ]
+  },
+  "onMediaImported": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bds:media-imported"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bds:media-imported"
+      },
+      {
+        "op": "off",
+        "ch": "bds:media-imported"
+      },
+      {
+        "op": "off",
+        "ch": "bds:media-imported"
+      }
+    ]
+  },
+  "onMediaRemoved": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bds:media-removed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bds:media-removed"
+      },
+      {
+        "op": "off",
+        "ch": "bds:media-removed"
+      },
+      {
+        "op": "off",
+        "ch": "bds:media-removed"
+      }
+    ]
+  },
+  "onMediaUpdated": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bds:media-updated"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bds:media-updated"
+      },
+      {
+        "op": "off",
+        "ch": "bds:media-updated"
+      },
+      {
+        "op": "off",
+        "ch": "bds:media-updated"
+      }
+    ]
+  },
+  "onMetadataLog": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "metadata:log"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "metadata:log"
+      },
+      {
+        "op": "off",
+        "ch": "metadata:log"
+      },
+      {
+        "op": "off",
+        "ch": "metadata:log"
+      }
+    ]
+  },
+  "onMetadataProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "metadata:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "metadata:progress"
+      },
+      {
+        "op": "off",
+        "ch": "metadata:progress"
+      },
+      {
+        "op": "off",
+        "ch": "metadata:progress"
+      }
+    ]
+  },
+  "onModulesChanged": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "modules:changed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "modules:changed"
+      },
+      {
+        "op": "off",
+        "ch": "modules:changed"
+      },
+      {
+        "op": "off",
+        "ch": "modules:changed"
+      }
+    ]
+  },
+  "onModulesProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "modules:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "modules:progress"
+      },
+      {
+        "op": "off",
+        "ch": "modules:progress"
+      },
+      {
+        "op": "off",
+        "ch": "modules:progress"
+      }
+    ]
+  },
+  "onModulesStatus": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "modules:status"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "modules:status"
+      },
+      {
+        "op": "off",
+        "ch": "modules:status"
+      },
+      {
+        "op": "off",
+        "ch": "modules:status"
+      }
+    ]
+  },
+  "onMontageFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "montage:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "montage:finished"
+      },
+      {
+        "op": "off",
+        "ch": "montage:finished"
+      },
+      {
+        "op": "off",
+        "ch": "montage:finished"
+      }
+    ]
+  },
+  "onMontageLog": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "montage:log"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "montage:log"
+      },
+      {
+        "op": "off",
+        "ch": "montage:log"
+      },
+      {
+        "op": "off",
+        "ch": "montage:log"
+      }
+    ]
+  },
+  "onMontageProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "montage:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "montage:progress"
+      },
+      {
+        "op": "off",
+        "ch": "montage:progress"
+      },
+      {
+        "op": "off",
+        "ch": "montage:progress"
+      }
+    ]
+  },
+  "onMontageQueueUpdated": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "montage:queue-updated"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "montage:queue-updated"
+      },
+      {
+        "op": "off",
+        "ch": "montage:queue-updated"
+      },
+      {
+        "op": "off",
+        "ch": "montage:queue-updated"
+      }
+    ]
+  },
+  "onMtpProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "mtp:import-progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "mtp:import-progress"
+      },
+      {
+        "op": "off",
+        "ch": "mtp:import-progress"
+      },
+      {
+        "op": "off",
+        "ch": "mtp:import-progress"
+      }
+    ]
+  },
+  "onNavigateToScreen": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bds:navigate-to-screen"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bds:navigate-to-screen"
+      },
+      {
+        "op": "off",
+        "ch": "bds:navigate-to-screen"
+      },
+      {
+        "op": "off",
+        "ch": "bds:navigate-to-screen"
+      }
+    ]
+  },
+  "onProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "download:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "download:progress"
+      },
+      {
+        "op": "off",
+        "ch": "download:progress"
+      },
+      {
+        "op": "off",
+        "ch": "download:progress"
+      }
+    ]
+  },
+  "onProjectImportProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "projects:importProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "projects:importProgress"
+      },
+      {
+        "op": "off",
+        "ch": "projects:importProgress"
+      },
+      {
+        "op": "off",
+        "ch": "projects:importProgress"
+      }
+    ]
+  },
+  "onSilenceFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "silence:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "silence:finished"
+      },
+      {
+        "op": "off",
+        "ch": "silence:finished"
+      },
+      {
+        "op": "off",
+        "ch": "silence:finished"
+      }
+    ]
+  },
+  "onSilenceLog": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "silence:log"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "silence:log"
+      },
+      {
+        "op": "off",
+        "ch": "silence:log"
+      },
+      {
+        "op": "off",
+        "ch": "silence:log"
+      }
+    ]
+  },
+  "onSilenceProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "silence:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "silence:progress"
+      },
+      {
+        "op": "off",
+        "ch": "silence:progress"
+      },
+      {
+        "op": "off",
+        "ch": "silence:progress"
+      }
+    ]
+  },
+  "onSonyImportProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "sony:import-progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "sony:import-progress"
+      },
+      {
+        "op": "off",
+        "ch": "sony:import-progress"
+      },
+      {
+        "op": "off",
+        "ch": "sony:import-progress"
+      }
+    ]
+  },
+  "onSonyStatusUpdated": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "sony-camera:status-update"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "sony-camera:status-update"
+      },
+      {
+        "op": "off",
+        "ch": "sony-camera:status-update"
+      },
+      {
+        "op": "off",
+        "ch": "sony-camera:status-update"
+      }
+    ]
+  },
+  "onThumbsRegenProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "bds:thumbs-regen-progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "bds:thumbs-regen-progress"
+      },
+      {
+        "op": "off",
+        "ch": "bds:thumbs-regen-progress"
+      },
+      {
+        "op": "off",
+        "ch": "bds:thumbs-regen-progress"
+      }
+    ]
+  },
+  "onUpdateCompleted": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "updates:completed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "updates:completed"
+      },
+      {
+        "op": "off",
+        "ch": "updates:completed"
+      },
+      {
+        "op": "off",
+        "ch": "updates:completed"
+      }
+    ]
+  },
+  "onUpdateProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "updates:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "updates:progress"
+      },
+      {
+        "op": "off",
+        "ch": "updates:progress"
+      },
+      {
+        "op": "off",
+        "ch": "updates:progress"
+      }
+    ]
+  },
+  "onUpdatesChecked": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "updates:checked"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "updates:checked"
+      },
+      {
+        "op": "off",
+        "ch": "updates:checked"
+      },
+      {
+        "op": "off",
+        "ch": "updates:checked"
+      }
+    ]
+  },
+  "onYoutubeAuthStatus": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "youtube:auth-status"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "youtube:auth-status"
+      },
+      {
+        "op": "off",
+        "ch": "youtube:auth-status"
+      },
+      {
+        "op": "off",
+        "ch": "youtube:auth-status"
+      }
+    ]
+  },
+  "onYoutubeCode": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "youtube:code"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "youtube:code"
+      },
+      {
+        "op": "off",
+        "ch": "youtube:code"
+      },
+      {
+        "op": "off",
+        "ch": "youtube:code"
+      }
+    ]
+  },
+  "openExternal": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "shell:openExternal",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "shell:openExternal",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "openLocalPath": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:openPath",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:openPath",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "parseLutCube": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:parse",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:parse",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "photoGetMetadata": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "photo:getMetadata",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "photo:getMetadata",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "photoGetRenderablePath": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "photo:getRenderablePath",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "photo:getRenderablePath",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "probeAudioStreams": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:probeAudioStreams",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:probeAudioStreams",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "probeMetadataFile": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:probe",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:probe",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "probeMontageFile": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:probe",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:probe",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "probeSilenceFile": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:probe",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:probe",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "processSilence": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:process",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:process",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery": {
+    "type": "object"
+  },
+  "recovery.cancel": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.diagnose": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:diagnose",
+          "args": [
+            {
+              "corruptPath": "@1",
+              "referencePath": "@2"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:diagnose",
+          "args": [
+            {
+              "corruptPath": "__undefined__",
+              "referencePath": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.onError": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:error"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:error"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:error"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:error"
+      }
+    ]
+  },
+  "recovery.onFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:finished"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:finished"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:finished"
+      }
+    ]
+  },
+  "recovery.onProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:progress"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:progress"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:progress"
+      }
+    ]
+  },
+  "recovery.onStage": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:stage"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:stage"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:stage"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:stage"
+      }
+    ]
+  },
+  "recovery.raw": {
+    "type": "object"
+  },
+  "recovery.raw.cancel": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:raw:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:raw:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.raw.diagnose": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:raw:diagnose",
+          "args": [
+            {
+              "corruptPath": "@1",
+              "referencePath": "@2"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:raw:diagnose",
+          "args": [
+            {
+              "corruptPath": "__undefined__",
+              "referencePath": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.raw.onError": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:raw:error"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:raw:error"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:error"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:error"
+      }
+    ]
+  },
+  "recovery.raw.onFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:raw:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:raw:finished"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:finished"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:finished"
+      }
+    ]
+  },
+  "recovery.raw.onProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:raw:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:raw:progress"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:progress"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:progress"
+      }
+    ]
+  },
+  "recovery.raw.onStage": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:raw:stage"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:raw:stage"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:stage"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:raw:stage"
+      }
+    ]
+  },
+  "recovery.raw.start": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:raw:start",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:raw:start",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.start": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:start",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:start",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "regenerateMissingThumbnails": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:regenerateMissingThumbnails",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:regenerateMissingThumbnails",
+          "args": [
+            {}
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "opts": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:regenerateMissingThumbnails",
+          "args": [
+            {
+              "batchSize": 3
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "relaunchApp": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:relaunchApp",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:relaunchApp",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "relinkMedia": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:relinkMedia",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:relinkMedia",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "removeAllListeners": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "off",
+          "ch": "ai:analysisProgress"
+        },
+        {
+          "op": "off",
+          "ch": "ai:chatDelta"
+        },
+        {
+          "op": "off",
+          "ch": "ai:chatDone"
+        },
+        {
+          "op": "off",
+          "ch": "ai:chatError"
+        },
+        {
+          "op": "off",
+          "ch": "ai:chatStatus"
+        },
+        {
+          "op": "off",
+          "ch": "bds:media-imported"
+        },
+        {
+          "op": "off",
+          "ch": "bds:media-removed"
+        },
+        {
+          "op": "off",
+          "ch": "bds:media-updated"
+        },
+        {
+          "op": "off",
+          "ch": "bds:navigate-to-screen"
+        },
+        {
+          "op": "off",
+          "ch": "bds:thumbs-regen-progress"
+        },
+        {
+          "op": "off",
+          "ch": "bdsm:device_added"
+        },
+        {
+          "op": "off",
+          "ch": "bdsm:device_removed"
+        },
+        {
+          "op": "off",
+          "ch": "bdsm:device_updated"
+        },
+        {
+          "op": "off",
+          "ch": "bdsm:lutSyncProgress"
+        },
+        {
+          "op": "off",
+          "ch": "bdsm:pairing"
+        },
+        {
+          "op": "off",
+          "ch": "bdsm:progress"
+        },
+        {
+          "op": "off",
+          "ch": "converter:fileFinished"
+        },
+        {
+          "op": "off",
+          "ch": "converter:fileStarted"
+        },
+        {
+          "op": "off",
+          "ch": "converter:finished"
+        },
+        {
+          "op": "off",
+          "ch": "converter:overallProgress"
+        },
+        {
+          "op": "off",
+          "ch": "converter:progress"
+        },
+        {
+          "op": "off",
+          "ch": "converter:queue"
+        },
+        {
+          "op": "off",
+          "ch": "dependencies:done"
+        },
+        {
+          "op": "off",
+          "ch": "dependencies:downloading"
+        },
+        {
+          "op": "off",
+          "ch": "download:finished"
+        },
+        {
+          "op": "off",
+          "ch": "download:progress"
+        },
+        {
+          "op": "off",
+          "ch": "download:queue"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:added"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:completed"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:failed"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:progress"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:queue-completed"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:removed"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:updated"
+        },
+        {
+          "op": "off",
+          "ch": "downloads:wait"
+        },
+        {
+          "op": "off",
+          "ch": "metadata:log"
+        },
+        {
+          "op": "off",
+          "ch": "metadata:progress"
+        },
+        {
+          "op": "off",
+          "ch": "modules:changed"
+        },
+        {
+          "op": "off",
+          "ch": "modules:progress"
+        },
+        {
+          "op": "off",
+          "ch": "modules:status"
+        },
+        {
+          "op": "off",
+          "ch": "montage:finished"
+        },
+        {
+          "op": "off",
+          "ch": "montage:log"
+        },
+        {
+          "op": "off",
+          "ch": "montage:progress"
+        },
+        {
+          "op": "off",
+          "ch": "montage:queue-updated"
+        },
+        {
+          "op": "off",
+          "ch": "mtp:import-progress"
+        },
+        {
+          "op": "off",
+          "ch": "projects:audioSyncProgress"
+        },
+        {
+          "op": "off",
+          "ch": "projects:importProgress"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:error"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:finished"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:progress"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:raw:error"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:raw:finished"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:raw:progress"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:raw:stage"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:stage"
+        },
+        {
+          "op": "off",
+          "ch": "silence:finished"
+        },
+        {
+          "op": "off",
+          "ch": "silence:log"
+        },
+        {
+          "op": "off",
+          "ch": "silence:progress"
+        },
+        {
+          "op": "off",
+          "ch": "sony-camera:status-update"
+        },
+        {
+          "op": "off",
+          "ch": "sony:import-progress"
+        },
+        {
+          "op": "off",
+          "ch": "updates:checked"
+        },
+        {
+          "op": "off",
+          "ch": "updates:completed"
+        },
+        {
+          "op": "off",
+          "ch": "updates:progress"
+        },
+        {
+          "op": "off",
+          "ch": "youtube:auth-status"
+        },
+        {
+          "op": "off",
+          "ch": "youtube:code"
+        }
+      ],
+      "returns": "undefined"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "undefined"
+    }
+  },
+  "removeCustomSource": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:removeCustomSource",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:removeCustomSource",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "removeMediaTag": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:removeMediaTag",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:removeMediaTag",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "removeMontageJob": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:removeJob",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "montage:removeJob",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "removeProjectMedia": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeMedia",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeMedia",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "removeProjectSyncGroupItem": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeSyncGroupItem",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeSyncGroupItem",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "renameLut": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:rename",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:rename",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "renameMedia": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:renameMedia",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:renameMedia",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "renameMediaBulk": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:renameMediaBulk",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:renameMediaBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "reportError": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:reportError",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:reportError",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "rescanAllLibrary": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:rescanAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:rescanAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "revealLut": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:reveal",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:reveal",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "rollbackTool": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:rollbackTool",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:rollbackTool",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "runAudioSync": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:runAudioSync",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:runAudioSync",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "saveMetadata": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:save",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "metadata:save",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "saveSettings": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "settings:save",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "settings:save",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "scanRelinkFolder": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:scanRelinkFolder",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:scanRelinkFolder",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "searchLibrary": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:search",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:search",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "selectFile": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "dialog:selectFiles",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "dialog:selectFiles",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "selectFiles": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "dialog:selectFiles",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "dialog:selectFiles",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "selectFolder": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "dialog:selectFolder",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "dialog:selectFolder",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "sendCrashReports": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:sendReports",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "telemetry:sendReports",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "setProjectBulk": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:setProjectBulk",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:setProjectBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "sonyBrowse": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:browse",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:browse",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "sonyGetStatus": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:get-status",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:get-status",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "sonyImportItems": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:import-items",
+          "args": [
+            {
+              "cameraId": "@1",
+              "items": "@2",
+              "destFolder": "@3"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:import-items",
+          "args": [
+            {
+              "cameraId": "__undefined__",
+              "items": "__undefined__",
+              "destFolder": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "sonyList": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:list",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "sony:list",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "startBdsmPairing": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairStart",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "bdsm:pairStart",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "toggleFavorite": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:toggleFavorite",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:toggleFavorite",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "toggleFavoriteBulk": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:toggleFavoriteBulk",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:toggleFavoriteBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateAllDependencies": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateAll",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateCustomSourcePath": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:updateCustomSourcePath",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:updateCustomSourcePath",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateEverything": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateEverything",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateEverything",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateProject": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:update",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:update",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateProjectBin": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateBin",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateBin",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateProjectClip": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateClip",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateClip",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateProjectSequence": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateSequence",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateSequence",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateProjectSyncGroup": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateSyncGroup",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateSyncGroup",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateProjectTrack": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateTrack",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:updateTrack",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "updateTool": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateTool",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "updates:updateTool",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "uploadScanDirectory": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:scanDirectory",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:scanDirectory",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "uploadSelectFiles": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:selectFiles",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:selectFiles",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "uploadSelectFolder": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:selectFolder",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:selectFolder",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeLogin": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:login",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:login",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  }
+}

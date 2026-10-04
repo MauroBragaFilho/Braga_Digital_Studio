@@ -1,5 +1,5 @@
 /**
- * Painel "Transcrição" das Configurações — instala e gerencia o módulo (motor, modelos e GPU).
+ * Painel "Transcrição" das Configurações — um botão instala o recurso (e pergunta da aceleração NVIDIA quando há placa) e uma tabela gerencia os modelos.
  * Toda a lógica vive no processo principal (src/core/modules); este painel só pede ações via
  * window.bds.modules* e mostra o estado e o progresso. Textos entram sempre por textContent.
  * A tela de Transcrição (renderer/screens/transcription.*) é quem usa o módulo para transcrever.
@@ -8,7 +8,7 @@
 let status = null;
 let unsubs = [];
 let root = null;
-let acceptCuda = false;
+let nvidiaDetected = false;
 
 const $ = (id) => (root ? root.querySelector(`#${id}`) : null);
 
@@ -46,7 +46,7 @@ async function call(fn, ...args) {
   if (typeof fn !== 'function') throw new Error('Recurso indisponível nesta versão do app.');
   const res = await fn(...args);
   if (!res || !res.ok) {
-    const err = new Error(res?.error || 'Falha desconhecida.');
+    const err = new Error(res?.error || 'Algo deu errado. Tente novamente.');
     err.code = res?.code || null;
     throw err;
   }
@@ -119,169 +119,187 @@ function onProgress(p) {
 
 function busy() { return Boolean(status && status.busy); }
 
-function section(title, iconName, children, extraClass = '') {
-  return h('div', { class: `mod-section ${extraClass}`.trim() }, [
-    h('h4', { class: 'mod-section-title' }, [icon(iconName), title]),
-    ...children
+/** Estrelas de 1 a 5 (texto acessível: "3 de 5"). */
+function stars(level, max = 5) {
+  const n = Math.max(0, Math.min(max, Number(level) || 0));
+  return h('span', { class: 'mod-stars', role: 'img', 'aria-label': `${n} de ${max}` }, [
+    h('span', { class: 'mod-stars-on', 'aria-hidden': 'true', text: '★'.repeat(n) }),
+    h('span', { class: 'mod-stars-off', 'aria-hidden': 'true', text: '★'.repeat(max - n) })
   ]);
+}
+
+/** Há placa NVIDIA neste computador? (só então oferecemos a aceleração) */
+async function detectNvidia() {
+  try {
+    const info = await window.bds?.getHardwareInfo?.();
+    const gpus = (info && (info.gpus || info.data?.gpus)) || [];
+    nvidiaDetected = gpus.some((g) => String(g.vendor || '').toLowerCase() === 'nvidia');
+  } catch (_) { nvidiaDetected = false; }
 }
 
 function renderHead() {
   const w = status.whisper;
-  const chip = w.ready ? ['Pronto para usar', 'ok'] : (w.engine.installed ? ['Falta escolher um modelo', 'warn'] : ['Não instalado', 'off']);
+  let chip;
+  if (!status.platformSupported) chip = ['Indisponível', 'off'];
+  else if (w.ready) chip = ['Pronto', 'ok'];
+  else if (w.engine.installed) chip = ['Falta um modelo', 'warn'];
+  else chip = ['Não instalado', 'off'];
   return h('div', { class: 'mod-head' }, [
     h('div', { class: 'mod-head-icon' }, [icon('closed_caption')]),
     h('div', { class: 'mod-head-text' }, [
-      h('h3', { text: w.name }),
-      h('p', { text: w.description })
+      h('p', { class: 'mod-head-lead', text: 'Gera legendas e textos a partir de áudio e vídeo, no seu computador.' })
     ]),
     h('span', { class: `mod-state mod-state-${chip[1]}`, text: chip[0] })
   ]);
 }
 
-function renderEngine() {
+/** Bloco principal: um botão para instalar (e perguntar da NVIDIA) ou o estado atual. */
+function renderMain() {
   const w = status.whisper;
   const b = busy();
   const children = [];
 
   if (!status.platformSupported) {
-    children.push(h('p', { class: 'mod-warning' }, [icon('info'), 'A transcrição está disponível apenas no Windows nesta versão.']));
-    return section('Motor', 'settings_suggest', children);
+    children.push(h('p', { class: 'mod-warning' }, [icon('info'), (w.engine.unavailableReason || 'Transcrição ainda não disponível neste sistema.')]));
+    return h('div', { class: 'mod-section' }, children);
   }
 
-  if (w.engine.installed) {
+  if (!w.engine.installed) {
     children.push(h('div', { class: 'mod-row' }, [
       h('div', { class: 'mod-row-text' }, [
-        h('strong', { text: `Instalado${w.engine.version ? ` · versão ${w.engine.version}` : ''}` }),
-        h('span', { class: 'mod-muted', text: w.engine.source === 'zip' ? 'Instalado a partir de um arquivo .zip.' : 'Baixado da versão oficial do whisper.cpp, no GitHub.' })
+        h('strong', { text: 'Instale para começar' }),
+        h('span', { class: 'mod-muted', text: `Download de cerca de ${fmtBytes(w.engine.downloadBytes)}. Depois escolha um modelo abaixo.` })
       ]),
       h('div', { class: 'mod-actions' }, [
-        h('button', { class: 'mod-btn mod-btn-ghost', type: 'button', disabled: b, onclick: () => installEngine(false) }, [icon('upgrade'), 'Reinstalar']),
-        h('button', { class: 'mod-btn mod-btn-danger', type: 'button', disabled: b, onclick: removeEngine }, [icon('delete'), 'Remover'])
+        h('button', { class: 'mod-btn mod-btn-primary', type: 'button', disabled: b, onclick: installFlow }, [icon('download'), 'Instalar']),
+        h('button', { class: 'mod-btn mod-btn-link', type: 'button', disabled: b, onclick: () => installEngine(true) }, 'Usar um arquivo…')
       ])
     ]));
-  } else {
-    children.push(h('p', { class: 'mod-muted' }, `O motor é o programa que faz o reconhecimento de fala (whisper.cpp). É pequeno (cerca de ${fmtBytes(w.engine.downloadBytes)}) e vem direto da página oficial do projeto, no GitHub. Os modelos e a aceleração por placa NVIDIA são baixados à parte, abaixo.`));
-    children.push(h('div', { class: 'mod-actions' }, [
-      h('button', { class: 'mod-btn mod-btn-primary', type: 'button', disabled: b, onclick: () => installEngine(false) }, [icon('download'), `Instalar o motor (${fmtBytes(w.engine.downloadBytes)})`]),
-      h('button', { class: 'mod-btn mod-btn-ghost', type: 'button', disabled: b, onclick: () => installEngine(true) }, [icon('folder_zip'), 'Instalar de um .zip…'])
+    return h('div', { class: 'mod-section' }, children);
+  }
+
+  // Instalado: estado + remover
+  children.push(h('div', { class: 'mod-row' }, [
+    h('div', { class: 'mod-row-text' }, [h('strong', { text: 'Transcrição instalada' })]),
+    h('div', { class: 'mod-actions' }, [
+      h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm', type: 'button', disabled: b, onclick: removeEngine }, [icon('delete'), 'Remover'])
+    ])
+  ]));
+
+  // Aceleração NVIDIA: só aparece com placa NVIDIA detectada (ou se já estiver instalada, para poder remover)
+  const c = w.cuda;
+  if (c.available !== false && (nvidiaDetected || c.installed)) {
+    children.push(h('div', { class: 'mod-row' }, [
+      h('div', { class: 'mod-row-text' }, [
+        h('strong', { text: c.installed ? 'Aceleração NVIDIA ativa' : 'Placa NVIDIA detectada' }),
+        h('span', { class: 'mod-muted', text: c.installed ? 'A transcrição usa a placa de vídeo.' : 'A aceleração deixa a transcrição bem mais rápida.' })
+      ]),
+      h('div', { class: 'mod-actions' }, [
+        c.installed
+          ? h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm', type: 'button', disabled: b, onclick: removeCuda }, [icon('delete'), 'Remover'])
+          : h('button', { class: 'mod-btn mod-btn-primary mod-btn-sm', type: 'button', disabled: b, onclick: askNvidia }, [icon('bolt'), 'Ativar aceleração'])
+      ])
     ]));
   }
-  return section('Motor', 'settings_suggest', children);
+  return h('div', { class: 'mod-section' }, children);
 }
 
-function stars(level, max = 5) {
-  return h('span', { class: 'mod-dots', 'aria-label': `${level} de ${max}` },
-    Array.from({ length: max }, (_, i) => h('span', { class: `mod-dot${i < level ? ' on' : ''}` })));
-}
-
+/** Tabela de modelos: nome, velocidade e precisão em estrelas, tamanho e ações. */
 function renderModels() {
   const w = status.whisper;
   const b = busy();
-  const cudaOn = w.cuda.installed;
 
   const rows = w.models.map((m) => {
-    const badges = [];
-    if (m.recommendedFor === 'gpu') badges.push(h('span', { class: 'mod-badge mod-badge-accent', text: 'Recomendado com GPU' }));
-    if (m.recommendedFor === 'cpu') badges.push(h('span', { class: 'mod-badge mod-badge-accent', text: 'Recomendado sem GPU' }));
-    if (m.active) badges.push(h('span', { class: 'mod-badge mod-badge-ok', text: 'Em uso' }));
-
+    const size = fmtBytes(m.sizeOnDisk || m.sizeBytes);
     let actions;
     if (m.installed) {
       actions = [
-        m.active ? null : h('button', { class: 'mod-btn mod-btn-secondary mod-btn-sm', type: 'button', disabled: b, onclick: () => act(window.bds.modulesSetActiveModel, m.id) }, 'Usar este'),
-        // O modelo em uso não pode ser removido; todos os outros liberam espaço com um clique.
-        m.active ? null : h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm', type: 'button', disabled: b, title: `Remover do disco e liberar ${fmtBytes(m.sizeOnDisk || m.sizeBytes)}`, 'aria-label': `Remover ${m.label}`, onclick: () => removeModel(m) }, [icon('delete'), `Remover · ${fmtBytes(m.sizeOnDisk || m.sizeBytes)}`])
+        m.active
+          ? h('span', { class: 'mod-badge mod-badge-ok', text: 'Em uso' })
+          : h('button', { class: 'mod-btn mod-btn-secondary mod-btn-sm', type: 'button', disabled: b, onclick: () => act(window.bds.modulesSetActiveModel, m.id) }, 'Usar'),
+        h('button', {
+          class: 'mod-icon-btn mod-icon-danger', type: 'button', disabled: b,
+          title: `Apagar ${m.label} (libera ${size})`, 'aria-label': `Apagar o modelo ${m.label}`,
+          onclick: () => removeModel(m)
+        }, [icon('delete')])
       ];
     } else {
-      actions = [h('button', { class: 'mod-btn mod-btn-primary mod-btn-sm', type: 'button', disabled: b, onclick: () => act(window.bds.modulesInstallModel, m.id) }, [icon('download'), `Baixar (${fmtBytes(m.sizeBytes)})`])];
+      actions = [h('button', { class: 'mod-btn mod-btn-primary mod-btn-sm', type: 'button', disabled: b || !w.engine.installed, title: w.engine.installed ? '' : 'Instale a transcrição primeiro', onclick: () => act(window.bds.modulesInstallModel, m.id) }, [icon('download'), 'Baixar'])];
     }
 
-    return h('div', { class: `mod-model${m.active ? ' active' : ''}${m.installed ? ' installed' : ''}` }, [
-      h('div', { class: 'mod-model-main' }, [
-        h('div', { class: 'mod-model-title' }, [h('strong', { text: m.label }), ...badges]),
-        h('p', { class: 'mod-muted mod-model-desc', text: m.description }),
-        h('div', { class: 'mod-model-meta' }, [
-          h('span', { title: 'Tamanho do download' }, [icon('database'), fmtBytes(m.sizeBytes)]),
-          h('span', { title: 'Velocidade relativa (referência do modelo)' }, [icon('speed'), `Velocidade ${m.speed}`, stars(m.speedLevel)]),
-          h('span', { title: 'Qualidade relativa da transcrição' }, [icon('verified'), 'Qualidade', stars(m.quality)]),
-          h('span', { title: 'Memória de vídeo de referência (GPU)' }, [icon('memory'), `~${m.vramGb} GB de VRAM`])
-        ])
+    return h('tr', { class: `mod-trow${m.active ? ' active' : ''}${m.installed ? ' installed' : ''}` }, [
+      h('th', { scope: 'row', class: 'mod-tcell-name' }, [
+        h('strong', { text: m.label }),
+        h('span', { class: 'mod-muted', text: m.description })
       ]),
-      h('div', { class: 'mod-model-actions' }, actions.filter(Boolean))
+      h('td', { class: 'mod-tcell-stars', 'data-label': 'Velocidade' }, [stars(m.speedLevel)]),
+      h('td', { class: 'mod-tcell-stars', 'data-label': 'Precisão' }, [stars(m.quality)]),
+      h('td', { class: 'mod-tcell-size', 'data-label': 'Tamanho', text: size }),
+      h('td', { class: 'mod-tcell-actions' }, [h('div', { class: 'mod-actions' }, actions)])
     ]);
   });
 
-  const installedModels = w.models.filter((m) => m.installed);
-  const usedBytes = installedModels.reduce((sum, m) => sum + (m.sizeOnDisk || m.sizeBytes || 0), 0);
-  const unusedCount = installedModels.filter((m) => !m.active).length;
-  const spaceLine = installedModels.length
-    ? h('p', { class: 'mod-hint' }, [icon('database'), ` Os modelos instalados ocupam ${fmtBytes(usedBytes)}.${unusedCount ? ` Remova os que você não usa para liberar espaço (${unusedCount === 1 ? '1 modelo sem uso' : `${unusedCount} modelos sem uso`}).` : ''}`])
-    : null;
+  const table = h('table', { class: 'mod-table' }, [
+    h('thead', {}, [h('tr', {}, [
+      h('th', { scope: 'col', text: 'Modelo' }),
+      h('th', { scope: 'col', text: 'Velocidade' }),
+      h('th', { scope: 'col', text: 'Precisão' }),
+      h('th', { scope: 'col', text: 'Tamanho' }),
+      h('th', { scope: 'col', class: 'mod-sr', text: 'Ações' })
+    ])]),
+    h('tbody', {}, rows)
+  ]);
 
-  return section('Modelos', 'neurology', [
-    spaceLine,
-    h('p', { class: 'mod-muted' }, `Escolha qual modelo usar. Cada um é baixado do Hugging Face (fonte oficial) só quando você pedir, e fica no seu computador. São versões compactadas (quantizadas): bem menores que as originais, com qualidade quase igual. ${cudaOn ? '' : 'Sem a aceleração NVIDIA, prefira o Small: os modelos maiores ficam muito lentos na CPU.'}`),
-    h('div', { class: 'mod-models' }, rows),
-    h('p', { class: 'mod-hint', text: w.referenceNote })
+  return h('div', { class: 'mod-section' }, [
+    h('h4', { class: 'mod-section-title' }, [icon('neurology'), 'Modelos']),
+    h('div', { class: 'mod-table-wrap' }, [table])
   ]);
 }
 
-function renderCuda() {
-  const w = status.whisper;
-  const c = w.cuda;
-  const b = busy();
-  if (c.installed) acceptCuda = false; // um novo download exige aceitar a licença de novo
-  const children = [
-    h('p', { class: 'mod-muted' }, 'Usa a placa de vídeo NVIDIA para transcrever bem mais rápido. É opcional: sem ela, tudo funciona na CPU, que fica lenta nos modelos grandes.'),
-    h('p', { class: 'mod-warning' }, [icon('info'), c.requirement])
-  ];
+// ------------------------------------------------------------------ NVIDIA (pergunta + termos)
 
-  if (!status.platformSupported) return section('Aceleração por GPU (NVIDIA)', 'bolt', children);
-
-  if (c.installed) {
-    const v = c.versions || {};
-    children.push(h('div', { class: 'mod-row' }, [
-      h('div', { class: 'mod-row-text' }, [
-        h('strong', { text: 'Aceleração instalada' }),
-        h('span', { class: 'mod-muted', text: [v.cuda ? `CUDA ${v.cuda}` : null, v.whispercpp ? `motor ${v.whispercpp}` : null].filter(Boolean).join(' · ') })
-      ]),
-      h('div', { class: 'mod-actions' }, [
-        h('button', { class: 'mod-btn mod-btn-danger', type: 'button', disabled: b, onclick: removeCuda }, [icon('delete'), 'Remover a aceleração'])
+/** Pergunta se quer baixar a aceleração; clicar em "Baixar" vale como aceite dos termos da NVIDIA. */
+function askNvidia() {
+  const c = status.whisper.cuda;
+  const size = fmtBytes(c.approxDownloadBytes);
+  const link = (c.licenseLinks || [])[0];
+  const dlg = h('dialog', { class: 'mod-dialog', 'aria-labelledby': 'modNvTitle' });
+  const close = () => { try { dlg.close(); } catch (_) { /* já fechado */ } dlg.remove(); };
+  dlg.append(
+    h('h4', { id: 'modNvTitle', text: 'Baixar a aceleração NVIDIA?' }),
+    h('p', { text: `Detectamos uma placa NVIDIA. Com a aceleração a transcrição fica bem mais rápida. Download de cerca de ${size}.` }),
+    h('p', { class: 'mod-dialog-terms' }, [
+      icon('gavel'),
+      h('span', {}, [
+        'Ao clicar em "Baixar e aceitar", você concorda com os ',
+        link ? h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.bds?.openExternal?.(link.url); } }, 'termos de licença da NVIDIA') : 'termos de licença da NVIDIA',
+        '.'
       ])
-    ]));
-  } else {
-    children.push(h('div', { class: 'mod-license' }, [
-      h('p', {}, [
-        h('strong', { text: 'Origem: ' }),
-        `o mesmo motor, compilado para placas NVIDIA, direto da versão oficial no GitHub (já inclui as bibliotecas CUDA da NVIDIA). Download de cerca de ${fmtBytes(c.approxDownloadBytes)}.`
-      ]),
-      h('p', { class: 'mod-muted' }, 'As bibliotecas da NVIDIA têm licença própria. Leia os termos antes de baixar:'),
-      h('ul', { class: 'mod-links' }, c.licenseLinks.map((l) => h('li', {}, [
-        h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.bds?.openExternal?.(l.url); } }, [icon('open_in_new'), l.label])
-      ]))),
-      h('label', { class: 'mod-check' }, [
-        h('input', { type: 'checkbox', checked: acceptCuda, onchange: (e) => { acceptCuda = e.target.checked; renderCudaSection(); } }),
-        h('span', { text: 'Li e aceito os termos de licença da NVIDIA' })
-      ])
-    ]));
-    if (!w.engine.installed) children.push(h('p', { class: 'mod-hint' }, 'Instale o motor (acima) primeiro: ele serve de reserva se a placa de vídeo falhar.'));
-    children.push(h('div', { class: 'mod-actions' }, [
-      h('button', { class: 'mod-btn mod-btn-primary', type: 'button', disabled: b || !acceptCuda || !w.engine.installed, onclick: () => act(window.bds.modulesInstallCuda, { acceptLicense: true }) }, [icon('download'), `Baixar a aceleração (~${fmtBytes(c.approxDownloadBytes)})`])
-    ]));
-  }
-  return section('Aceleração por GPU (NVIDIA)', 'bolt', children);
+    ]),
+    h('div', { class: 'mod-dialog-actions' }, [
+      h('button', { class: 'mod-btn mod-btn-ghost', type: 'button', onclick: close }, 'Agora não'),
+      h('button', { class: 'mod-btn mod-btn-primary', type: 'button', onclick: () => { close(); act(window.bds.modulesInstallCuda, { acceptLicense: true }); } }, [icon('download'), 'Baixar e aceitar'])
+    ])
+  );
+  dlg.addEventListener('close', () => dlg.remove());
+  (root || document.body).append(dlg);
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  dlg.querySelector('.mod-btn-ghost')?.focus();
 }
 
-function renderCudaSection() { if (status) { const el = $('modCuda'); clear(el).append(renderCuda()); } }
-
 // ------------------------------------------------------------------ ações
+
+/** Botão "Instalar": baixa a transcrição e, havendo placa NVIDIA, pergunta pela aceleração. */
+async function installFlow() {
+  const data = await installEngine(false);
+  if (data && data.whisper && nvidiaDetected && data.whisper.cuda.available !== false && !data.whisper.cuda.installed) askNvidia();
+}
 
 async function installEngine(fromZip) {
   if (!fromZip) return act(window.bds.modulesInstallEngine, {});
   const picked = await window.bds.selectFile({
-    title: 'Selecionar o pacote do motor (.zip)',
-    filters: [{ name: 'Pacote do motor (whisper.cpp)', extensions: ['zip'] }],
+    title: 'Selecionar o pacote de transcrição',
+    filters: [{ name: 'Pacote de transcrição', extensions: ['zip'] }],
     properties: ['openFile']
   });
   const list = Array.isArray(picked) ? picked : (picked?.filePaths || []);
@@ -290,17 +308,22 @@ async function installEngine(fromZip) {
 }
 
 async function removeEngine() {
-  const ok = await window.bdsModal.confirm('Remover o motor de transcrição?\n\nOs modelos e a aceleração NVIDIA já baixados continuam no disco; remova-os separadamente se quiser liberar espaço.');
+  const ok = await window.bdsModal.confirm('Remover a transcrição?\n\nOs modelos e a aceleração NVIDIA já baixados continuam no disco; apague-os separadamente se quiser liberar espaço.');
   if (ok) act(window.bds.modulesUninstallEngine);
 }
 
 async function removeModel(m) {
-  const ok = await window.bdsModal.confirm(`Remover o modelo ${m.label}?\n\nIsso libera ${fmtBytes(m.sizeOnDisk || m.sizeBytes)}. Você pode baixá-lo de novo quando quiser.`);
+  const installed = status.whisper.models.filter((x) => x.installed);
+  const last = installed.length === 1;
+  const lines = [`Apagar o modelo ${m.label}?`, '', `Isso libera ${fmtBytes(m.sizeOnDisk || m.sizeBytes)}. Você pode baixá-lo de novo quando quiser.`];
+  if (last) lines.push('', 'É o único modelo instalado: a transcrição só volta a funcionar depois que você baixar um modelo.');
+  else if (m.active) lines.push('', 'Outro modelo instalado passará a ser usado.');
+  const ok = await window.bdsModal.confirm(lines.join('\n'));
   if (ok) act(window.bds.modulesRemoveModel, m.id);
 }
 
 async function removeCuda() {
-  const ok = await window.bdsModal.confirm('Remover a aceleração NVIDIA?\n\nA transcrição continuará funcionando, mas na CPU (bem mais devagar nos modelos grandes).');
+  const ok = await window.bdsModal.confirm('Remover a aceleração NVIDIA?\n\nA transcrição continua funcionando, mas na CPU (bem mais devagar nos modelos grandes).');
   if (ok) act(window.bds.modulesRemoveCuda);
 }
 
@@ -308,15 +331,11 @@ async function removeCuda() {
 
 function render() {
   if (!status) return;
-  const w = status.whisper;
-  $('modDisk').textContent = status.disk.freeBytes != null ? `${fmtBytes(status.disk.freeBytes)} livres` : '—';
   clear($('modWhisperHead')).append(renderHead());
-  clear($('modEngine')).append(renderEngine());
+  clear($('modMain')).append(renderMain());
   clear($('modModels')).append(renderModels());
-  clear($('modCuda')).append(renderCuda());
   $('modProgressCancel').disabled = !status.busy;
   if (!status.busy) $('modProgress').classList.add('hidden');
-  void w;
 }
 
 function subscribe() {
@@ -333,10 +352,6 @@ export async function mountModulesPanel(container) {
   clear(root);
   root.append(
     h('div', { class: 'mod-screen mod-embedded' }, [
-      h('div', { class: 'mod-toolbar' }, [
-        h('span', { class: 'mod-muted', text: 'Espaço livre no disco' }),
-        h('span', { id: 'modDisk', class: 'mod-chip', title: 'Espaço livre no disco', text: '—' })
-      ]),
       h('div', { id: 'modNotice', class: 'mod-notice hidden', role: 'status', 'aria-live': 'polite' }),
       h('section', { id: 'modProgress', class: 'mod-progress hidden', 'aria-live': 'polite' }, [
         h('div', { class: 'mod-progress-head' }, [
@@ -346,12 +361,13 @@ export async function mountModulesPanel(container) {
         h('div', { id: 'modBar', class: 'mod-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, [h('div', { id: 'modBarFill', class: 'mod-bar-fill' })]),
         h('div', { class: 'mod-progress-info' }, [h('span', { id: 'modProgressMsg', text: '—' }), h('span', { id: 'modProgressStats', class: 'mod-muted' })])
       ]),
-      h('section', { class: 'mod-card', 'aria-label': 'Módulo de transcrição' }, [
-        h('div', { id: 'modWhisperHead' }), h('div', { id: 'modEngine' }), h('div', { id: 'modModels' }), h('div', { id: 'modCuda' })
+      h('section', { class: 'mod-card', 'aria-label': 'Transcrição' }, [
+        h('div', { id: 'modWhisperHead' }), h('div', { id: 'modMain' }), h('div', { id: 'modModels' })
       ])
     ])
   );
   subscribe();
+  await detectNvidia();
   await refresh();
 }
 

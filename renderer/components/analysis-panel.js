@@ -1,7 +1,7 @@
 /**
- * Painel "Análise com IA" das Configurações → Transcrição — escolhe o servidor de IA que resume as
- * transcrições (LM Studio, Ollama, OpenAI ou outro compatível). É opcional: sem ele, a transcrição
- * funciona normalmente. A configuração é a mesma do assistente (window.bds.ai*); a chave de API só é
+ * Painel "Servidor de IA" da seção Configurações → Inteligência Artificial — escolhe o servidor de IA usado
+ * pela análise de transcrições e pelo assistente (LM Studio, Ollama, OpenAI ou outro compatível). É opcional:
+ * sem ele, a transcrição funciona normalmente. A configuração é a mesma do assistente (window.bds.ai*); a chave de API só é
  * gravada (criptografada) e nunca volta para a tela. Textos entram sempre por textContent.
  */
 
@@ -35,7 +35,7 @@ const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); ret
 async function call(fn, ...args) {
   if (typeof fn !== 'function') throw new Error('Recurso indisponível nesta versão do app.');
   const res = await fn(...args);
-  if (!res || !res.ok) throw new Error(res?.error || 'Falha desconhecida.');
+  if (!res || !res.ok) throw new Error(res?.error || 'Algo deu errado. Tente novamente.');
   return res.data;
 }
 
@@ -49,9 +49,9 @@ function presetFor(url) {
 }
 
 function serverHint(url) {
-  if (isOfficial(url)) return 'API oficial da OpenAI: o texto das transcrições será enviado pela internet.';
-  if (isLocalUrl(url)) return 'Servidor na sua máquina: o texto das transcrições não sai do computador.';
-  return 'Servidor externo: o texto das transcrições e a chave serão enviados a ele. Use https://.';
+  if (isOfficial(url)) return 'API oficial da OpenAI: o texto enviado à IA sai do computador pela internet.';
+  if (isLocalUrl(url)) return 'Servidor na sua máquina: o texto enviado à IA não sai do computador.';
+  return 'Servidor externo: o texto enviado à IA e a chave serão enviados a ele. Use https://.';
 }
 
 function keyHint(url) {
@@ -196,8 +196,8 @@ function render() {
   const head = h('div', { class: 'mod-head' }, [
     h('div', { class: 'mod-head-icon' }, [icon('auto_awesome')]),
     h('div', { class: 'mod-head-text' }, [
-      h('h3', { text: 'Análise com IA' }),
-      h('p', { text: 'Opcional. Resume cada transcrição e destaca assuntos, pontos importantes e trechos relevantes, em um arquivo .analise.md. Funciona com LM Studio, Ollama ou OpenAI.' })
+      h('h3', { text: 'Servidor de IA' }),
+      h('p', { text: 'Opcional. Usado para resumir transcrições (em um arquivo .analise.md) e pelo assistente. Funciona com LM Studio, Ollama ou OpenAI.' })
     ]),
     h('span', { class: `mod-state mod-state-${ready ? 'ok' : 'off'}`, text: ready ? 'Pronta' : 'Não configurada' })
   ]);
@@ -210,7 +210,7 @@ function render() {
       h('div', { class: 'mod-row' }, [
         h('div', { class: 'mod-row-text' }, [
           h('strong', { text: `${serverName} · ${config.model}` }),
-          h('span', { class: 'mod-muted', text: config.isLocal ? 'Servidor na sua máquina: o texto das transcrições não sai do computador.' : 'Servidor externo: o texto das transcrições é enviado a ele.' })
+          h('span', { class: 'mod-muted', text: config.isLocal ? 'Servidor na sua máquina: o texto enviado à IA não sai do computador.' : 'Servidor externo: o texto enviado à IA sai do computador.' })
         ]),
         h('div', { class: 'mod-actions' }, [
           h('button', { class: 'mod-btn mod-btn-ghost', type: 'button', onclick: () => { editing = true; statusLine = null; render(); } }, [icon('edit'), 'Alterar'])
@@ -227,11 +227,11 @@ function render() {
 
 // ------------------------------------------------------------------ ciclo de vida
 
-/** Monta o cartão dentro de `container` (Configurações → Transcrição) e carrega a configuração. */
+/** Monta o cartão dentro de `container` (Configurações → Inteligência Artificial) e carrega a configuração. */
 export async function mountAnalysisPanel(container) {
   root = container;
   clear(root);
-  root.append(h('div', { class: 'mod-screen mod-embedded' }, [h('section', { id: 'anaHost', class: 'mod-card ana-card', 'aria-label': 'Análise com IA' })]));
+  root.append(h('div', { class: 'mod-screen mod-embedded' }, [h('section', { id: 'anaHost', class: 'mod-card ana-card', 'aria-label': 'Servidor de IA' })]));
   statusLine = null;
   try {
     config = await call(window.bds?.aiGetConfig);

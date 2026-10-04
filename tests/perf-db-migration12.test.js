@@ -37,9 +37,9 @@ test('migração 12: colunas, índices e triggers; backfill idêntico a libraryT
     assert.strictEqual(r.media_type, libraryTypeOf(r.filename), `tipo de ${r.filename}`);
     assert.strictEqual(r.sort_date, r.recorded_at || r.imported_at, `sort_date de ${r.filename}`);
   }
-  // RAW é 'raw'; foto exclui gif/bmp/svg (semântica anterior da Biblioteca)
+  // RAW é 'raw'; foto inclui todas as imagens (gif/bmp/tiff/svg desde a migração 13)
   assert.strictEqual(db.prepare("SELECT media_type t FROM media WHERE filename LIKE '%.arw'").get().t, 'raw');
-  assert.strictEqual(db.prepare("SELECT media_type t FROM media WHERE filename LIKE '%.gif'").get().t, null);
+  assert.strictEqual(db.prepare("SELECT media_type t FROM media WHERE filename LIKE '%.gif'").get().t, 'photo'); // migração 13: GIF/BMP/TIFF/SVG também são foto
 
   const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map(r => r.name);
   for (const n of ['idx_media_sort_listing', 'idx_media_type_stats', 'idx_media_type_hf', 'idx_media_imported_at',

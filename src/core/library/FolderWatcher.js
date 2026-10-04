@@ -6,8 +6,12 @@ const EventBus = require('../EventBus');
 const { SUPPORTED_EXTENSIONS, isJpeg, findSiblingRaw } = require('../media/MediaTypes');
 
 const JPG_DEFER_MS = 6000;      // espera o RAW irmão chegar antes de indexar um JPG
-const MAX_RESTARTS = 3;
 const RESTART_DELAY_MS = 5000;
+const MAX_RESTART_DELAY_MS = 5 * 60 * 1000; // backoff exponencial com teto: nunca desiste do monitoramento
+const STABLE_MS = 2 * 60 * 1000;            // sem erros por este tempo => zera o contador de reinícios
+
+/** Temporários de download (yt-dlp: .partN/.fNNN/.ytdl/.temp) que somem logo e geravam ENOENT no log. */
+const TEMP_FILE_RE = /(\.part(-Frag\d+)?|\.ytdl|\.temp|\.tmp)$|\.f\d{2,4}\.[a-z0-9]{2,4}$/i;
 
 class FolderWatcher {
     constructor(libraryId, folderPath, importQueue) {
@@ -38,6 +42,8 @@ class FolderWatcher {
                     return true;
                 }
                 
+                if (TEMP_FILE_RE.test(basename)) return true;
+
                 // Se for garantidamente um arquivo, ignora se não tiver extensão suportada
                 if (stats && stats.isFile()) {
                     const ext = path.extname(basename).toLowerCase();
@@ -53,6 +59,11 @@ class FolderWatcher {
                 pollInterval: 100
             }
         });
+
+        // Watcher estável por STABLE_MS sem erro: os reinícios anteriores deixam de contar
+        clearTimeout(this._stableTimer);
+        this._stableTimer = setTimeout(() => { this.restarts = 0; }, STABLE_MS);
+        if (this._stableTimer.unref) this._stableTimer.unref();
 
         this.watcher
             .on('add', filePath => this.handleFileEvent('CREATE', filePath))
@@ -104,18 +115,23 @@ class FolderWatcher {
 
     _handleError(err) {
         logger.error(`[FolderWatcher] Erro no watcher da lib #${this.libraryId} (${this.folderPath}): ${err && (err.message || err)}`);
-        if (this.stopped || this.restarts >= MAX_RESTARTS) return;
+        // ENOENT de arquivo que sumiu (temporário de download, pasta apagada no meio da varredura) não derruba o watcher
+        if (err && err.code === 'ENOENT') return;
+        if (this.stopped) return;
+        clearTimeout(this._stableTimer);
+        const delay = Math.min(RESTART_DELAY_MS * Math.pow(2, this.restarts), MAX_RESTART_DELAY_MS);
         this.restarts++;
-        logger.warn(`[FolderWatcher] Reiniciando watcher da lib #${this.libraryId} (tentativa ${this.restarts}/${MAX_RESTARTS})`);
+        logger.warn(`[FolderWatcher] Reiniciando watcher da lib #${this.libraryId} em ${Math.round(delay / 1000)}s (tentativa ${this.restarts})`);
         const old = this.watcher;
         this.watcher = null;
         if (old) { try { Promise.resolve(old.close()).catch(() => {}); } catch (_) {} }
-        const t = setTimeout(() => { if (!this.stopped && !this.watcher) this.start(); }, RESTART_DELAY_MS);
+        const t = setTimeout(() => { if (!this.stopped && !this.watcher) this.start(); }, delay);
         if (t.unref) t.unref();
     }
 
     stop() {
         this.stopped = true;
+        clearTimeout(this._stableTimer);
         for (const t of this.pendingJpgs.values()) clearTimeout(t);
         this.pendingJpgs.clear();
         if (this.watcher) {

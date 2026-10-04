@@ -1,7 +1,8 @@
 ﻿'use strict';
 
 const EventEmitter = require('node:events');
-const { v4: uuidv4 } = require('uuid');
+// [PERF] crypto.randomUUID() gera o mesmo UUID v4 do pacote 'uuid', sem o custo de carregar o pacote inteiro (~20 ms).
+const { randomUUID: uuidv4 } = require('node:crypto');
 
 /**
  * Status possíveis de um Job.

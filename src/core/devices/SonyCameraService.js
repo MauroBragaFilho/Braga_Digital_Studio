@@ -24,6 +24,12 @@ class SonyCameraService extends EventEmitter {
             });
         });
 
+        // Câmera sem sinal: remove o provider (evita acumular providers e telemetria de câmeras ausentes)
+        this.discovery.on('camera_lost', (cameraInfo) => {
+            this.providers.delete(cameraInfo.id);
+            this.emit('camera_disconnected', cameraInfo);
+        });
+
         this.discovery.start();
 
         // Polling de telemetria a cada 10 segundos
@@ -37,6 +43,11 @@ class SonyCameraService extends EventEmitter {
                 }
             }
         }, 10000);
+    }
+
+    /** Repete a busca de câmeras agora (botão "Procurar novamente"). */
+    rescan() {
+        try { this.discovery.rescan(); } catch (e) { logger.warn(`[SonyCameraService] Falha ao repetir a busca: ${e.message}`); }
     }
 
     getProvider(cameraId) {

@@ -6,8 +6,11 @@
 import { WaveformRenderer } from './WaveformRenderer.js';
 
 import { escapeHtml as _e } from '../../utils/escape.js';
+import { toFileUrl } from '../../utils/fileUrl.js';
+const _fps = r => { const [n,d]=String(r||'').split('/').map(Number); const v=d?n/d:n; return v>0&&isFinite(v)?String(Math.round(v*100)/100):''; };
+const _sz = b => b>=1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(b/1024))+' KB';
 const _t = s => { if(!s||isNaN(s))return'00:00'; return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0'); };
-const _f = fp => 'file:///'+String(fp).replace(/\\\\/g,'/');
+const _f = fp => toFileUrl(fp);
 const _u = (m,fp) => { if(m&&m.uuid)return m.uuid; let h=0; const s=String(fp||'').toLowerCase(); for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;} return 'v_'+Math.abs(h).toString(36); };
 
 export class VideoPreview {
@@ -50,6 +53,7 @@ export class VideoPreview {
     video?.addEventListener('pause', ()=>this._onPause());
     video?.addEventListener('ended', ()=>this._onEnd());
     video?.addEventListener('loadedmetadata', ()=>this._onMeta());
+    video?.addEventListener('error', ()=>this._onMediaError());
     video?.addEventListener('timeupdate', ()=>this._onTimeUpdate());
     document.addEventListener('keydown', this._kb);
     document.addEventListener('fullscreenchange', this._fsh);
@@ -73,12 +77,39 @@ export class VideoPreview {
     const ext=(fp.split('.').pop()||'').toUpperCase();
     this.dom.badge.textContent=ext||'VIDEO';
     this.dom.title.textContent=media.filename||media.name||fp.split(/[/\\]/).pop()||'Video';
-    this.duration=0; this._infoFetched=false; this._infoData=null;
+    this.media=media; this.duration=0; this._infoFetched=false; this._infoData=null;
+    if(this.dom.infoGrid) this.dom.infoGrid.innerHTML='';
+    if(this.isInfoOpen) this._fetchInfo(); // painel já aberto: mostra os dados da nova mídia
     this.dom.curTime.textContent='00:00'; this.dom.dur.textContent='00:00';
     this.dom.tlFill.style.width='0%'; this.dom.tlHead.style.left='0%';
     this.dom.btnPlay.querySelector('.material-symbols-rounded').textContent='play_arrow';
+    this._showError('');
+    const gen=this._loadGen; // token de sequência: descarta a sondagem de uma mídia já substituída/fechada
     const v=this.dom.video; v.src=_f(fp); v.load();
-    await this._probeAudio(fp); this._buildAudioPanel(media);
+    const streams=await this._probeAudio(fp);
+    if(gen!==this._loadGen) return;
+    this.aStreams=streams; this._buildAudioPanel(media);
+  }
+
+  // Mídia ausente/corrompida/formato não suportado: avisa em vez de ficar com a tela preta
+  _onMediaError() {
+    const v=this.dom.video; if(!v||!v.getAttribute('src')) return;
+    const code=v.error&&v.error.code;
+    const msg=code===3?'Não foi possível decodificar este vídeo.'
+      :code===4?'Arquivo ausente ou formato não suportado.'
+      :'Não foi possível carregar este vídeo.';
+    this._showError(msg);
+  }
+
+  _showError(msg) {
+    const area=this.dom.videoArea; if(!area) return;
+    if(!this.dom.err){
+      const el=document.createElement('div'); el.className='vp-error';
+      el.style.cssText='position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;color:#fca5a5;font-size:14px;pointer-events:none';
+      if(getComputedStyle(area).position==='static') area.style.position='relative';
+      area.appendChild(el); this.dom.err=el;
+    }
+    this.dom.err.textContent=msg||''; this.dom.err.style.display=msg?'flex':'none';
   }
 
   _stopAll() {
@@ -94,7 +125,8 @@ export class VideoPreview {
 
   async _probeAudio(fp) {
     this.aStreams=[];
-    try{ if(window.bds?.probeAudioStreams){ this.aStreams=await window.bds.probeAudioStreams(fp); if(!Array.isArray(this.aStreams))this.aStreams=[]; } }catch(_){ this.aStreams=[]; }
+    try{ if(window.bds?.probeAudioStreams){ const s=await window.bds.probeAudioStreams(fp); return Array.isArray(s)?s:[]; } }catch(_){ /* sem trilhas */ }
+    return [];
   }
 
   _init() {
@@ -269,21 +301,28 @@ export class VideoPreview {
     try{
       const data=await window.bds.probeMetadataFile(fp);
       this._infoData=data; this._infoFetched=true; this._renderInfo(data);
-    }catch(_){}
+    }catch(err){ console.error('[PREVIEW] Falha ao ler informações da mídia:',err); }
   }
 
-  _renderInfo(data) {
-    const grid=this.dom.infoGrid; if(!grid||!data)return;
+  _renderInfo(raw) {
+    const grid=this.dom.infoGrid; if(!grid||!raw)return;
     grid.innerHTML='';
+    // 'metadata:probe' devolve o JSON do ffprobe ({ streams, format }); aceita também um objeto já achatado.
+    const streams=Array.isArray(raw.streams)?raw.streams:[];
+    const vs=streams.find(s=>s.codec_type==='video')||{};
+    const as=streams.find(s=>s.codec_type==='audio')||{};
+    const fmt=raw.format||{};
+    const data=streams.length||raw.format?{...raw,...vs,fps:_fps(vs.avg_frame_rate||vs.r_frame_rate),audio_codec:as.codec_name,channels:as.channels,
+      duration:fmt.duration||vs.duration,bit_rate:fmt.bit_rate||vs.bit_rate,size:fmt.size}:raw;
     const fields=[
-      ['Codec',data.codec_name||data.format||'-'],
+      ['Codec',data.codec_name||'-'],
       ['Resolução',data.width&&data.height?`${data.width}×${data.height}`:'-'],
-      ['FPS',data.fps||data.r_frame_rate||'-'],
-      ['Duração',_t(data.duration||this.duration)],
+      ['FPS',data.fps||'-'],
+      ['Duração',_t(parseFloat(data.duration)||this.duration)],
       ['Bitrate',data.bit_rate?`${(parseInt(data.bit_rate)/1000).toFixed(0)} kbps`:'-'],
-      ['Áudio',data.audio_codec||data.audio_codec_name||'-'],
-      ['Canais',data.channels||data.audio_channels||'-'],
-      ['Tamanho',data.size?`${(parseInt(data.size)/(1024*1024)).toFixed(1)} MB`:'-'],
+      ['Áudio',data.audio_codec||'-'],
+      ['Canais',data.channels||'-'],
+      ['Tamanho',data.size?_sz(parseInt(data.size)):'-'],
     ];
     fields.forEach(([label,value])=>{
       const item=document.createElement('div'); item.className='vp-info-item';

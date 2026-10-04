@@ -3,7 +3,6 @@
   <!-- CABEÇALHO -->
   <div class="settings-header">
     <div class="st-header-text">
-      <h2 class="st-header-title">Configurações</h2>
       <p class="settings-description">Personalize a aparência, os padrões e o comportamento do BDS.</p>
     </div>
     <button id="saveSettingsButton" class="settings-btn-primary" type="button">
@@ -17,42 +16,51 @@
     <aside class="settings-sidebar">
       <div class="st-search">
         <span class="material-symbols-rounded" aria-hidden="true">search</span>
-        <input id="settingsSearch" type="search" class="st-search-input" placeholder="Buscar configuração…" autocomplete="off" spellcheck="false" aria-label="Buscar configuração" />
+        <input id="settingsSearch" type="search" class="st-search-input" placeholder="Buscar configuração…" aria-controls="settingsContent" autocomplete="off" spellcheck="false" aria-label="Buscar configuração" />
       </div>
 
       <nav class="st-nav" aria-label="Categorias de configuração">
+        <span class="st-nav-group" aria-hidden="true">Preferências</span>
         <button class="settings-tab active" data-tab="settingsGeneralView" type="button">
-          <span class="material-symbols-rounded">tune</span> Geral
+          <span class="material-symbols-rounded" aria-hidden="true">tune</span> Geral
         </button>
         <button class="settings-tab" data-tab="settingsNotificationsView" type="button">
-          <span class="material-symbols-rounded">notifications</span> Notificações
+          <span class="material-symbols-rounded" aria-hidden="true">notifications</span> Notificações
         </button>
         <button class="settings-tab" data-tab="settingsMediaView" type="button">
-          <span class="material-symbols-rounded">movie_filter</span> Mídia e Desempenho
+          <span class="material-symbols-rounded" aria-hidden="true">movie_filter</span> Mídia e Desempenho
         </button>
         <button class="settings-tab" data-tab="settingsFoldersView" type="button">
-          <span class="material-symbols-rounded">folder_open</span> Pastas e Bibliotecas
+          <span class="material-symbols-rounded" aria-hidden="true">folder_open</span> Pastas e Bibliotecas
         </button>
-        <button class="settings-tab" data-tab="settingsAiView" type="button">
-          <span class="material-symbols-rounded">smart_toy</span> Inteligência Artificial
-        </button>
-        <button class="settings-tab" data-tab="settingsLutsView" type="button">
-          <span class="material-symbols-rounded">gradient</span> LUTs
+        <span class="st-nav-group" aria-hidden="true">Recursos</span>
+        <button class="settings-tab" data-tab="settingsModulesView" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">extension</span> Módulos
         </button>
         <button class="settings-tab" data-tab="settingsTranscriptionView" type="button">
-          <span class="material-symbols-rounded">subtitles</span> Transcrição
+          <span class="material-symbols-rounded" aria-hidden="true">subtitles</span> Transcrição
         </button>
+        <button class="settings-tab" data-tab="settingsLutsView" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">gradient</span> LUTs
+        </button>
+        <button class="settings-tab st-devhidden" data-tab="settingsAiView" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">smart_toy</span> Inteligência Artificial
+        </button>
+        <span class="st-nav-group" aria-hidden="true">Aplicativo</span>
         <button class="settings-tab" data-tab="settingsUpdatesView" type="button">
-          <span class="material-symbols-rounded">system_update</span> Atualizações
+          <span class="material-symbols-rounded" aria-hidden="true">system_update</span> Atualizações
         </button>
         <button class="settings-tab" data-tab="settingsSystemView" type="button">
-          <span class="material-symbols-rounded">desktop_windows</span> Sistema
+          <span class="material-symbols-rounded" aria-hidden="true">desktop_windows</span> Sistema
+        </button>
+        <button class="settings-tab" data-tab="settingsAboutView" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">gavel</span> Sobre e licenças
         </button>
       </nav>
     </aside>
 
     <!-- CONTEÚDO -->
-    <main class="settings-content">
+    <main class="settings-content" id="settingsContent">
 
       <div id="settingsNoResults" class="st-no-results hidden" role="status">
         <span class="material-symbols-rounded" aria-hidden="true">search_off</span>
@@ -82,19 +90,18 @@
 
           <div class="st-row">
             <div class="st-row-text">
-              <label class="st-row-label" for="accentColorInput">Cor de destaque</label>
-              <span class="st-row-hint">Usada em botões, abas ativas, barras de progresso e seleções.</span>
+              <span class="st-row-label" id="accentColorLabel">Cor de destaque</span>
+              <span class="st-row-hint">Realça o menu, links e barras de progresso.</span>
             </div>
             <div class="st-row-control st-accent-control">
-              <div class="st-swatches" id="accentSwatches" role="group" aria-label="Cores sugeridas">
-                <button type="button" class="st-swatch" data-color="#e53935" style="--sw:#e53935" title="Vermelho" aria-label="Vermelho"></button>
-                <button type="button" class="st-swatch" data-color="#f25c05" style="--sw:#f25c05" title="Laranja" aria-label="Laranja"></button>
-                <button type="button" class="st-swatch" data-color="#fbc02d" style="--sw:#fbc02d" title="Amarelo" aria-label="Amarelo"></button>
-                <button type="button" class="st-swatch" data-color="#43a047" style="--sw:#43a047" title="Verde" aria-label="Verde"></button>
-                <button type="button" class="st-swatch" data-color="#1e88e5" style="--sw:#1e88e5" title="Azul" aria-label="Azul"></button>
-                <button type="button" class="st-swatch" data-color="#8e24aa" style="--sw:#8e24aa" title="Roxo" aria-label="Roxo"></button>
+              <div class="st-accent-radios" id="accentSwatches" role="radiogroup" aria-labelledby="accentColorLabel">
+                <label class="st-accent-opt" title="Vermelho"><input type="radio" class="st-accent-radio" name="accentChoice" value="#ff0000" aria-label="Vermelho" style="--sw:#ff0000" /></label>
+                <label class="st-accent-opt" title="Rosa"><input type="radio" class="st-accent-radio" name="accentChoice" value="#ff2d8a" aria-label="Rosa" style="--sw:#ff2d8a" /></label>
+                <label class="st-accent-opt" title="Azul"><input type="radio" class="st-accent-radio" name="accentChoice" value="#1a73e8" aria-label="Azul" style="--sw:#1a73e8" /></label>
+                <label class="st-accent-opt" title="Verde"><input type="radio" class="st-accent-radio" name="accentChoice" value="#00a651" aria-label="Verde" style="--sw:#00a651" /></label>
+                <label class="st-accent-opt" title="Laranja"><input type="radio" class="st-accent-radio" name="accentChoice" value="#ff6a00" aria-label="Laranja" style="--sw:#ff6a00" /></label>
               </div>
-              <input type="color" id="accentColorInput" class="settings-color-input" value="#e53935" title="Escolher outra cor" />
+              <input type="hidden" id="accentColorInput" value="#ff0000" />
             </div>
           </div>
 
@@ -127,7 +134,6 @@
                 <option value="upload">Envio</option>
                 <option value="devices">Dispositivos</option>
                 <option value="luts">LUTs</option>
-                <option value="ai">Assistente IA</option>
               </select>
             </div>
           </div>
@@ -148,6 +154,16 @@
           <div class="st-order-actions">
             <button id="sidebarOrderResetButton" class="settings-btn-outline" type="button">Restaurar ordem padrão</button>
           </div>
+        </div>
+      </section>
+
+      <!-- ================= MÓDULOS ================= -->
+      <section id="settingsModulesView" class="settings-view hidden" data-search-keywords="módulos recursos ligar desligar transcrição recuperação montagem">
+        <h3 class="settings-section-title">Módulos</h3>
+        <div class="st-card">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">extension</span> Recursos do BDS</h4>
+          <p class="st-card-desc">Ligue só o que você usa. Módulos desligados somem do menu lateral, da Home e dos atalhos; suas configurações e arquivos são mantidos.</p>
+          <div id="modulesList" class="st-modules-list" aria-live="polite"></div>
         </div>
       </section>
 
@@ -234,39 +250,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Telegram: recurso ainda oculto (mantido para quando for liberado) -->
-        <div class="st-card hidden">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">send</span> Telegram <span class="st-optional">(opcional)</span></h4>
-          <p class="st-row-hint">
-            Receba os mesmos avisos no seu celular. Crie um bot com o @BotFather no Telegram, copie o token e informe o ID do seu chat.
-            Clique em "Salvar Alterações" e depois teste enviando uma notificação.
-          </p>
-
-          <label class="st-row st-row-toggle">
-            <div class="st-row-text">
-              <span class="st-row-label">Ativar notificações via Telegram</span>
-              <span class="st-row-hint">Envia também para o seu Telegram quando houver notificações do app.</span>
-            </div>
-            <input type="checkbox" id="telegramNotificationsEnabledInput" class="st-switch" />
-          </label>
-
-          <div class="st-row st-row-stack">
-            <label class="st-row-label" for="telegramBotTokenInput">Token do Bot</label>
-            <input type="password" id="telegramBotTokenInput" class="settings-input" placeholder="1234567890:AA... (token do @BotFather)" />
-          </div>
-
-          <div class="st-row st-row-stack">
-            <label class="st-row-label" for="telegramChatIdInput">Chat ID</label>
-            <input type="text" id="telegramChatIdInput" class="settings-input" placeholder="Ex: 123456789 — ID do seu chat" />
-          </div>
-
-          <div class="st-row">
-            <button id="testTelegramButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded">send</span> Testar envio no Telegram
-            </button>
-          </div>
-        </div>
       </section>
 
       <!-- ================= MÍDIA E DESEMPENHO ================= -->
@@ -284,17 +267,43 @@
             <input type="checkbox" id="useHardwareAccelerationInput" class="st-switch" />
           </label>
 
-          <div class="st-row st-row-sub">
+          <details class="st-advanced">
+            <summary>Ajustes avançados</summary>
+            <div class="st-row st-row-sub">
+              <div class="st-row-text">
+                <label class="st-row-label" for="preferredGpuVendorInput">GPU preferida</label>
+                <span class="st-row-hint">Só mude se o computador tiver mais de uma placa de vídeo.</span>
+              </div>
+              <div class="st-row-control">
+                <select id="preferredGpuVendorInput" class="settings-select">
+                  <option value="auto">Automático (melhor disponível)</option>
+                  <option value="nvidia">NVIDIA</option>
+                  <option value="amd">AMD</option>
+                  <option value="intel">Intel</option>
+                </select>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="st-card">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">download</span> Lista de downloads</h4>
+          <label class="st-row st-row-toggle">
             <div class="st-row-text">
-              <label class="st-row-label" for="preferredGpuVendorInput">GPU preferida</label>
+              <span class="st-row-label">Pausar entre os downloads</span>
+              <span class="st-row-hint">Espera um tempo aleatório antes de cada vídeo da lista, para o YouTube não tratar a fila como robô.</span>
+            </div>
+            <input type="checkbox" id="downloadPauseEnabledInput" class="st-switch" checked />
+          </label>
+          <div id="downloadPauseRange" class="st-row st-row-sub">
+            <div class="st-row-text">
+              <span class="st-row-label">Tempo da pausa (segundos)</span>
+              <span class="st-row-hint">Sorteado entre o mínimo e o máximo. Padrão: 10 a 180 (3 minutos).</span>
             </div>
             <div class="st-row-control">
-              <select id="preferredGpuVendorInput" class="settings-select">
-                <option value="auto">Automático (melhor disponível)</option>
-                <option value="nvidia">NVIDIA</option>
-                <option value="amd">AMD</option>
-                <option value="intel">Intel</option>
-              </select>
+              <input type="number" id="downloadPauseMinInput" class="settings-input st-input-short" min="0" max="600" step="1" value="10" aria-label="Pausa mínima em segundos" />
+              <span aria-hidden="true">a</span>
+              <input type="number" id="downloadPauseMaxInput" class="settings-input st-input-short" min="0" max="600" step="1" value="180" aria-label="Pausa máxima em segundos" />
             </div>
           </div>
         </div>
@@ -317,19 +326,6 @@
 
           <div class="st-row">
             <div class="st-row-text">
-              <label class="st-row-label" for="converterDefaultCodecInput">Codec de vídeo</label>
-              <span class="st-row-hint">H265 gera arquivos menores, mas depende do suporte do motor de conversão e do equipamento.</span>
-            </div>
-            <div class="st-row-control">
-              <select id="converterDefaultCodecInput" class="settings-select">
-                <option value="libx264">H264 (mais compatível)</option>
-                <option value="libx265">H265 (menor tamanho)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="st-row">
-            <div class="st-row-text">
               <label class="st-row-label" for="converterDefaultResolutionInput">Resolução</label>
             </div>
             <div class="st-row-control">
@@ -340,6 +336,21 @@
                 <option value="1080">Full HD (1080p)</option>
                 <option value="720">HD (720p)</option>
                 <option value="480">SD (480p)</option>
+              </select>
+            </div>
+          </div>
+
+          <details class="st-advanced">
+            <summary>Ajustes avançados</summary>
+          <div class="st-row">
+            <div class="st-row-text">
+              <label class="st-row-label" for="converterDefaultCodecInput">Codec de vídeo</label>
+              <span class="st-row-hint">H265 gera arquivos menores, mas nem todos os aparelhos e programas conseguem abrir.</span>
+            </div>
+            <div class="st-row-control">
+              <select id="converterDefaultCodecInput" class="settings-select">
+                <option value="libx264">H264 (mais compatível)</option>
+                <option value="libx265">H265 (menor tamanho)</option>
               </select>
             </div>
           </div>
@@ -368,6 +379,7 @@
               </select>
             </div>
           </div>
+          </details>
         </div>
       </section>
 
@@ -379,17 +391,17 @@
           <h4 class="st-card-title"><span class="material-symbols-rounded">download</span> Destino dos downloads</h4>
           <div id="customFoldersGroup" class="settings-folder-list">
             <div class="st-row st-row-stack">
-              <span class="st-row-label">Pasta de destino para áudio</span>
+              <label class="st-row-label" for="mp3FolderInput">Pasta de destino para áudio</label>
               <div class="settings-folder-controls">
-                <input type="text" id="mp3FolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-                <button id="mp3FolderButton" class="settings-btn-outline" type="button">Alterar</button>
+                <input type="text" id="mp3FolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <button id="mp3FolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
               </div>
             </div>
             <div class="st-row st-row-stack">
-              <span class="st-row-label">Pasta de destino para vídeo</span>
+              <label class="st-row-label" for="mp4FolderInput">Pasta de destino para vídeo</label>
               <div class="settings-folder-controls">
-                <input type="text" id="mp4FolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-                <button id="mp4FolderButton" class="settings-btn-outline" type="button">Alterar</button>
+                <input type="text" id="mp4FolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <button id="mp4FolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
               </div>
             </div>
           </div>
@@ -398,10 +410,10 @@
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">sync</span> Saída do Conversor</h4>
           <div class="st-row st-row-stack">
-            <span class="st-row-label">Pasta dos arquivos convertidos</span>
+            <label class="st-row-label" for="converterFolderInput">Pasta dos arquivos convertidos</label>
             <div class="settings-folder-controls">
-              <input type="text" id="converterFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-              <button id="converterFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              <input type="text" id="converterFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+              <button id="converterFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
             </div>
           </div>
         </div>
@@ -410,24 +422,24 @@
           <h4 class="st-card-title"><span class="material-symbols-rounded">video_library</span> Pastas da biblioteca</h4>
           <div class="settings-folder-list">
             <div class="st-row st-row-stack">
-              <span class="st-row-label">Gravações do OBS Studio</span>
+              <label class="st-row-label" for="obsFolderInput">Gravações do OBS Studio</label>
               <div class="settings-folder-controls">
-                <input type="text" id="obsFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-                <button id="obsFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+                <input type="text" id="obsFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <button id="obsFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
               </div>
             </div>
             <div class="st-row st-row-stack">
-              <span class="st-row-label">Gravações do NVIDIA ShadowPlay</span>
+              <label class="st-row-label" for="shadowplayFolderInput">Gravações do NVIDIA ShadowPlay</label>
               <div class="settings-folder-controls">
-                <input type="text" id="shadowplayFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-                <button id="shadowplayFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+                <input type="text" id="shadowplayFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <button id="shadowplayFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
               </div>
             </div>
             <div class="st-row st-row-stack">
-              <span class="st-row-label">Importação de dispositivos</span>
+              <label class="st-row-label" for="deviceFolderInput">Importação de dispositivos</label>
               <div class="settings-folder-controls">
-                <input type="text" id="deviceFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-                <button id="deviceFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+                <input type="text" id="deviceFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <button id="deviceFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
               </div>
             </div>
           </div>
@@ -438,10 +450,10 @@
           <h4 class="st-card-title"><span class="material-symbols-rounded">cloud_upload</span> Upload para YouTube</h4>
           <p class="st-row-hint">Pasta monitorada pelo scanner de uploads automáticos para YouTube.</p>
           <div class="st-row st-row-stack">
-            <span class="st-row-label">Pasta de uploads</span>
+            <label class="st-row-label" for="uploadsFolderInput">Pasta de uploads</label>
             <div class="settings-folder-controls">
-              <input type="text" id="uploadsFolderInput" class="settings-input" placeholder="Selecione uma pasta..." />
-              <button id="uploadsFolderButton" class="settings-btn-outline" type="button">Alterar</button>
+              <input type="text" id="uploadsFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+              <button id="uploadsFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
             </div>
           </div>
         </div>
@@ -457,30 +469,36 @@
       </section>
 
       <!-- ================= INTELIGÊNCIA ARTIFICIAL ================= -->
-      <section id="settingsAiView" class="settings-view hidden">
+      <section id="settingsAiView" class="settings-view st-devhidden hidden">
         <h3 class="settings-section-title">Inteligência Artificial</h3>
 
-        <div class="st-card">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">smart_toy</span> Assistente</h4>
-          <p class="st-card-desc">O assistente usa a API da OpenAI ou qualquer servidor compatível (Ollama, LM Studio…). A chave fica guardada criptografada neste computador.</p>
+        <p class="st-card-desc">Servidor de IA usado pela análise de transcrições e pelo assistente. Funciona com a API da OpenAI ou com servidores compatíveis (Ollama, LM Studio…). A chave fica guardada criptografada neste computador.</p>
+        <div id="settingsAnalysisPanel"></div>
 
-          <div class="st-ai-summary" id="settingsAiSummary" aria-live="polite">
-            <div class="st-ai-item"><span class="st-row-hint">Servidor</span><strong id="settingsAiServer">—</strong></div>
-            <div class="st-ai-item"><span class="st-row-hint">Modelo</span><strong id="settingsAiModel">—</strong></div>
-            <div class="st-ai-item"><span class="st-row-hint">Chave de API</span><strong id="settingsAiKey">—</strong></div>
-          </div>
+        <div class="st-card" id="settingsAssistantCard">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">smart_toy</span> Assistente de IA</h4>
+          <p class="st-card-desc">Um botão flutuante com um chat, em todas as telas. Consulta suas mídias e projetos e, só com a sua confirmação, transcreve mídias e cria projetos. Usa o servidor configurado acima (o que ele consulta é enviado a esse servidor); o modelo precisa aceitar ferramentas.</p>
 
-          <div class="st-row">
+          <label class="st-row st-row-toggle">
             <div class="st-row-text">
-              <span class="st-row-label">Configurar o assistente</span>
-              <span class="st-row-hint">Servidor, modelo, chave e instruções ficam na própria tela do Assistente.</span>
+              <span class="st-row-label">Ativar assistente</span>
+              <span class="st-row-hint">Desligado, o botão some e o assistente não funciona.</span>
             </div>
-            <div class="st-row-control">
-              <button id="settingsOpenAiButton" class="settings-btn-outline" type="button">
-                <span class="material-symbols-rounded">open_in_new</span> Abrir Assistente IA
-              </button>
+            <input type="checkbox" id="aiAssistantEnabledInput" class="st-switch" />
+          </label>
+
+          <details class="st-advanced">
+            <summary>Ajustes avançados</summary>
+            <div class="st-row st-row-stack">
+              <label class="st-row-label" for="aiAssistantInstructionsInput">Instruções personalizadas</label>
+              <span class="st-row-hint">Opcional. Por exemplo: "responda de forma curta". Valem para toda conversa.</span>
+              <textarea id="aiAssistantInstructionsInput" class="settings-textarea" rows="3" maxlength="2000" spellcheck="true" placeholder="Ex.: responda de forma curta."></textarea>
+              <div class="st-row-control">
+                <button id="aiAssistantInstructionsSave" class="settings-btn-outline" type="button">Salvar instruções</button>
+              </div>
             </div>
-          </div>
+          </details>
+          <span id="aiAssistantStatus" class="st-row-hint" role="status" aria-live="polite"></span>
         </div>
       </section>
 
@@ -511,11 +529,9 @@
       </section>
 
       <!-- ================= TRANSCRIÇÃO ================= -->
-      <section id="settingsTranscriptionView" class="settings-view hidden">
+      <section id="settingsTranscriptionView" class="settings-view hidden" data-search-keywords="transcrição legenda áudio modelo qualidade aceleração placa de vídeo NVIDIA instalar recurso">
         <h3 class="settings-section-title">Transcrição</h3>
-        <p class="st-card-desc">Recurso opcional: instale o motor, escolha o modelo e ative a aceleração por placa de vídeo. Para transcrever, use a tela <strong>Transcrição</strong> no menu lateral. Mais abaixo fica o servidor de IA da análise opcional.</p>
         <div id="settingsTranscriptionPanel"></div>
-        <div id="settingsAnalysisPanel"></div>
       </section>
 
       <!-- ================= ATUALIZAÇÕES ================= -->
@@ -524,16 +540,16 @@
 
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">deployed_code_update</span> Componentes do BDS</h4>
-          <p class="st-card-desc">Mantenha os componentes e motores de processamento do BDS atualizados.</p>
+          <p class="st-card-desc">Mantenha os recursos internos do BDS atualizados para baixar, converter e analisar mídia sem erros.</p>
 
           <div class="settings-updates-unified-card" id="settingsUpdatesCard">
             <div class="settings-update-header">
               <div class="settings-update-icon-wrap" id="updateStatusIconWrap">
-                <span class="material-symbols-rounded" id="updateStatusIcon">check_circle</span>
+                <span class="material-symbols-rounded" id="updateStatusIcon">update</span>
               </div>
-              <div class="settings-update-header-text">
-                <h4 id="updateHeadline">Verificando componentes...</h4>
-                <p id="updateSubHeadline">Aguarde enquanto o BDS verifica a integridade dos motores internos.</p>
+              <div class="settings-update-header-text" role="status" aria-live="polite">
+                <h4 id="updateHeadline">Atualizações dos componentes</h4>
+                <p id="updateSubHeadline">Use "Verificar atualizações" para consultar as fontes oficiais.</p>
               </div>
             </div>
 
@@ -562,6 +578,8 @@
             </div>
           </div>
 
+          <p id="updateLastCheck" class="st-row-hint st-last-check" role="status" aria-live="polite"></p>
+
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
               <span class="st-row-label">Verificar atualizações ao abrir o BDS</span>
@@ -569,6 +587,15 @@
             </div>
             <input type="checkbox" id="checkUpdatesOnStartInput" class="st-switch" />
           </label>
+
+          <details class="st-advanced">
+            <summary>Ajustes avançados</summary>
+            <div class="st-row st-row-stack">
+              <label class="st-row-label" for="updateServerUrlInput">Servidor de atualizações próprio (opcional)</label>
+              <span class="st-row-hint">Deixe em branco para usar as fontes oficiais. Se a sua empresa tem um servidor de atualizações, informe o endereço seguro (https://…).</span>
+              <input type="url" id="updateServerUrlInput" class="settings-input" placeholder="https://atualizacoes.exemplo.com" autocomplete="off" spellcheck="false" />
+            </div>
+          </details>
         </div>
 
         <!-- Atualização do Aplicativo (unificada no painel) -->
@@ -610,7 +637,7 @@
 
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">storage</span> Armazenamento</h4>
-          <p class="st-card-desc">Gerencia o armazenamento temporário do aplicativo (thumbnails, waveforms e arquivos temporários).</p>
+          <p class="st-card-desc">Arquivos temporários que o BDS cria para ficar mais rápido (miniaturas, ondas de áudio e rascunhos). Limpar libera espaço e não apaga seus vídeos, projetos nem conversões; o BDS recria o que precisar.</p>
 
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
@@ -633,6 +660,7 @@
 
           <div class="settings-cache-bar">
             <span class="settings-check-hint">Uso atual: <strong id="cacheTotalSize">Calculando...</strong></span>
+            <span id="cacheResult" class="settings-check-hint st-cache-result" role="status" aria-live="polite"></span>
           </div>
 
           <div id="cacheCategoriesList" class="settings-crash-list">
@@ -684,7 +712,7 @@
 
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">assignment</span> Diagnóstico e suporte</h4>
-          <p class="st-card-desc">Exporte os registros de atividades internas para resolução de problemas técnicos e diagnóstico seguro.</p>
+          <p class="st-card-desc">Salva um arquivo com o registro das atividades do BDS, para enviar ao suporte quando algo não funciona.</p>
           <div>
             <button id="exportLogsButton" class="settings-btn-outline" type="button">
               <span class="material-symbols-rounded">file_export</span> Exportar logs de diagnóstico
@@ -695,12 +723,39 @@
         <div class="st-card st-card-danger">
           <h4 class="st-card-title"><span class="material-symbols-rounded">warning</span> Zona de perigo</h4>
           <p class="st-card-desc">
-            Esta ação limpa o banco de dados interno da biblioteca. Os arquivos de vídeo no disco NÃO serão excluídos, mas as marcações de favoritos e tags serão perdidas.
+            Apaga o catálogo da biblioteca: favoritos, tags e o histórico de mídias já lidas, e as pastas serão lidas de novo do zero. Seus arquivos no disco NÃO são apagados e o BDS guarda um backup antes de limpar. Use só se a biblioteca estiver com problemas.
           </p>
           <div>
             <button id="clearDbButton" class="settings-btn-danger" type="button">
               <span class="material-symbols-rounded">delete_sweep</span> Limpar banco de dados
             </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SOBRE E LICENÇAS ================= -->
+      <section id="settingsAboutView" class="settings-view hidden">
+        <h3 class="settings-section-title">Sobre e licenças</h3>
+
+        <div class="st-card">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">info</span> Braga Digital Studio</h4>
+          <div class="settings-system-grid">
+            <div class="settings-system-item"><span>Versão</span><strong id="aboutVersion">Carregando...</strong></div>
+            <div class="settings-system-item"><span>Direitos autorais</span><strong>© 2026 Mauro Braga. Todos os direitos reservados.</strong></div>
+          </div>
+        </div>
+
+        <div class="st-card">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">volunteer_activism</span> Licenças de código aberto</h4>
+          <p class="st-card-desc">O BDS usa software livre de terceiros, sempre conforme as licenças de cada projeto. Os componentes que o BDS baixa quando você ativa um recurso são programas independentes, executados separadamente: a licença deles continua sendo a do projeto original. Para os componentes sob licença GPL, o código-fonte está disponível na página oficial do projeto (link em cada item).</p>
+          <button id="licensesToggle" class="settings-btn-outline st-licenses-toggle" type="button" aria-expanded="false" aria-controls="licensesPanel">
+            <span class="material-symbols-rounded" aria-hidden="true">list_alt</span>
+            <span id="licensesToggleText">Ver lista de componentes</span>
+            <span class="material-symbols-rounded st-licenses-chevron" aria-hidden="true">expand_more</span>
+          </button>
+          <div id="licensesPanel" class="st-licenses-panel" hidden>
+            <input id="licensesSearch" type="search" class="settings-input" placeholder="Buscar componente ou licença…" autocomplete="off" spellcheck="false" aria-label="Buscar componente ou licença" />
+            <div id="licensesList" class="st-licenses" aria-live="polite"><p class="st-card-desc">Carregando…</p></div>
           </div>
         </div>
       </section>
@@ -719,15 +774,35 @@
   </div>
 </div>
 
-<!-- MODAL: NOVA FONTE PERSONALIZADA -->
-<div id="modalSettingsAddCustomSource" class="settings-modal-overlay hidden">
+<!-- MODAL: ALTERAÇÕES NÃO SALVAS -->
+<div id="modalSettingsLeave" class="settings-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalSettingsLeaveTitle">
   <div class="settings-modal">
     <div class="settings-modal-header">
-      <h3 class="settings-modal-title">
+      <h3 class="settings-modal-title" id="modalSettingsLeaveTitle">
+        <span class="material-symbols-rounded" aria-hidden="true">edit_note</span>
+        Alterações não salvas
+      </h3>
+    </div>
+    <p class="settings-modal-desc">Você mudou algumas configurações e ainda não salvou. O que deseja fazer antes de sair?</p>
+    <div class="settings-modal-footer">
+      <button id="modalSettingsLeaveStay" class="settings-btn-outline" type="button">Continuar editando</button>
+      <button id="modalSettingsLeaveDiscard" class="settings-btn-outline settings-btn-warn" type="button">Descartar e sair</button>
+      <button id="modalSettingsLeaveSave" class="settings-btn-primary" type="button">
+        <span class="material-symbols-rounded" aria-hidden="true">save</span> Salvar e sair
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NOVA FONTE PERSONALIZADA -->
+<div id="modalSettingsAddCustomSource" class="settings-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalSettingsAddCustomSourceTitle">
+  <div class="settings-modal">
+    <div class="settings-modal-header">
+      <h3 class="settings-modal-title" id="modalSettingsAddCustomSourceTitle">
         <span class="material-symbols-rounded">create_new_folder</span>
         Nova Fonte Personalizada
       </h3>
-      <button id="btnCloseSettingsCustomSourceModal" class="settings-modal-close" type="button">
+      <button id="btnCloseSettingsCustomSourceModal" class="settings-modal-close" type="button" aria-label="Fechar">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -745,7 +820,7 @@
         <label class="settings-form-label" for="modalSettingsAddCustomSourcePath">Caminho da Pasta</label>
         <div class="settings-folder-controls">
           <input type="text" id="modalSettingsAddCustomSourcePath" class="settings-input" placeholder="Selecione a pasta no seu computador..." />
-          <button id="modalSettingsAddCustomSourceSelectBtn" class="settings-btn-icon" type="button">
+          <button id="modalSettingsAddCustomSourceSelectBtn" class="settings-btn-icon" type="button" aria-label="Escolher pasta" title="Escolher pasta">
             <span class="material-symbols-rounded">folder_open</span>
           </button>
         </div>
@@ -755,21 +830,21 @@
     <div class="settings-modal-footer">
       <button id="modalSettingsAddCustomSourceCancel" class="settings-btn-outline" type="button">Cancelar</button>
       <button id="modalSettingsAddCustomSourceConfirm" class="settings-btn-primary" type="button">
-        <span class="material-symbols-rounded">check_circle</span> Cadastrar & Importar Mídias
+        <span class="material-symbols-rounded">check_circle</span> Cadastrar e importar mídias
       </button>
     </div>
   </div>
 </div>
 
 <!-- MODAL: RELATAR PROBLEMA -->
-<div id="modalSettingsReportProblem" class="settings-modal-overlay hidden">
+<div id="modalSettingsReportProblem" class="settings-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalSettingsReportProblemTitle">
   <div class="settings-modal">
     <div class="settings-modal-header">
-      <h3 class="settings-modal-title">
+      <h3 class="settings-modal-title" id="modalSettingsReportProblemTitle">
         <span class="material-symbols-rounded">report</span>
         Relatar um Problema
       </h3>
-      <button id="btnCloseSettingsReportProblem" class="settings-modal-close" type="button">
+      <button id="btnCloseSettingsReportProblem" class="settings-modal-close" type="button" aria-label="Fechar">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
