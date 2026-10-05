@@ -40,6 +40,11 @@ function applyQuickActionVisibility() {
     card.classList.toggle('hidden', !visible);
     card.style.display = visible ? '' : 'none';
   });
+  // A pesquisa e o atalho "Abrir a Biblioteca" dependem do módulo Biblioteca
+  const libraryOn = window.bdsIsScreenAllowed ? window.bdsIsScreenAllowed('library') : true;
+  const search = document.querySelector('.qa-card[data-action="search"]');
+  if (search) { search.classList.toggle('hidden', !libraryOn); search.style.display = libraryOn ? '' : 'none'; }
+  document.querySelectorAll('[data-go="library"]').forEach((b) => { b.hidden = !libraryOn; });
 }
 let modulesListenerBound = false;
 
@@ -249,6 +254,7 @@ function renderRecordingsCarousel(recordings) {
       + '<strong class="bds-empty-title">Nenhuma gravação recente</strong>'
       + '<span class="bds-empty-text">Os vídeos que você adicionar à Biblioteca ou importar de um dispositivo aparecem aqui.</span>'
       + '<button type="button" class="bds-empty-action" data-go="library">Abrir a Biblioteca</button></div>';
+    applyQuickActionVisibility();
     container.querySelector('[data-go]')?.addEventListener('click', (e) => {
       document.querySelector(`.sidebar .tab-button[data-view="${e.currentTarget.dataset.go}"]`)?.click();
     });

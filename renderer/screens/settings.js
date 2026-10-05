@@ -204,6 +204,11 @@ function applyModuleDependentUi(list) {
     document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
   }
 
+  // Cartões e abas ligados a uma tela somem quando o módulo dela está desligado ([data-module="<id>"])
+  document.querySelectorAll('[data-module]').forEach((el) => el.classList.toggle('st-devhidden', !on(el.dataset.module)));
+  const activeTab = document.querySelector('.settings-tab.active');
+  if (activeTab?.classList.contains('st-devhidden')) document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
+
   // Tela inicial: só telas de módulos ligados (telas de desenvolvimento ausentes da lista ficam ocultas)
   const select = document.getElementById('defaultStartScreenInput');
   if (!select) return;

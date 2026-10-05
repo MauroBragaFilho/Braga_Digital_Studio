@@ -14,16 +14,16 @@
  */
 export const AI_SCREENS = Object.freeze([
   Object.freeze({ id: 'home', label: 'Home', module: null }),
-  Object.freeze({ id: 'download', label: 'Downloads', module: null }),
-  Object.freeze({ id: 'converter', label: 'Conversor', module: null }),
+  Object.freeze({ id: 'download', label: 'Downloads', module: 'download' }),
+  Object.freeze({ id: 'converter', label: 'Conversor', module: 'converter' }),
   Object.freeze({ id: 'silence', label: 'Remover Silêncio', module: 'silence' }),
   Object.freeze({ id: 'metadata', label: 'Metadados', module: 'metadata' }),
   Object.freeze({ id: 'transcription', label: 'Transcrição', module: 'transcription' }),
-  Object.freeze({ id: 'library', label: 'Biblioteca', module: null }),
-  Object.freeze({ id: 'projects', label: 'Projetos', module: null }),
-  Object.freeze({ id: 'upload', label: 'Envio', module: null }),
-  Object.freeze({ id: 'devices', label: 'Dispositivos', module: null }),
-  Object.freeze({ id: 'luts', label: 'LUTs', module: null }),
+  Object.freeze({ id: 'library', label: 'Biblioteca', module: 'library' }),
+  Object.freeze({ id: 'projects', label: 'Projetos', module: 'projects' }),
+  Object.freeze({ id: 'upload', label: 'Envio', module: 'upload' }),
+  Object.freeze({ id: 'devices', label: 'Dispositivos', module: 'devices' }),
+  Object.freeze({ id: 'luts', label: 'LUTs', module: 'luts' }),
   Object.freeze({ id: 'settings', label: 'Configurações', module: null })
 ]);
 

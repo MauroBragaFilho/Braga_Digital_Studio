@@ -186,7 +186,7 @@ const SETTINGS = {
   theme: 'dark', accentColor: '#3b82f6', reduceMotion: false, mp4Folder: mp4Dir, mp3Folder: mp3Dir, converterFolder: convDir,
   apiKey: 'sk-nao-vazar', cookiesFile: path.join(tmpRoot, 'cookies.txt')
 };
-const ENABLED = { transcription: true, metadata: true, silence: true, recovery: false, montage: false, ai: true };
+const ENABLED = { download: true, converter: true, library: true, projects: true, upload: true, devices: true, luts: true, transcription: true, metadata: true, silence: true, recovery: false, montage: false, ai: true };
 
 function makeBox(over = {}) {
   const confirmCalls = [];
@@ -305,7 +305,7 @@ test('app_overview: telas disponíveis (respeita módulos), recursos ligados e r
   assert.ok(screens.includes('library') && screens.includes('settings') && screens.includes('transcription'));
   assert.ok(!screens.includes('silence') && !screens.includes('metadata'), 'módulos desligados somem');
   assert.ok(!screens.includes('montage') && !screens.includes('recovery'));
-  assert.deepEqual(r.recursos_ligados, ['Transcrição', 'Assistente de IA']);
+  assert.deepEqual(r.recursos_ligados, ['Downloads', 'Conversor', 'Biblioteca', 'Projetos', 'Envio', 'Dispositivos', 'LUTs', 'Transcrição', 'Assistente de IA']);
   assert.equal(r.downloads.baixando, 1);
   assert.equal(r.conversor.na_fila, 1);
   assert.equal(r.dispositivos_conectados, 2);
@@ -1067,7 +1067,9 @@ test('injeção: nome de arquivo, transcrição, legenda e contexto mandam agir 
 
 // ============================================================ fiação no processo principal (handlers)
 
-function setupHandlers({ isDev = false, enabledModules = {}, chatTimeouts = {}, deps = {} } = {}) {
+// As telas principais são módulos (desligados por padrão): por padrão estes testes as deixam ligadas.
+const SCREENS_ON = { download: true, converter: true, library: true, projects: true, upload: true, devices: true, luts: true };
+function setupHandlers({ isDev = false, enabledModules = SCREENS_ON, chatTimeouts = {}, deps = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'h-'));
   const handlers = new Map();
   const reg = createRegistry({ ipcMain: { handle: (ch, fn) => handlers.set(ch, fn) }, logger: { warn() {} } });
@@ -1180,7 +1182,7 @@ test('open_screen pelo handler: o evento ai:navigate sai pelo broadcast com a te
     if (n === 1) streamCalls(res, [{ id: 'n', name: 'open_screen', args: { tela: 'library' } }]);
     else text(res, 'Abri a Biblioteca.');
   });
-  const h = setupHandlers({ enabledModules: {} });
+  const h = setupHandlers({ enabledModules: { library: true } });
   try {
     await h.call('ai:saveConfig', { baseUrl: server.url, model: 'm' });
     await h.call('ai:chatStart', { text: 'abra a biblioteca' });

@@ -77,6 +77,7 @@ const api = {
   probeSilenceFile: (filePath) => ipcRenderer.invoke('silence:probe', filePath),
   analyzeSilence: (config) => ipcRenderer.invoke('silence:analyze', config),
   processSilence: (config) => ipcRenderer.invoke('silence:process', config),
+  silenceGetState: () => ipcRenderer.invoke('silence:getState'),
   cancelSilence: () => ipcRenderer.invoke('silence:cancel'),
 
   // --- Metadados ---
@@ -91,6 +92,7 @@ const api = {
   converterCancel: () => ipcRenderer.invoke('converter:cancel'),
   converterClearQueue: () => ipcRenderer.invoke('converter:clearQueue'),
   converterRemoveFile: (index) => ipcRenderer.invoke('converter:removeFile', index),
+  converterGetState: () => ipcRenderer.invoke('converter:getState'),
 
   // --- Downloads e mídia ---
   getMetadata: (url) => ipcRenderer.invoke('media:metadata', url),
@@ -208,6 +210,10 @@ const api = {
   aiHistoryClear: () => ipcRenderer.invoke('ai:historyClear'),
   aiAnalyzeTranscript: (path) => ipcRenderer.invoke('ai:analyzeTranscript', { path }),
   aiCancelAnalysis: () => ipcRenderer.invoke('ai:cancelAnalysis'),
+
+  // --- ui ---
+  uiConfirmAck: (id) => ipcRenderer.invoke('ui:confirmAck', id),
+  uiConfirmRespond: (id, accepted) => ipcRenderer.invoke('ui:confirmRespond', id, accepted),
 
   // --- Módulos opcionais (Whisper) ---
   modulesGetStatus: () => ipcRenderer.invoke('modules:getStatus'),
@@ -372,6 +378,8 @@ const api = {
   onAiChatError: (cb) => registerListener('ai:chatError', cb),
   onAiChatStatus: (cb) => registerListener('ai:chatStatus', cb),
   onAiNavigate: (cb) => registerListener('ai:navigate', cb),
+  onUiConfirmRequest: (cb) => registerListener('ui:confirmRequest', cb),
+  onUiConfirmCancel: (cb) => registerListener('ui:confirmCancel', cb),
   onModulesChanged: (cb) => registerListener('modules:changed', cb),
   onModulesProgress: (cb) => registerListener('modules:progress', cb),
   onModulesStatus: (cb) => registerListener('modules:status', cb),

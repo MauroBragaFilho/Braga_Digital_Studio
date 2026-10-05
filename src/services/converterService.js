@@ -55,6 +55,10 @@ class ConverterService extends EventEmitter {
   getQueue() {
     return this.queue;
   }
+  /** Estado da fila: a tela usa para mostrar uma conversão iniciada fora dela (ex.: pelo assistente). */
+  getState() {
+    return { running: this.running, queue: this.queue.map((it) => ({ ...it })) };
+  }
   clearQueue() {
     if (this.running) {
       throw new Error(

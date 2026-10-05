@@ -40,7 +40,7 @@
         <button class="settings-tab" data-tab="settingsTranscriptionView" type="button">
           <span class="material-symbols-rounded" aria-hidden="true">subtitles</span> Transcrição
         </button>
-        <button class="settings-tab" data-tab="settingsLutsView" type="button">
+        <button class="settings-tab" data-tab="settingsLutsView" data-module="luts" type="button">
           <span class="material-symbols-rounded" aria-hidden="true">gradient</span> LUTs
         </button>
         <button class="settings-tab st-devhidden" data-tab="settingsAiView" type="button">
@@ -214,7 +214,7 @@
           </div>
         </div>
 
-        <div class="st-card">
+        <div class="st-card" data-module="projects">
           <h4 class="st-card-title"><span class="material-symbols-rounded">event_upcoming</span> Prazos dos projetos</h4>
 
           <label class="st-row st-row-toggle">
@@ -286,7 +286,7 @@
           </details>
         </div>
 
-        <div class="st-card">
+        <div class="st-card" data-module="download">
           <h4 class="st-card-title"><span class="material-symbols-rounded">download</span> Lista de downloads</h4>
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
@@ -308,7 +308,7 @@
           </div>
         </div>
 
-        <div class="st-card">
+        <div class="st-card" data-module="converter">
           <h4 class="st-card-title"><span class="material-symbols-rounded">sync</span> Padrões do Conversor</h4>
           <p class="st-card-desc">Valores iniciais ao abrir a tela de Conversão. Você ainda pode mudá-los a cada conversão.</p>
 
@@ -387,7 +387,7 @@
       <section id="settingsFoldersView" class="settings-view hidden">
         <h3 class="settings-section-title">Pastas e Bibliotecas</h3>
 
-        <div class="st-card">
+        <div class="st-card" data-module="download">
           <h4 class="st-card-title"><span class="material-symbols-rounded">download</span> Destino dos downloads</h4>
           <div id="customFoldersGroup" class="settings-folder-list">
             <div class="st-row st-row-stack">
@@ -412,7 +412,7 @@
           </div>
         </div>
 
-        <div class="st-card">
+        <div class="st-card" data-module="converter">
           <h4 class="st-card-title"><span class="material-symbols-rounded">sync</span> Saída do Conversor</h4>
           <div class="st-row st-row-stack">
             <label class="st-row-label" for="converterFolderInput">Pasta dos arquivos convertidos</label>
@@ -428,7 +428,7 @@
           </div>
         </div>
 
-        <div class="st-card">
+        <div class="st-card" data-module="library">
           <h4 class="st-card-title"><span class="material-symbols-rounded">video_library</span> Pastas da biblioteca</h4>
           <div class="settings-folder-list">
             <div class="st-row st-row-stack">
@@ -468,7 +468,7 @@
           </div>
         </div>
 
-        <div class="st-card">
+        <div class="st-card" data-module="library">
           <h4 class="st-card-title"><span class="material-symbols-rounded">create_new_folder</span> Pastas personalizadas</h4>
           <p class="st-card-desc">Cadastre ou remova fontes de mídia personalizadas (câmeras, cartão SD, Podcast Studio, etc.).</p>
           <button id="btnSettingsAddCustomSource" class="settings-btn-accent" type="button">
@@ -513,7 +513,7 @@
       </section>
 
       <!-- ================= LUTS ================= -->
-      <section id="settingsLutsView" class="settings-view hidden">
+      <section id="settingsLutsView" class="settings-view hidden" data-module="luts">
         <h3 class="settings-section-title">LUTs</h3>
 
         <div class="st-card">

@@ -21,6 +21,9 @@ function manager(dirs) {
   return m;
 }
 
+// As telas principais viraram módulos: quem já usava o app recebe todas ligadas.
+const SCREENS_ON = Object.fromEntries(reg.CORE_SCREEN_MODULE_IDS.map((id) => [id, true]));
+
 const readDisk = (dirs) => JSON.parse(fs.readFileSync(path.join(dirs.configDir, 'settings.json'), 'utf8'));
 
 test('instalação nova (sem settings.json): módulos pesados desligados e assistente de IA ligado (padrão)', () => {
@@ -28,6 +31,7 @@ test('instalação nova (sem settings.json): módulos pesados desligados e assis
   try {
     const s = manager(dirs).load();
     assert.equal(s.modulesMigrated, true);
+    assert.equal(s.screenModulesMigrated, true);
     assert.deepEqual(s.enabledModules, {});
     for (const isDev of [true, false]) {
       const e = reg.resolveEnabled(s, { isDev });
@@ -46,7 +50,7 @@ test('instalação existente sem enabledModules: migra transcription, metadata e
     assert.equal(s.theme, 'light');
     assert.equal(s.modulesMigrated, true);
     // 'ai' fica ausente de propósito: quem nunca escolheu recebe o padrão do módulo (ligado)
-    assert.deepEqual(s.enabledModules, { transcription: true, metadata: true, silence: true, recovery: false, montage: false });
+    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, transcription: true, metadata: true, silence: true, recovery: false, montage: false });
     const e = reg.resolveEnabled(s, { isDev: true });
     assert.deepEqual([e.transcription, e.metadata, e.silence, e.recovery, e.montage, e.ai], [true, true, true, false, false, true]);
     assert.equal(reg.resolveEnabled(s, { isDev: false }).ai, true, 'também no app empacotado');
@@ -80,7 +84,7 @@ test('enabledModules já existente sem a flag: preserva e só marca como migrado
     fs.mkdirSync(dirs.configDir, { recursive: true });
     fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({ enabledModules: { silence: false } }));
     const s = manager(dirs).load();
-    assert.deepEqual(s.enabledModules, { silence: false });
+    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, silence: false });
     assert.equal(s.modulesMigrated, true);
     assert.equal(readDisk(dirs).modulesMigrated, true);
   } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
@@ -133,6 +137,41 @@ test('assistente de IA: quem já tinha escolhido ligar (ai: true) continua ligad
     fs.mkdirSync(dirs.configDir, { recursive: true });
     fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({ modulesMigrated: true, enabledModules: { ai: true, metadata: true } }));
     const s = manager(dirs).load();
-    assert.deepEqual(s.enabledModules, { ai: true, metadata: true });
+    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, ai: true, metadata: true });
+  } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
+});
+
+test('telas principais como módulos: instalação nova começa só com Home e Configurações (todas desligadas)', () => {
+  const dirs = tmpDirs();
+  try {
+    const s = manager(dirs).load();
+    const e = reg.resolveEnabled(s, { isDev: true });
+    for (const id of reg.CORE_SCREEN_MODULE_IDS) assert.equal(e[id], false, `${id} desligado`);
+    assert.equal(reg.moduleForScreen('project_workspace').id, 'projects');
+    assert.equal(reg.moduleForScreen('home'), null);
+    assert.equal(reg.moduleForScreen('settings'), null);
+  } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
+});
+
+test('telas principais como módulos: quem já tinha módulos migrados recebe as 7 telas ligadas, sem mudar escolhas, e só uma vez', () => {
+  const dirs = tmpDirs();
+  try {
+    fs.mkdirSync(dirs.configDir, { recursive: true });
+    fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({
+      modulesMigrated: true,
+      enabledModules: { transcription: true, metadata: false, silence: true, library: false }
+    }));
+    const s = manager(dirs).load();
+    assert.equal(s.screenModulesMigrated, true);
+    assert.equal(s.enabledModules.library, false, 'escolha já gravada é respeitada');
+    for (const id of reg.CORE_SCREEN_MODULE_IDS.filter((x) => x !== 'library')) assert.equal(s.enabledModules[id], true, id);
+    assert.equal(s.enabledModules.metadata, false);
+    assert.equal(readDisk(dirs).screenModulesMigrated, true);
+
+    // o usuário desliga Downloads: a migração não roda de novo e não religa
+    const m = manager(dirs);
+    m.load();
+    m.save({ enabledModules: { ...s.enabledModules, download: false } });
+    assert.equal(manager(dirs).load().enabledModules.download, false);
   } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
 });

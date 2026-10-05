@@ -281,7 +281,22 @@ window.bdsModal = {
     this._input = document.getElementById('bdsModalInput');
   },
 
-  show({ title, message, isConfirm = false, isPrompt = false, defaultText = '' }) {
+  /** true se já há um aviso aberto (um <dialog> modal não abre duas vezes). */
+  isOpen() {
+    if (!this._modal) this.init();
+    return Boolean(this._modal && this._modal.open);
+  },
+
+  /** Fecha por fora o aviso aberto, como se o usuário tivesse cancelado. */
+  dismiss() {
+    if (this._dismiss) this._dismiss();
+  },
+
+  /**
+   * trusted: só aceita "Confirmar" por clique/tecla real do usuário (event.isTrusted) — usado nas ações do assistente.
+   * focusCancel: abre com o foco em "Cancelar", para confirmar exigir um gesto deliberado.
+   */
+  show({ title, message, isConfirm = false, isPrompt = false, defaultText = '', trusted = false, focusCancel = false, confirmLabel = '', cancelLabel = '' }) {
     return new Promise((resolve) => {
       if (!this._modal) this.init();
 
@@ -293,7 +308,8 @@ window.bdsModal = {
       
       if (isConfirm || isPrompt) {
         this._btnCancel.classList.remove('hidden');
-        this._btnConfirm.textContent = 'Confirmar';
+        this._btnCancel.textContent = cancelLabel || 'Cancelar';
+        this._btnConfirm.textContent = confirmLabel || 'Confirmar';
       } else {
         this._btnCancel.classList.add('hidden');
         this._btnConfirm.textContent = 'OK';
@@ -312,13 +328,19 @@ window.bdsModal = {
         this._btnCancel.removeEventListener('click', onCancel);
         if (this._input) this._input.removeEventListener('keydown', onKeyDown);
         this._modal.removeEventListener('cancel', onNativeCancel);
+        this._dismiss = null;
         this._modal.close();
       };
 
-      const onConfirm = () => { cleanup(); resolve(isPrompt ? (this._input ? this._input.value : null) : true); };
+      const onConfirm = (e) => {
+        if (trusted && !(e && e.isTrusted)) return; // clique/tecla sintético: ignora
+        cleanup();
+        resolve(isPrompt ? (this._input ? this._input.value : null) : true);
+      };
       const onCancel = () => { cleanup(); resolve(isPrompt ? null : false); };
+      this._dismiss = onCancel;
       const onKeyDown = (e) => {
-        if (e.key === 'Enter') onConfirm();
+        if (e.key === 'Enter') onConfirm(e);
         if (e.key === 'Escape') onCancel();
       };
 
@@ -332,6 +354,7 @@ window.bdsModal = {
       }
 
       this._modal.showModal();
+      if (focusCancel && isConfirm) this._btnCancel.focus();
     });
   },
 
@@ -372,17 +395,40 @@ const startApp = () => {
   // telas de desenvolvimento permanecem ocultas (fail-safe).
   const moduleScreens = new Map();
   let modulesLoaded = false;
+  let modulesFailed = false; // a lista de módulos não pôde ser lida: não trava o app, mostra as telas principais
+
+  // Todas as telas, exceto Home e Configurações, são módulos (instalação nova começa com elas desligadas).
+  // Ficam ocultas até o main informar o estado, para não piscarem no menu.
+  const MODULE_GATED_SCREENS = ['download', 'converter', 'library', 'projects', 'project_workspace', 'upload', 'devices', 'luts'];
+
+  // Resolve quando o estado dos módulos é conhecido (ou falhou / demorou): a tela inicial espera por ele.
+  let resolveModulesReady = () => {};
+  const modulesReady = new Promise((resolve) => { resolveModulesReady = resolve; });
+  setTimeout(() => resolveModulesReady(), 3000);
 
   function isScreenAllowed(screenName) {
     if (DEV_ONLY_SCREENS.includes(screenName)) {
       if (isPackagedApp || !modulesLoaded) return false;
       return moduleScreens.get(screenName) === true;
     }
+    if (MODULE_GATED_SCREENS.includes(screenName)) {
+      if (modulesFailed) return true;
+      return modulesLoaded && moduleScreens.get(screenName) === true;
+    }
     return moduleScreens.has(screenName) ? moduleScreens.get(screenName) : true;
+  }
+  screenAllowedRef = isScreenAllowed;
+  window.bdsIsScreenAllowed = isScreenAllowed; // outras partes da interface (Home, Configurações) consultam o estado dos módulos
+
+  /** Pesquisa do topo e contador de mídias só fazem sentido com a Biblioteca ligada. */
+  function applyLibraryDependentChrome() {
+    const on = isScreenAllowed('library');
+    document.querySelector('.search-wrapper')?.classList.toggle('hidden', !on);
+    if (!on) document.getElementById('globalMediaCount')?.classList.add('hidden');
   }
 
   function applyDevOnlyVisibility() {
-    const managed = new Set([...DEV_ONLY_SCREENS, ...moduleScreens.keys()]);
+    const managed = new Set([...DEV_ONLY_SCREENS, ...MODULE_GATED_SCREENS, ...moduleScreens.keys()]);
     managed.forEach((screenName) => {
       const btn = document.querySelector(`.tab-button[data-view="${screenName}"]`);
       if (!btn) return;
@@ -405,6 +451,8 @@ const startApp = () => {
     list.forEach((m) => (m.screens || []).forEach((s) => moduleScreens.set(s, m.enabled === true)));
     modulesLoaded = true;
     applyDevOnlyVisibility();
+    applyLibraryDependentChrome();
+    resolveModulesReady();
     const active = document.querySelector('.sidebar .tab-button.active')?.getAttribute('data-view');
     if (active && !isScreenAllowed(active)) {
       document.querySelector('.sidebar .tab-button[data-view="home"]')?.click();
@@ -415,8 +463,11 @@ const startApp = () => {
     try {
       const r = await window.bds.modulesList();
       if (r && r.ok) applyModules(r.data);
+      else throw new Error((r && r.error) || 'resposta inválida');
     } catch (err) {
-      console.warn('[APP] Falha ao ler módulos:', err);
+      console.warn('[APP] Falha ao ler módulos (mostrando as telas principais):', err);
+      if (!modulesLoaded) { modulesFailed = true; applyDevOnlyVisibility(); applyLibraryDependentChrome(); }
+      resolveModulesReady();
     }
   }
 
@@ -436,9 +487,12 @@ const startApp = () => {
         if (typeof window.bds.modulesList === 'function') refreshModules();
       }).catch((err) => {
         console.error('[APP] Falha ao verificar isPackaged (mantendo módulos dev ocultos):', err);
+        if (typeof window.bds.modulesList === 'function') refreshModules();
+        else { modulesFailed = true; applyDevOnlyVisibility(); resolveModulesReady(); }
       });
     } else {
       console.warn('[APP] window.bds.isPackaged indisponível — mantendo módulos dev ocultos (fail-safe).');
+      modulesFailed = true; applyDevOnlyVisibility(); resolveModulesReady();
     }
   } catch (err) {
     console.error('[APP] Erro inesperado ao checar isPackaged:', err);
@@ -804,7 +858,7 @@ const startApp = () => {
       if (!query) return;
       document.querySelector('.sidebar .tab-button[data-view="library"]')?.click();
     } else {
-      getScreenModule('library')
+      getScreenModuleIfOn('library')
         .then(m => { if (typeof m.applyGlobalSearch === 'function') m.applyGlobalSearch(query); })
         .catch(() => {});
     }
@@ -885,6 +939,11 @@ const startApp = () => {
 
   if (window.bds?.onModulesChanged) window.bds.onModulesChanged(() => refreshModules());
 
+  // Confirmações pedidas pelo processo principal (assistente, remover fonte, limpar banco…) no modal do app.
+  import('./components/app-confirm.js')
+    .then((m) => m.mountAppConfirm())
+    .catch((err) => console.warn('[APP] Confirmações no modal indisponíveis (usa o diálogo nativo):', err));
+
   // Assistente de IA: botão flutuante em todas as telas (só existe com o módulo e o interruptor ligados; liberado no app final).
   // Um erro aqui nunca pode afetar o restante do app.
   import('./components/ai-assistant.js')
@@ -897,17 +956,25 @@ const startApp = () => {
   // Abre a tela inicial pela própria aba da sidebar (marca o botão, ajusta o título e carrega a tela).
   // A tela vem das Configurações; se a aba não existir ou estiver oculta (ex.: módulo só de
   // desenvolvimento), cai para a Home.
+  // Espera o estado dos módulos (no máx. 3 s) para a tela escolhida não cair na Home só porque a aba ainda estava oculta.
   const wanted = state.settings?.defaultStartScreen || 'home';
-  let startTab = document.querySelector(`.sidebar .tab-button[data-view="${wanted}"]`);
-  if (!startTab || startTab.classList.contains('hidden') || startTab.style.display === 'none') {
-    startTab = document.querySelector('.sidebar .tab-button[data-view="home"]');
-  }
-  if (startTab) startTab.click();
-  else loadScreen('home');
+  modulesReady.then(() => {
+    let startTab = document.querySelector(`.sidebar .tab-button[data-view="${wanted}"]`);
+    if (!startTab || startTab.classList.contains('hidden') || startTab.style.display === 'none') {
+      startTab = document.querySelector('.sidebar .tab-button[data-view="home"]');
+    }
+    if (startTab) startTab.click();
+    else loadScreen('home');
+  });
 };
 
 // Módulos de tela já importados (evita import() dinâmico a cada navegação/tick de progresso)
 const screenModules = {};
+let screenAllowedRef = () => true; // preenchido por startApp (isScreenAllowed)
+/** Como getScreenModule, mas recusa (promessa rejeitada) quando o módulo da tela está desligado: nada é carregado. */
+function getScreenModuleIfOn(name) {
+  return screenAllowedRef(name) ? getScreenModule(name) : Promise.reject(new Error(`módulo da tela ${name} desligado`));
+}
 function getScreenModule(name) {
   if (!screenModules[name]) {
     screenModules[name] = import(`./screens/${name}.js`).catch((err) => { delete screenModules[name]; throw err; });
@@ -989,7 +1056,7 @@ async function initGlobalElectronListeners() {
     pendingProgress.clear();
     const last = batch[batch.length - 1];
     updateGlobalDownloadFooter(last, 'downloading');
-    getScreenModule('download').then((m) => batch.forEach((d) => m.updateProgressVisuals?.(d))).catch(() => {});
+    getScreenModuleIfOn('download').then((m) => batch.forEach((d) => m.updateProgressVisuals?.(d))).catch(() => {});
   };
   const scheduleProgress = (data) => {
     pendingProgress.set(data.id ?? '_', { ...(pendingProgress.get(data.id ?? '_') || {}), ...data });
@@ -1034,7 +1101,7 @@ async function initGlobalElectronListeners() {
     if (queueRaf) return;
     queueRaf = (document.hidden ? setTimeout : requestAnimationFrame)(() => {
       queueRaf = 0;
-      getScreenModule('download')
+      getScreenModuleIfOn('download')
         .then(m => m.renderDownloadQueue?.(state.downloadQueue))
         .catch(() => {});
     }, 250);
@@ -1047,7 +1114,7 @@ async function initGlobalElectronListeners() {
     updateGlobalDownloadFooter(item, 'completed');
     setTimeout(() => updateGlobalDownloadFooter(null, 'idle'), 3000);
 
-    getScreenModule('library')
+    getScreenModuleIfOn('library')
       .then(m => m.fetchMedia?.())
       .catch(() => {});
   });
@@ -1064,7 +1131,7 @@ async function initGlobalElectronListeners() {
     state.downloadQueue = queue;
     const isRunning = queue.some(i => i.status === 'downloading');
     state.running = isRunning;
-    getScreenModule('download')
+    getScreenModuleIfOn('download')
       .then(m => m.renderDownloadQueue?.(queue))
       .catch(() => {});
   });
@@ -1072,7 +1139,7 @@ async function initGlobalElectronListeners() {
   // onFinished (canal `download:finished`) — mantido para compat
   window.bds.onFinished((payload) => {
     state.running = false;
-    getScreenModule('download').then(m => {
+    getScreenModuleIfOn('download').then(m => {
       m.setControlsEnabled?.(true);
     }).catch(() => {});
   });

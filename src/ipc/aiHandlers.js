@@ -13,6 +13,7 @@ const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const registry = require('../core/modules/ModuleRegistry');
 const { ToolBox } = require('../services/ai/tools');
 const { createNativeConfirm } = require('../services/ai/tools/confirmDialog');
+const { createAppConfirm } = require('../infrastructure/desktop/AppConfirm');
 const { isAssistantBuildAllowed } = require('../services/ai/releaseGate');
 
 /**
@@ -73,6 +74,14 @@ function registerAiHandlers(paths, deps = {}) {
   // Ferramentas do assistente: dependências preguiçosas (o banco e o log só são carregados quando usados)
   let toolbox = null;
   if (deps.projectService) {
+    const getMainWindow = deps.getMainWindow || (() => null);
+    // A confirmação aparece no modal do app (mesmo visual das demais); sem janela ou sem resposta do modal, cai no diálogo nativo.
+    const nativeConfirm = createNativeConfirm({ dialog: deps.dialog || electron.dialog, getMainWindow });
+    const modalConfirm = createAppConfirm({ fallback: nativeConfirm });
+    const mainConfirm = (req) => {
+      const win = getMainWindow();
+      return modalConfirm({ ...req, webContents: win && !(typeof win.isDestroyed === 'function' && win.isDestroyed()) ? win.webContents : null });
+    };
     const lazyLog = { info: (m) => require('../services/logService').info(m), warn: (m) => require('../services/logService').warn(m) };
     toolbox = new ToolBox({
       getDb: deps.getDb || (() => require('../core/database/database').get()),
@@ -82,7 +91,7 @@ function registerAiHandlers(paths, deps = {}) {
       },
       projects: deps.projectService,
       getModuleManager: deps.getModuleManager || (() => null),
-      confirm: deps.confirm || createNativeConfirm({ dialog: deps.dialog || electron.dialog, getMainWindow: deps.getMainWindow || (() => null) }),
+      confirm: deps.confirm || mainConfirm,
       log: deps.log || lazyLog,
       // Serviços que as telas já usam: as ferramentas só os REAPROVEITAM (sem canal novo para o renderer)
       services: { downloads: deps.downloadService, converter: deps.converterService, silence: deps.silenceService, devices: deps.deviceDiscovery },

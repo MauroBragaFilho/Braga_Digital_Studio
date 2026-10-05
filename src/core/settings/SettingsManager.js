@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const logger = require('../../services/logService');
 const { DEVELOPER_EMAIL } = require('../../config/appInfo');
-const { sanitizeEnabledModules } = require('../modules/ModuleRegistry');
+const { sanitizeEnabledModules, CORE_SCREEN_MODULE_IDS } = require('../modules/ModuleRegistry');
 const { DEFAULT_ACCENT, normalizeAccentColor } = require('./accentPalette');
 
 /** Chaves de segredo guardadas no disco criptografadas (safeStorage) em "<chave>Enc" (base64). Hoje nenhuma: o mecanismo fica pronto para uso futuro. */
@@ -97,6 +97,7 @@ class SettingsManager {
       defaultStartScreen: 'home',      // tela aberta ao iniciar o app
       enabledModules: {},              // { idDoModulo: boolean } — chave ausente = padrão do módulo (ModuleRegistry: desligados, menos o Assistente de IA)
       modulesMigrated: false,          // true após a migração única dos módulos (ver _migrateModules)
+      screenModulesMigrated: false,    // true após as telas principais virarem módulos (ver _migrateScreenModules)
       sidebarOrder: [],                // ordem das telas no menu lateral (vazio = padrão; Home é sempre a primeira)
       reduceMotion: false,             // desliga animações e transições
       rememberWindowBounds: false,     // lembra tamanho/posição da janela
@@ -130,7 +131,7 @@ class SettingsManager {
 
     if (!fs.existsSync(this.settingsPath)) {
       // Instalação nova: módulos pesados desligados (o assistente de IA vem ligado) e nada a migrar depois.
-      const fresh = { ...this.defaultSettings, enabledModules: {}, modulesMigrated: true };
+      const fresh = { ...this.defaultSettings, enabledModules: {}, modulesMigrated: true, screenModulesMigrated: true };
       try {
         fs.writeFileSync(this.settingsPath, JSON.stringify(fresh, null, 2), 'utf8');
       } catch (_) {}
@@ -179,8 +180,9 @@ class SettingsManager {
   _legacyModulesPatch() {
     return {
       // 'ai' fica de fora de propósito: chave ausente = padrão do módulo (ligado)
-      enabledModules: { transcription: true, metadata: true, silence: true, recovery: false, montage: false },
-      modulesMigrated: true
+      enabledModules: { ...Object.fromEntries(CORE_SCREEN_MODULE_IDS.map((id) => [id, true])), transcription: true, metadata: true, silence: true, recovery: false, montage: false },
+      modulesMigrated: true,
+      screenModulesMigrated: true
     };
   }
 
@@ -200,7 +202,22 @@ class SettingsManager {
     }
     // O que o usuário já escolheu em enabledModules (inclusive o assistente de IA) tem prioridade e nunca é
     // alterado: só quem NUNCA escolheu (chave ausente) recebe o padrão do módulo.
-    return changed;
+    return this._migrateScreenModules(saved, merged) || changed;
+  }
+
+  /**
+   * Migração única das telas principais (Downloads, Conversor, Biblioteca, Projetos, Envio, Dispositivos, LUTs),
+   * que viraram módulos: quem já usava o app recebe todas LIGADAS (nada some do menu); só não sobrescreve uma
+   * escolha já gravada. Instalação nova grava a flag em load() e começa com elas desligadas. true = precisa gravar.
+   */
+  _migrateScreenModules(saved, merged) {
+    if (saved.screenModulesMigrated === true) return false;
+    const current = merged.enabledModules && typeof merged.enabledModules === 'object' && !Array.isArray(merged.enabledModules) ? merged.enabledModules : {};
+    const next = { ...current };
+    for (const id of CORE_SCREEN_MODULE_IDS) if (typeof next[id] !== 'boolean') next[id] = true;
+    merged.enabledModules = next;
+    merged.screenModulesMigrated = true;
+    return true;
   }
 
   /**

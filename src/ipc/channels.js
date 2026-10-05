@@ -162,6 +162,7 @@ define('silence', 'throw', {
     api: ['analyzeSilence']
   },
   'silence:process': { args: [OBJ('config', {}, { label: 'Configuração do processamento', maxKeys: 100 })], returns: 'Resultado do processamento', api: ['processSilence'] },
+  'silence:getState': { returns: '{ running, files } do lote em andamento', api: ['silenceGetState'] },
   'silence:cancel': { returns: 'Resultado', api: ['cancelSilence'] }
 });
 
@@ -182,6 +183,7 @@ define('converter', 'throw', {
   'converter:cancel': { returns: 'Resultado', api: ['converterCancel'] },
   'converter:clearQueue': { returns: 'Resultado', api: ['converterClearQueue'] },
   'converter:removeFile': { args: [t.oneOf([t.int(), t.string({ max: 64 })], { name: 'index', label: 'Item' })], returns: 'Resultado', api: ['converterRemoveFile'] },
+  'converter:getState': { returns: '{ running, queue } da fila do Conversor', api: ['converterGetState'] },
   'converter:listQueue': { returns: 'Legado: fila do conversor' }
 });
 
@@ -385,6 +387,14 @@ define('ai', 'wrap', {
     api: [{ name: 'aiAnalyzeTranscript', params: 'path', call: '{ path }' }]
   },
   'ai:cancelAnalysis': { returns: 'true', api: ['aiCancelAnalysis'] }
+});
+
+// --- Confirmações no modal do app (padrão { ok, data }) ---------------------------------------------
+// O main manda ui:confirmRequest { id, title, message, detail, confirmLabel, cancelLabel } (id aleatório, uso único); o renderer avisa que
+// mostrou (ack) e devolve a decisão. O main só aceita a resposta do webContents que recebeu o pedido; sem ack, usa o diálogo nativo.
+define('ui', 'wrap', {
+  'ui:confirmAck': { args: [STR('id', 100, { label: 'Id do pedido' })], returns: 'true se o pedido existe', api: ['uiConfirmAck'] },
+  'ui:confirmRespond': { args: [STR('id', 100, { label: 'Id do pedido' }), t.boolean({ name: 'accepted', label: 'Confirmou' })], returns: 'true se a resposta foi aceita', api: ['uiConfirmRespond'] }
 });
 
 define('modules', 'wrap', {
@@ -693,6 +703,8 @@ const EVENTS = [
   ['onAiChatError', 'ai:chatError'],
   ['onAiChatStatus', 'ai:chatStatus'],
   ['onAiNavigate', 'ai:navigate'],
+  ['onUiConfirmRequest', 'ui:confirmRequest'],
+  ['onUiConfirmCancel', 'ui:confirmCancel'],
   ['onModulesChanged', 'modules:changed'],
   ['onModulesProgress', 'modules:progress'],
   ['onModulesStatus', 'modules:status'],

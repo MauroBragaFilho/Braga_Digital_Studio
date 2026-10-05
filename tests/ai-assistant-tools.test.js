@@ -800,7 +800,7 @@ test('injeção: o modelo "obedece" um nome de arquivo e tenta ferramenta destru
 
 // ============================================================ fiação no processo principal
 
-function setupHandlers({ isDev = true, enabledModules = { ai: true }, confirm, manager = new FakeManager() } = {}) {
+function setupHandlers({ isDev = true, enabledModules = { ai: true, projects: true, library: true }, confirm, manager = new FakeManager() } = {}) {
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'h-'));
   const handlers = new Map();
   const reg = createRegistry({ ipcMain: { handle: (ch, fn) => handlers.set(ch, fn) }, logger: { warn() {} } });

@@ -1,5 +1,6 @@
-const { BrowserWindow, dialog, shell } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 const { handle } = require('./channelRegistry');
+const { appConfirm } = require('../infrastructure/desktop/AppConfirm');
 const path = require('path');
 const fs = require('fs');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
@@ -154,19 +155,14 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     // Remover a fonte apaga as mídias dela e, em cascata, os vínculos de projeto: avisa antes (RK-015)
     const impact = countLibraryLinks(db, libId, libName);
     if (impact.links > 0) {
-      const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
-      const options = {
-        type: 'warning',
+      const ok = await appConfirm({
+        webContents: event.sender,
         title: 'Remover fonte',
         message: `Remover "${libName}" também apaga ${describeLinks(impact)}.`,
         detail: 'As mídias saem dos projetos, dos grupos de sincronização e da timeline. Os arquivos do disco não são removidos.',
-        buttons: ['Cancelar', 'Remover mesmo assim'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true
-      };
-      const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
-      if (response !== 1) throw new Error('Operação cancelada pelo usuário.');
+        confirmLabel: 'Remover mesmo assim'
+      });
+      if (!ok) throw new Error('Operação cancelada pelo usuário.');
     }
 
     if (watcherService) watcherService.stopWatcher(libId);
@@ -413,23 +409,18 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
     const dbManager = require('../core/database/database');
     const db = dbManager.get();
 
-    // Confirmação nativa no processo principal: o renderer sozinho não pode apagar a biblioteca.
-    const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+    // Confirmação decidida no processo principal (modal do app): o renderer sozinho não pode apagar a biblioteca.
     const linksInfo = describeLinks(countAllLinks(db));
-    const options = {
-      type: 'warning',
+    const ok = await appConfirm({
+      webContents: event.sender,
       title: 'Limpar banco de dados',
       message: 'Limpar todo o banco de dados da biblioteca?',
       detail: 'Registros de mídia, tags e favoritos serão apagados' +
         (linksInfo ? `, junto com ${linksInfo}, grupos de sincronização e referências da timeline` : '') +
         '. Um backup do banco é criado antes. Os arquivos do disco não são removidos.',
-      buttons: ['Cancelar', 'Limpar banco'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true
-    };
-    const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
-    if (response !== 1) throw new Error('Operação cancelada pelo usuário.');
+      confirmLabel: 'Limpar banco'
+    });
+    if (!ok) throw new Error('Operação cancelada pelo usuário.');
 
     // Backup antes de apagar (RK-015); sem backup não limpa
     let backup = null;

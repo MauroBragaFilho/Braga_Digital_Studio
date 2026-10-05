@@ -13,16 +13,16 @@
  */
 const AI_SCREENS = Object.freeze([
   { id: 'home', label: 'Home', module: null },
-  { id: 'download', label: 'Downloads', module: null },
-  { id: 'converter', label: 'Conversor', module: null },
+  { id: 'download', label: 'Downloads', module: 'download' },
+  { id: 'converter', label: 'Conversor', module: 'converter' },
   { id: 'silence', label: 'Remover Silêncio', module: 'silence' },
   { id: 'metadata', label: 'Metadados', module: 'metadata' },
   { id: 'transcription', label: 'Transcrição', module: 'transcription' },
-  { id: 'library', label: 'Biblioteca', module: null },
-  { id: 'projects', label: 'Projetos', module: null },
-  { id: 'upload', label: 'Envio', module: null },
-  { id: 'devices', label: 'Dispositivos', module: null },
-  { id: 'luts', label: 'LUTs', module: null },
+  { id: 'library', label: 'Biblioteca', module: 'library' },
+  { id: 'projects', label: 'Projetos', module: 'projects' },
+  { id: 'upload', label: 'Envio', module: 'upload' },
+  { id: 'devices', label: 'Dispositivos', module: 'devices' },
+  { id: 'luts', label: 'LUTs', module: 'luts' },
   { id: 'settings', label: 'Configurações', module: null }
 ].map((s) => Object.freeze(s)));
 

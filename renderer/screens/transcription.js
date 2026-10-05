@@ -29,6 +29,8 @@ let nextId = 1;
 let status = null;         // resposta de modulesGetStatus
 let mode = 'empty';
 let cancelling = false;
+let external = false;      // o lote em andamento não foi iniciado nesta tela (ex.: assistente de IA)
+let externalNotice = false;
 let sawFileEvents = false; // o motor informa o andamento de cada arquivo? (senão estimamos pelo geral)
 let batchPercent = 0;
 let lastMessage = '';
@@ -176,6 +178,8 @@ async function refreshStatus() {
     showNotice(`Não foi possível verificar o módulo de transcrição: ${friendlyError(err)}`, 'danger');
   }
   await refreshAi();
+  if (status && status.busy && status.busy.kind === 'transcribe') adoptExternal(status.busy.files);
+  else if (external && running() && !(status && status.busy)) { external = false; setMode('ready'); } // terminou sem eu ver o fim
   renderEngine();
   renderDeviceControl();
   updatePanel();
@@ -517,8 +521,55 @@ function setRun(percent, message) {
   $('trRunTitle').textContent = `${current} de ${items.length}`;
 }
 
+/**
+ * Transcrição iniciada fora desta tela (ex.: pelo assistente de IA): mostra os arquivos e o andamento aqui também.
+ * Se o usuário já montou uma fila, ela é preservada e só aparece um aviso.
+ */
+function adoptExternal(files) {
+  if (running() || !Array.isArray(files) || !files.length) return;
+  if (mode === 'ready' && items.length) {
+    externalNotice = true;
+    showNotice('Há uma transcrição em andamento, iniciada pelo assistente. Aguarde ela terminar para iniciar outra.', 'info');
+    return;
+  }
+  items = files.map(newItem);
+  external = true;
+  cancelling = false;
+  analysis = null;
+  phase = 'transcribe';
+  sawFileEvents = false;
+  showNotice('');
+  $('trRunLabel').textContent = 'Transcrevendo (pedido pelo assistente)';
+  setMode('running');
+  renderList();
+  setRun(0, 'Preparando o motor…');
+  probeDurations(items);
+}
+
+/** Fim de uma transcrição adotada: mesmo resumo de uma iniciada aqui. */
+function finishExternal(p) {
+  external = false;
+  if (p.phase === 'done' && p.result) {
+    reconcile(p.result);
+    items.forEach(paintRow);
+    finish(p.result);
+  } else {
+    const cancelled = p.phase === 'cancelled';
+    items.forEach((i) => { if (i.status === 'running' || i.status === 'pending') i.status = cancelled ? 'cancelled' : 'error'; });
+    showNotice(cancelled ? 'Transcrição cancelada. O que já estava pronto foi mantido.' : `A transcrição falhou: ${friendlyError(p.message)}`, cancelled ? 'info' : 'danger');
+    finish(null, cancelled);
+  }
+}
+
 function onProgress(p) {
-  if (!running() || p.kind !== 'transcribe') return;
+  if (p.kind !== 'transcribe') return;
+  const terminal = p.phase === 'done' || p.phase === 'cancelled' || p.phase === 'error';
+  if (!running()) {
+    if (terminal) { if (externalNotice) { externalNotice = false; showNotice(''); } return; }
+    adoptExternal(p.files);
+    if (!running()) return;
+  }
+  if (external && terminal) { finishExternal(p); return; }
 
   if (p.file) {
     sawFileEvents = true;

@@ -37,12 +37,33 @@ const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 function listTools() { return TOOLS; }
 
 /**
+ * Módulo (ModuleRegistry) que precisa estar ligado para cada ferramenta existir. Ferramenta de módulo desligado
+ * não é oferecida ao modelo e, se ele a chamar mesmo assim, é recusada (o app não faz o que o usuário desligou).
+ */
+const TOOL_MODULES = Object.freeze({
+  library_search: 'library', media_get: 'library', library_stats: 'library', tag_media: 'library', set_favorite: 'library',
+  projects_list: 'projects', project_get: 'projects', create_project: 'projects', add_media_to_project: 'projects', export_project: 'projects',
+  add_download: 'download', downloads_status: 'download',
+  convert_media: 'converter', converter_status: 'converter',
+  devices_list: 'devices',
+  transcribe_media: 'transcription', transcription_status: 'transcription', get_transcript: 'transcription',
+  remove_silence: 'silence'
+});
+
+/** `enabled` vazio/ausente = sem informação de módulos (uso isolado): não bloqueia. */
+function toolModuleOn(name, enabled) {
+  const id = TOOL_MODULES[name];
+  if (!id || !enabled || !Object.keys(enabled).length) return true;
+  return enabled[id] === true;
+}
+
+/**
  * Definições no formato `tools` do protocolo de chat (tipo "function" + esquema JSON).
  * @param {Set<string>|string[]|null} [only]  nomes a incluir (subconjunto por turno, ver toolSelect.js); sem isso, todas
  */
-function toolDefinitions(only = null) {
+function toolDefinitions(only = null, enabled = null) {
   const keep = only ? new Set(only) : null;
-  return TOOLS.filter((t) => !keep || keep.has(t.name))
+  return TOOLS.filter((t) => !keep || keep.has(t.name)).filter((t) => toolModuleOn(t.name, enabled))
     .map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
 
@@ -96,7 +117,12 @@ class ToolBox {
    * relevante (toolSelect.js). Isto NÃO limita o que o ToolBox aceita na execução: a lista fixa inteira continua valendo.
    */
   definitions(hints = null) {
-    return toolDefinitions(hints ? selectToolNames(hints) : null);
+    return toolDefinitions(hints ? selectToolNames(hints) : null, this._enabledModules());
+  }
+
+  /** Módulos ligados agora ({} se o app não informa). */
+  _enabledModules() {
+    try { return (typeof this.deps.getEnabledModules === 'function' && this.deps.getEnabledModules()) || {}; } catch (_) { return {}; }
   }
 
   /** Resposta para chamadas além do limite por pergunta (o laço do chat as recusa sem executar). */
@@ -121,6 +147,9 @@ class ToolBox {
       return serializeError(`A ferramenta "${safeText(name, 40)}" não existe. Ferramentas disponíveis: ${TOOLS.map((t) => t.name).join(', ')}.`);
     }
     const ctx = { ...this.deps, signal, onStatus: (text, kind) => onStatus(text, kind) };
+    if (!toolModuleOn(name, this._enabledModules())) {
+      return serializeError(`Este recurso está desligado (módulo "${TOOL_MODULES[name]}"). O usuário pode ligá-lo em Configurações → Módulos.`);
+    }
     try {
       const args = validateArgs(tool.parameters, parseArgs(rawArgs));
       onStatus(tool.status(args), tool.kind === 'action' ? 'confirm' : 'tool');

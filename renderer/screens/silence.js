@@ -87,6 +87,62 @@ export async function initScreen() {
   bindSilenceEvents();
   updateSilenceStepperVisuals();
   setupSilenceIPCListeners();
+  await adoptRunningSilence();
+}
+
+/**
+ * Processamento iniciado fora desta tela (ex.: pelo assistente de IA): mostra na lista os arquivos do lote em
+ * andamento. Itens que a tela já conhece (mesmo caminho) mantêm miniatura e duração.
+ */
+function adoptSilenceRun(files) {
+  if (!Array.isArray(files) || !files.length) return;
+  const known = new Map(silenceList.map((i) => [i.path, i]));
+  silenceList = files.map((fp) => known.get(fp) || {
+    id: String(Date.now() + Math.random()),
+    name: String(fp).split(/[\\/]/).pop(),
+    path: fp,
+    thumbnail: '',
+    durationSeconds: 0,
+    isAudio: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma'].includes(String(fp).split('.').pop().toLowerCase()),
+    progress: 0,
+    status: 'Pronto'
+  });
+  exportSilenceState = { ...exportSilenceState, active: true, completed: false, total: silenceList.length };
+  renderSilenceTable();
+  updateSilenceStepperVisuals();
+  updateSilenceRunningUi();
+  silenceList.filter((i) => !(i.durationSeconds > 0) && window.bds?.probeSilenceFile).forEach(async (item) => {
+    try {
+      const probe = await window.bds.probeSilenceFile(item.path);
+      if (probe && probe.duration) item.durationSeconds = probe.duration;
+      if (probe && probe.isVideo === false) item.isAudio = true;
+      if (silenceList.includes(item)) renderSilenceTable();
+    } catch (_) { /* sem duração: a linha só não mostra */ }
+  });
+}
+
+let silenceStateRequest = null;
+/** O arquivo do evento não é o da lista = o lote veio de fora da tela: lê os arquivos do serviço e adota. */
+async function ensureSilenceListMatches(payload) {
+  const idx = (payload.index || 1) - 1;
+  if (silenceList[idx] && silenceList[idx].name === payload.file) return;
+  if (!window.bds?.silenceGetState) return;
+  try {
+    if (!silenceStateRequest) silenceStateRequest = window.bds.silenceGetState();
+    const state = await silenceStateRequest;
+    if (state && state.running) adoptSilenceRun(state.files);
+  } catch (_) { /* sem estado: segue só com a barra de status */ } finally {
+    silenceStateRequest = null;
+  }
+}
+
+/** Ao abrir a tela com um processamento já em andamento. */
+async function adoptRunningSilence() {
+  if (!window.bds?.silenceGetState) return;
+  try {
+    const state = await window.bds.silenceGetState();
+    if (state && state.running) adoptSilenceRun(state.files);
+  } catch (_) { /* a tela segue vazia até o próximo evento */ }
 }
 
 function updateSilenceStepperVisuals() {
@@ -554,8 +610,9 @@ function updateSilenceRunningUi() {
 
 function setupSilenceIPCListeners() {
   if (window.bds && window.bds.onSilenceProgress) {
-    window.bds.onSilenceProgress((payload) => {
+    window.bds.onSilenceProgress(async (payload) => {
       if (payload) {
+        await ensureSilenceListMatches(payload);
         exportSilenceState.active = true;
         exportSilenceState.current = payload.index || 1;
         exportSilenceState.total = payload.total || silenceList.length;

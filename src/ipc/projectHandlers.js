@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { dialog, BrowserWindow } = require('electron');
 const { handle } = require('./channelRegistry');
+const { appConfirm } = require('../infrastructure/desktop/AppConfirm');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 const {
   assertNonEmpty, assertPositiveInt, assertAbsolutePath
@@ -189,19 +190,14 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
   async function resolveExportOutput(event, spec, ext, label) {
     const out = assertOutputFile(buildOutputPath(spec, ext), [ext], label);
     if (fs.existsSync(out)) {
-      const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
-      const options = {
-        type: 'warning',
+      const ok = await appConfirm({
+        webContents: event.sender,
         title: 'Arquivo já existe',
         message: `Já existe um arquivo chamado "${path.basename(out)}" nesta pasta. Substituir?`,
         detail: out,
-        buttons: ['Cancelar', 'Substituir'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true
-      };
-      const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
-      if (response !== 1) throw new Error('Exportação cancelada: o arquivo já existe e não foi substituído.');
+        confirmLabel: 'Substituir'
+      });
+      if (!ok) throw new Error('Exportação cancelada: o arquivo já existe e não foi substituído.');
     }
     return out;
   }

@@ -13,6 +13,7 @@ module.exports = function registerMediaToolsHandlers({ converterService, montage
   handle('converter:cancel', () => converterService.cancelCurrent());
   handle('converter:clearQueue', () => converterService.clearQueue());
   handle('converter:removeFile', (_, index) => converterService.removeFile(index));
+  handle('converter:getState', () => converterService.getState());
   handle('converter:listQueue', () => converterService.getQueue());
 
   // Montage
@@ -27,6 +28,7 @@ module.exports = function registerMediaToolsHandlers({ converterService, montage
   handle('silence:probe', (_, filePath) => silenceService.probeFile(filePath));
   handle('silence:analyze', (_, config) => silenceService.analyzeSilence(config.filePath, config.threshold, config.minDuration));
   handle('silence:process', (_, config) => silenceService.processQueue(config));
+  handle('silence:getState', () => silenceService.getState());
   handle('silence:cancel', () => silenceService.cancel());
 
   // Metadata

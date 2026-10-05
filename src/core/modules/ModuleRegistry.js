@@ -2,7 +2,7 @@
 
 /**
  * Registro dos módulos do BDS: recursos que o usuário liga/desliga em Configurações → Módulos.
- * Módulo desligado some do menu lateral, dos cartões da Home e dos atalhos. NÃO se baixa código de
+ * Todas as telas, exceto Home e Configurações, são módulos. Módulo desligado some do menu lateral, dos cartões da Home e dos atalhos. NÃO se baixa código de
  * telas: o módulo controla visibilidade/registro e, quando há (`hasEngine`), o motor pesado.
  *
  * Campos: id, title, description, screens[] (data-view das telas; vazio = o módulo não tem tela, como o Assistente de IA, que é um botão flutuante), devOnly (só aparece em
@@ -20,6 +20,76 @@
 const { ASSISTANT_ALLOWED_IN_PACKAGED_APP } = require('../../services/ai/releaseGate');
 
 const BASE_MODULES = [
+  {
+    id: 'download',
+    title: 'Downloads',
+    description: 'Baixa vídeos e músicas de links, com fila, pausa e histórico.',
+    screens: ['download'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 1
+  },
+  {
+    id: 'converter',
+    title: 'Conversor',
+    description: 'Converte vídeos e áudios para MP4 e MP3, em fila.',
+    screens: ['converter'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 2
+  },
+  {
+    id: 'library',
+    title: 'Biblioteca',
+    description: 'Organiza e pesquisa as mídias das suas pastas. A pesquisa do topo e os números da Home dependem dela.',
+    screens: ['library'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 3
+  },
+  {
+    id: 'projects',
+    title: 'Projetos',
+    description: 'Agrupa mídias em projetos, com pastas, prazos e exportação.',
+    screens: ['projects', 'project_workspace'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 4
+  },
+  {
+    id: 'upload',
+    title: 'Envio',
+    description: 'Envia vídeos para o YouTube Studio.',
+    screens: ['upload'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 5
+  },
+  {
+    id: 'devices',
+    title: 'Dispositivos',
+    description: 'Conecta celulares, câmeras e cartões para importar mídias.',
+    screens: ['devices'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 6
+  },
+  {
+    id: 'luts',
+    title: 'LUTs',
+    description: 'Gerencia e visualiza as LUTs de cor.',
+    screens: ['luts'],
+    devOnly: false,
+    defaultEnabled: false,
+    hasEngine: false,
+    order: 7
+  },
   {
     id: 'transcription',
     title: 'Transcrição',
@@ -140,4 +210,7 @@ function sanitizeEnabledModules(value) {
   return out;
 }
 
-module.exports = { MODULES, getModule, isKnownId, moduleForScreen, resolveEnabled, isEnabled, sanitizeEnabledModules };
+/** Módulos criados quando as telas principais passaram a ser módulos (quem já usava o app os recebe ligados). */
+const CORE_SCREEN_MODULE_IDS = Object.freeze(['download', 'converter', 'library', 'projects', 'upload', 'devices', 'luts']);
+
+module.exports = { CORE_SCREEN_MODULE_IDS, MODULES, getModule, isKnownId, moduleForScreen, resolveEnabled, isEnabled, sanitizeEnabledModules };

@@ -993,6 +993,30 @@
       "returns": "promise"
     }
   },
+  "converterGetState": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:getState",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "converter:getState",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "converterRemoveFile": {
     "type": "function",
     "length": 1,
@@ -6405,6 +6429,68 @@
       }
     ]
   },
+  "onUiConfirmCancel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ui:confirmCancel"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ui:confirmCancel"
+      },
+      {
+        "op": "off",
+        "ch": "ui:confirmCancel"
+      },
+      {
+        "op": "off",
+        "ch": "ui:confirmCancel"
+      }
+    ]
+  },
+  "onUiConfirmRequest": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ui:confirmRequest"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ui:confirmRequest"
+      },
+      {
+        "op": "off",
+        "ch": "ui:confirmRequest"
+      },
+      {
+        "op": "off",
+        "ch": "ui:confirmRequest"
+      }
+    ]
+  },
   "onUpdateCompleted": {
     "type": "function",
     "length": 1,
@@ -7615,6 +7701,14 @@
         },
         {
           "op": "off",
+          "ch": "ui:confirmCancel"
+        },
+        {
+          "op": "off",
+          "ch": "ui:confirmRequest"
+        },
+        {
+          "op": "off",
           "ch": "updates:checked"
         },
         {
@@ -8257,6 +8351,30 @@
       "returns": "promise"
     }
   },
+  "silenceGetState": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:getState",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "silence:getState",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "sonyBrowse": {
     "type": "function",
     "length": 2,
@@ -8462,6 +8580,64 @@
         {
           "op": "invoke",
           "ch": "library:toggleFavoriteBulk",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "uiConfirmAck": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ui:confirmAck",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ui:confirmAck",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "uiConfirmRespond": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ui:confirmRespond",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ui:confirmRespond",
           "args": [
             "__undefined__",
             "__undefined__"

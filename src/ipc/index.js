@@ -21,6 +21,7 @@ function registerIpcHandlers(ctx) {
   } = services;
 
   // Registra Handlers por Módulo
+  require('./confirmHandlers')();
   require('./deviceHandlers')(logger, lutSyncService);
   require('./libraryHandlers')(paths, watcherService);
   // 'isBusy': limpar o armazenamento temporário durante uma tarefa apagaria arquivos em uso

@@ -32,6 +32,7 @@ class SilenceService extends EventEmitter {
     this.currentProcess = null;
     this.cancelRequested = false;
     this.running = false;
+    this.currentFiles = null; // arquivos do lote em andamento (para telas abertas depois do início)
     // Flag do ffmpeg para ler o grafo de um arquivo: '-/filter_complex' (ffmpeg >= 7) ou '-filter_complex_script' (antigo)
     this._scriptFlag = '-/filter_complex';
   }
@@ -306,6 +307,7 @@ class SilenceService extends EventEmitter {
       const threshold = Number(config.threshold);
       const minDuration = Number(config.minDuration);
       if (!Array.isArray(files) || files.length === 0) throw new Error('Nenhum arquivo informado.');
+      this.currentFiles = files.map(String);
       if (!Number.isFinite(threshold) || threshold > 0 || threshold < -120) throw new Error('Sensibilidade inválida (use um valor entre -120 e 0 dB).');
       if (!Number.isFinite(minDuration) || minDuration < 0.01 || minDuration > 3600) throw new Error('Duração mínima inválida.');
 
@@ -508,8 +510,14 @@ class SilenceService extends EventEmitter {
       this.emit('finished', { status: 'error', error: err.message });
     } finally {
       this.running = false;
+      this.currentFiles = null;
       this.currentProcess = null;
     }
+  }
+
+  /** Estado do lote: a tela usa para mostrar um processamento iniciado fora dela (ex.: pelo assistente). */
+  getState() {
+    return { running: this.running, files: this.running && this.currentFiles ? [...this.currentFiles] : [] };
   }
 
   /**

@@ -111,8 +111,9 @@ eventos (`ai:chatDelta`, `ai:chatDone`, `ai:chatError`), listados em `EVENTS`. A
 **Ferramentas do assistente: NÃO existe canal para elas.** O modelo pede ferramentas ao processo principal pelo laço do
 chat (`AssistantChat` → `ToolBox`, ver `.docs/ASSISTENTE_IA_FERRAMENTAS.md`: 22 ferramentas de leitura, interface e ação); o
 renderer só envia texto (`ai:chatStart`) e cancela (`ai:chatCancel`). A confirmação das ações (baixar, converter, remover
-silêncio, transcrever, criar/adicionar a projeto, etiquetar, favoritar, exportar) é um diálogo nativo do main
-(`dialog.showMessageBox`), que o renderer não consegue acionar nem pular; o destino de `export_project` é o diálogo de salvar do
+silêncio, transcrever, criar/adicionar a projeto, etiquetar, favoritar, exportar) é decidida no main e aparece no modal do app
+(`ui:confirmRequest`, ver `infrastructure/desktop/AppConfirm.js`: id aleatório de uso único, resposta só do webContents que recebeu o pedido,
+clique real e foco em "Cancelar"; sem resposta do modal cai em `dialog.showMessageBox`), que o renderer não consegue acionar nem pular; o destino de `export_project` é o diálogo de salvar do
 sistema. As ferramentas reaproveitam os serviços das telas (`downloadService`, `converterService`, `silenceService`,
 `ProjectService`, exportadores), ligados em `src/ipc/index.js`, sem canal novo. A superfície main → renderer do assistente é:
 `ai:chatStatus` (`{ id, text, kind }`, `kind` = `tool`, `confirm`, `progress`, `notice` ou `clear`, mostrado como linha de status

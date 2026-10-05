@@ -20,6 +20,7 @@ let exportConverterState = {
   total: 0,
   percent: 0
 };
+let backendQueue = [];   // última fila informada pelo serviço (inclui o que o assistente de IA colocou nela)
 let ipcListenersInitialized = false; // Previne duplicação de listeners em recargas de tela
 let availableEncoders = null; // Lista de codificadores disponíveis (cache)
 let addMenuDocClickListener = null; // Listener do document para fechar menu Adicionar
@@ -36,6 +37,51 @@ const CONVERTER_SUPPORTED_EXTENSIONS = [
 
 // Extensões exibidas no grid de extensões suportadas (empty state)
 const CONVERTER_FORMAT_CHIPS = ['MP4', 'MKV', 'AVI', 'MOV', 'WEBM', 'MP3', 'AAC', 'FLAC', 'WAV', 'OGG'];
+
+/**
+ * Conversão iniciada fora desta tela (ex.: pelo assistente de IA): mostra na lista os arquivos que estão na fila do
+ * serviço, com o andamento de cada um. Itens que a tela já conhece mantêm miniatura e duração.
+ */
+function adoptBackendQueue(queue = backendQueue, running = true) {
+  if (!Array.isArray(queue) || !queue.length) return;
+  const known = new Map(converterList.map((i) => [String(i.id), i]));
+  converterList = queue.map((b) => known.get(String(b.id)) || {
+    id: String(b.id),
+    name: String(b.file || '').split(/[\\/]/).pop(),
+    path: b.file,
+    thumbnail: '',
+    durationSeconds: Number(b.duration || b.knownDuration) > 0 ? Number(b.duration || b.knownDuration) : 0,
+    progress: b.progress || 0,
+    status: !b.status || b.status === 'Pendente' ? STATUS_WAITING : b.status
+  });
+  if (running) {
+    exportConverterState = { ...exportConverterState, active: true, completed: false, cancelled: false, total: converterList.length };
+    setConverterCancelButtonVisible(true);
+    setAppStatus('Convertendo…', 'info');
+  }
+  renderConverterTable();
+  updateConverterStepperVisuals();
+  updateConverterBatchProgress();
+  fillConverterDurations(converterList.filter((i) => !(i.durationSeconds > 0)));
+}
+
+/** Evento de um arquivo que a lista não conhece = o lote veio de fora da tela: adota a fila do serviço. */
+function ensureConverterItem(id) {
+  if (id == null || converterList.some((i) => String(i.id) === String(id))) return;
+  if (backendQueue.some((b) => String(b.id) === String(id))) adoptBackendQueue();
+}
+
+/** Ao abrir a tela com uma conversão já em andamento. */
+async function adoptRunningConverter() {
+  if (!window.bds?.converterGetState) return;
+  try {
+    const st = await window.bds.converterGetState();
+    if (st && st.running && Array.isArray(st.queue)) {
+      backendQueue = st.queue;
+      adoptBackendQueue(st.queue, true);
+    }
+  } catch (_) { /* sem estado: a tela segue vazia até o próximo evento */ }
+}
 
 function logConverterScreen(msg, type = 'info') {
   if (type === 'error') {
@@ -411,6 +457,7 @@ export async function initScreen() {
   bindConverterEvents();
   updateConverterStepperVisuals();
   setupConverterIPCListeners();
+  await adoptRunningConverter();
 }
 
 // ---------------------------------------------------------------------------
@@ -1352,9 +1399,14 @@ function setupConverterIPCListeners() {
   if (ipcListenersInitialized) return;
   ipcListenersInitialized = true;
 
+  if (window.bds && window.bds.onConverterQueue) {
+    window.bds.onConverterQueue((queue) => { backendQueue = Array.isArray(queue) ? queue : []; });
+  }
+
   if (window.bds && window.bds.onConverterProgress) {
     window.bds.onConverterProgress((payload) => {
       if (payload && payload.id) {
+        ensureConverterItem(payload.id);
         const item = converterList.find(i => String(i.id) === String(payload.id));
         if (item) {
           item.progress = payload.progress || 0;
@@ -1371,6 +1423,7 @@ function setupConverterIPCListeners() {
   if (window.bds && window.bds.onConverterFileStarted) {
     window.bds.onConverterFileStarted((item) => {
       if (item && item.id) {
+        ensureConverterItem(item.id);
         const found = converterList.find(i => String(i.id) === String(item.id));
         if (found) {
           found.status = STATUS_CONVERTING;
@@ -1386,6 +1439,7 @@ function setupConverterIPCListeners() {
   if (window.bds && window.bds.onConverterFileFinished) {
     window.bds.onConverterFileFinished((item) => {
       if (item && item.id) {
+        ensureConverterItem(item.id);
         const found = converterList.find(i => String(i.id) === String(item.id));
         if (found) {
           // Respeita o status real vindo do backend ('Concluído', 'Cancelado', 'Erro')

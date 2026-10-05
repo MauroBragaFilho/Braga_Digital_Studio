@@ -1,7 +1,8 @@
 'use strict';
 
-const { BrowserWindow, shell, dialog } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 const { handle } = require('./channelRegistry');
+const { appConfirm } = require('../infrastructure/desktop/AppConfirm');
 const path = require('node:path');
 const { ModuleManager } = require('../core/modules/ModuleManager');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
@@ -43,22 +44,20 @@ module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, 
   handle('modules:getStatus', () => manager.getStatus());
   // .zip local fora do SHA-256 oficial só instala com confirmação NATIVA (o renderer não consegue
   // se autoconfirmar), com aviso de origem não oficial (RK-065).
-  const confirmUnofficialZip = async ({ zipPath, sha256 }) => {
+  const mainWebContents = () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
-    const opts = {
-      type: 'warning',
-      buttons: ['Cancelar', 'Instalar mesmo assim'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
+    return win && !win.isDestroyed() ? win.webContents : null;
+  };
+  const confirmUnofficialZip = async ({ zipPath, sha256 }) => {
+    return appConfirm({
+      webContents: mainWebContents(),
       title: 'Pacote de origem não oficial',
       message: 'Este arquivo não é o pacote oficial do recurso de transcrição.',
       detail: `A verificação de integridade não confere com o pacote oficial. O conteúdo será executado no seu computador; instale só se você confia na origem.
 
-Arquivo: ${zipPath}`
-    };
-    const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
-    return r.response === 1;
+Arquivo: ${zipPath}`,
+      confirmLabel: 'Instalar mesmo assim'
+    });
   };
 
   // Os esquemas do canal (channels.js) já garantem os tipos e limites: textos de 1 a 500 caracteres.

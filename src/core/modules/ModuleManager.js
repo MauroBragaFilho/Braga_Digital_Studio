@@ -148,7 +148,7 @@ class ModuleManager extends EventEmitter {
       apiVersion: MODULE_API_VERSION,
       platformSupported: engineAvailable,
       engineDownload: true, // o motor é baixado da release oficial (também dá para instalar de um .zip)
-      busy: this._active ? { opId: this._active.opId, kind: this._active.kind, label: this._active.label } : null,
+      busy: this._active ? { opId: this._active.opId, kind: this._active.kind, label: this._active.label, files: this._active.files || null } : null,
       disk: { freeBytes },
       whisper: {
         id: 'whisper',
@@ -219,14 +219,18 @@ class ModuleManager extends EventEmitter {
   }
 
   _progress(op, patch) {
-    this.emit('progress', { opId: op.opId, kind: op.kind, label: op.label, percent: null, ...patch });
+    // "files": quem abre a tela no meio de uma transcrição (ex.: pedida pelo assistente) sabe quais arquivos são.
+    this.emit('progress', { opId: op.opId, kind: op.kind, label: op.label, percent: null, ...(op.files ? { files: op.files } : {}), ...patch });
   }
 
   async _run(kind, label, fn) {
     const op = this._begin(kind, label);
     try {
       const result = await fn(op);
-      this._progress(op, { phase: 'done', percent: 100, message: 'Concluído.' });
+      const summary = kind === 'transcribe' && result
+        ? { result: { outputs: result.outputs || [], errors: result.errors || [], device: result.device || null } }
+        : {};
+      this._progress(op, { phase: 'done', percent: 100, message: 'Concluído.', ...summary });
       return result;
     } catch (err) {
       const cancelled = err && (err.code === CANCELLED || err.code === 'CANCELLED' || op.controller.signal.aborted);
@@ -491,6 +495,7 @@ class ModuleManager extends EventEmitter {
     if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
 
     return this._run('transcribe', 'Gerando legendas/transcrição', async (op) => {
+      op.files = Array.isArray(options.files) ? options.files.map(String) : [];
       const runner = new WhisperCppRunner({
         engineDir: this.paths.engine,
         cudaDir: this._cudaInstalled() ? this.paths.cuda : null,
