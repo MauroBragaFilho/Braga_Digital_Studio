@@ -1,6 +1,5 @@
 'use strict';
 
-const path = require('node:path');
 const { dialog } = require('electron');
 
 const perf = require('../infrastructure/diagnostics/startupPerf');
@@ -12,10 +11,7 @@ const notificationCenter = require('../infrastructure/desktop/NotificationCenter
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 
-const DownloadService = require('../services/downloadService');
 const HistoryService = require('../services/historyService');
-const ThumbnailService = require('../services/thumbnailService');
-const ConverterService = require('../services/converterService');
 const UpdateService = require('../services/updateService');
 const MontageService = require('../services/montageService');
 const SilenceService = require('../services/silenceService');
@@ -24,16 +20,9 @@ const VideoRecoveryService = require('../services/videoRecoveryService');
 const RawRecoveryService = require('../services/rawRecoveryService');
 const PhotoPreviewService = require('../services/photoPreviewService');
 
-const UploadScannerService = require('../core/uploads/UploadScannerService');
 
 const projectService = require('../core/projects/ProjectService');
-const SequenceBuilder = require('../core/projects/SequenceBuilder');
-const PremiereExporter = require('../core/projects/PremiereExporter');
-const BdsproPackageService = require('../core/projects/BdsproPackageService');
-const WaveformService = require('../core/projects/WaveformService');
-const AudioSyncService = require('../core/projects/AudioSyncService');
 
-const LutSyncService = require('../core/devices/LutSyncService');
 
 const dbManager = require('../core/database/database');
 const { runMigrations } = require('../core/database/migrations');
@@ -42,6 +31,8 @@ const ImportQueue = require('../core/library/ImportQueue');
 const LibraryWatcherService = require('../core/library/LibraryWatcherService');
 
 const { syncLibraries } = require('./libraries');
+const { lazyService } = require('../core/modules/lazyService');
+const { moduleRuntime } = require('./moduleRuntime');
 
 /**
  * Preparação da plataforma antes dos serviços: preferências de hardware, notificações,
@@ -66,9 +57,8 @@ async function initPlatform({ settings, appPaths, paths, settingsManager, lutMan
     getSettings: () => settingsManager.load()
   });
 
-  // Copiar LUTs embutidas
-  const bundledLutsDir = path.join(__dirname, '..', '..', 'data', 'LUTs');
-  perf.time('platform:ensureBundledLuts', () => lutManager.ensureBundledLuts(bundledLutsDir));
+  // LUTs embutidas: copiadas só com o módulo LUTs ou Dispositivos ligado (moduleRuntime.js; também ao ligá-los depois)
+  moduleRuntime.setContext({ lutManager });
 
   // 1. Inicializar Banco de Dados
   await perf.timeAsync('db:init', () => dbManager.init(paths.databaseDir));
@@ -93,9 +83,10 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
 
   // 2. Inicializar Serviços Core e Infraestrutura
   const historyService = await perf.timeAsync('services:historyService.create', () => HistoryService.create(paths.databaseDir));
-  const downloadService = new DownloadService({ paths, getSettings, historyService });
-  const converterService = new ConverterService({ paths, getSettings, historyService });
-  const thumbnailService = new ThumbnailService({ paths, getSettings });
+  // Serviços dos módulos de tela: criados no PRIMEIRO uso (lazyService); com o módulo desligado nunca são carregados.
+  const downloadService = lazyService(() => new (require('../services/downloadService'))({ paths, getSettings, historyService }));
+  const converterService = lazyService(() => new (require('../services/converterService'))({ paths, getSettings, historyService }));
+  const thumbnailService = lazyService(() => new (require('../services/thumbnailService'))({ paths, getSettings }));
   const updateService = new UpdateService({ paths, getSettings });
   const montageService = new MontageService({ paths, getSettings });
   const silenceService = new SilenceService({ paths, getSettings });
@@ -103,24 +94,24 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
   const videoRecoveryService = new VideoRecoveryService({ paths });
   const rawRecoveryService = new RawRecoveryService({ paths });
 
-  const sequenceBuilder = new SequenceBuilder(projectService);
-  const premiereExporter = new PremiereExporter(projectService, sequenceBuilder);
-  const bdsproPackageService = new BdsproPackageService(projectService);
+  const sequenceBuilder = lazyService(() => new (require('../core/projects/SequenceBuilder'))(projectService));
+  const premiereExporter = lazyService(() => new (require('../core/projects/PremiereExporter'))(projectService, sequenceBuilder));
+  const bdsproPackageService = lazyService(() => new (require('../core/projects/BdsproPackageService'))(projectService));
 
-  const waveformService = new WaveformService({
+  const waveformService = lazyService(() => new (require('../core/projects/WaveformService'))({
     ffmpegPath: ffmpegTool.resolve({ mustExist: false }),
     cacheDir: appPaths.waveformsDir
-  });
-  const audioSyncService = new AudioSyncService({
+  }));
+  const audioSyncService = lazyService(() => new (require('../core/projects/AudioSyncService'))({
     ffmpegPath: ffmpegTool.resolve({ mustExist: false })
-  });
+  }));
 
-  const lutSyncService = new LutSyncService(paths.lutsDir);
-  const uploadScannerService = new UploadScannerService({
+  const lutSyncService = lazyService(() => new (require('../core/devices/LutSyncService'))(paths.lutsDir));
+  const uploadScannerService = lazyService(() => new (require('../core/uploads/UploadScannerService'))({
     paths,
     ffprobePath: ffprobeTool.resolve({ mustExist: false }),
     ffmpegPath: ffmpegTool.resolve({ mustExist: false })
-  });
+  }));
 
   // 3. Inicializar Media Library e Watcher
   const libManager = new LibraryManager();

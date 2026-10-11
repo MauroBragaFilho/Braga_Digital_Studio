@@ -143,19 +143,32 @@ reutilizando `FileDownloader` (retomada, SHA-256, cancelamento), `ZipExtractor` 
 
 ## Sistema de módulos (ligar/desligar recursos)
 
-Em Configurações → Módulos o usuário liga/desliga recursos; desligado, o recurso some do menu lateral,
-dos cartões da Home e dos atalhos (Ctrl+N) e qualquer navegação a ele volta para a Home. **Não se baixa
-código de telas**: o módulo controla visibilidade e, quando há (`hasEngine`), o motor pesado.
+**Todas as telas, exceto Home e Configurações, são módulos**: Downloads, Conversor, Biblioteca, Projetos (com a área de
+trabalho), Envio, Dispositivos, LUTs, Transcrição, Metadados, Remover Silêncios, mais Recuperar e Montagem (desenvolvimento)
+e o Assistente de IA (sem tela). Em Configurações → Módulos o usuário liga/desliga cada um; desligado, o recurso some do menu
+lateral, dos cartões da Home, dos atalhos (Ctrl+N), das opções de tela inicial, dos cartões das Configurações
+(`[data-module="<id>"]` em `settings.html`) e das ferramentas/telas do assistente, e qualquer navegação a ele volta para a Home.
+A pesquisa do topo e o contador de mídias dependem da Biblioteca. As abas ficam ocultas até o main informar o estado
+(fail-closed; a tela inicial espera até 3 s por isso) e, se a lista de módulos não puder ser lida, as telas principais aparecem.
 
 - `ModuleRegistry.js`: definições (`id`, `title`, `description`, `screens[]`, `devOnly`, `defaultEnabled`,
-  `hasEngine`, `order`) e funções puras `resolveEnabled(settings, { isDev })`, `isEnabled`, `sanitizeEnabledModules`.
+  `hasEngine`, `order`) e funções puras `resolveEnabled(settings, { isDev })`, `isEnabled`, `moduleForScreen`,
+  `sanitizeEnabledModules`; `CORE_SCREEN_MODULE_IDS` lista os 7 módulos de tela criados em 2026-10-05.
   O slot `EXTRA_MODULES` (vazio) é onde entram módulos futuros; vazio, nada aparece na interface.
 - Estado em `settings.enabledModules` (`{ id: boolean }`). Chave ausente = padrão do módulo = **desligado**
-  (instalação nova começa com tudo desligado). Migração única em `SettingsManager._migrateModules`, controlada
-  por `modulesMigrated`: se não havia `enabledModules` e já existia um `settings.json` (instalação anterior),
-  grava Transcrição, Metadados e Remover Silêncios ligados para ninguém perder recursos; instalação nova
-  (sem `settings.json`) grava a flag sem ligar nada; depois disso a escolha do usuário nunca é sobrescrita.
-  Módulos `devOnly` (Assistente de IA, Montagem, Recuperar) só existem em desenvolvimento. O módulo `ai` não tem tela (`screens: []`): ele controla o botão flutuante do assistente (`renderer/components/ai-assistant.js`).
+  (instalação nova começa só com Home, Configurações e o Assistente de IA). Duas migrações únicas em
+  `SettingsManager`, que nunca sobrescrevem uma escolha já gravada: `_migrateModules` (`modulesMigrated`) liga
+  Transcrição, Metadados e Remover Silêncios para quem tinha um `settings.json` anterior ao sistema de módulos;
+  `_migrateScreenModules` (`screenModulesMigrated`) liga as 7 telas principais para quem já usava o app quando elas
+  viraram módulos (ninguém perde tela). Instalação nova grava as duas flags sem ligar nada.
+  Módulos `devOnly` (Montagem, Recuperar) só existem em desenvolvimento. O módulo `ai` não tem tela (`screens: []`): ele controla o botão flutuante do assistente (`renderer/components/ai-assistant.js`).
+- **Processo principal sob demanda** (`src/bootstrap/moduleRuntime.js` e `src/core/modules/lazyService.js`): os serviços
+  dos módulos (downloads, conversor, miniaturas, exportadores e sequenciador de Projetos, ondas de áudio, sincronia de áudio,
+  sincronização de LUTs, varredor do Envio) são criados no primeiro uso, e as tarefas de fundo (monitoramento da Biblioteca
+  e regeneração de miniaturas, descoberta de dispositivos/pareamento/câmeras Sony, lembretes de prazo dos Projetos, LUTs
+  embutidas, yt-dlp dos Downloads) só começam com o módulo ligado e começam/param ao ligar/desligar em Configurações, sem
+  reiniciar. Os handlers IPC continuam sempre registrados (o preload os expõe); o banco, a fila de importação e o histórico
+  são núcleo. A sondagem de armazenamento da sidebar só enumera dispositivos MTP/USB com o módulo Dispositivos ligado.
 - Motor sob demanda: o que é pesado é o motor/binário, baixado na ativação. Ao ligar um módulo com
   `hasEngine` e motor ausente, Configurações → Módulos pergunta antes de instalar: Transcrição abre o painel do
   motor Whisper (`engine: 'whisper'`); Recuperar (`engine: 'tool:untrunc'`) baixa o motor de recuperação via

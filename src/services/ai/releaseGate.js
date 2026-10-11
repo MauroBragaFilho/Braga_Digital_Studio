@@ -10,7 +10,7 @@
  * a constante para `false`.
  *
  * O modelo de ameaça de .docs/ASSISTENTE_IA_FERRAMENTAS.md vale para TODOS os usuários: toda ação passa por uma
- * confirmação nativa do processo principal, o modelo só enxerga ids e resumos sem caminhos, e antes da primeira
+ * confirmação decidida pelo processo principal (modal do app; diálogo nativo como reserva), o modelo só enxerga ids e resumos sem caminhos, e antes da primeira
  * mensagem a um servidor que não é local o chat mostra um aviso de privacidade (o aceite fica em ai.json).
  */
 const ASSISTANT_ALLOWED_IN_PACKAGED_APP = true;

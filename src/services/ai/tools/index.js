@@ -13,7 +13,7 @@
  * Quem executa é o ToolBox, SEMPRE no processo principal:
  *   1. acha a ferramenta pelo nome (desconhecida = recusa);
  *   2. valida os argumentos com o esquema estrito (schema.js);
- *   3. ferramenta de LEITURA ou de INTERFACE: executa; ferramenta de AÇÃO: prepare() → diálogo nativo de confirmação
+ *   3. ferramenta de LEITURA ou de INTERFACE: executa; ferramenta de AÇÃO: prepare() → confirmação do app (modal; diálogo nativo como reserva)
  *      (confirm) → run();
  *   4. devolve um texto curto e seguro (results.js: sem caminhos, com limite, marcado como dado).
  * O renderer não tem canal para executar ferramentas nem para confirmar: a confirmação é do app, não do modelo.
@@ -160,7 +160,7 @@ class ToolBox {
       if (signal && signal.aborted) throw cancelled();
       let confirmed = false;
       try {
-        // Corrida com o cancelamento: parar o chat encerra o fluxo na hora (o diálogo nativo fecha pelo mesmo sinal)
+        // Corrida com o cancelamento: parar o chat encerra o fluxo na hora (o modal ou o diálogo nativo fecha pelo mesmo sinal)
         confirmed = (await abortable(this.confirm({ title: 'Confirmar ação do assistente', message: prep.message, detail: prep.detail, signal }), signal)) === true;
       } catch (err) {
         if (err && err.code === 'CANCELLED') throw err;

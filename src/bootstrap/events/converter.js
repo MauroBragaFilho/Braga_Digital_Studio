@@ -3,10 +3,15 @@
 const logger = require('../../services/logService');
 const taskProgressCenter = require('../../infrastructure/desktop/TaskProgressCenter');
 const notificationCenter = require('../../infrastructure/desktop/NotificationCenter');
+const { onceCreated } = require('../../core/modules/lazyService');
 
 /** Eventos do conversor -> renderer / taskbar / notificações. */
 function bindConverterEvents({ bridge, services }) {
-  const { converterService } = services;
+  // O serviço é criado no primeiro uso (módulo Conversor): os eventos são ligados nesse momento
+  onceCreated(services.converterService, (converterService) => bindTo(converterService, { bridge }));
+}
+
+function bindTo(converterService, { bridge }) {
 
   converterService.on('queue', (p) => bridge.send('converter:queue', p));
   converterService.on('fileStarted', (p) => {

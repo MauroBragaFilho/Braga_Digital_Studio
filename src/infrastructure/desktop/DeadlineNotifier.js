@@ -112,7 +112,8 @@ class DeadlineNotifier {
       if (nowMinutes < reminderMinutes) return;
 
       const projects = projectService.getAllProjects();
-      const withDeadline = projects.filter((p) => p.deadline);
+      // Projetos concluídos ou arquivados não têm mais prazo a lembrar
+      const withDeadline = projects.filter((p) => p.deadline && p.status !== 'Concluído' && p.status !== 'Arquivado');
       let dirty = false;
 
       for (const project of withDeadline) {

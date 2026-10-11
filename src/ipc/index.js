@@ -2,6 +2,7 @@
 
 const { app } = require('electron');
 const logger = require('../services/logService');
+const { liveService, lazyService } = require('../core/modules/lazyService');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 
 /**
@@ -29,8 +30,8 @@ function registerIpcHandlers(ctx) {
     isBusy: () => {
       try {
         return Boolean(
-          (services.downloadService.getQueue?.() || []).some((i) => i.status === 'downloading') ||
-          services.converterService.running ||
+          (liveService(services.downloadService)?.getQueue?.() || []).some((i) => i.status === 'downloading') ||
+          liveService(services.converterService)?.running ||
           services.silenceService.running ||
           services.metadataService.currentProcess
         );
@@ -57,7 +58,7 @@ function registerIpcHandlers(ctx) {
     downloadService,
     converterService,
     silenceService,
-    deviceDiscovery: require('../core/devices/DeviceDiscoveryService'),
+    deviceDiscovery: lazyService(() => require('../core/devices/DeviceDiscoveryService')),
     premiereExporter,
     bdsproPackageService,
     thumbnailsDir: appPaths.thumbnailsDir
@@ -69,6 +70,15 @@ function registerIpcHandlers(ctx) {
     isDev: !app.isPackaged,
     tasks: {
       silence: () => services.silenceService,
+      // Serviços de módulos criados sob demanda: só há o que cancelar se já existirem
+      download: () => {
+        const d = liveService(services.downloadService);
+        return d ? { running: (d.getQueue?.() || []).some((i) => i.status === 'downloading'), cancel: () => d.pause?.() } : null;
+      },
+      converter: () => {
+        const c = liveService(services.converterService);
+        return c ? { running: !!c.isRunning?.(), cancel: () => c.cancelCurrent?.() } : null;
+      },
       metadata: () => ({ running: !!services.metadataService.currentProcess, cancel: () => services.metadataService.cancel() })
     }
   });

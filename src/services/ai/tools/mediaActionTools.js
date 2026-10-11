@@ -55,7 +55,9 @@ const listFolder = (dir) => { try { return new Set(fs.readdirSync(dir)); } catch
 
 /**
  * Apaga SÓ o que este download criou ou reescreveu e ficou pela metade (arquivo com cara de parcial que é NOVO ou que
- * foi modificado depois de `since`; um parcial antigo que ninguém tocou não é mexido) ao ser parado. No Windows o arquivo pode continuar travado por alguns instantes depois que o processo morre: tenta de novo até
+ * foi modificado depois de `since`; um parcial antigo que ninguém tocou não é mexido) ao ser parado.
+ * (Os downloads do app gravam numa subpasta temporária ".bds-dl-<id>" que o próprio serviço apaga ao cancelar/remover;
+ * esta varredura da pasta continua como rede de segurança para parciais soltos.) No Windows o arquivo pode continuar travado por alguns instantes depois que o processo morre: tenta de novo até
  * ficar livre (até ~3 s). Devolve quantos parciais ainda não puderam ser apagados.
  */
 async function removeNewPartials(dir, before, { since = Date.now(), tries = 15, delayMs = 200 } = {}) {
@@ -149,6 +151,8 @@ const add_download = {
         throw cancelled();
       }
       if (err instanceof ToolError) throw err;
+      // Link repetido (já na fila ou já baixado com o arquivo ainda na pasta): recusa curta, sem quebrar a conversa
+      if (err && typeof err.code === 'string' && err.code.startsWith('DUPLICATE_')) throw new ToolError(safeText(err.message, 160), 'DUPLICATE');
       throw new ToolError(`Não foi possível iniciar o download: ${safeText(err && err.message, 140)}`, 'DOWNLOAD_FAILED');
     }
     if (item.status === 'completed') {

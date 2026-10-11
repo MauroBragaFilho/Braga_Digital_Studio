@@ -92,7 +92,6 @@
 .url-add-btn:focus-visible,
 .queue-btn:focus-visible,
 .card-action-btn:focus-visible,
-.active-download-cancel-btn:focus-visible,
 .queue-more > summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* --- FILA --- */
@@ -193,123 +192,12 @@
 .metric-label-success, .metric-value-success { color: var(--status-ok); }
 .metric-label-danger, .metric-value-danger { color: var(--status-bad); }
 
-/* --- DOWNLOAD ATIVO --- */
-.active-download-section {
-  padding: 20px;
-  background: var(--card-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-}
-.active-download-section.active { display: block; }
-.active-download-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  color: var(--accent-text);
-  font-size: var(--fs-label);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.active-download-header .material-symbols-rounded { font-size: 20px; }
-.active-download-header::after {
-  content: '';
-  width: 8px;
-  height: 8px;
-  margin-left: 2px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: activePulse 1.6s ease-out infinite;
-}
+/* Pulso do ponto da etiqueta "Baixando" */
 @keyframes activePulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
   70% { box-shadow: 0 0 0 8px transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
-.active-download-content { display: flex; gap: 16px; align-items: center; }
-.active-download-thumb,
-.active-download-thumb-placeholder {
-  flex-shrink: 0;
-  width: 140px;
-  height: 79px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-.active-download-thumb { object-fit: cover; }
-.active-download-thumb-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  background: var(--card);
-}
-.active-download-thumb-placeholder .material-symbols-rounded { font-size: 32px; }
-.active-download-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.active-download-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.active-download-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
-}
-.active-download-badge {
-  padding: 3px 12px;
-  white-space: nowrap;
-  color: var(--accent-text);
-  background: var(--accent-light);
-  border-radius: var(--radius-pill);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.active-download-meta { color: var(--muted); font-size: var(--fs-label); }
-.active-download-progress {
-  position: relative;
-  height: 8px;
-  margin-top: 6px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--text) 14%, transparent);
-  border-radius: var(--radius-pill);
-}
-.active-download-progress-fill {
-  position: relative;
-  height: 100%;
-  overflow: hidden;
-  background: var(--accent);
-  border-radius: var(--radius-pill);
-  transition: width 0.3s var(--ease);
-}
-.active-download-stats {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 2px;
-  color: var(--text);
-  font-size: var(--fs-label);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.active-download-cancel-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 9px 18px;
-  color: var(--danger);
-  background: var(--danger-bg);
-  border: none;
-  border-radius: var(--radius-pill);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.2s var(--ease);
-}
-.active-download-cancel-btn:hover { background: color-mix(in srgb, var(--danger) 24%, transparent); }
-.active-download-cancel-btn .material-symbols-rounded { font-size: 18px; }
 
 /* --- LISTA DA FILA --- */
 .download-queue-list {
@@ -434,12 +322,42 @@
 }
 .download-card-progress-info {
   display: flex;
-  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   color: var(--muted);
   font-size: var(--fs-label);
   font-variant-numeric: tabular-nums;
 }
-.download-card-progress-info .speed-info { font-family: ui-monospace, Consolas, monospace; }
+.download-card-progress-info .dl-row-pct { color: var(--text); font-weight: 700; }
+.download-card-progress-info .speed-info { margin-left: auto; font-family: ui-monospace, Consolas, monospace; }
+.download-card.status-downloading .download-card-progress-track { height: 8px; }
+.download-card.status-downloading .download-card-progress-fill { background: var(--accent); }
+
+/* Cartão recém-criado: informações (título, miniatura, canal) ainda carregando — esqueleto discreto */
+.dl-skeleton {
+  display: inline-block;
+  min-width: 140px;
+  padding: 0 2px;
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 10%, transparent), transparent);
+  background-size: 200% 100%;
+  animation: dlSkeleton 1.6s ease-in-out infinite;
+}
+@keyframes dlSkeleton {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.download-card.is-loading .download-card-thumb-placeholder { background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 8%, transparent), transparent); background-size: 200% 100%; animation: dlSkeleton 1.6s ease-in-out infinite; }
+:root.reduce-motion .download-card.is-loading .download-card-thumb-placeholder { animation: none; }
+@media (prefers-reduced-motion: reduce) { .download-card.is-loading .download-card-thumb-placeholder { animation: none; } }
+
+/* Link repetido: destaca o cartão que já existe na fila */
+.download-card.dl-highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
 .download-card-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .download-card-buttons { display: flex; align-items: center; gap: 2px; }
 
@@ -497,9 +415,6 @@
   .queue-header { flex-direction: column; align-items: flex-start; }
   .queue-controls { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
   .queue-more-menu { right: auto; left: 0; }
-  .active-download-content { flex-direction: column; align-items: flex-start; }
-  .active-download-thumb,
-  .active-download-thumb-placeholder { width: 100%; height: auto; aspect-ratio: 16 / 9; }
   .download-card-top { flex-direction: column; align-items: flex-start; }
   .download-card-selectors { width: 100%; justify-content: flex-start; }
   .download-card-bottom { flex-direction: column; align-items: stretch; }
@@ -591,8 +506,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .active-download-header::after,
-  .status-badge-downloading::before { animation: none; }
+  .status-badge-downloading::before,
+  .dl-skeleton { animation: none; }
 }
-:root.reduce-motion .active-download-header::after,
-:root.reduce-motion .status-badge-downloading::before { animation: none; }
+:root.reduce-motion .status-badge-downloading::before,
+:root.reduce-motion .dl-skeleton { animation: none; }

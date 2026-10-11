@@ -64,9 +64,9 @@ function showMultipleLinksModal() {
 
   overlay.querySelector('#cancelLinks').addEventListener('click', () => overlay.remove());
 
-  overlay.querySelector('#confirmLinks').addEventListener('click', async () => {
+  overlay.querySelector('#confirmLinks').addEventListener('click', () => {
     const rawText = textarea.value || '';
-    
+
     // Divide por quebras de linha e limpa espaços
     const lines = rawText
       .split(/\r?\n/)
@@ -82,76 +82,9 @@ function showMultipleLinksModal() {
       return;
     }
 
-    const btnConfirm = overlay.querySelector('#confirmLinks');
-    btnConfirm.disabled = true;
-    btnConfirm.textContent = `Analisando (0/${validLinks.length})...`;
-
-    const api = getDownloadsApi();
-    let addedCount = 0;
-
-    for (let i = 0; i < validLinks.length; i++) {
-      const url = validLinks[i];
-      btnConfirm.textContent = `Analisando (${i + 1}/${validLinks.length})...`;
-      setStatus(`Analisando link ${i + 1} de ${validLinks.length}...`);
-
-      const isSpot = isSpotify(url);
-      let titleToUse = '';
-      let thumbToUse = '';
-      let channelToUse = '';
-      let durationToUse = null;
-      let platformToUse = detectSource(url);
-
-      let analysisError = null;
-
-      // Tenta obter metadados para analisar o link com timeout defensivo de 8 segundos no cliente
-      if (window.bds && window.bds.getMetadata) {
-        try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Tempo limite excedido ao analisar link')), 8000)
-          );
-          const meta = await Promise.race([
-            window.bds.getMetadata(url),
-            timeoutPromise
-          ]);
-
-          if (meta) {
-            titleToUse = meta.title || '';
-            thumbToUse = meta.thumbnail || '';
-            channelToUse = meta.channel || '';
-            durationToUse = meta.duration || null;
-            if (meta.platform) platformToUse = meta.platform;
-          } else {
-            analysisError = 'Não foi possível obter dados do link';
-          }
-        } catch (e) {
-          analysisError = ipcMsg(e) || 'Erro ao analisar o link';
-          console.warn('[DOWNLOAD] Falha ao obter metadados para:', url, e);
-        }
-      }
-
-      try {
-        await api.add({
-          url: url,
-          format: isSpot ? 'MP3' : (els.formatSelect?.value || 'MP4'),
-          quality: els.resolutionSelect?.value || 'best',
-          title: titleToUse || (analysisError ? `Link com erro: ${url}` : (isSpot ? 'Música' : 'Vídeo')),
-          thumbnail: thumbToUse,
-          channel: channelToUse,
-          platform: platformToUse,
-          duration: durationToUse,
-          status: analysisError ? 'failed' : 'queued',
-          error: analysisError || ''
-        });
-        addedCount++;
-        fetchQueue();
-      } catch (err) {
-        console.error('[DOWNLOAD] Falha ao adicionar link múltiplo:', url, err);
-      }
-    }
-
-    setStatus(`Adicionados ${addedCount} de ${validLinks.length} link(s) à fila.`);
-    fetchQueue();
+    // Fecha na hora: os cartões aparecem na fila e as informações (título, miniatura...) chegam depois, um link por vez
     overlay.remove();
+    enqueueManyLinks(validLinks);
   });
 
   // Fechar ao clicar fora do modal
@@ -335,9 +268,8 @@ export function onEnter() {
 }
 
 // ---- Renderização da fila: diff por item.id (apenas linhas alteradas são recriadas) ----
-const rowCache = new Map();   // id -> { sig, el, fill, pct, speed }
+const rowCache = new Map();   // id -> { sig, el, fill, pct, bytes, speed }
 let queueEmptyShown = false;
-let activeRefs = null;        // { key, id, fill, pct, bytes, speed }
 let queueDelegated = false;
 
 function buildRowHtml(item, dyn) {
@@ -347,6 +279,8 @@ function buildRowHtml(item, dyn) {
     let statusBadge = '';
     let actionsHtml = '';
     let cardClass = 'download-card';
+    const loadingInfo = Boolean(item.infoLoading) && item.status === 'queued';
+    if (loadingInfo) cardClass += ' is-loading';
 
     if (item.status === 'queued') {
       statusBadge = `<span class="status-badge status-badge-queued">Aguardando</span>`;
@@ -450,7 +384,9 @@ function buildRowHtml(item, dyn) {
     const channelText = item.channel ? escapeHtml(item.channel) : escapeHtml(friendlyPlatform(item.platform));
     const durationText = item.duration ? formatDuration(item.duration) : '';
     const platformText = escapeHtml(friendlyPlatform(item.platform));
-    const metaSubtitle = `${channelText}${platformText === channelText ? '' : ' • ' + platformText}${durationText ? ' • ' + durationText : ''}`;
+    const metaSubtitle = loadingInfo
+      ? `${platformText} • <span class="dl-skeleton">Carregando informações...</span>`
+      : `${channelText}${platformText === channelText ? '' : ' • ' + platformText}${durationText ? ' • ' + durationText : ''}`;
 
     return `
       <div class="${cardClass}" data-item-id="${item.id}">
@@ -472,7 +408,8 @@ function buildRowHtml(item, dyn) {
             </div>
             <div class="download-card-progress-info">
               <span class="dl-row-pct">${Math.round(prog)}%</span>
-              <span class="speed-info">${escapeHtml(speed)} ${eta ? '• ETA ' + escapeHtml(eta) : ''}</span>
+              <span class="dl-row-bytes">${dyn ? escapeHtml(bytesText(item)) : ''}</span>
+              <span class="speed-info">${escapeHtml(speed)} ${eta ? '• Restante ' + escapeHtml(eta) : ''}</span>
             </div>
           </div>
           <div class="download-card-actions">
@@ -486,7 +423,7 @@ function buildRowHtml(item, dyn) {
     `;
 }
 
-function bindQueueDelegation(container, activeContent) {
+function bindQueueDelegation(container) {
   if (queueDelegated) return;
   queueDelegated = true;
   const onClick = (e) => {
@@ -496,7 +433,6 @@ function bindQueueDelegation(container, activeContent) {
     handleQueueAction(btn.dataset.action, btn.dataset.id, btn.dataset.path);
   };
   container.addEventListener('click', onClick);
-  if (activeContent) activeContent.addEventListener('click', onClick);
   container.addEventListener('change', (e) => {
     const select = e.target.closest('select[data-action]');
     if (!select) return;
@@ -511,17 +447,21 @@ function rowFromHtml(html) {
   return tpl.content.firstElementChild;
 }
 
+/** "12,3 MB / 80 MB" (vazio enquanto o tamanho total é desconhecido). */
+function bytesText(item) {
+  return item.totalBytes ? `${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}` : '';
+}
+
 function patchRowProgress(entry, item) {
   if (typeof item.progress !== 'number') return;
   if (entry.fill) entry.fill.style.width = `${item.progress}%`;
   if (entry.pct) entry.pct.textContent = `${Math.round(item.progress)}%`;
-  if (entry.speed) entry.speed.textContent = `${item.speed || '--'} ${item.eta ? '• ETA ' + item.eta : ''}`;
+  if (entry.bytes) entry.bytes.textContent = bytesText(item);
+  if (entry.speed) entry.speed.textContent = `${item.speed || '--'} ${item.eta ? '• Restante ' + item.eta : ''}`;
 }
 
 export function renderDownloadQueue(queue) {
   const container = document.getElementById('downloadQueueContainer');
-  const activeSection = document.getElementById('activeDownloadSection');
-  const activeContent = document.getElementById('activeDownloadContent');
   if (!container) return;
 
   const items = queue || [];
@@ -529,7 +469,7 @@ export function renderDownloadQueue(queue) {
   // Tela oculta: não gasta DOM; onEnter busca a fila de novo e desenha
   const viewEl = container.closest('.view');
   if (viewEl && viewEl.classList.contains('hidden')) return;
-  bindQueueDelegation(container, activeContent);
+  bindQueueDelegation(container);
 
   // Métricas (uma passada)
   let queuedCount = 0, completedCount = 0, failedCount = 0, activeItem = null;
@@ -548,60 +488,6 @@ export function renderDownloadQueue(queue) {
   setText('metricActive', activeCount);
   setText('metricCompleted', completedCount);
   setText('metricFailed', failedCount);
-
-  // Download Ativo
-  if (activeItem && activeSection && activeContent) {
-    activeSection.classList.remove('hidden');
-    activeSection.classList.add('active');
-    
-    const thumbHtml = activeItem.thumbnail 
-      ? `<img src="${escapeHtml(activeItem.thumbnail)}" class="active-download-thumb" />` 
-      : `<div class="active-download-thumb-placeholder"><span class="material-symbols-rounded">movie</span></div>`;
-
-    const channelInfo = activeItem.channel ? escapeHtml(activeItem.channel) : escapeHtml(friendlyPlatform(activeItem.platform));
-
-    const activeKey = [activeItem.id, activeItem.thumbnail, activeItem.title, activeItem.channel, activeItem.platform, activeItem.duration, activeItem.format, activeItem.quality].join('|');
-    if (activeRefs && activeRefs.key === activeKey && activeContent.contains(activeRefs.fill)) {
-      updateProgressVisuals(activeItem);
-    } else {
-    activeContent.innerHTML = `
-      ${thumbHtml}
-      <div class="active-download-info">
-        <div class="active-download-title-row">
-          <span class="active-download-title" title="${escapeHtml(activeItem.title)}">${escapeHtml(activeItem.title)}</span>
-          <span class="active-download-badge">${escapeHtml(activeItem.format)} • ${escapeHtml(activeItem.quality)}</span>
-        </div>
-        <div class="active-download-meta">
-          ${channelInfo} • ${activeItem.duration ? formatDuration(activeItem.duration) : '--'}
-        </div>
-        <div class="active-download-progress">
-          <div id="dl-fill-${activeItem.id}" class="active-download-progress-fill" style="width: ${activeItem.progress || 0}%;"></div>
-        </div>
-        <div class="active-download-stats">
-          <span id="dl-percent-${activeItem.id}">${Math.round(activeItem.progress || 0)}%</span>
-          <span id="dl-bytes-${activeItem.id}">${formatBytes(activeItem.downloadedBytes)} / ${formatBytes(activeItem.totalBytes)}</span>
-          <span id="dl-speed-${activeItem.id}">${escapeHtml(activeItem.speed || '--')} • ETA ${escapeHtml(activeItem.eta || '--')}</span>
-        </div>
-      </div>
-      <button type="button" class="active-download-cancel-btn" data-action="cancel" data-id="${activeItem.id}">
-        <span class="material-symbols-rounded">cancel</span>
-        Cancelar
-      </button>
-    `;
-    activeRefs = {
-      key: activeKey,
-      id: activeItem.id,
-      fill: activeContent.querySelector('.active-download-progress-fill'),
-      pct: activeContent.querySelector('[id^="dl-percent-"]'),
-      bytes: activeContent.querySelector('[id^="dl-bytes-"]'),
-      speed: activeContent.querySelector('[id^="dl-speed-"]')
-    };
-    }
-  } else if (activeSection) {
-    activeRefs = null;
-    activeSection.classList.add('hidden');
-    activeSection.classList.remove('active');
-  }
 
   if (items.length === 0) {
     rowCache.clear();
@@ -626,6 +512,7 @@ export function renderDownloadQueue(queue) {
         sig, el,
         fill: el.querySelector('.dl-row-fill'),
         pct: el.querySelector('.dl-row-pct'),
+        bytes: el.querySelector('.dl-row-bytes'),
         speed: el.querySelector('.speed-info')
       };
       rowCache.set(key, entry);
@@ -668,13 +555,6 @@ async function handleQueueAction(action, id, path) {
 
 export function updateProgressVisuals(payload) {
   if (!payload || !payload.id) return;
-  if (activeRefs && activeRefs.id === payload.id) {
-    const r = activeRefs;
-    if (r.fill && typeof payload.progress === 'number') r.fill.style.width = `${payload.progress}%`;
-    if (r.pct && typeof payload.progress === 'number') r.pct.textContent = `${Math.round(payload.progress)}%`;
-    if (r.speed) r.speed.textContent = `${payload.speed || '--'} • ETA ${payload.eta || '--'}`;
-    if (r.bytes) r.bytes.textContent = `${formatBytes(payload.downloadedBytes)} / ${formatBytes(payload.totalBytes)}`;
-  }
   const row = rowCache.get(String(payload.id));
   if (row) patchRowProgress(row, payload);
 }
@@ -822,171 +702,172 @@ async function choosePlaylistScope(url) {
   return askPlaylistScope();
 }
 
-async function addToQueue() {
-  const url = els.urlInput.value.trim();
+// ---- Adição de links: o cartão aparece na hora (nome do site + "Carregando informações...") ----
+let adding = false;     // trava: Enter duplo / Enter + clique não geram cópias
+let lastAddAt = 0;
+
+/** Link que provavelmente é uma playlist/álbum inteiro: só esses passam pela análise antes de virar cartões. */
+export function looksLikePlaylist(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^(www|m|music|open)\./, '');
+    if (host === 'spotify.com') return /^\/(?:intl-[a-z-]+\/)?(album|playlist|artist)\//.test(u.pathname);
+    if (host === 'youtu.be' || /(^|\.)youtube\.com$/.test(host)) {
+      return u.pathname.startsWith('/playlist') || (u.searchParams.has('list') && !u.searchParams.has('v') && host !== 'youtu.be');
+    }
+    return /\/sets\//.test(u.pathname) && /soundcloud\.com$/.test(host);
+  } catch (_) {
+    return false;
+  }
+}
+
+function dlQuality() {
+  return els.resolutionSelect?.value || 'best';
+}
+
+/** Envia um link ao processo principal. Devolve { added: true } ou { duplicate: true, message, existingId }. */
+async function addLink(payload) {
+  const res = await getDownloadsApi().add(payload);
+  if (res && res.duplicate) return { duplicate: true, message: res.error || 'Este link já está na fila.', existingId: res.existingId || null };
+  return { added: true };
+}
+
+/** Aviso discreto de link repetido + destaque (e rolagem) do cartão que já existe. */
+function notifyDuplicate(result) {
+  const message = result.message || 'Este link já está na fila.';
+  setStatus(message);
+  if (typeof window.bdsToast === 'function') window.bdsToast(message, { type: 'info', duration: 4500 });
+  highlightQueueItem(result.existingId);
+}
+
+function highlightQueueItem(id) {
+  if (!id) return;
+  const container = document.getElementById('downloadQueueContainer');
+  if (!container) return;
+  const el = Array.from(container.children).find((c) => c.dataset && c.dataset.itemId === String(id));
+  if (!el) return;
+  if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('dl-highlight');
+  setTimeout(() => el.classList.remove('dl-highlight'), 2200);
+}
+
+/** "3 adicionados, 1 já estavam na fila ou já baixados." */
+function addSummary(added, skipped, failed = 0) {
+  const parts = [];
+  if (!skipped && !failed) return `${added} ${added === 1 ? 'link adicionado' : 'links adicionados'} à fila.`;
+  parts.push(`${added} adicionados`);
+  if (skipped) parts.push(`${skipped} já estavam na fila ou já baixados`);
+  if (failed) parts.push(`${failed} não puderam ser adicionados`);
+  return `${parts.join(', ')}.`;
+}
+
+/** Lista de links (Múltiplos Links ou itens de playlist): duplicados são pulados e o resumo diz quantos. */
+async function enqueueManyLinks(urls, { format = null, items = null } = {}) {
+  let added = 0; let skipped = 0; let failed = 0;
+  const list = items || urls.map((url) => ({ url }));
+  setStatus(`Adicionando ${list.length} link(s) à fila...`);
+  for (const it of list) {
+    const isSpot = isSpotify(it.url);
+    try {
+      const r = await addLink({
+        url: it.url,
+        format: isSpot ? 'MP3' : (format || els.formatSelect?.value || 'MP4'),
+        quality: dlQuality(),
+        title: it.title || '',
+        thumbnail: it.thumbnail || '',
+        channel: it.channel || '',
+        duration: it.duration || null
+      });
+      if (r.duplicate) skipped++; else added++;
+    } catch (err) {
+      failed++;
+      console.error('[DOWNLOAD] Falha ao adicionar link:', it.url, err);
+    }
+  }
+  const text = addSummary(added, skipped, failed);
+  setStatus(text);
+  if (skipped && typeof window.bdsToast === 'function') window.bdsToast(text, { type: 'info', duration: 5000 });
+  fetchQueue();
+}
+
+async function addToQueue() { return submitUrl(null, 'Cole um link antes de adicionar.'); }
+async function startDownloadDirect(format) { return submitUrl(format, 'Cole uma URL primeiro.'); }
+
+/**
+ * Enter, "Adicionar à Fila" e MP3/MP4: limpa o campo e cria o cartão na hora. A trava impede cópias (Enter duplo,
+ * Enter + clique) e é solta logo depois da escolha "Só este item / Playlist inteira", antes de qualquer trabalho
+ * demorado; o próximo link já pode ser colado. A regra de link repetido vive no processo principal.
+ */
+async function submitUrl(format, emptyMessage) {
+  if (adding) return;
+  const url = (els.urlInput?.value || '').trim();
   if (!url) {
-    setStatus('Cole um link antes de adicionar.');
+    if (Date.now() - lastAddAt < 1500) return; // segundo Enter/clique logo após adicionar: não apaga o aviso de sucesso
+    setStatus(emptyMessage);
     return;
   }
   if (!/^https?:\/\//i.test(url)) { setStatus('Isso não parece um link. Cole um endereço que comece com http:// ou https://'); return; }
 
+  adding = true;
+  let released = false;
+  const release = () => { if (!released) { released = true; adding = false; } };
   try {
-    setStatus('Analisando URL...');
-    const api = getDownloadsApi();
-    
     // Link de um item que está dentro de uma playlist: pergunta se é só o item ou a playlist inteira.
     const scope = await choosePlaylistScope(url);
     if (scope === 'cancel') {
       setStatus('Adição cancelada.');
       return;
     }
-    let isPlaylist = scope === 'playlist';
-    if (scope === 'auto' && window.bds && window.bds.inspectPlaylist) {
-      try {
-        const playlistInfo = await window.bds.inspectPlaylist(url);
-        isPlaylist = playlistInfo && playlistInfo.isPlaylist;
-      } catch (e) {}
-    }
-
-    if (isPlaylist && window.bds && window.bds.expandPlaylist) {
-      setStatus('Expandindo playlist...');
-      const items = await window.bds.expandPlaylist(url);
-      if (Array.isArray(items) && items.length > 0) {
-        setStatus(`Adicionando ${items.length} itens da playlist à fila...`);
-        for (const item of items) {
-          const isSpot = isSpotify(item.url || url);
-          await api.add({
-            url: item.url,
-            format: isSpot ? 'MP3' : 'MP4',
-            quality: els.resolutionSelect?.value || 'best',
-            title: item.title,
-            thumbnail: item.thumbnail,
-            channel: item.channel || '',
-            platform: item.platform || detectSource(item.url),
-            duration: item.duration || null
-          });
-        }
-        clearInputForm();
-        setStatus(`${items.length} itens da playlist adicionados à fila com sucesso.`);
-        fetchQueue();
-        return;
-      }
-    }
-
-    let titleToUse = metadataFor(url)?.title || '';
-    let thumbToUse = metadataFor(url)?.thumbnail || '';
-    let channelToUse = metadataFor(url)?.channel || '';
-    let durationToUse = metadataFor(url)?.duration || null;
-    let platformToUse = detectSource(url);
-    const isSpot = isSpotify(url);
-
-    if (!titleToUse) {
-      try {
-        const meta = await window.bds.getMetadata(url);
-        if (meta) {
-          titleToUse = meta.title;
-          thumbToUse = meta.thumbnail;
-          channelToUse = meta.channel;
-          durationToUse = meta.duration;
-        }
-      } catch (e) {}
-    }
-
-    await api.add({
-      url,
-      format: isSpot ? 'MP3' : 'MP4',
-      quality: els.resolutionSelect?.value || 'best',
-      title: titleToUse,
-      thumbnail: thumbToUse,
-      channel: channelToUse,
-      platform: platformToUse,
-      duration: durationToUse
-    });
-
+    const cached = metadataFor(url);
     clearInputForm();
-    setStatus('Item adicionado à fila com sucesso.');
-    fetchQueue();
+    lastAddAt = Date.now();
+    release();
+
+    const fmt = isSpotify(url) ? 'MP3' : (format || 'MP4');
+    if (scope === 'playlist' || (scope === 'auto' && looksLikePlaylist(url))) {
+      await addPlaylistLinks(url, scope, fmt);
+    } else {
+      await addSingleLink(url, fmt, cached);
+    }
   } catch (error) {
     setStatus(ipcMsg(error) || 'Erro ao adicionar à fila.');
+  } finally {
+    release();
   }
 }
 
-async function startDownloadDirect(format) {
-  const url = els.urlInput.value.trim();
-  if (!url) {
-    setStatus('Cole uma URL primeiro.');
-    return;
+async function addSingleLink(url, fmt, cached) {
+  const r = await addLink({
+    url,
+    format: fmt,
+    quality: dlQuality(),
+    title: cached?.title || '',
+    thumbnail: cached?.thumbnail || '',
+    channel: cached?.channel || '',
+    duration: cached?.duration || null
+  });
+  if (r.duplicate) { notifyDuplicate(r); return; }
+  setStatus('Item adicionado à fila.');
+  fetchQueue();
+}
+
+async function addPlaylistLinks(url, scope, fmt) {
+  let isPlaylist = scope === 'playlist';
+  if (scope === 'auto' && window.bds && window.bds.inspectPlaylist) {
+    try {
+      const playlistInfo = await window.bds.inspectPlaylist(url);
+      isPlaylist = Boolean(playlistInfo && playlistInfo.isPlaylist);
+    } catch (e) { /* sem análise: trata como link comum */ }
   }
-
-  try {
-    setStatus('Analisando URL...');
-    const api = getDownloadsApi();
-
-    // Link de um item que está dentro de uma playlist: pergunta se é só o item ou a playlist inteira.
-    const scope = await choosePlaylistScope(url);
-    if (scope === 'cancel') {
-      setStatus('Adição cancelada.');
+  if (isPlaylist && window.bds && window.bds.expandPlaylist) {
+    setStatus('Expandindo playlist...');
+    const items = await window.bds.expandPlaylist(url);
+    if (Array.isArray(items) && items.length > 0) {
+      await enqueueManyLinks(null, { format: fmt, items: items.map((i) => ({ ...i, url: i.url || url })) });
       return;
     }
-    let isPlaylist = scope === 'playlist';
-    if (scope === 'auto' && window.bds && window.bds.inspectPlaylist) {
-      try {
-        const playlistInfo = await window.bds.inspectPlaylist(url);
-        isPlaylist = playlistInfo && playlistInfo.isPlaylist;
-      } catch (e) {}
-    }
-
-    if (isPlaylist && window.bds && window.bds.expandPlaylist) {
-      setStatus('Expandindo playlist...');
-      const items = await window.bds.expandPlaylist(url);
-      if (Array.isArray(items) && items.length > 0) {
-        setStatus(`Adicionando ${items.length} itens da playlist à fila...`);
-        for (const item of items) {
-          const isSpot = isSpotify(item.url || url);
-          const finalFormat = isSpot ? 'MP3' : format;
-          await api.add({
-            url: item.url,
-            format: finalFormat,
-            quality: els.resolutionSelect?.value || 'best',
-            title: item.title,
-            thumbnail: item.thumbnail,
-            channel: item.channel || '',
-            platform: item.platform || detectSource(item.url),
-            duration: item.duration || null
-          });
-        }
-        clearInputForm();
-        setStatus(`${items.length} itens da playlist adicionados à fila.`);
-        fetchQueue();
-        return;
-      }
-    }
-
-    let titleToUse = metadataFor(url)?.title || '';
-    let thumbToUse = metadataFor(url)?.thumbnail || '';
-    let channelToUse = metadataFor(url)?.channel || '';
-    let durationToUse = metadataFor(url)?.duration || null;
-    let platformToUse = detectSource(url);
-    const isSpot = isSpotify(url);
-    const finalFormat = isSpot ? 'MP3' : format;
-
-    await api.add({
-      url,
-      format: finalFormat,
-      quality: els.resolutionSelect?.value || 'best',
-      title: titleToUse,
-      thumbnail: thumbToUse,
-      channel: channelToUse,
-      platform: platformToUse,
-      duration: durationToUse
-    });
-
-    clearInputForm();
-    setStatus(`Item ${finalFormat} adicionado à fila.`);
-    fetchQueue();
-  } catch (error) {
-    setStatus(ipcMsg(error) || 'Erro ao adicionar.');
   }
+  await addSingleLink(url, fmt, null);
 }
 
 async function startQueue() {

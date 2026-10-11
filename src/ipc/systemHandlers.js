@@ -212,12 +212,19 @@ module.exports = function registerSystemHandlers(paths, settingsManager, { isBus
         ? [appPaths.systemRoot, 'D:\\']
         : [appPaths.systemRoot];
 
-      // Disco do PC e provedores MTP/USB em paralelo (antes eram sequenciais).
-      const { deviceManager } = require('../infrastructure/hardware/DeviceManager');
+      // Disco do PC e provedores MTP/USB em paralelo (antes eram sequenciais). Os dispositivos só são
+      // enumerados com o módulo Dispositivos ligado: desligado, nem o código deles é carregado.
+      let devicesOn = false;
+      try {
+        const registry = require('../core/modules/ModuleRegistry');
+        const settings = settingsManager && typeof settingsManager.load === 'function' ? settingsManager.load() : {};
+        devicesOn = registry.isEnabled('devices', settings, { isDev: !(app && app.isPackaged) });
+      } catch (_) { devicesOn = false; }
+      const deviceManager = devicesOn ? require('../infrastructure/hardware/DeviceManager').deviceManager : null;
       const [statsList, mtpDevs, usbDevs] = await Promise.all([
         Promise.all(rootsToCheck.map(root => fs.statfs(root).catch(() => null))),
-        deviceManager.getMtpDevices().catch((e) => { console.error('Error fetching MTP devices for sidebar', e); return []; }),
-        deviceManager.getStorageDevices().catch((e) => { console.error('Error fetching USB devices for sidebar', e); return []; })
+        deviceManager ? deviceManager.getMtpDevices().catch((e) => { console.error('Error fetching MTP devices for sidebar', e); return []; }) : [],
+        deviceManager ? deviceManager.getStorageDevices().catch((e) => { console.error('Error fetching USB devices for sidebar', e); return []; }) : []
       ]);
 
       let totalPC = 0;

@@ -486,6 +486,15 @@ test('add_download: avisa na confirmação quando já há itens na fila; falha d
   assert.match(r.motivo, /não está disponível/);
 });
 
+test('add_download: link repetido (já na fila ou já baixado) volta como erro curto ao modelo, sem quebrar nem iniciar', async () => {
+  const { box, svc } = makeBox();
+  svc.downloads.add = () => { throw Object.assign(new Error('Este link já está na fila.'), { code: 'DUPLICATE_QUEUED', existingId: 'dl_9' }); };
+  const r = await run(box, 'add_download', { url: LINK, formato: 'video' });
+  assert.match(r.erro, /já está na fila/);
+  assert.equal(svc.downloads.started, 0);
+  assert.doesNotMatch(JSON.stringify(r), ABS_PATH);
+});
+
 test('add_download: parar o chat durante o download cancela, tira da fila e limpa só os parciais criados por ele', async () => {
   const { box, svc } = makeBox();
   svc.downloads.hold = true;

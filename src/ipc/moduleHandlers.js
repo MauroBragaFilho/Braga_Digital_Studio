@@ -145,6 +145,8 @@ Arquivo: ${zipPath}`,
     }
     const current = registry.sanitizeEnabledModules(loadSettings().enabledModules);
     settingsManager.save({ enabledModules: { ...current, [id]: enabled } });
+    // Tarefas de fundo do módulo (monitoramento, descoberta, prazos…) começam/param agora, sem reiniciar o app
+    try { await require('../bootstrap/moduleRuntime').moduleRuntime.toggle(id, enabled); } catch (_) { /* a escolha já foi salva */ }
     broadcast('modules:changed', registry.resolveEnabled(loadSettings(), { isDev }));
     return registry.resolveEnabled(loadSettings(), { isDev });
   });

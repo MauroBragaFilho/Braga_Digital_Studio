@@ -1,7 +1,34 @@
 const dbManager = require('../database/database');
 const logger = require('../../services/logService');
 const fs = require('fs');
-const path = require('path');
+const {
+    normalizeStatus, DEFAULT_STATUS, DELIVERY_STATUSES, DEFAULT_DELIVERY_ITEMS, DEFAULT_DELIVERY_DESTINATIONS,
+    DEVICE_CATEGORY_IDS, ACTIVITY_KINDS, LIMITS
+} = require('./projectStatus');
+
+/** Colunas que a tela pode alterar em cada tabela: o SQL nunca recebe um nome de coluna vindo do renderer. */
+const PROJECT_COLUMNS = Object.freeze(['name', 'description', 'status', 'color', 'client', 'type', 'start_date', 'deadline', 'cover_path']);
+const SEQUENCE_COLUMNS = Object.freeze(['name', 'timebase', 'sample_rate', 'width', 'height']);
+const TRACK_COLUMNS = Object.freeze(['name', 'track_index', 'muted', 'locked', 'solo', 'enabled', 'volume']);
+const CLIP_COLUMNS = Object.freeze(['project_media_id', 'media_id', 'name', 'start_time', 'end_time', 'in_point', 'out_point', 'color', 'audio_stream_index', 'speed', 'volume', 'enabled']);
+
+/** Monta "col = ?" só para as colunas permitidas que vieram em `data`. */
+function pickColumns(data, allowed) {
+    const fields = [];
+    const values = [];
+    for (const key of allowed) {
+        if (data && Object.prototype.hasOwnProperty.call(data, key)) {
+            fields.push(`${key} = ?`);
+            values.push(data[key]);
+        }
+    }
+    return { fields, values };
+}
+
+const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const parseJsonList = (raw, fallback) => {
+    try { const v = JSON.parse(raw); return Array.isArray(v) ? v : fallback; } catch (_) { return fallback; }
+};
 
 class ProjectService {
     constructor() {
@@ -13,61 +40,300 @@ class ProjectService {
 
     getAllProjects() {
         const stmt = this.db.prepare(`
-            SELECT p.*, 
+            SELECT p.*,
                    (SELECT COUNT(*) FROM project_media pm WHERE pm.project_id = p.id) as media_count,
-                   (SELECT SUM(m.filesize) FROM project_media pm JOIN media m ON pm.media_id = m.id WHERE pm.project_id = p.id) as total_size
+                   (SELECT SUM(m.filesize) FROM project_media pm JOIN media m ON pm.media_id = m.id WHERE pm.project_id = p.id) as total_size,
+                   (SELECT d.status FROM project_delivery d WHERE d.project_id = p.id) as delivery_status,
+                   (SELECT d.items FROM project_delivery d WHERE d.project_id = p.id) as delivery_items_json
             FROM projects p
             ORDER BY p.created_at DESC
         `);
-        return stmt.all();
+        // Progresso da entrega (itens concluídos / total) para o cartão; nada de JSON cru sai daqui
+        return stmt.all().map((p) => {
+            const items = parseJsonList(p.delivery_items_json, null);
+            const { delivery_items_json, ...rest } = p;
+            return { ...rest, delivery_done: items ? items.filter((i) => i && i.done).length : 0, delivery_total: items ? items.length : 0 };
+        });
+    }
+
+    // --- ATIVIDADE (registro) ---
+
+    /** Registra um evento do projeto e atualiza `last_activity_at`. Nunca lança (o registro é acessório). */
+    logActivity(projectId, kind, message) {
+        try {
+            const k = ACTIVITY_KINDS.includes(kind) ? kind : 'editado';
+            this.db.prepare(`INSERT INTO project_activity (project_id, kind, message) VALUES (?, ?, ?)`).run(projectId, k, text(message, 200));
+            this.db.prepare(`UPDATE projects SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?`).run(projectId);
+        } catch (e) {
+            logger.warn('[Projects] atividade não registrada', { error: e.message });
+        }
+    }
+
+    listActivity(projectId, limit = 50) {
+        const n = Math.max(1, Math.min(LIMITS.activityMax, Number(limit) || 50));
+        return this.db.prepare(`SELECT id, kind, message, created_at FROM project_activity WHERE project_id = ? ORDER BY id DESC LIMIT ?`).all(projectId, n);
+    }
+
+    /** Atividade recente de TODOS os projetos (coluna lateral da tela Projetos). */
+    listRecentActivity(limit = 20) {
+        const n = Math.max(1, Math.min(100, Number(limit) || 20));
+        return this.db.prepare(`
+            SELECT a.id, a.project_id, p.name AS project_name, p.color AS project_color, a.kind, a.message, a.created_at
+            FROM project_activity a JOIN projects p ON p.id = a.project_id
+            ORDER BY a.id DESC LIMIT ?
+        `).all(n);
+    }
+
+    /** Estrutura de pastas sugerida (.docs/BDS_TELA_PROJETOS.md §6): só cria o que ainda não existe. */
+    createDefaultBins(projectId) {
+        const existing = new Set(this.getProjectBins(projectId).map((b) => b.name.trim().toUpperCase()));
+        const created = [];
+        const db = this.db;
+        db.exec('BEGIN TRANSACTION');
+        try {
+            const mk = (name, parentId = null) => {
+                if (parentId === null && existing.has(name.toUpperCase())) return this.getProjectBins(projectId).find((b) => !b.parent_id && b.name.trim().toUpperCase() === name.toUpperCase()).id;
+                const id = this.createBin(projectId, parentId, name);
+                created.push(name);
+                return id;
+            };
+            const brutos = mk('BRUTOS');
+            const subs = new Set(this.getProjectBins(projectId).filter((b) => b.parent_id === brutos).map((b) => b.name.trim().toUpperCase()));
+            for (const s of ['CÂMERA A', 'CÂMERA B', 'ÁUDIO EXTERNO']) if (!subs.has(s)) mk(s, brutos);
+            for (const n of ['FOTOS', 'ÁUDIO', 'EXPORTAÇÕES', 'PROJETO']) mk(n);
+            db.exec('COMMIT');
+        } catch (e) {
+            try { db.exec('ROLLBACK'); } catch (_) { /* já revertida */ }
+            throw e;
+        }
+        if (created.length) this.logActivity(projectId, 'pasta', `Estrutura de pastas criada (${created.length})`);
+        return created;
+    }
+
+    /** Ajuste manual da posição de um clipe num grupo de sincronia (aba Áudio). */
+    updateSyncGroupItem(itemId, { offset_seconds }) {
+        const v = Number(offset_seconds);
+        if (!Number.isFinite(v)) throw new Error('Posição inválida.');
+        return this.db.prepare(`UPDATE sync_group_items SET offset_seconds = ?, confidence = 1 WHERE id = ?`).run(Number(v.toFixed(3)), itemId).changes > 0;
+    }
+
+    /** Acrescenta um clipe (ou atualiza) num grupo de sincronia: posição manual de um clipe ainda não posicionado. */
+    upsertSyncGroupItem(groupId, mediaId, offsetSeconds) {
+        const v = Number(offsetSeconds);
+        if (!Number.isFinite(v)) throw new Error('Posição inválida.');
+        const row = this.db.prepare('SELECT id FROM sync_group_items WHERE sync_group_id = ? AND media_id = ?').get(groupId, mediaId);
+        if (row) { this.db.prepare('UPDATE sync_group_items SET offset_seconds = ?, confidence = 1 WHERE id = ?').run(Number(v.toFixed(3)), row.id); return row.id; }
+        return this.db.prepare('INSERT INTO sync_group_items (sync_group_id, media_id, offset_seconds, confidence, drift_rate_ppm) VALUES (?, ?, ?, 1, 0)').run(groupId, mediaId, Number(v.toFixed(3))).lastInsertRowid;
     }
 
     getProjectById(id) {
         const stmt = this.db.prepare(`
-            SELECT p.*, 
+            SELECT p.*,
                    (SELECT COUNT(*) FROM project_media pm WHERE pm.project_id = p.id) as media_count,
-                   (SELECT SUM(m.filesize) FROM project_media pm JOIN media m ON pm.media_id = m.id WHERE pm.project_id = p.id) as total_size
+                   (SELECT SUM(m.filesize) FROM project_media pm JOIN media m ON pm.media_id = m.id WHERE pm.project_id = p.id) as total_size,
+                   (SELECT d.status FROM project_delivery d WHERE d.project_id = p.id) as delivery_status
             FROM projects p
             WHERE p.id = ?
         `);
         return stmt.get(id);
     }
 
-    createProject(data) {
+    createProject(data, { log = true } = {}) {
         const { name, description, status, color, client, type, start_date, deadline, cover_path } = data;
         const stmt = this.db.prepare(`
-            INSERT INTO projects (name, description, status, color, client, type, start_date, deadline, cover_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (name, description, status, color, client, type, start_date, deadline, cover_path, updated_at, last_activity_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `);
         const info = stmt.run(
-            name, 
-            description || '', 
-            status || 'Ativo', 
-            color || '#3b82f6', 
-            client || '', 
-            type || '', 
-            start_date || null, 
-            deadline || null, 
+            name,
+            description || '',
+            normalizeStatus(status),
+            color || '#3b82f6',
+            client || '',
+            type || '',
+            start_date || null,
+            deadline || null,
             cover_path || ''
         );
-        return info.lastInsertRowid;
+        const id = info.lastInsertRowid;
+        if (log) this.logActivity(id, 'criado', 'Projeto criado');
+        return id;
     }
 
+    /**
+     * Altera só as colunas permitidas (PROJECT_COLUMNS); `status` é normalizado para um dos 7 estados.
+     * Mudança de status entra no registro de atividade.
+     */
     updateProject(id, data) {
-        const fields = [];
-        const values = [];
-        for (const [key, value] of Object.entries(data)) {
-            if (key !== 'id') {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
-        }
+        const patch = { ...(data || {}) };
+        if (Object.prototype.hasOwnProperty.call(patch, 'status')) patch.status = normalizeStatus(patch.status);
+        const { fields, values } = pickColumns(patch, PROJECT_COLUMNS);
         if (fields.length === 0) return false;
-        
+
+        const before = Object.prototype.hasOwnProperty.call(patch, 'status') ? this.db.prepare('SELECT status FROM projects WHERE id = ?').get(id) : null;
+        fields.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
         const stmt = this.db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`);
         const info = stmt.run(...values);
+        if (info.changes > 0 && before && before.status !== patch.status) {
+            this.logActivity(id, 'status', `Status: ${patch.status}`);
+        }
         return info.changes > 0;
+    }
+
+    /** Arquivar = status "Arquivado" (nada é apagado). */
+    archiveProject(id) {
+        return this.updateProject(id, { status: 'Arquivado' });
+    }
+
+    /**
+     * Duplica um projeto: dados, pastas, mídias referenciadas, dispositivos e entrega (sem sequências nem grupos de
+     * sincronia, que são trabalho de edição). A cópia nasce em "Planejamento" e sem capa própria (referencia a mesma).
+     */
+    duplicateProject(id) {
+        const src = this.getProjectById(id);
+        if (!src) throw new Error('Projeto não encontrado');
+        const db = this.db;
+        db.exec('BEGIN TRANSACTION');
+        try {
+            const newId = this.createProject({
+                name: `${src.name} (cópia)`.slice(0, LIMITS.nameMax), description: src.description, status: DEFAULT_STATUS, color: src.color,
+                client: src.client, type: src.type, start_date: src.start_date, deadline: src.deadline, cover_path: src.cover_path
+            }, { log: false });
+            const binMap = new Map();
+            const bins = this.getProjectBins(id);
+            const pending = [...bins];
+            // pais antes dos filhos (a lista é ordenada por nome, não por hierarquia)
+            let guard = 0;
+            while (pending.length && guard++ < 10000) {
+                const b = pending.shift();
+                if (b.parent_id && !binMap.has(b.parent_id)) { pending.push(b); continue; }
+                binMap.set(b.id, this.createBin(newId, b.parent_id ? binMap.get(b.parent_id) : null, b.name));
+            }
+            for (const pm of db.prepare('SELECT bin_id, media_id, custom_name FROM project_media WHERE project_id = ?').all(id)) {
+                db.prepare('INSERT INTO project_media (project_id, bin_id, media_id, custom_name) VALUES (?, ?, ?, ?)')
+                    .run(newId, pm.bin_id ? (binMap.get(pm.bin_id) || null) : null, pm.media_id, pm.custom_name);
+            }
+            for (const d of this.listDevices(id)) {
+                db.prepare('INSERT INTO project_devices (project_id, category, name, note) VALUES (?, ?, ?, ?)').run(newId, d.category, d.name, d.note);
+            }
+            const delivery = db.prepare('SELECT * FROM project_delivery WHERE project_id = ?').get(id);
+            if (delivery) {
+                db.prepare('INSERT INTO project_delivery (project_id, status, deadline, items, destinations, notes) VALUES (?, ?, ?, ?, ?, ?)')
+                    .run(newId, 'Não iniciada', delivery.deadline, delivery.items, delivery.destinations, delivery.notes);
+            }
+            this.logActivity(newId, 'duplicado', `Criado a partir de "${text(src.name, 80)}"`);
+            this.logActivity(id, 'duplicado', 'Projeto duplicado');
+            db.exec('COMMIT');
+            return newId;
+        } catch (e) {
+            try { db.exec('ROLLBACK'); } catch (_) { /* já revertida */ }
+            throw e;
+        }
+    }
+
+    /**
+     * Resumo da Visão Geral: contagens por tipo, espaço, mídias ausentes, pastas, dispositivos, transcrições ao lado
+     * das mídias (conferidas em disco, até 500 arquivos), entrega e última atividade.
+     */
+    getProjectSummary(projectId) {
+        const project = this.getProjectById(projectId);
+        if (!project) throw new Error('Projeto não encontrado');
+        const media = this.db.prepare(`
+            SELECT m.filepath, m.filesize, m.missing, m.media_type, m.filename
+            FROM project_media pm JOIN media m ON pm.media_id = m.id WHERE pm.project_id = ?
+        `).all(projectId);
+        const counts = { video: 0, audio: 0, photo: 0, other: 0 };
+        let size = 0;
+        let missing = 0;
+        let transcripts = 0;
+        let checked = 0;
+        for (const m of media) {
+            const t = m.media_type || 'other';
+            counts[t] = (counts[t] || 0) + 1;
+            size += Number(m.filesize) || 0;
+            if (m.missing) missing++;
+            if (checked < 500 && (t === 'video' || t === 'audio') && m.filepath) {
+                checked++;
+                const base = m.filepath.replace(/\.[^./\\]+$/, '');
+                if (['.md', '.srt', '.txt', '.vtt'].some((ext) => { try { return fs.existsSync(base + ext); } catch (_) { return false; } })) transcripts++;
+            }
+        }
+        const bins = this.db.prepare('SELECT COUNT(*) AS n FROM project_bins WHERE project_id = ?').get(projectId).n;
+        const devices = this.db.prepare('SELECT COUNT(*) AS n FROM project_devices WHERE project_id = ?').get(projectId).n;
+        const delivery = this.getDelivery(projectId);
+        const last = this.db.prepare('SELECT kind, message, created_at FROM project_activity WHERE project_id = ? ORDER BY id DESC LIMIT 1').get(projectId) || null;
+        return {
+            id: project.id,
+            videos: counts.video, audios: counts.audio, photos: counts.photo, others: counts.other, total: media.length,
+            total_size: size, missing, bins, devices, transcripts,
+            delivery: { status: delivery.status, done: delivery.items.filter((i) => i.done).length, items: delivery.items.length, deadline: delivery.deadline },
+            last_activity_at: project.last_activity_at || project.created_at,
+            last_activity: last
+        };
+    }
+
+    // --- DISPOSITIVOS DO PROJETO ---
+
+    listDevices(projectId) {
+        return this.db.prepare(`SELECT id, category, name, note, created_at FROM project_devices WHERE project_id = ? ORDER BY category ASC, name ASC`).all(projectId);
+    }
+
+    addDevice(projectId, { category, name, note } = {}) {
+        const cat = DEVICE_CATEGORY_IDS.includes(category) ? category : 'other';
+        const nm = text(name, LIMITS.deviceNameMax);
+        if (!nm) throw new Error('Informe o nome do dispositivo.');
+        const info = this.db.prepare(`INSERT INTO project_devices (project_id, category, name, note) VALUES (?, ?, ?, ?)`)
+            .run(projectId, cat, nm, text(note, LIMITS.deviceNoteMax) || null);
+        this.logActivity(projectId, 'dispositivo', `Dispositivo adicionado: ${nm}`);
+        return info.lastInsertRowid;
+    }
+
+    removeDevice(deviceId) {
+        const row = this.db.prepare('SELECT project_id, name FROM project_devices WHERE id = ?').get(deviceId);
+        if (!row) return false;
+        const info = this.db.prepare(`DELETE FROM project_devices WHERE id = ?`).run(deviceId);
+        if (info.changes > 0) this.logActivity(row.project_id, 'dispositivo', `Dispositivo removido: ${row.name}`);
+        return info.changes > 0;
+    }
+
+    // --- ENTREGA ---
+
+    /** Controle de entrega do projeto; sem linha gravada devolve o padrão (itens e destinos sugeridos, nada marcado). */
+    getDelivery(projectId) {
+        const row = this.db.prepare('SELECT * FROM project_delivery WHERE project_id = ?').get(projectId);
+        const items = row ? parseJsonList(row.items, []) : DEFAULT_DELIVERY_ITEMS.map((label) => ({ label, done: false }));
+        const destinations = row ? parseJsonList(row.destinations, []) : DEFAULT_DELIVERY_DESTINATIONS.map((label) => ({ label, checked: false }));
+        return {
+            project_id: projectId,
+            status: row && DELIVERY_STATUSES.includes(row.status) ? row.status : DELIVERY_STATUSES[0],
+            deadline: row ? row.deadline : null,
+            items: items.map((i) => ({ label: text(i && i.label, 80), done: Boolean(i && i.done) })).filter((i) => i.label),
+            destinations: destinations.map((d) => ({ label: text(d && d.label, 40), checked: Boolean(d && d.checked) })).filter((d) => d.label),
+            notes: row ? (row.notes || '') : '',
+            updated_at: row ? row.updated_at : null,
+            saved: Boolean(row)
+        };
+    }
+
+    setDelivery(projectId, data = {}) {
+        const current = this.getDelivery(projectId);
+        const next = {
+            status: DELIVERY_STATUSES.includes(data.status) ? data.status : current.status,
+            deadline: Object.prototype.hasOwnProperty.call(data, 'deadline') ? (text(data.deadline, 10) || null) : current.deadline,
+            items: Array.isArray(data.items) ? data.items.slice(0, LIMITS.deliveryItemsMax).map((i) => ({ label: text(i && i.label, 80), done: Boolean(i && i.done) })).filter((i) => i.label) : current.items,
+            destinations: Array.isArray(data.destinations) ? data.destinations.slice(0, LIMITS.deliveryItemsMax).map((d) => ({ label: text(d && d.label, 40), checked: Boolean(d && d.checked) })).filter((d) => d.label) : current.destinations,
+            notes: Object.prototype.hasOwnProperty.call(data, 'notes') ? text(data.notes, LIMITS.textMax) : current.notes
+        };
+        this.db.prepare(`
+            INSERT INTO project_delivery (project_id, status, deadline, items, destinations, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(project_id) DO UPDATE SET status = excluded.status, deadline = excluded.deadline, items = excluded.items,
+                destinations = excluded.destinations, notes = excluded.notes, updated_at = CURRENT_TIMESTAMP
+        `).run(projectId, next.status, next.deadline, JSON.stringify(next.items), JSON.stringify(next.destinations), next.notes);
+        if (next.status !== current.status) this.logActivity(projectId, 'entrega', `Entrega: ${next.status}`);
+        else this.logActivity(projectId, 'entrega', 'Entrega atualizada');
+        return this.getDelivery(projectId);
     }
 
     deleteProject(id) {
@@ -228,14 +494,7 @@ class ProjectService {
     }
 
     updateSequence(id, data) {
-        const fields = [];
-        const values = [];
-        for (const [key, value] of Object.entries(data)) {
-            if (key !== 'id') {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
-        }
+        const { fields, values } = pickColumns(data, SEQUENCE_COLUMNS);
         if (fields.length === 0) return false;
         fields.push("updated_at = CURRENT_TIMESTAMP");
         values.push(id);
@@ -266,14 +525,7 @@ class ProjectService {
     }
 
     updateTrack(id, data) {
-        const fields = [];
-        const values = [];
-        for (const [key, value] of Object.entries(data)) {
-            if (key !== 'id') {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
-        }
+        const { fields, values } = pickColumns(data, TRACK_COLUMNS);
         if (fields.length === 0) return false;
         values.push(id);
         const stmt = this.db.prepare(`UPDATE timeline_tracks SET ${fields.join(', ')} WHERE id = ?`);
@@ -338,14 +590,7 @@ class ProjectService {
     }
 
     updateClip(id, data) {
-        const fields = [];
-        const values = [];
-        for (const [key, value] of Object.entries(data)) {
-            if (key !== 'id') {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
-        }
+        const { fields, values } = pickColumns(data, CLIP_COLUMNS);
         if (fields.length === 0) return false;
         values.push(id);
         const stmt = this.db.prepare(`UPDATE timeline_clips SET ${fields.join(', ')} WHERE id = ?`);
@@ -510,8 +755,9 @@ class ProjectService {
             clips: clipsByTrack.get(t.id) || []
         }));
 
+        // 1.1.0: dispositivos, atividade e entrega (campos opcionais; leitores antigos os ignoram)
         return {
-            version: "1.0.0",
+            version: "1.1.0",
             metadata: {
                 id: project.id,
                 name: project.name,
@@ -523,8 +769,13 @@ class ProjectService {
                 start_date: project.start_date,
                 deadline: project.deadline,
                 cover_path: project.cover_path,
-                created_at: project.created_at
+                created_at: project.created_at,
+                updated_at: project.updated_at || null,
+                last_activity_at: project.last_activity_at || null
             },
+            devices: this.listDevices(projectId),
+            activity: this.listActivity(projectId, LIMITS.activityMax),
+            delivery: this.getDelivery(projectId),
             settings: {
                 timebase: sequence.timebase,
                 sample_rate: sequence.sample_rate,

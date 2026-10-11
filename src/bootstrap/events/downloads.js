@@ -4,10 +4,15 @@ const logger = require('../../services/logService');
 const taskProgressCenter = require('../../infrastructure/desktop/TaskProgressCenter');
 const notificationCenter = require('../../infrastructure/desktop/NotificationCenter');
 const dbManager = require('../../core/database/database');
+const { onceCreated } = require('../../core/modules/lazyService');
 
 /** Eventos do serviço de downloads -> renderer / taskbar / biblioteca. */
 function bindDownloadEvents({ bridge, services }) {
-  const { downloadService, importQueue } = services;
+  // O serviço é criado no primeiro uso (módulo Downloads): os eventos são ligados nesse momento
+  onceCreated(services.downloadService, (downloadService) => bindTo(downloadService, { bridge, importQueue: services.importQueue }));
+}
+
+function bindTo(downloadService, { bridge, importQueue }) {
 
   downloadService.on('downloads:added', (item) => bridge.send('downloads:added', item));
   downloadService.on('downloads:updated', (queue) => bridge.sendThrottled('downloads:updated', queue));

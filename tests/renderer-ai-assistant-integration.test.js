@@ -337,6 +337,6 @@ test('telas que alimentam o contexto registram os provedores (Biblioteca, Projet
   const proj = fs.readFileSync(path.join(ROOT, 'renderer', 'screens', 'projects.js'), 'utf8');
   assert.match(proj, /setContextProvider\('projectSelected', \(\) => selectedProjectId\)/);
   const ws = fs.readFileSync(path.join(ROOT, 'renderer', 'screens', 'project_workspace.js'), 'utf8');
-  assert.match(ws, /setContextProvider\('workspaceProject', \(\) => projectId\)/);
+  assert.match(ws, /setContextProvider\('workspaceProject', \(\) => (ws\.)?projectId\)/);
   assert.match(ws, /setContextProvider\('workspaceProject', null\)/);
 });

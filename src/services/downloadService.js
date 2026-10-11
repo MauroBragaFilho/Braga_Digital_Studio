@@ -12,6 +12,70 @@ const { processRunner } = require('../infrastructure/external-tools/ProcessRunne
 const { isHttpUrl, assertHttpUrl } = require('./urlValidator');
 const { friendlyYtDlpError, sanitizeUserMessage } = require('./ytdlpErrors');
 const { inspectCookiesFile, cookiesFileFor } = require('./youtubeCookies');
+const { uniqueSuffixPath } = require('./uniquePath');
+
+// Subpasta temporária de cada item, dentro da pasta de destino: o ponto inicial a deixa fora do escaneamento e
+// do observador da Biblioteca. Tudo é baixado ali e só o arquivo FINAL é movido para o destino, com nome único.
+const WORKDIR_PREFIX = '.bds-dl-';
+// Tempo máximo (ms) para carregar título/miniatura de UM link (o serviço de metadados também tem o seu, de 15 s)
+const METADATA_TIMEOUT_MS = 20000;
+// Parâmetros de rastreio/compartilhamento que não mudam o conteúdo do link
+const TRACKING_PARAM = /^(utm_.*|fbclid|gclid|dclid|msclkid|igshid|igsh|si|feature|pp|ref|ref_.*|spm|mc_.*|cmpid|share|share_id|sharing_id|rdt_cid|_ga)$/i;
+
+/** Nome do site pela URL (para o cartão aparecer na hora, antes de qualquer análise). */
+function siteName(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^(www|m)\./, '');
+    if (host === 'music.youtube.com') return 'YouTube Music';
+    if (host === 'youtu.be' || /(^|\.)youtube(-nocookie)?\.com$/.test(host)) return 'YouTube';
+    if (host === 'spotify.com' || host.endsWith('.spotify.com')) return 'Spotify';
+    if (/(^|\.)vimeo\.com$/.test(host)) return 'Vimeo';
+    if (/(^|\.)tiktok\.com$/.test(host)) return 'TikTok';
+    if (/(^|\.)instagram\.com$/.test(host)) return 'Instagram';
+    if (/(^|\.)facebook\.com$/.test(host) || host === 'fb.watch') return 'Facebook';
+    if (host === 'x.com' || /(^|\.)twitter\.com$/.test(host)) return 'X (Twitter)';
+    if (/(^|\.)soundcloud\.com$/.test(host)) return 'SoundCloud';
+    if (/(^|\.)dailymotion\.com$/.test(host)) return 'Dailymotion';
+    if (/(^|\.)twitch\.tv$/.test(host)) return 'Twitch';
+    return host || 'Link';
+  } catch (_) {
+    return 'Link';
+  }
+}
+
+/** Título neutro enquanto o nome real não chega (nunca "erro"): "Vídeo do YouTube", "Música", "Vídeo de vimeo.com". */
+function neutralTitle(url, format) {
+  const site = siteName(url);
+  const audio = format === 'MP3';
+  if (site === 'Spotify') return 'Música';
+  if (site === 'YouTube') return audio ? 'Música do YouTube' : 'Vídeo do YouTube';
+  if (site === 'YouTube Music') return 'Música do YouTube';
+  return `${audio ? 'Áudio' : 'Vídeo'} de ${site}`;
+}
+
+const DUPLICATE_MESSAGES = {
+  DUPLICATE_QUEUED: 'Este link já está na fila.',
+  DUPLICATE_DOWNLOADED: 'Este link já foi baixado e o arquivo continua na pasta de destino.'
+};
+
+/** Erro de link repetido: `code` estável + mensagem em português; `existingId` aponta o cartão que já existe. */
+function duplicateError(code, existing, fileName) {
+  const message = code === 'DUPLICATE_DOWNLOADED' && fileName
+    ? `Este link já foi baixado. O arquivo "${fileName}" continua na pasta de destino.`
+    : DUPLICATE_MESSAGES[code];
+  return Object.assign(new Error(message), { code, existingId: existing ? existing.id : null, fileName: fileName || '' });
+}
+
+/** Cria o arquivo `dest` a partir de `src` SEM nunca sobrescrever: link físico (instantâneo) ou cópia exclusiva; depois solta `src`. */
+function moveWithoutOverwrite(src, dest) {
+  try {
+    fs.linkSync(src, dest);
+  } catch (err) {
+    if (err && err.code === 'EEXIST') throw err;
+    fs.copyFileSync(src, dest, fs.constants.COPYFILE_EXCL); // volume sem link físico (FAT, rede…)
+  }
+  try { fs.unlinkSync(src); } catch (_) { /* a limpeza da subpasta tenta de novo */ }
+}
 
 // Persistência/emissão de progresso no máximo a cada 500ms (mudanças de status gravam na hora)
 const PROGRESS_THROTTLE_MS = 500;
@@ -82,6 +146,15 @@ class DownloadManager extends EventEmitter {
     this.cookiesProvider = null;
     this._cookiesFile = undefined;
     this._cookiesCheckedAt = 0;
+
+    // Título/miniatura/canal/duração dos links novos: provedor injetado pelo bootstrap (async url => meta) e fila
+    // sequencial de UM link por vez (nunca em massa). Sem provedor, os cartões ficam só com o nome do site.
+    this.metadataProvider = null;
+    this.metadataTimeoutMs = METADATA_TIMEOUT_MS;
+    this._metaQueue = [];
+    this._metaRunning = false;
+    // Funções de cancelamento ficam num Map à parte: o item é enviado à tela e precisa ser clonável (sem funções)
+    this._metaAbort = new Map();
 
     // Carrega a fila salva no SQLite no startup
     this.initDatabaseQueue();
@@ -192,38 +265,83 @@ class DownloadManager extends EventEmitter {
     return this.queue;
   }
 
+  /**
+   * Procura o MESMO pedido (mesmo vídeo + mesmo formato + mesma qualidade) na fila.
+   *  - na fila (aguardando/baixando/pausado)            -> { kind: 'queued', item }
+   *  - concluído e o arquivo AINDA existe (size > 0)     -> { kind: 'downloaded', item, file }
+   *  - concluído com arquivo apagado/movido, falhou ou cancelado -> { kind: 'stale', items } (podem ser substituídos)
+   *  - nada parecido                                     -> null
+   */
+  _findDuplicate(url, format, quality) {
+    const key = this._videoKey(url);
+    if (!key) return null;
+    const same = this.queue.filter((o) => this._videoKey(o.url) === key
+      && o.format === format && (o.quality || 'best') === quality);
+    if (!same.length) return null;
+
+    const queued = same.find((o) => ['queued', 'downloading', 'paused'].includes(o.status));
+    if (queued) return { kind: 'queued', item: queued };
+
+    const exists = (p) => { try { return fs.statSync(p).size > 0; } catch (_) { return false; } };
+    for (const o of same) {
+      if (o.status === 'completed' && o.outputPath && exists(o.outputPath)) {
+        return { kind: 'downloaded', item: o, file: o.outputPath };
+      }
+    }
+    return { kind: 'stale', items: same };
+  }
+
+  /**
+   * Adiciona um link à fila. Quem decide o status inicial é SEMPRE este método (o pedido não pode mandar
+   * `status`/`error`): o item nasce "queued". Link repetido é recusado com `code` estável:
+   *   DUPLICATE_QUEUED (já está na fila) ou DUPLICATE_DOWNLOADED (já baixado e o arquivo ainda existe).
+   * Concluído com arquivo apagado, falho ou cancelado PODE ser baixado de novo: o cartão antigo é substituído.
+   * Sem título no pedido, o cartão nasce com o nome do site + título neutro e as informações vêm depois (fila de metadados).
+   */
   add(request) {
     const url = this.validateRequest(request);
     const settings = this.getSettings();
     const isSpotify = detectarSpotify(url).isSpotify;
     const format = normalizeFormat(request.format || request.type);
+    const quality = normalizeQuality(request.quality || request.resolution);
+
+    const dup = this._findDuplicate(url, format, quality);
+    if (dup && dup.kind === 'queued') throw duplicateError('DUPLICATE_QUEUED', dup.item);
+    if (dup && dup.kind === 'downloaded') throw duplicateError('DUPLICATE_DOWNLOADED', dup.item, path.basename(dup.file));
+
     const folder = format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
     fs.mkdirSync(folder, { recursive: true });
 
+    // Cartões antigos do mesmo link que não valem mais (arquivo sumiu, falhou, cancelado) saem da fila
+    if (dup && dup.kind === 'stale') {
+      for (const old of dup.items) this._dropItem(old);
+    }
+
     const maxPos = this.queue.reduce((max, i) => Math.max(max, i.position || 0), 0);
-    const initialStatus = request.status || 'queued';
-    const initialError = request.error || '';
+    const givenTitle = typeof request.title === 'string' ? request.title.trim() : '';
+    const loadInfo = !givenTitle && typeof this.metadataProvider === 'function';
 
     const item = {
       id: 'dl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       url,
-      title: request.title || 'Mídia sem título',
+      title: givenTitle || neutralTitle(url, format),
       thumbnail: request.thumbnail || '',
       channel: request.channel || '',
-      platform: request.platform || (isSpotify ? 'Spotify' : 'YouTube'),
+      platform: isSpotify ? 'Spotify' : siteName(url),
       duration: request.duration || null,
       format,
-      quality: normalizeQuality(request.quality || request.resolution),
+      quality,
       folder,
       isSpotify,
-      status: initialStatus,
+      status: 'queued',
+      infoLoading: loadInfo, // transitório (não vai para o banco): o cartão mostra "Carregando informações..."
       progress: 0,
       downloadedBytes: 0,
       totalBytes: 0,
       speed: '',
       eta: '',
       outputPath: '',
-      error: initialError,
+      error: '',
       position: maxPos + 1,
       createdAt: new Date().toISOString(),
       startedAt: null,
@@ -236,7 +354,81 @@ class DownloadManager extends EventEmitter {
     logger.info('[DownloadManager] Item adicionado à fila:', { id: item.id, title: item.title });
     this.emit('downloads:added', item);
     this.emit('downloads:updated', this.queue);
+    if (loadInfo) this._enqueueMetadata(item);
     return item;
+  }
+
+  /** Tira o item da fila e do banco sem matar processo (usado ao substituir cartões antigos). */
+  _dropItem(item) {
+    const index = this.queue.indexOf(item);
+    if (index === -1) return;
+    this.queue.splice(index, 1);
+    this.deleteItemFromDb(item.id);
+    this._cancelMetadata(item);
+    this.emit('downloads:removed', item.id);
+  }
+
+  // ---- Informações do link (título, miniatura, canal, duração): UM link por vez, em ordem de chegada ----
+
+  _enqueueMetadata(item) {
+    this._metaQueue.push(item);
+    if (!this._metaRunning) {
+      this._metaRunning = true;
+      this._runMetadataQueue().catch((err) => logger.warn('[DownloadManager] Fila de informações falhou', { error: err && err.message }));
+    }
+  }
+
+  /** Item removido/cancelado: a espera por ele termina na hora e o resultado, se vier, é ignorado. */
+  _cancelMetadata(item) {
+    const i = this._metaQueue.indexOf(item);
+    if (i !== -1) this._metaQueue.splice(i, 1);
+    const abort = this._metaAbort.get(item);
+    if (abort) abort();
+    item.infoLoading = false;
+  }
+
+  async _runMetadataQueue() {
+    try {
+      while (this._metaQueue.length) {
+        const item = this._metaQueue.shift();
+        // Só busca de quem ainda está aguardando na fila: removido, baixando ou concluído não precisa
+        if (!this.queue.includes(item) || item.status !== 'queued' || !item.infoLoading) {
+          item.infoLoading = false;
+          continue;
+        }
+
+        let meta = null;
+        let timer = null;
+        try {
+          meta = await Promise.race([
+            Promise.resolve().then(() => this.metadataProvider(item.url)),
+            new Promise((resolve) => { this._metaAbort.set(item, () => resolve(null)); }),
+            new Promise((resolve) => { timer = setTimeout(() => resolve(null), this.metadataTimeoutMs); })
+          ]);
+        } catch (err) {
+          // Falha ao analisar NÃO é falha do item: continua "Aguardando" com o título neutro e o download tenta mesmo assim
+          logger.warn('[DownloadManager] Não foi possível carregar as informações do link', { id: item.id, error: err && err.message });
+          meta = null;
+        } finally {
+          clearTimeout(timer);
+          this._metaAbort.delete(item);
+        }
+
+        item.infoLoading = false;
+        if (!this.queue.includes(item)) continue; // removido durante a análise
+        if (meta && item.status === 'queued') {
+          const title = typeof meta.title === 'string' ? meta.title.trim() : '';
+          if (title) item.title = title;
+          if (meta.thumbnail) item.thumbnail = meta.thumbnail;
+          if (meta.channel) item.channel = meta.channel;
+          if (meta.duration) item.duration = Number(meta.duration) || item.duration;
+        }
+        this.saveItemToDb(item);
+        this.emit('downloads:updated', this.queue);
+      }
+    } finally {
+      this._metaRunning = false;
+    }
   }
 
   async start() {
@@ -294,6 +486,10 @@ class DownloadManager extends EventEmitter {
       item.error = 'Cancelado pelo usuário';
       this.saveItemToDb(item);
     }
+    this._cancelMetadata(item);
+
+    // Cancelado não deixa parciais: a subpasta temporária do item some (depois de o processo soltar os arquivos)
+    await this._cleanWorkDir(item);
 
     this.emit('downloads:updated', this.queue);
     return { ok: true };
@@ -333,6 +529,8 @@ class DownloadManager extends EventEmitter {
 
     this.queue.splice(index, 1);
     this.deleteItemFromDb(id);
+    this._cancelMetadata(item);
+    this._cleanWorkDir(item).catch(() => {}); // sem parciais: a subpasta temporária some (com novas tentativas se travada)
 
     this.emit('downloads:removed', id);
     this.emit('downloads:updated', this.queue);
@@ -379,6 +577,8 @@ class DownloadManager extends EventEmitter {
     }
     for (const item of this.queue) {
       this.deleteItemFromDb(item.id);
+      this._cancelMetadata(item);
+      this._cleanWorkDir(item).catch(() => {});
     }
     this.queue = [];
     this.isProcessing = false;
@@ -404,7 +604,9 @@ class DownloadManager extends EventEmitter {
       }
     }
     
+    const oldItem = { id: item.id, folder: item.folder, format: item.format };
     item.folder = item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
+    if (this._workDir(oldItem) !== this._workDir(item)) this._cleanWorkDir(oldItem).catch(() => {});
     this.saveItemToDb(item);
 
     this.emit('downloads:updated', this.queue);
@@ -476,6 +678,7 @@ class DownloadManager extends EventEmitter {
       }
 
       await this._prepareCookies();
+      if (nextItem.infoLoading) this._cancelMetadata(nextItem); // quem vai baixar agora não precisa de busca de informações
       this.currentItem = nextItem;
       nextItem.status = 'downloading';
       nextItem.startedAt = new Date().toISOString();
@@ -585,7 +788,7 @@ class DownloadManager extends EventEmitter {
   /** Marca o item como concluído (nunca sobrescreve cancelled/paused). */
   _completeItem(item) {
     if (item.status === 'cancelled' || item.status === 'paused') return false;
-    item.outputPath = this._resolveOutputPath(item);
+    this._finalizeOutput(item);
     item.status = 'completed';
     item.progress = 100;
     item.completedAt = new Date().toISOString();
@@ -625,21 +828,90 @@ class DownloadManager extends EventEmitter {
       if (exists(alt)) return alt;
     }
 
-    if (item.isSpotify) {
-      const folder = item.folder || '';
-      const since = (item.startedAt ? Date.parse(item.startedAt) : 0) - 2000;
+    // O destino que o programa informou pode estar errado/ausente: procura o arquivo final na subpasta temporária
+    const finalExt = item.format === 'MP3' || item.isSpotify ? '.mp3' : '.mp4';
+    const newestIn = (folder, since) => {
       try {
         let best = null;
         for (const name of fs.readdirSync(folder)) {
-          if (path.extname(name).toLowerCase() !== '.mp3') continue;
+          if (path.extname(name).toLowerCase() !== finalExt) continue;
           const full = path.join(folder, name);
           const st = fs.statSync(full);
-          if (st.size > 0 && st.mtimeMs >= since && (!best || st.mtimeMs > best.mtimeMs)) best = { full, mtimeMs: st.mtimeMs };
+          if (st.isFile() && st.size > 0 && st.mtimeMs >= since && (!best || st.mtimeMs > best.mtimeMs)) best = { full, mtimeMs: st.mtimeMs };
         }
-        if (best) return best.full;
-      } catch (_) { /* pasta inexistente/ilegível */ }
+        return best ? best.full : '';
+      } catch (_) { return ''; /* pasta inexistente/ilegível */ }
+    };
+    const inWork = newestIn(this._workDir(item), 0);
+    if (inWork) return inWork;
+
+    // Música (spotDL) de itens antigos: o arquivo mais recente gravado na própria pasta de destino
+    if (item.isSpotify) {
+      const since = (item.startedAt ? Date.parse(item.startedAt) : 0) - 2000;
+      return newestIn(item.folder || '', since);
     }
     return '';
+  }
+
+  /** Subpasta temporária do item (dentro da pasta de destino). */
+  _workDir(item) {
+    const settings = this.getSettings ? this.getSettings() : {};
+    const folder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder) || '';
+    return path.join(folder, WORKDIR_PREFIX + item.id);
+  }
+
+  /**
+   * Apaga a subpasta temporária do item (parciais ".part", miniaturas, etc.). No Windows o arquivo pode ficar
+   * travado por instantes depois que o processo morre: tenta de novo por ~3 s. Nunca apaga nada fora da subpasta
+   * ".bds-dl-<id>" criada pelo app.
+   */
+  async _cleanWorkDir(item, { tries = 15, delayMs = 200 } = {}) {
+    if (!item || !item.id) return true;
+    const dir = this._workDir(item);
+    if (path.basename(dir) !== WORKDIR_PREFIX + item.id || path.dirname(dir) === '.') return true;
+    for (let i = 0; i < tries; i++) {
+      try {
+        if (!fs.existsSync(dir)) return true;
+        fs.rmSync(dir, { recursive: true, force: true });
+        if (!fs.existsSync(dir)) return true;
+      } catch (_) { /* travado: tenta de novo */ }
+      await this._sleep(delayMs);
+    }
+    logger.warn('[DownloadManager] Subpasta temporária não pôde ser apagada', { id: item.id });
+    return false;
+  }
+
+  /**
+   * Move o arquivo final da subpasta temporária para a pasta de destino com nome ÚNICO: nunca apaga nem
+   * substitui um arquivo existente (ou reservado por outro item da fila). "Nome.mp4", depois "Nome - 2.mp4"...
+   * Atualiza outputPath/title. Se o arquivo não está na subpasta (ex.: item antigo), só confirma o caminho.
+   */
+  _finalizeOutput(item) {
+    const found = this._resolveOutputPath(item);
+    const work = this._workDir(item);
+    const inside = found && path.resolve(path.dirname(found)).toLowerCase() === path.resolve(work).toLowerCase();
+    if (!found) { item.outputPath = ''; return; }
+    if (!inside) { item.outputPath = found; return; }
+
+    const folder = item.folder || path.dirname(work);
+    fs.mkdirSync(folder, { recursive: true });
+    const name = path.basename(found);
+    const avoid = this.queue.filter((o) => o !== item && o.outputPath).map((o) => o.outputPath);
+    let dest = '';
+    for (let attempt = 0; attempt < 100 && !dest; attempt++) {
+      const candidate = uniqueSuffixPath(folder, name, { avoid });
+      try {
+        moveWithoutOverwrite(found, candidate);
+        dest = candidate;
+      } catch (err) {
+        if (!err || err.code !== 'EEXIST') throw err;
+        avoid.push(candidate); // alguém criou este nome agora: tenta o próximo número
+      }
+    }
+    if (!dest) throw new Error('Não foi possível escolher um nome de arquivo livre.');
+    item.outputPath = dest;
+    item.title = path.basename(dest, path.extname(dest));
+    this._cleanWorkDir(item).catch(() => {});
   }
 
   /**
@@ -651,7 +923,7 @@ class DownloadManager extends EventEmitter {
       const u = new URL(url);
       const host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
       if (host === 'youtu.be') return `yt:${u.pathname.split('/')[1] || ''}`;
-      if (/(^|\.)youtube\.com$/.test(host)) {
+      if (/(^|\.)youtube(-nocookie)?\.com$/.test(host)) {
         const v = u.searchParams.get('v');
         if (v) return `yt:${v}`;
         const m = /^\/(?:shorts|live|embed|v)\/([\w-]{6,})/.exec(u.pathname);
@@ -659,7 +931,11 @@ class DownloadManager extends EventEmitter {
       }
       // Outros sites: o identificador do vídeo pode estar na query string (ex.: ?id=123), então ela
       // entra na chave; o fragmento (#...) nunca identifica o conteúdo.
-      return `url:${host}${u.pathname}${u.search}`;
+      // (sem parâmetros de rastreio/compartilhamento, em ordem fixa, e sem a barra final do caminho)
+      const params = Array.from(u.searchParams.entries()).filter(([k]) => !TRACKING_PARAM.test(k))
+        .map(([k, v]) => `${k}=${v}`).sort();
+      const pathname = u.pathname.length > 1 ? u.pathname.replace(/\/+$/, '') : u.pathname;
+      return `url:${host}${pathname}${params.length ? '?' + params.join('&') : ''}`;
     } catch (_) {
       return null;
     }
@@ -884,7 +1160,10 @@ class DownloadManager extends EventEmitter {
   }
 
   async buildCommand(item, settings) {
-    const targetFolder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
+    const finalFolder = item.folder || (item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder);
+    // Tudo é baixado na subpasta temporária do item (retoma o ".part" em retry/pausa); o arquivo final é movido
+    // para o destino, com nome único, quando termina. Assim nenhum arquivo existente é tocado durante o download.
+    const targetFolder = finalFolder ? this._workDir({ ...item, folder: finalFolder }) : '';
     if (targetFolder && !fs.existsSync(targetFolder)) {
       try {
         fs.mkdirSync(targetFolder, { recursive: true });
@@ -958,3 +1237,6 @@ class DownloadManager extends EventEmitter {
 module.exports = DownloadManager;
 module.exports.readPauseSettings = readPauseSettings;
 module.exports.pickPauseMs = pickPauseMs;
+module.exports.siteName = siteName;
+module.exports.neutralTitle = neutralTitle;
+module.exports.WORKDIR_PREFIX = WORKDIR_PREFIX;

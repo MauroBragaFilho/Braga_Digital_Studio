@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Ferramentas de AÇÃO do assistente. TODA ação passa por uma confirmação nativa no processo principal (ver
+ * Ferramentas de AÇÃO do assistente. TODA ação passa por uma confirmação decidida no processo principal (modal do app; diálogo nativo como reserva) (ver
  * index.js → ToolBox.execute): o modelo apenas PROPÕE. Contrato: { name, description, parameters, kind:'action',
  * status(args), prepare(args, ctx) → { message, detail, plan }, run(plan, ctx) }.
  *   - prepare: valida contra o banco (ids existentes, arquivo comum presente, recurso instalado) e monta o texto EXATO do

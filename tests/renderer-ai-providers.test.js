@@ -60,19 +60,19 @@ const preset = (host, id) => host.querySelector(`.ana-preset[data-preset="${id}"
 const add = async (h, host, id) => { click(h, preset(host, id)); await settle(20); };
 const stop = async (t) => { t.h.cleanup && await t.h.cleanup(); };
 
-test('estado vazio: texto curto, "Adicionar provedor" com os 7 presets na ordem e nada de interruptor de fallback', async () => {
+test('estado vazio: texto curto, "Adicionar provedor" com os 6 presets na ordem e nada de interruptor de fallback', async () => {
   const t = await mountPanel();
   assert.equal(cards(t.host).length, 0);
   assert.match(t.host.querySelector('.ana-empty').textContent, /Nenhum provedor ainda/);
   assert.match(t.host.querySelector('.mod-state').textContent, /Não configurada/);
   assert.match(t.host.querySelector('.ana-add-btn').textContent, /Adicionar provedor/);
   assert.deepEqual([...t.host.querySelectorAll('.ana-preset')].map((b) => b.textContent),
-    ['Groq', 'Qwen (Alibaba)', 'Qwen (outro endereço)', 'LM Studio (local)', 'Ollama (local)', 'OpenAI', 'Personalizado']);
+    ['Groq', 'Qwen', 'LM Studio (local)', 'Ollama (local)', 'OpenAI', 'Personalizado']);
   assert.equal(t.host.querySelector('.ana-fallback'), null, 'com menos de 2 provedores o interruptor não aparece');
   await stop(t);
 });
 
-test('adicionar preset: o cartão traz nome, estado, modelo sugerido e a chave pedida; só o endereço não confirmado mostra aviso', async () => {
+test('adicionar preset: o cartão traz nome, estado, modelo sugerido e a chave pedida; nenhum preset atual mostra aviso de endereço', async () => {
   const t = await mountPanel();
   await add(t.h, t.host, 'groq');
   let card = cards(t.host)[0];
@@ -83,20 +83,14 @@ test('adicionar preset: o cartão traz nome, estado, modelo sugerido e a chave p
   assert.equal(card.querySelector('.ana-note'), null, 'Groq não tem aviso de endereço');
   assert.match(card.querySelector('.ana-where').textContent, /Servidor externo \(api\.groq\.com\)/);
 
-  await add(t.h, t.host, 'qwen');
+  await add(t.h, t.host, 'qwencloud');
   card = cards(t.host)[1];
+  assert.equal(names(t.host)[1], 'Qwen');
   assert.equal(card.querySelector('.ana-model').value, 'qwen-plus');
-  assert.equal(card.querySelector('.ana-note'), null, 'Qwen no endereço oficial não avisa');
-  assert.match(card.querySelector('.ana-where').textContent, /dashscope-intl\.aliyuncs\.com/);
-
-  await add(t.h, t.host, 'qwen-alt');
-  card = cards(t.host)[2];
-  assert.equal(names(t.host)[2], 'Qwen (outro endereço)');
-  const note = card.querySelector('.ana-note');
-  assert.ok(note);
-  assert.match(note.textContent, /não confirmado como oficial: use só se você confia nele/i);
-  assert.match(t.host.querySelector('#anaStatus').textContent, /não confirmado como oficial/i, 'o aviso também aparece ao escolher o preset');
-  assert.equal(t.host.querySelectorAll('.ana-note').length, 1);
+  assert.equal(card.querySelector('.ana-note'), null, 'QwenCloud é endereço oficial (docs.qwencloud.com): sem aviso');
+  assert.match(card.querySelector('.ana-where').textContent, /maas\.qwencloudapi\.com/);
+  assert.doesNotMatch(t.host.querySelector('#anaStatus').textContent, /não confirmado/i);
+  assert.equal(t.host.querySelectorAll('.ana-note').length, 0, 'nenhum dos presets atuais é de origem não confirmada');
   assert.match(t.host.querySelector('.mod-state').textContent, /Não configurada/);
   await stop(t);
 });
@@ -104,7 +98,7 @@ test('adicionar preset: o cartão traz nome, estado, modelo sugerido e a chave p
 test('chave: só "Chave guardada" (nunca o valor); Trocar abre o campo vazio; Remover apaga; cada provedor tem a sua', async () => {
   const t = await mountPanel();
   await add(t.h, t.host, 'groq');
-  await add(t.h, t.host, 'qwen');
+  await add(t.h, t.host, 'qwencloud');
   const [groq] = cards(t.host);
   groq.querySelector('.ana-key').value = 'sk-groq-segredo-111';
   click(t.h, groq.querySelector('.ana-save'));
@@ -154,12 +148,12 @@ test('modelos: o botão de atualizar lista os modelos do próprio provedor', asy
 
 test('ordem: Subir/Descer reordenam (primeiro sem Subir, último sem Descer) e o foco continua no botão', async () => {
   const t = await mountPanel();
-  for (const id of ['groq', 'qwen', 'ollama']) await add(t.h, t.host, id);
-  assert.deepEqual(names(t.host), ['Groq', 'Qwen (Alibaba)', 'Ollama (local)']);
+  for (const id of ['groq', 'qwencloud', 'ollama']) await add(t.h, t.host, id);
+  assert.deepEqual(names(t.host), ['Groq', 'Qwen', 'Ollama (local)']);
   const cs = cards(t.host);
   assert.equal(cs[0].querySelector('.ana-up').disabled, true);
   assert.equal(cs[2].querySelector('.ana-down').disabled, true);
-  assert.equal(cs[1].querySelector('.ana-up').getAttribute('aria-label'), 'Subir Qwen (Alibaba)');
+  assert.equal(cs[1].querySelector('.ana-up').getAttribute('aria-label'), 'Subir Qwen');
   // linkedom não tem document.activeElement: registra quem recebeu o foco
   const proto = t.h.window.HTMLElement.prototype;
   const origFocus = proto.focus;
@@ -168,14 +162,14 @@ test('ordem: Subir/Descer reordenam (primeiro sem Subir, último sem Descer) e o
   click(t.h, cs[1].querySelector('.ana-up'));
   await settle(20);
   proto.focus = origFocus;
-  assert.deepEqual(names(t.host), ['Qwen (Alibaba)', 'Groq', 'Ollama (local)']);
+  assert.deepEqual(names(t.host), ['Qwen', 'Groq', 'Ollama (local)']);
   // chegou ao topo: o "Subir" ficou desabilitado e o foco vai para o "Descer" do mesmo cartão
   assert.equal(cards(t.host)[0].querySelector('.ana-up').disabled, true);
   assert.equal(lastFocus === cards(t.host)[0].querySelector('.ana-down'), true);
   click(t.h, cards(t.host)[1].querySelector('.ana-down'));
   await settle(20);
-  assert.deepEqual(names(t.host), ['Qwen (Alibaba)', 'Ollama (local)', 'Groq']);
-  assert.deepEqual(t.ai.getPublicConfig().providers.map((p) => p.label), ['Qwen (Alibaba)', 'Ollama (local)', 'Groq']);
+  assert.deepEqual(names(t.host), ['Qwen', 'Ollama (local)', 'Groq']);
+  assert.deepEqual(t.ai.getPublicConfig().providers.map((p) => p.label), ['Qwen', 'Ollama (local)', 'Groq']);
   await stop(t);
 });
 

@@ -848,3 +848,30 @@ test('fiação: app empacotado (simulado) liberado; o laço usa o diálogo injet
     assert.ok(open.sent.some((e) => e.channel === 'ai:chatStatus'));
   } finally { await server.close(); }
 });
+
+// ============================================================ ferramentas e módulos (telas como módulos)
+
+test('módulo desligado: a ferramenta não é oferecida ao modelo e, chamada mesmo assim, é recusada sem executar', async () => {
+  const enabled = { library: true, projects: false, download: false, converter: true, devices: true, transcription: true, silence: true, ai: true };
+  const box = new ToolBox({
+    getDb: () => dbm.get(), library: LQS, projects, getModuleManager: () => new FakeManager(),
+    confirm: async () => { throw new Error('não devia chegar à confirmação'); },
+    getEnabledModules: () => enabled
+  });
+  const offered = box.definitions().map((d) => d.function.name);
+  assert.ok(offered.includes('library_search') && offered.includes('convert_media'), 'módulos ligados continuam');
+  for (const name of ['projects_list', 'project_get', 'create_project', 'add_media_to_project', 'export_project', 'add_download', 'downloads_status']) {
+    assert.ok(!offered.includes(name), `${name} some com o módulo desligado`);
+  }
+  assert.ok(offered.includes('open_screen') && offered.includes('app_overview'), 'ferramentas sem módulo ficam');
+
+  const before = projectCount();
+  const r = await run(box, 'create_project', { nome: 'Não deve existir' });
+  assert.match(JSON.stringify(r), /desligado.*projects.*Configurações → Módulos/);
+  assert.equal(projectCount(), before, 'nada é criado');
+  assert.match(JSON.stringify(await run(box, 'projects_list', {})), /desligado/);
+
+  // sem informação de módulos (uso isolado, testes antigos): nada é bloqueado
+  const open = new ToolBox({ getDb: () => dbm.get(), library: LQS, projects, getModuleManager: () => null, confirm: async () => true });
+  assert.equal(open.definitions().length, TOOLS.length);
+});

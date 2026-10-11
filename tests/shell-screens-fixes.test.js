@@ -10,8 +10,8 @@ const root = path.join(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 
 test('bootstrap usa this.appPaths ao iniciar o notificador de prazos (sem identificador solto)', () => {
-  // O startup saiu do bootstrap.js para src/bootstrap/startup.js (recebe o contexto em `ctx`).
-  const src = read('src/bootstrap/startup.js');
+  // O startup saiu do bootstrap.js para src/bootstrap/startup.js e, com os módulos, o início dos prazos foi para src/bootstrap/moduleRuntime.js (recebe o contexto em `ctx`).
+  const src = read('src/bootstrap/moduleRuntime.js');
   assert.match(src, /setStateFile\(path\.join\(ctx\.appPaths\.dataDir, 'deadline-reminders\.json'\)\)/);
   assert.doesNotMatch(src, /[^.\w]appPaths\.dataDir, 'deadline-reminders/);
 });

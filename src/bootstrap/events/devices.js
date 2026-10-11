@@ -1,11 +1,19 @@
 'use strict';
 
-const deviceDiscoveryService = require('../../core/devices/DeviceDiscoveryService');
-const sonyCameraService = require('../../core/devices/SonyCameraService');
-const UsbService = require('../../core/UsbService');
+const { moduleRuntime } = require('../moduleRuntime');
 
-/** Eventos de descoberta de dispositivos, câmeras Sony e importação USB -> renderer. */
+/**
+ * Eventos de descoberta de dispositivos, câmeras Sony e importação USB -> renderer.
+ * Só são ligados quando o módulo Dispositivos liga (na abertura, se já ligado): até lá o código dos dispositivos nem é carregado.
+ */
 function bindDeviceEvents({ bridge }) {
+  moduleRuntime.whenOn('devices', () => bindNow({ bridge }));
+}
+
+function bindNow({ bridge }) {
+  const deviceDiscoveryService = require('../../core/devices/DeviceDiscoveryService');
+  const sonyCameraService = require('../../core/devices/SonyCameraService');
+  const UsbService = require('../../core/UsbService');
   // Discovery Events
   deviceDiscoveryService.on('device_added', (d) => bridge.send('bdsm:device_added', d));
   deviceDiscoveryService.on('device_removed', (id) => bridge.send('bdsm:device_removed', id));

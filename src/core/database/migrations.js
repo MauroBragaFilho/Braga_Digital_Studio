@@ -5,7 +5,7 @@ const dbManager = require('./database');
 const { mediaTypeCaseSql } = require('../media/MediaTypes');
 
 // [FASE 3.2] Controle de versao do schema com tabela de metadados.
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 function getAppliedMigrations(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -211,6 +211,28 @@ const MIGRATIONS = [
             db.exec(`CREATE TRIGGER trg_media_derived_upd AFTER UPDATE OF filename, recorded_at, imported_at ON media BEGIN ${derive} END;`);
             db.exec(`UPDATE media SET media_type = ${mediaTypeCaseSql('filename')} WHERE media_type IS NULL;`);
         }
+    },
+    {
+        // Tela Projetos (.docs/BDS_TELA_PROJETOS.md): 7 status (os 3 antigos são mapeados), última atividade,
+        // dispositivos do projeto, registro de atividade e controle de entrega. As tabelas novas vêm do schema.sql
+        // (reexecutado quando há migração pendente); aqui só as colunas novas, o mapeamento e os índices.
+        version: 14,
+        up: (db) => {
+            addColumn(db, 'projects', 'updated_at', 'DATETIME');
+            addColumn(db, 'projects', 'last_activity_at', 'DATETIME');
+            const { LEGACY_STATUS, STATUS_IDS, DEFAULT_STATUS } = require('../projects/projectStatus');
+            for (const [oldValue, newValue] of Object.entries(LEGACY_STATUS)) {
+                if (oldValue !== newValue) db.prepare('UPDATE projects SET status = ? WHERE status = ?').run(newValue, oldValue);
+            }
+            // Qualquer outro valor (vazio, nulo, texto livre) vira o padrão
+            const placeholders = STATUS_IDS.map(() => '?').join(',');
+            db.prepare(`UPDATE projects SET status = ? WHERE status IS NULL OR status NOT IN (${placeholders})`).run(DEFAULT_STATUS, ...STATUS_IDS);
+            db.exec('UPDATE projects SET last_activity_at = COALESCE(last_activity_at, created_at), updated_at = COALESCE(updated_at, created_at);');
+            createIndexes(db, [
+                ['idx_project_devices_project_id', 'project_devices', 'project_id'],
+                ['idx_project_activity_project_id', 'project_activity', 'project_id, created_at']
+            ]);
+        }
     }
 ];
 
@@ -272,6 +294,7 @@ function runMigrations() {
 }
 
 module.exports = {
+    MIGRATIONS,
     runMigrations,
     SCHEMA_VERSION
 };

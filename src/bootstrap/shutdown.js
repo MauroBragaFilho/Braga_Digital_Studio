@@ -1,9 +1,8 @@
 'use strict';
 
 const logger = require('../services/logService');
-const deadlineNotifier = require('../infrastructure/desktop/DeadlineNotifier');
-const deviceDiscoveryService = require('../core/devices/DeviceDiscoveryService');
-const sonyCameraService = require('../core/devices/SonyCameraService');
+const { liveService } = require('../core/modules/lazyService');
+const { moduleRuntime } = require('./moduleRuntime');
 const dbManager = require('../core/database/database');
 
 /**
@@ -16,7 +15,10 @@ const dbManager = require('../core/database/database');
  * `ctx` = { services, getModuleManager, settingsManager }.
  */
 async function runShutdown(ctx, { timeoutMs = 5000 } = {}) {
-  const s = ctx.services || {};
+  const raw = ctx.services || {};
+  // Serviços de módulos são criados sob demanda: no desligamento só se mexe nos que já existem (não cria para parar)
+  const s = { ...raw };
+  for (const k of ['downloadService', 'converterService', 'thumbnailService', 'audioSyncService', 'waveformService']) s[k] = liveService(raw[k]);
   const step = async (name, fn) => {
     try { await fn(); }
     catch (err) { logger.warn('Bootstrap:shutdown:step_error', { step: name, error: err && err.message }); }
@@ -44,12 +46,9 @@ async function runShutdown(ctx, { timeoutMs = 5000 } = {}) {
   clearTimeout(timer);
   if (outcome === 'timeout') logger.warn('Bootstrap:shutdown:timeout', { timeoutMs });
 
-  // Watchers, descoberta de dispositivos, câmeras Sony e lembretes de prazo
-  await step('watchers', () => s.watcherService?.stopAll?.());
-  await step('deadline', () => deadlineNotifier.stop());
-  await step('discovery', () => deviceDiscoveryService?.stop?.());
-  await step('bdsm-pairing', () => require('../core/integrations/bdsm/BdsmPairing').getPairing().stopAll());
-  await step('sony', () => sonyCameraService?.stop?.());
+  // Tarefas de fundo dos módulos que foram iniciados: monitoramento da Biblioteca, descoberta de dispositivos
+  // (e pareamentos, câmeras Sony) e lembretes de prazo dos Projetos
+  await step('modules', () => moduleRuntime.stopAll());
 
   // Grava configurações com escrita adiada pendente (ex.: posição da janela)
   await step('settings', () => ctx.settingsManager.flush());

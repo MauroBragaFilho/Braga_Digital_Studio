@@ -32,19 +32,38 @@ export async function onEnter() {
   await loadRecentJobs();
 }
 
+/** O módulo Biblioteca está ligado? (estatísticas, gravações recentes, últimos trabalhos e a pesquisa dependem dele) */
+const libraryOn = () => (window.bdsIsScreenAllowed ? window.bdsIsScreenAllowed('library') === true : true);
+
 // Cartões de Ações Rápidas somem junto com a aba da tela (módulo desligado ou só de desenvolvimento).
 function applyQuickActionVisibility() {
+  let anyModuleCard = false;
   document.querySelectorAll('.qa-card[data-target]').forEach((card) => {
-    const btn = document.querySelector(`.sidebar .tab-button[data-view="${card.getAttribute('data-target')}"]`);
+    const target = card.getAttribute('data-target');
+    const btn = document.querySelector(`.sidebar .tab-button[data-view="${target}"]`);
     const visible = !!btn && !btn.classList.contains('hidden') && btn.style.display !== 'none';
     card.classList.toggle('hidden', !visible);
     card.style.display = visible ? '' : 'none';
+    if (visible && target !== 'settings' && target !== 'home') anyModuleCard = true;
   });
-  // A pesquisa e o atalho "Abrir a Biblioteca" dependem do módulo Biblioteca
-  const libraryOn = window.bdsIsScreenAllowed ? window.bdsIsScreenAllowed('library') : true;
+  // A pesquisa, o atalho "Abrir a Biblioteca" e as seções que leem a Biblioteca dependem desse módulo
+  const lib = libraryOn();
   const search = document.querySelector('.qa-card[data-action="search"]');
-  if (search) { search.classList.toggle('hidden', !libraryOn); search.style.display = libraryOn ? '' : 'none'; }
-  document.querySelectorAll('[data-go="library"]').forEach((b) => { b.hidden = !libraryOn; });
+  if (search) { search.classList.toggle('hidden', !lib); search.style.display = lib ? '' : 'none'; }
+  document.querySelectorAll('[data-go="library"]').forEach((b) => { b.hidden = !lib; });
+  document.querySelectorAll('.stats-section, .recent-section, .jobs-section').forEach((s) => s.classList.toggle('hidden', !lib));
+  // Instalação nova (nada ligado além de Home e Configurações): diz onde ligar os recursos
+  document.getElementById('homeModulesHint')?.classList.toggle('hidden', anyModuleCard || lib);
+}
+
+/** Abre Configurações numa aba específica (a tela de Configurações lê o pedido ao entrar). */
+function openSettingsTab(tabId) {
+  document.querySelector('.sidebar .tab-button[data-view="settings"]')?.click();
+  let tries = 0;
+  const timer = setInterval(() => {
+    const tab = document.querySelector(`.settings-tab[data-tab="${tabId}"]`);
+    if (tab || ++tries > 30) { clearInterval(timer); tab?.click(); }
+  }, 100);
 }
 let modulesListenerBound = false;
 
@@ -65,6 +84,10 @@ export async function initScreen() {
         console.warn('[HOME] Não foi possível obter thumbsDir:', e);
       }
     }
+
+    document.querySelector('#homeModulesHint .home-modules-link')?.addEventListener('click', (e) => {
+      openSettingsTab(e.currentTarget.dataset.settingsTab || 'settingsModulesView');
+    });
 
     // Ações Rápidas
     document.querySelectorAll('.qa-card').forEach(card => {
@@ -117,7 +140,7 @@ export async function initScreen() {
 }
 
 async function loadStats() {
-  if (!window.bds || !window.bds.getLibraryStats) return;
+  if (!window.bds || !window.bds.getLibraryStats || !libraryOn()) return;
   const stats = await window.bds.getLibraryStats();
 
   const totalMediaCount = stats.totalMedia
@@ -154,7 +177,7 @@ async function loadStats() {
 }
 
 async function loadRecentJobs() {
-  if (!window.bds || !window.bds.getRecentMedia) return;
+  if (!window.bds || !window.bds.getRecentMedia || !libraryOn()) return;
   
   recentJobs = await window.bds.getRecentMedia(10);
 

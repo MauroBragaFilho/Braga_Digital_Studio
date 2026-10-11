@@ -117,6 +117,36 @@
       "returns": "promise"
     }
   },
+  "addProjectDevice": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addDevice",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addDevice",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "addProjectMarker": {
     "type": "function",
     "length": 1,
@@ -1126,6 +1156,34 @@
           "args": [
             "__undefined__",
             "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "createProjectDefaultBins": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createDefaultBins",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:createDefaultBins",
+          "args": [
             "__undefined__"
           ]
         }
@@ -2264,6 +2322,34 @@
       "returns": "promise"
     }
   },
+  "duplicateProject": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:duplicate",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:duplicate",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "enqueueMontage": {
     "type": "function",
     "length": 1,
@@ -2432,6 +2518,34 @@
       "returns": "promise"
     }
   },
+  "exportProjectInfo": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportInfo",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportInfo",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "exportProjectPremiere": {
     "type": "function",
     "length": 2,
@@ -2483,6 +2597,36 @@
         {
           "op": "invoke",
           "ch": "projects:exportSequencePremiere",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "exportProjectXmeml": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportXmeml",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:exportXmeml",
           "args": [
             "__undefined__",
             "__undefined__"
@@ -3448,6 +3592,36 @@
       "returns": "promise"
     }
   },
+  "getMulticamModel": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMulticamModel",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getMulticamModel",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "getOrCreateDefaultSequence": {
     "type": "function",
     "length": 1,
@@ -3574,6 +3748,34 @@
         {
           "op": "invoke",
           "ch": "projects:getClips",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectDelivery": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getDelivery",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getDelivery",
           "args": [
             "__undefined__"
           ]
@@ -3744,6 +3946,34 @@
         {
           "op": "invoke",
           "ch": "projects:getSequences",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "getProjectSummary": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSummary",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:getSummary",
           "args": [
             "__undefined__"
           ]
@@ -4496,6 +4726,92 @@
       "returns": "promise"
     }
   },
+  "listProjectActivity": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listActivity",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listActivity",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listProjectDevices": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listDevices",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listDevices",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listProjectSyncSources": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listSyncSources",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listSyncSources",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "listProjects": {
     "type": "function",
     "length": 0,
@@ -4515,6 +4831,34 @@
           "op": "invoke",
           "ch": "projects:list",
           "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listProjectsRecentActivity": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:recentActivity",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:recentActivity",
+          "args": [
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"
@@ -7821,6 +8165,34 @@
       "returns": "promise"
     }
   },
+  "removeProjectDevice": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeDevice",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeDevice",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "removeProjectMedia": {
     "type": "function",
     "length": 1,
@@ -8105,6 +8477,34 @@
       "returns": "promise"
     }
   },
+  "runMulticamSync": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:runMulticamSync",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:runMulticamSync",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "saveMetadata": {
     "type": "function",
     "length": 1,
@@ -8343,6 +8743,68 @@
           "op": "invoke",
           "ch": "library:setProjectBulk",
           "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "setProjectDelivery": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:setDelivery",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:setDelivery",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "setSyncClipOffset": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:setSyncClipOffset",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:setSyncClipOffset",
+          "args": [
+            "__undefined__",
             "__undefined__",
             "__undefined__"
           ]

@@ -5,7 +5,7 @@
  *   { screen, selectedIds?, projectId? }
  * como argumento OPCIONAL de ai:chatStart. O main valida tudo (tipos, limites, telas conhecidas) e o acrescenta ao
  * prompt de sistema como DADO NÃO CONFIÁVEL. O contexto serve para o modelo entender "este vídeo", "o que está
- * selecionado", "este projeto"; ele NUNCA autoriza uma ação: toda ação continua pedindo a confirmação nativa.
+ * selecionado", "este projeto"; ele NUNCA autoriza uma ação: toda ação continua pedindo a confirmação do app (decidida no processo principal).
  *
  * Nada vindo do renderer entra no prompt como texto livre: a tela vira o nome fixo da lista (screens.js) e os ids
  * viram nomes lidos do BANCO (curtos, sem caminhos, com safeText).

@@ -40,6 +40,12 @@ on:
       - '.docs/**'
       - 'LICENSE'
 
+# As RELEASES (instaladores) são publicadas em um repositório SEPARADO do código: é de lá que o atualizador do app
+# baixa (src/config/appUpdate.config.json). Precisa do segredo RELEASES_TOKEN (Settings -> Secrets and variables -> Actions
+# deste repositório): token com permissão de escrita em "Contents" do repositório de releases.
+env:
+  RELEASES_REPO: MauroBragaFilho/Braga_Digital_Studio
+
 # Mínimo por padrão; só o job `release` (publica a Release e dá push da versão) recebe contents: write.
 permissions:
   contents: read
@@ -69,10 +75,17 @@ jobs:
 
       - name: Escolher a versão da Release (próxima livre a partir do package.json)
         id: get_version
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
+          if [ -z "$RELEASES_TOKEN" ]; then
+            echo "::error::Falta o segredo RELEASES_TOKEN (token com escrita em Contents de $RELEASES_REPO). Crie em Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
           VERSION=$(node -p "require('./package.json').version")
           BASE="$VERSION"
-          TAGS=$(git ls-remote --tags origin)
+          # As tags de versão vivem no repositório de releases (é onde as Releases são publicadas)
+          TAGS=$(git ls-remote --tags "https://x-access-token:${RELEASES_TOKEN}@github.com/${RELEASES_REPO}.git")
           BUMPED=false
           while echo "$TAGS" | grep -q "refs/tags/v$VERSION$"; do
             if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -343,7 +356,7 @@ jobs:
     needs: [determine-version, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # criar tag/Release e push do package.json
+      contents: write   # push do package.json neste repositório (a Release usa o RELEASES_TOKEN, no repositório de releases)
     steps:
       - name: Baixar artefato Windows
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -363,12 +376,12 @@ jobs:
       - name: Publicar Release unificada (Windows + Linux)
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          repository: ${{ env.RELEASES_REPO }}   # Release no repositório de releases, não neste
+          token: ${{ secrets.RELEASES_TOKEN }}
           tag_name: ${{ needs.determine-version.outputs.tag }}
           name: BDS ${{ needs.determine-version.outputs.tag }}
           files: release-files/*
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Registra no package.json a versão que acabou de ser publicada, para o repositório não
       # ficar para trás. Se falhar (ex.: main protegida), a Release continua válida: o próximo

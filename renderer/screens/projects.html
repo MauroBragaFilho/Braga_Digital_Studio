@@ -1,167 +1,142 @@
-<div class="proj-container">
+<div class="proj-screen" id="projRoot">
 
-  <!-- Main Area -->
-  <main class="proj-main">
-
-    <!-- Topbar -->
-    <header class="proj-topbar">
-      <div class="proj-topbar-actions">
-        <button id="btnImportBdspro" class="proj-btn-secondary">
-          <span class="material-symbols-rounded">file_open</span>
-          Importar Projeto
-        </button>
-        <button id="btnNewProject" class="proj-btn-primary">
-          <span class="material-symbols-rounded">add</span>
-          Novo Projeto
-        </button>
-      </div>
-    </header>
-
-    <!-- Content Area -->
-    <div id="projectsContentArea" class="proj-content-area">
-        <div id="projectsGrid" class="proj-grid">
-            <!-- Projetos injetados pelo JS -->
-        </div>
+  <!-- Barra: busca, filtro, ordenação, grade/lista e ações (o título da tela fica só na barra do app) -->
+  <div class="proj-toolbar">
+    <div class="proj-search">
+      <span class="material-symbols-rounded" aria-hidden="true">search</span>
+      <input type="search" id="projSearch" placeholder="Buscar por nome, cliente, observações…" autocomplete="off" aria-label="Buscar projetos" />
     </div>
-
-  </main>
-
-  <!-- Right Sidebar: Inspector -->
-  <aside id="projectInspector" class="proj-inspector">
-
-    <div id="inspectorProjCover" class="proj-inspector-cover" title="Clique para alterar a capa">
-      <div class="cover-overlay">
-        <span class="material-symbols-rounded">add_photo_alternate</span>
-      </div>
-      <button id="closeProjInspectorBtn" class="proj-inspector-close-btn" title="Fechar" aria-label="Fechar">
-        <span class="material-symbols-rounded">close</span>
+    <select id="projFilter" class="proj-select" aria-label="Filtrar por situação">
+      <option value="active">Em andamento</option>
+      <option value="all">Todos</option>
+      <option value="waiting">Aguardando cliente</option>
+      <option value="done">Concluídos</option>
+      <option value="archived">Arquivados</option>
+    </select>
+    <select id="projSort" class="proj-select" aria-label="Ordenar">
+      <option value="deadline">Próximo prazo</option>
+      <option value="recent">Mais recentes</option>
+      <option value="oldest">Mais antigos</option>
+      <option value="name">Nome</option>
+      <option value="activity">Última atividade</option>
+    </select>
+    <div class="proj-view-toggle" role="group" aria-label="Modo de exibição">
+      <button id="projViewGrid" class="proj-icon-btn active" type="button" title="Grade" aria-pressed="true"><span class="material-symbols-rounded">grid_view</span></button>
+      <button id="projViewList" class="proj-icon-btn" type="button" title="Lista" aria-pressed="false"><span class="material-symbols-rounded">view_list</span></button>
+    </div>
+    <div class="proj-toolbar-actions">
+      <button id="btnImportBdspro" class="proj-btn proj-btn-outline" type="button" title="Importar um pacote .bdspro">
+        <span class="material-symbols-rounded" aria-hidden="true">archive</span> Importar
+      </button>
+      <button id="btnNewProject" class="proj-btn proj-btn-primary" type="button">
+        <span class="material-symbols-rounded" aria-hidden="true">add</span> Novo projeto
       </button>
     </div>
+  </div>
 
-    <!-- Inspector Content -->
-    <div class="proj-inspector-body">
+  <!-- Resumo: como está o trabalho hoje -->
+  <div class="proj-summary" id="projSummary">
+    <button class="proj-stat" type="button" data-filter="active"><span class="proj-stat-label">Em andamento</span><b id="projStatActive">0</b></button>
+    <button class="proj-stat" type="button" data-filter="waiting"><span class="proj-stat-label">Aguardando cliente</span><b id="projStatWaiting">0</b></button>
+    <button class="proj-stat proj-stat-warn" type="button" data-sort="deadline"><span class="proj-stat-label">Entregas em 7 dias</span><b id="projStatDue">0</b></button>
+    <div class="proj-stat proj-stat-static"><span class="proj-stat-label">Material referenciado</span><b id="projStatSize">0 B</b></div>
+  </div>
 
-      <div class="proj-inspector-fields">
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Nome</span>
-          <span id="inspectorProjName" class="proj-detail-value proj-detail-value--strong">-</span>
-        </div>
-
-        <div class="proj-detail-row">
-            <span class="proj-detail-label">Cor do Projeto</span>
-            <input type="color" id="inspectorProjColor" class="proj-color-swatch">
-        </div>
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Status</span>
-          <span id="inspectorProjStatus" class="proj-detail-value">-</span>
-        </div>
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Cliente</span>
-          <span id="inspectorProjClient" class="proj-detail-value">-</span>
-        </div>
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Tipo</span>
-          <span id="inspectorProjType" class="proj-detail-value">-</span>
-        </div>
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Data de Início</span>
-          <span id="inspectorProjStart" class="proj-detail-value">-</span>
-        </div>
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Data de Entrega</span>
-          <span id="inspectorProjDeadline" class="proj-detail-value">-</span>
-        </div>
-
-        <div class="proj-detail-row proj-detail-row--divider">
-          <span class="proj-detail-label">Qtd. de Mídias</span>
-          <span id="inspectorProjCount" class="proj-detail-value">-</span>
-        </div>
-
-        <div class="proj-detail-row">
-          <span class="proj-detail-label">Espaço Utilizado</span>
-          <span id="inspectorProjSize" class="proj-detail-value">-</span>
-        </div>
-
-        <!-- Buttons -->
-        <div class="proj-inspector-actions">
-            <button id="btnOpenProject" class="proj-btn-accent">
-                <span class="material-symbols-rounded">folder_open</span> Abrir Workspace
-            </button>
-            <button id="btnExportBdspro" class="proj-btn-secondary">
-                <span class="material-symbols-rounded">archive</span> Exportar Projeto
-            </button>
-            <button id="btnEditProject" class="proj-btn-secondary">
-                <span class="material-symbols-rounded">edit</span> Editar Propriedades
-            </button>
-            <button id="btnDeleteProject" class="proj-btn-danger">
-                <span class="material-symbols-rounded">delete</span> Excluir
-            </button>
-        </div>
-
-      </div>
+  <div class="proj-main">
+    <div class="proj-list-col">
+      <p id="projCount" class="proj-count" aria-live="polite"></p>
+      <div id="projectsGrid" class="proj-grid" role="list"></div>
+      <table id="projectsTable" class="proj-table hidden">
+        <thead>
+          <tr><th>Projeto</th><th>Cliente</th><th>Status</th><th>Entrega</th><th>Arquivos</th><th>Atividade</th><th class="proj-th-actions"></th></tr>
+        </thead>
+        <tbody id="projectsTableBody"></tbody>
+      </table>
     </div>
-  </aside>
 
+    <!-- Coluna lateral: o que vence primeiro e o que aconteceu por último, em todos os projetos -->
+    <aside class="proj-rail" aria-label="Próximas entregas e atividade recente">
+      <h3 class="proj-rail-title">Próximas entregas</h3>
+      <ul id="projDueList" class="proj-rail-list"></ul>
+      <h3 class="proj-rail-title">Atividade recente</h3>
+      <ul id="projActivityList" class="proj-rail-list proj-rail-activity"></ul>
+    </aside>
+  </div>
+
+  <!-- Menu contextual (⋮) de um projeto; montado pelo JS -->
+  <div id="projMenu" class="proj-menu hidden" role="menu"></div>
 </div>
 
 <!-- Modal Novo/Editar Projeto -->
 <div id="modalProjectForm" class="proj-modal-overlay">
   <div class="proj-modal">
-    <h3 id="modalProjectTitle" class="proj-modal-title">Novo Projeto</h3>
+    <h3 id="modalProjectTitle" class="proj-modal-title">Novo projeto</h3>
 
     <input type="hidden" id="projFormId">
 
-    <div>
-        <label class="proj-form-label">NOME DO PROJETO</label>
-        <input type="text" id="projFormName" class="proj-form-input" />
+    <div class="proj-field">
+      <label class="proj-form-label" for="projFormName">Nome do projeto</label>
+      <input type="text" id="projFormName" class="proj-form-input" maxlength="200" />
     </div>
 
     <div class="proj-form-row">
-        <div class="proj-form-col">
-            <label class="proj-form-label">CLIENTE</label>
-            <input type="text" id="projFormClient" class="proj-form-input" />
-        </div>
-        <div class="proj-form-col">
-            <label class="proj-form-label">TIPO</label>
-            <input type="text" id="projFormType" placeholder="Ex: Casamento" class="proj-form-input" />
-        </div>
+      <div class="proj-field">
+        <label class="proj-form-label" for="projFormClient">Cliente</label>
+        <input type="text" id="projFormClient" class="proj-form-input" maxlength="120" />
+      </div>
+      <div class="proj-field">
+        <label class="proj-form-label" for="projFormType">Tipo</label>
+        <input type="text" id="projFormType" placeholder="Ex.: Casamento" class="proj-form-input" maxlength="60" />
+      </div>
     </div>
 
     <div class="proj-form-row">
-        <div class="proj-form-col">
-            <label class="proj-form-label">INÍCIO</label>
-            <input type="date" id="projFormStart" class="proj-form-input" />
-        </div>
-        <div class="proj-form-col">
-            <label class="proj-form-label">ENTREGA</label>
-            <input type="date" id="projFormDeadline" class="proj-form-input" />
-        </div>
+      <div class="proj-field">
+        <label class="proj-form-label" for="projFormStart">Data do projeto</label>
+        <input type="date" id="projFormStart" class="proj-form-input" />
+      </div>
+      <div class="proj-field">
+        <label class="proj-form-label" for="projFormDeadline">Data de entrega</label>
+        <input type="date" id="projFormDeadline" class="proj-form-input" />
+      </div>
     </div>
 
     <div class="proj-form-row">
-        <div class="proj-form-col">
-            <label class="proj-form-label">STATUS</label>
-            <select id="projFormStatus" class="proj-form-input">
-                <option value="Ativo">Ativo</option>
-                <option value="Pausado">Pausado</option>
-                <option value="Concluído">Concluído</option>
-            </select>
-        </div>
-        <div>
-            <label class="proj-form-label">COR</label>
-            <input type="color" id="projFormColor" value="#3b82f6" class="proj-form-color-input" />
-        </div>
+      <div class="proj-field">
+        <label class="proj-form-label" for="projFormStatus">Status</label>
+        <select id="projFormStatus" class="proj-form-input">
+          <option value="Planejamento">Planejamento</option>
+          <option value="Em produção">Em produção</option>
+          <option value="Pós-produção">Pós-produção</option>
+          <option value="Aguardando cliente">Aguardando cliente</option>
+          <option value="Concluído">Concluído</option>
+          <option value="Problema">Problema</option>
+          <option value="Arquivado">Arquivado</option>
+        </select>
+      </div>
+      <div class="proj-field proj-field-color">
+        <label class="proj-form-label" for="projFormColor">Cor do projeto</label>
+        <input type="color" id="projFormColor" value="#3b82f6" class="proj-form-color-input" />
+      </div>
+    </div>
+
+    <div class="proj-field">
+      <span class="proj-form-label">Capa</span>
+      <div class="proj-cover-row">
+        <div id="projFormCoverPreview" class="proj-cover-preview" aria-hidden="true"></div>
+        <button id="btnProjFormCover" class="proj-btn proj-btn-outline" type="button">Selecionar imagem</button>
+        <button id="btnProjFormCoverClear" class="proj-link hidden" type="button">Remover capa</button>
+      </div>
+    </div>
+
+    <div class="proj-field">
+      <label class="proj-form-label" for="projFormNotes">Observações</label>
+      <textarea id="projFormNotes" class="proj-form-input proj-form-textarea" rows="3" maxlength="2000" placeholder="Ex.: Cerimônia + recepção. Entrega final em 4K."></textarea>
     </div>
 
     <div class="proj-form-actions">
-      <button id="btnCancelProjForm" class="proj-btn-outline">Cancelar</button>
-      <button id="btnSaveProjForm" class="proj-btn-accent-sm">Salvar</button>
+      <button id="btnCancelProjForm" class="proj-btn proj-btn-outline" type="button">Cancelar</button>
+      <button id="btnSaveProjForm" class="proj-btn proj-btn-primary" type="button">Criar projeto</button>
     </div>
   </div>
 </div>
@@ -171,10 +146,10 @@
   <div class="proj-modal proj-modal--large">
     <div class="proj-modal-header">
       <h3 class="proj-modal-title">
-        <span class="material-symbols-rounded" style="color: var(--accent);">archive</span>
-        Importar Projeto BDS (.bdspro)
+        <span class="material-symbols-rounded" aria-hidden="true">archive</span>
+        Importar projeto (.bdspro)
       </h3>
-      <button id="btnCloseRelinkModal" class="proj-modal-close-btn" title="Fechar" aria-label="Fechar">
+      <button id="btnCloseRelinkModal" class="proj-modal-close-btn" type="button" title="Fechar" aria-label="Fechar">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -187,47 +162,42 @@
         <div class="relink-stats-pills">
           <span id="pillTotalMedia" class="relink-pill">0 mídias</span>
           <span id="pillMissingMedia" class="relink-pill relink-pill--warning">0 ausentes</span>
-          <span id="pillTracksCount" class="relink-pill">Timeline pronta</span>
         </div>
       </div>
     </div>
 
-    <!-- Alerta de mídias ausentes -->
     <div id="relinkMissingAlert" class="relink-alert-box hidden">
       <div class="relink-alert-content">
-        <span class="material-symbols-rounded relink-alert-icon">warning</span>
+        <span class="material-symbols-rounded relink-alert-icon" aria-hidden="true">warning</span>
         <div>
           <div class="relink-alert-title">Mídias não encontradas nos caminhos originais</div>
-          <div class="relink-alert-desc">Os arquivos de vídeo/áudio foram movidos ou o projeto veio de outro computador. Selecione a pasta onde estão os arquivos para reconectá-los automaticamente.</div>
+          <div class="relink-alert-desc">Os arquivos foram movidos ou o projeto veio de outro computador. Selecione a pasta onde estão os arquivos para reconectá-los.</div>
         </div>
       </div>
-      <button id="btnSelectRelinkFolder" class="proj-btn-primary">
-        <span class="material-symbols-rounded">folder_open</span>
-        Localizar Pasta de Mídias
+      <button id="btnSelectRelinkFolder" class="proj-btn proj-btn-outline" type="button">
+        <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+        Localizar pasta de mídias
       </button>
     </div>
 
-    <!-- Tabela de status das mídias -->
     <div class="relink-table-container">
       <table class="relink-table">
         <thead>
           <tr>
             <th>Status</th>
             <th>Arquivo</th>
-            <th>Caminho Original / Reconectado</th>
+            <th>Caminho original / reconectado</th>
             <th>Confiança</th>
           </tr>
         </thead>
-        <tbody id="relinkMediaTableBody">
-          <!-- Linhas injetadas dinamicamente -->
-        </tbody>
+        <tbody id="relinkMediaTableBody"></tbody>
       </table>
     </div>
 
     <div class="proj-form-actions">
-      <button id="btnCancelRelink" class="proj-btn-outline">Cancelar</button>
-      <button id="btnConfirmImportBdspro" class="proj-btn-accent-sm">
-        <span class="material-symbols-rounded">check</span> Confirmar Importação
+      <button id="btnCancelRelink" class="proj-btn proj-btn-outline" type="button">Cancelar</button>
+      <button id="btnConfirmImportBdspro" class="proj-btn proj-btn-primary" type="button">
+        <span class="material-symbols-rounded" aria-hidden="true">check</span> Confirmar importação
       </button>
     </div>
   </div>

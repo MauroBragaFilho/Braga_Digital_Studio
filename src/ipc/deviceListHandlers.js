@@ -3,7 +3,8 @@
 const { handle } = require('./channelRegistry');
 const logger = require('../services/logService');
 const { deviceManager } = require('../infrastructure/hardware/DeviceManager');
-const deviceDiscoveryService = require('../core/devices/DeviceDiscoveryService');
+// Carregado só quando um handler é usado (módulo Dispositivos): o código da descoberta não entra na abertura do app
+const deviceDiscoveryService = require('../core/modules/lazyService').lazyService(() => require('../core/devices/DeviceDiscoveryService'));
 const sonyCameraService = require('../core/devices/SonyCameraService');
 const MtpService = require('../core/MtpService');
 const UsbService = require('../core/UsbService');

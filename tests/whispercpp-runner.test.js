@@ -65,6 +65,16 @@ test('transcreve: gera .srt e .md ao lado do arquivo e nunca sobrescreve (aula 0
   assert.ok(exists(s.root, 'aula 01.srt'), 'a primeira legenda foi mantida');
 });
 
+test('grava aula 01.words.json com os tempos medidos por palavra, sem entrar nas saídas', async () => {
+  const s = setup();
+  const res = await withEnv({ FAKE_RECORD: s.record }, () => s.make().run({ files: [s.media], srt: true }, ctx(s)));
+  assert.deepEqual(res.outputs.map((o) => path.basename(o.path)), ['aula 01.srt']);
+  const doc = JSON.parse(fs.readFileSync(path.join(s.root, 'aula 01.words.json'), 'utf8'));
+  assert.equal(doc.schema, 1);
+  assert.ok(doc.words.length > 0 && doc.words.every((w) => typeof w.word === 'string' && w.end >= w.start));
+  assert.ok(doc.segments.length > 0);
+});
+
 test('o whisper-cli recebe a configuração validada e só caminhos relativos em ASCII (usuário com acento)', async () => {
   const s = setup();
   await withEnv({ FAKE_RECORD: s.record }, () => s.make().run({ files: [s.media], srt: true }, ctx(s)));

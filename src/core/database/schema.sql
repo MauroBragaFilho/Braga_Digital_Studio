@@ -25,7 +25,42 @@ CREATE TABLE IF NOT EXISTS projects (
     start_date DATETIME,
     deadline DATETIME,
     cover_path TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
+    last_activity_at DATETIME
+);
+
+-- Equipamentos usados ou associados ao projeto (câmeras, áudio, outros)
+CREATE TABLE IF NOT EXISTS project_devices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    category TEXT NOT NULL DEFAULT 'other',
+    name TEXT NOT NULL,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- Registro de atividade do projeto (criado, mídia adicionada, exportado...)
+CREATE TABLE IF NOT EXISTS project_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- Controle de entrega (uma linha por projeto; listas em JSON)
+CREATE TABLE IF NOT EXISTS project_delivery (
+    project_id INTEGER PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'Não iniciada',
+    deadline DATETIME,
+    items TEXT,
+    destinations TEXT,
+    notes TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS project_bins (

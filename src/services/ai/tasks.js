@@ -7,15 +7,12 @@
  * `ctx` expõe o que a tarefa precisa sem conhecer o provedor:
  *   ctx.chat({ messages, system })  → { text, usage }   (usa o provedor configurado)
  *
- * As tarefas com `implemented: false` são só contrato para as próximas etapas. Para implementar
- * uma, troque `run` (ou use register()). `analyzeTranscript` já está pronta (transcriptAnalysis.js).
+ * Hoje existe uma tarefa: `analyzeTranscript` (transcriptAnalysis.js), usada pela tela de Transcrição.
+ * Transcrever e etiquetar mídias NÃO são tarefas daqui: são ferramentas do assistente (`transcribe_media`,
+ * `tag_media`, em tools/), que passam pela confirmação do usuário. Para plugar uma tarefa nova, use register().
  */
 
 const { runAnalyzeTranscript } = require('./transcriptAnalysis');
-
-const notImplemented = (name) => async () => {
-  throw new Error(`A tarefa "${name}" ainda não foi implementada.`);
-};
 
 const TASKS = new Map([
   ['analyzeTranscript', {
@@ -25,20 +22,6 @@ const TASKS = new Map([
     // payload: { text?: string, filePath?: string (.md/.srt/.vtt/.txt), title?: string, maxChunkChars?: number }
     // ctx extra: signal (cancelar) e onProgress({ stage, index, total, percent })
     run: runAnalyzeTranscript
-  }],
-  ['transcribe', {
-    label: 'Transcrição e legendas',
-    description: 'Transforma áudio/vídeo em texto e gera legendas (SRT/VTT).',
-    implemented: false,
-    // payload esperado: { filePath: string, language?: string, format?: 'srt'|'vtt'|'txt' }
-    run: notImplemented('transcribe')
-  }],
-  ['suggestTags', {
-    label: 'Organização da biblioteca',
-    description: 'Sugere título, descrição e tags para itens da biblioteca.',
-    implemented: false,
-    // payload esperado: { mediaIds: number[] }
-    run: notImplemented('suggestTags')
   }]
 ]);
 

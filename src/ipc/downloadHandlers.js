@@ -2,6 +2,7 @@
 
 const { handle } = require('./channelRegistry');
 const CookiesService = require('../core/CookiesService');
+const { onceCreated } = require('../core/modules/lazyService');
 
 /**
  * Metadados de mídia (yt-dlp), download direto e fila de downloads.
@@ -22,7 +23,13 @@ module.exports = function registerDownloadHandlers({ downloadService, thumbnailS
     if (settingsManager.load().cookiesFile !== cookiesPath) settingsManager.save({ cookiesFile: cookiesPath });
     return cookiesPath;
   };
-  downloadService.cookiesProvider = refreshYoutubeCookies;
+  // O serviço é criado no primeiro uso (módulo Downloads): o provedor de cookies é ligado nesse momento
+  // Também liga o provedor de informações dos links (título, miniatura...): a fila de metadados do serviço busca
+  // UM link por vez, depois de o cartão já estar na tela.
+  onceCreated(downloadService, (d) => {
+    d.cookiesProvider = refreshYoutubeCookies;
+    d.metadataProvider = (url) => thumbnailService.getMetadata(url);
+  });
   handle('youtube:exportCookies', async () => {
     try {
       const cookiesPath = await refreshYoutubeCookies();
@@ -33,7 +40,18 @@ module.exports = function registerDownloadHandlers({ downloadService, thumbnailS
   });
 
   // Download Queue
-  handle('downloads:add', (_, request) => downloadService.add(request));
+  // Link repetido não é erro do app: volta { ok: false, duplicate: true, code, error, existingId } para a tela avisar
+  // e destacar o cartão que já existe (o código estável não sobreviveria a uma exceção do IPC).
+  handle('downloads:add', (_, request) => {
+    try {
+      return downloadService.add(request);
+    } catch (err) {
+      if (err && typeof err.code === 'string' && err.code.startsWith('DUPLICATE_')) {
+        return { ok: false, duplicate: true, code: err.code, error: err.message, existingId: err.existingId || null };
+      }
+      throw err;
+    }
+  });
   handle('downloads:start', () => downloadService.start());
   handle('downloads:pause', () => downloadService.pause());
   handle('downloads:cancel', (_, id) => downloadService.cancel(id));

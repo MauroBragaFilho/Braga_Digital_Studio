@@ -37,4 +37,31 @@ function uniqueOutputPath(dir, name, opts = {}) {
   return candidate;
 }
 
-module.exports = { uniqueOutputPath, isSamePath };
+/**
+ * Igual a uniqueOutputPath, mas com o número DEPOIS do nome e separado por hífen, começando em 2:
+ * "Nome.mp4", depois "Nome - 2.mp4", "Nome - 3.mp4"… (padrão da tela Downloads).
+ * @param {string} dir
+ * @param {string} name nome do arquivo com extensão
+ * @param {{avoid?: string[], reserved?: Set<string>, skipFirst?: number}} [opts]
+ *   `skipFirst`: número a partir do qual tenta, quando um candidato foi tomado por outro processo no meio do caminho.
+ */
+function uniqueSuffixPath(dir, name, opts = {}) {
+  const avoid = (opts.avoid || []).filter(Boolean).map(norm);
+  const reserved = opts.reserved || null;
+  const ext = path.extname(name);
+  const base = path.basename(name, ext);
+  let candidate = path.join(dir, name);
+  const taken = (p) => fs.existsSync(p) || avoid.includes(norm(p)) || (reserved && reserved.has(norm(p)));
+  // O nome simples vem primeiro; depois "Nome - 2", "Nome - 3"… (skipFirst = primeiro número a tentar, mínimo 2)
+  let n = Math.max(2, Number(opts.skipFirst) || 2);
+  if (n > 2) candidate = path.join(dir, `${base} - ${n}${ext}`);
+  while (taken(candidate)) {
+    if (n > 9999) throw new Error('Não foi possível escolher um nome de arquivo livre.');
+    candidate = path.join(dir, `${base} - ${n}${ext}`);
+    n++;
+  }
+  if (reserved) reserved.add(norm(candidate));
+  return candidate;
+}
+
+module.exports = { uniqueOutputPath, uniqueSuffixPath, isSamePath };

@@ -531,6 +531,59 @@ define('projects', 'throw', {
   'projects:create': { args: [OBJ('data', { name: t.string({ max: 500, optional: true, label: 'Nome do projeto' }) }, { label: 'Dados do projeto', maxKeys: 100 })], returns: 'Projeto criado', api: ['createProject'] },
   'projects:update': { args: [PROJECT_ID('id'), DATA('data', 'Dados do projeto')], returns: 'Projeto atualizado', api: ['updateProject'] },
   'projects:delete': { args: [PROJECT_ID('id')], returns: 'Resultado', api: ['deleteProject'] },
+  // Tela Projetos (.docs/BDS_TELA_PROJETOS.md): resumo, duplicar, dispositivos, atividade, entrega e "Exportar informações"
+  'projects:duplicate': { args: [PROJECT_ID('id')], returns: 'ID do projeto novo', api: ['duplicateProject'] },
+  'projects:getSummary': { args: [PROJECT_ID('id')], returns: 'Resumo do projeto (contagens, espaço, última atividade, entrega)', api: ['getProjectSummary'] },
+  'projects:listDevices': { args: [PROJECT_ID()], returns: 'Dispositivos do projeto', api: ['listProjectDevices'] },
+  'projects:addDevice': {
+    args: [PROJECT_ID(), OBJ('device', { category: t.string({ max: 20, optional: true, label: 'Categoria' }), name: t.string({ min: 1, max: 80, label: 'Nome do dispositivo' }), note: t.string({ max: 200, optional: true, label: 'Observação' }) }, { label: 'Dispositivo', strict: true, maxKeys: 3 })],
+    returns: 'ID do dispositivo',
+    api: ['addProjectDevice']
+  },
+  'projects:removeDevice': { args: [ID('id', { label: 'ID do dispositivo' })], returns: 'Resultado', api: ['removeProjectDevice'] },
+  'projects:listActivity': { args: [PROJECT_ID(), t.int({ name: 'limit', min: 1, max: 200, optional: true, label: 'Limite' })], returns: 'Atividade recente do projeto', api: ['listProjectActivity'] },
+  'projects:getDelivery': { args: [PROJECT_ID()], returns: 'Controle de entrega', api: ['getProjectDelivery'] },
+  'projects:setDelivery': {
+    args: [PROJECT_ID(), OBJ('delivery', {
+      status: t.string({ max: 30, optional: true, label: 'Estado da entrega' }),
+      deadline: t.string({ max: 10, optional: true, label: 'Prazo' }),
+      items: t.array(t.object({ label: t.string({ min: 1, max: 80, label: 'Item' }), done: t.boolean({ optional: true }) }, { strict: true, maxKeys: 2 }), { max: 30, optional: true, label: 'Itens' }),
+      destinations: t.array(t.object({ label: t.string({ min: 1, max: 40, label: 'Destino' }), checked: t.boolean({ optional: true }) }, { strict: true, maxKeys: 2 }), { max: 30, optional: true, label: 'Destinos' }),
+      notes: t.string({ max: 2000, optional: true, label: 'Observações' })
+    }, { label: 'Entrega', strict: true, maxKeys: 5 })],
+    returns: 'Controle de entrega',
+    api: ['setProjectDelivery']
+  },
+  'projects:exportInfo': { args: [PROJECT_ID('id')], returns: '{ filePath } ou null se cancelou (o usuário escolhe onde salvar)', api: ['exportProjectInfo'] },
+  'projects:recentActivity': { args: [t.int({ name: 'limit', min: 1, max: 100, optional: true, label: 'Limite' })], returns: 'Atividade recente de todos os projetos', api: ['listProjectsRecentActivity'] },
+  'projects:createDefaultBins': { args: [PROJECT_ID()], returns: 'Nomes das pastas criadas', api: ['createProjectDefaultBins'] },
+  // Sincronização multicâmera (aba Áudio) e exportação xmeml (formato do Premiere/PluralEyes)
+  'projects:listSyncSources': { args: [PROJECT_ID()], returns: 'Fontes (pastas de 1º nível) com os clipes encadeados', api: ['listProjectSyncSources'] },
+  'projects:runMulticamSync': {
+    args: [OBJ('payload', {
+      projectId: PROJECT_ID('projectId'),
+      masterSourceId: t.int({ min: 0, max: 2147483647, label: 'Fonte mestre' }),
+      sourceIds: t.array(t.int({ min: 0, max: 2147483647 }), { max: 50, optional: true, label: 'Fontes' }),
+      name: t.string({ max: 120, optional: true, label: 'Nome' })
+    }, { label: 'Sincronização', strict: true, maxKeys: 4 })],
+    returns: '{ groupId, lanes, start, end, duration }',
+    api: ['runMulticamSync']
+  },
+  'projects:getMulticamModel': { args: [PROJECT_ID(), ID('groupId', { label: 'ID do grupo' })], returns: 'Linhas e posições de um grupo de sincronia', api: ['getMulticamModel'] },
+  'projects:setSyncClipOffset': {
+    args: [ID('groupId', { label: 'ID do grupo' }), ID('mediaId', { label: 'ID da mídia' }), t.number({ name: 'offsetSeconds', min: -360000, max: 360000, label: 'Posição (s)' })],
+    returns: 'ID do item',
+    api: ['setSyncClipOffset']
+  },
+  'projects:exportXmeml': {
+    args: [PROJECT_ID('id'), OBJ('options', {
+      mode: t.string({ pattern: /^(bins|multicam)$/, label: 'Modo' }),
+      groupId: t.int({ min: 1, max: 2147483647, optional: true, label: 'ID do grupo' }),
+      sequenceName: t.string({ max: 120, optional: true, label: 'Nome da sequência' })
+    }, { label: 'Opções', strict: true, maxKeys: 3 })],
+    returns: '{ filePath, ... } ou null se cancelou (o usuário escolhe onde salvar)',
+    api: ['exportProjectXmeml']
+  },
   'projects:getBins': { args: [PROJECT_ID()], returns: 'Pastas do projeto', api: ['getProjectBins'] },
   'projects:createBin': { args: [PROJECT_ID(), OPT_ID('parentId', 'ID da pasta'), STR('name', 500, { nonBlank: true, label: 'Nome da pasta' })], returns: 'ID da pasta criada', api: ['createProjectBin'] },
   'projects:updateBin': { args: [ID('id', { label: 'ID da pasta' }), STR('name', 500, { optional: true, label: 'Nome da pasta' }), OPT_ID('parentId', 'ID da pasta')], returns: 'Resultado', api: ['updateProjectBin'] },

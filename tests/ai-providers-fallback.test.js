@@ -500,8 +500,9 @@ test('migração: o ai.json antigo (um servidor) vira o primeiro provedor, com p
 
 test('migração: preset detectado pelo endereço (Groq, Qwen, LM Studio, Ollama, OpenAI) e servidor "de fábrica" não vira provedor', () => {
   const cases = [
-    ['https://api.groq.com/openai/v1', 'groq'], ['https://dashscope-intl.aliyuncs.com/compatible-mode/v1', 'qwen'],
-    ['https://maas.qwencloudapi.com/compatible-mode/v1', 'qwen-alt'], ['http://localhost:1234/v1', 'lmstudio'],
+    ['https://api.groq.com/openai/v1', 'groq'], ['https://maas.qwencloudapi.com/compatible-mode/v1', 'qwencloud'],
+    // o preset do Model Studio foi removido: endereço antigo vira "Personalizado" (chave e modelo preservados)
+    ['https://dashscope-intl.aliyuncs.com/compatible-mode/v1', 'custom'], ['http://localhost:1234/v1', 'lmstudio'],
     ['http://127.0.0.1:11434/v1', 'ollama'], ['https://api.openai.com/v1', 'openai'], ['http://192.168.0.5:8080/v1', 'custom']
   ];
   for (const [url, preset] of cases) {
@@ -516,22 +517,32 @@ test('migração: preset detectado pelo endereço (Groq, Qwen, LM Studio, Ollama
   assert.equal(cfg.ready, false);
 });
 
-test('presets: Groq, Qwen oficial, Qwen de outro endereço (não confirmado), LM Studio, Ollama, OpenAI e Personalizado', () => {
+test('presets: Groq, Qwen (QwenCloud Pay-As-You-Go), LM Studio, Ollama, OpenAI e Personalizado; todos de origem confirmada', () => {
   const list = presets.publicList();
-  assert.deepEqual(list.map((p) => p.id), ['groq', 'qwen', 'qwen-alt', 'lmstudio', 'ollama', 'openai', 'custom']);
+  assert.deepEqual(list.map((p) => p.id), ['groq', 'qwencloud', 'lmstudio', 'ollama', 'openai', 'custom']);
   const by = Object.fromEntries(list.map((p) => [p.id, p]));
   assert.deepEqual([by.groq.baseUrl, by.groq.model], ['https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile']);
-  assert.deepEqual([by.qwen.baseUrl, by.qwen.model], ['https://dashscope-intl.aliyuncs.com/compatible-mode/v1', 'qwen-plus']);
-  assert.equal(by['qwen-alt'].baseUrl, 'https://maas.qwencloudapi.com/compatible-mode/v1');
-  assert.equal(by['qwen-alt'].unverified, true);
-  assert.match(by['qwen-alt'].warning, /não confirmado como oficial/);
-  assert.equal(by.qwen.unverified, false);
-  assert.ok(new URL(by.qwen.baseUrl).hostname.endsWith('aliyuncs.com'));
+  // QwenCloud (Pay-As-You-Go): endereço publicado em docs.qwencloud.com, marca da Alibaba fora da China; único preset Qwen
+  assert.deepEqual([by.qwencloud.label, by.qwencloud.baseUrl, by.qwencloud.model], ['Qwen', 'https://maas.qwencloudapi.com/compatible-mode/v1', 'qwen-plus']);
+  for (const p of list) assert.equal(p.unverified, false, `${p.id} é de origem confirmada`);
+  assert.ok(list.every((p) => p.warning === ''));
 
   const ai = new AIService({ configDir: tmpDir(), safeStorage });
-  const cfg = ai.saveConfig({ addProvider: { preset: 'qwen-alt' } });
+  const cfg = ai.saveConfig({ addProvider: { preset: 'qwencloud' } });
   const p = cfg.providers[0];
-  assert.deepEqual([p.preset, p.model, p.unverifiedAddress, p.keyRequired, p.isLocal, p.needsRemoteConsent, p.state], ['qwen-alt', 'qwen-plus', true, true, false, true, 'nokey']);
+  assert.deepEqual([p.preset, p.model, p.unverifiedAddress, p.keyRequired, p.isLocal, p.needsRemoteConsent, p.state], ['qwencloud', 'qwen-plus', false, true, false, true, 'nokey']);
+
+  // provedor salvo com o preset removido ('qwen' do Model Studio) ou com o id antigo 'qwen-alt': endereço, chave e modelo ficam
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'ai.json'), JSON.stringify({
+    providers: [
+      { id: 'a', preset: 'qwen', label: 'Meu Qwen', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', apiKeyEnc: 'x', model: 'qwen-max', enabled: true },
+      { id: 'b', preset: 'qwen-alt', label: 'Qwen (outro endereço)', baseUrl: 'https://maas.qwencloudapi.com/compatible-mode/v1', apiKeyEnc: 'y', model: 'qwen-plus', enabled: true }
+    ],
+    order: ['a', 'b']
+  }));
+  const old = new AIService({ configDir: dir, safeStorage }).getPublicConfig().providers;
+  assert.deepEqual(old.map((x) => [x.preset, x.label, x.model, x.hasKey]), [['custom', 'Meu Qwen', 'qwen-max', true], ['qwencloud', 'Qwen (outro endereço)', 'qwen-plus', true]]);
 });
 
 // ----------------------------------------------------------------- ordem, gestão, validações

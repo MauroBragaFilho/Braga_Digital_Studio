@@ -62,6 +62,77 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
   });
   handle('projects:delete', (_, id) => projectService.deleteProject(id));
 
+  // --- Tela Projetos (.docs/BDS_TELA_PROJETOS.md): resumo, duplicar, dispositivos, atividade, entrega ---
+  handle('projects:duplicate', (_, id) => projectService.duplicateProject(id));
+  handle('projects:getSummary', (_, id) => projectService.getProjectSummary(id));
+  handle('projects:listDevices', (_, projectId) => projectService.listDevices(projectId));
+  handle('projects:addDevice', (_, projectId, device) => projectService.addDevice(projectId, device || {}));
+  handle('projects:removeDevice', (_, id) => projectService.removeDevice(id));
+  handle('projects:listActivity', (_, projectId, limit) => projectService.listActivity(projectId, limit));
+  handle('projects:getDelivery', (_, projectId) => projectService.getDelivery(projectId));
+  handle('projects:setDelivery', (_, projectId, delivery) => projectService.setDelivery(projectId, delivery || {}));
+  handle('projects:recentActivity', (_, limit) => projectService.listRecentActivity(limit));
+  handle('projects:createDefaultBins', (_, projectId) => projectService.createDefaultBins(projectId));
+
+  // --- Sincronização multicâmera (aba Áudio) e exportação xmeml no formato do Premiere/PluralEyes ---
+  let multicam = null;
+  const getMulticam = () => {
+    if (!audioSyncService) throw new Error('Sincronização de áudio indisponível — verifique se o motor de mídia foi carregado corretamente.');
+    if (!multicam) multicam = new (require('../core/projects/MulticamSyncService'))({ projectService, audioSyncService });
+    return multicam;
+  };
+  let xmeml = null;
+  const getXmeml = () => { if (!xmeml) xmeml = new (require('../core/projects/XmemlExporter'))(projectService); return xmeml; };
+
+  handle('projects:listSyncSources', (_, projectId) => getMulticam().listSources(projectId));
+  handle('projects:runMulticamSync', (event, { projectId, masterSourceId, sourceIds, name }) => getMulticam().sync({
+    projectId, masterSourceId, sourceIds: sourceIds || null, name: name || null,
+    onProgress: (p) => { try { event.sender.send('projects:audioSyncProgress', { projectId, ...p }); } catch (_) { /* janela fechada */ } }
+  }));
+  handle('projects:getMulticamModel', (_, projectId, groupId) => getMulticam().getModel(projectId, groupId));
+  handle('projects:setSyncClipOffset', (_, groupId, mediaId, offsetSeconds) => projectService.upsertSyncGroupItem(groupId, mediaId, offsetSeconds));
+  handle('projects:exportXmeml', async (event, id, { mode, groupId, sequenceName }) => {
+    const project = projectService.getProjectById(id);
+    if (!project) throw new Error('Projeto não encontrado');
+    const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+    const safe = String(project.name).replace(/[\\/:*?"<>|]+/g, '-').trim().slice(0, 80) || 'projeto';
+    const suffix = mode === 'multicam' ? ' - Multicam' : ' - Pastas';
+    const r = await dialog.showSaveDialog(win, {
+      title: mode === 'multicam' ? 'Exportar sequência multicâmera (XML)' : 'Exportar pastas do projeto (XML)',
+      defaultPath: `${safe}${suffix}.xml`,
+      filters: [{ name: 'XML do Premiere', extensions: ['xml'] }]
+    });
+    if (!r || r.canceled || !r.filePath) return null;
+    let result;
+    if (mode === 'multicam') {
+      if (!groupId) throw new Error('Escolha uma sincronização para exportar.');
+      const model = getMulticam().getModel(id, groupId);
+      result = getXmeml().exportMulticam(id, model, r.filePath, { sequenceName: sequenceName || null });
+      projectService.logActivity(id, 'exportado', 'Sequência multicâmera exportada (XML)');
+    } else {
+      result = getXmeml().exportBins(id, r.filePath);
+      projectService.logActivity(id, 'exportado', 'Pastas exportadas para o Premiere (XML)');
+    }
+    return result;
+  });
+
+  // "Exportar informações": resumo em Markdown; o USUÁRIO escolhe onde salvar (diálogo do sistema)
+  handle('projects:exportInfo', async (event, id) => {
+    const { buildProjectInfo } = require('../core/projects/projectInfoExport');
+    const info = buildProjectInfo(projectService, id);
+    const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+    const documents = (() => { try { return require('electron').app.getPath('documents'); } catch (_) { return ''; } })();
+    const r = await dialog.showSaveDialog(win, {
+      title: 'Exportar informações do projeto',
+      defaultPath: documents ? path.join(documents, info.fileName) : info.fileName,
+      filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'Texto', extensions: ['txt'] }]
+    });
+    if (!r || r.canceled || !r.filePath) return null;
+    fs.writeFileSync(r.filePath, info.content, 'utf8');
+    projectService.logActivity(id, 'exportado', 'Informações exportadas');
+    return { filePath: r.filePath };
+  });
+
   handle('projects:getBins', (_, projectId) => projectService.getProjectBins(projectId));
   handle('projects:createBin', (_, projectId, parentId, name) => projectService.createBin(projectId, parentId, name));
   handle('projects:updateBin', (_, id, name, parentId) => projectService.updateBin(id, name, parentId));
@@ -206,7 +277,9 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
     if (!bdsproPackageService) throw new Error('BdsproPackageService não inicializado');
     const id = assertPositiveInt(projectId, 'ID do projeto');
     const out = await resolveExportOutput(event, outputPath, '.bdspro', 'Arquivo de saída');
-    return bdsproPackageService.exportBdspro(id, out, thumbnailsDir);
+    const result = await bdsproPackageService.exportBdspro(id, out, thumbnailsDir);
+    projectService.logActivity(id, 'exportado', 'Pacote .bdspro exportado');
+    return result;
   });
 
   handle('projects:inspectBdspro', (_, bdsproPath) => {
@@ -232,11 +305,15 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
 
   handle('projects:exportPremiere', async (event, projectId, outputPath) => {
     const id = assertPositiveInt(projectId, 'ID do projeto');
-    return premiereExporter.exportToPremiereXml(id, await resolveExportOutput(event, outputPath, '.xml', 'Arquivo de saída'));
+    const result = await premiereExporter.exportToPremiereXml(id, await resolveExportOutput(event, outputPath, '.xml', 'Arquivo de saída'));
+    projectService.logActivity(id, 'exportado', 'XML para o Premiere exportado');
+    return result;
   });
   handle('projects:exportSequencePremiere', async (event, projectId, outputPath) => {
     const id = assertPositiveInt(projectId, 'ID do projeto');
-    return premiereExporter.exportSequenceXml(id, await resolveExportOutput(event, outputPath, '.xml', 'Arquivo de saída'));
+    const result = await premiereExporter.exportSequenceXml(id, await resolveExportOutput(event, outputPath, '.xml', 'Arquivo de saída'));
+    projectService.logActivity(id, 'exportado', 'Sequência exportada para o Premiere');
+    return result;
   });
   handle('projects:getSequenceModel', (_, projectId) => {
     if (!sequenceBuilder) throw new Error('SequenceBuilder não inicializado');

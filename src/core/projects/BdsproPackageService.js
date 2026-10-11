@@ -67,10 +67,15 @@ function readBdsproPackage(bdsproPath) {
  */
 function validateProjectData(data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('project.json inválido: estrutura inesperada.');
-    for (const key of ['media', 'folders', 'syncGroups', 'markers']) {
+    for (const key of ['media', 'folders', 'syncGroups', 'markers', 'devices', 'activity']) {
         if (data[key] === undefined || data[key] === null) continue;
         if (!Array.isArray(data[key])) throw new Error(`project.json inválido: '${key}' deve ser uma lista.`);
         if (data[key].length > MAX_LIST_ITEMS) throw new Error(`project.json inválido: '${key}' com itens demais.`);
+    }
+    // 1.1.0: entrega é um objeto (ou ausente); dispositivos e atividade são listas de objetos
+    if (data.delivery !== undefined && data.delivery !== null && (typeof data.delivery !== 'object' || Array.isArray(data.delivery))) data.delivery = null;
+    for (const key of ['devices', 'activity']) {
+        if (Array.isArray(data[key])) data[key] = data[key].filter((x) => x && typeof x === 'object' && !Array.isArray(x));
     }
     if (data.metadata !== undefined && data.metadata !== null && (typeof data.metadata !== 'object' || Array.isArray(data.metadata))) {
         throw new Error('project.json inválido: metadata deve ser um objeto.');
@@ -402,7 +407,7 @@ class BdsproPackageService {
             newProjectId = this.projectService.createProject({
                 name: metadata.name ? `${metadata.name}` : 'Projeto Importado',
                 description: metadata.description || '',
-                status: metadata.status || 'Ativo',
+                status: metadata.status, // normalizado pelo serviço (aceita os 3 valores antigos)
                 color: metadata.color || '#3b82f6',
                 client: metadata.client || '',
                 type: metadata.type || '',
@@ -580,6 +585,24 @@ class BdsproPackageService {
                 }));
                 this.projectService.createSyncGroup(newProjectId, sg.name, masterMapped, itemsMapped);
             }
+
+            // 9. (1.1.0) Dispositivos, entrega e atividade do pacote; pacotes antigos simplesmente não os têm
+            for (const d of (projectData.devices || [])) {
+                try { this.projectService.addDevice(newProjectId, { category: d.category, name: d.name, note: d.note }); }
+                catch (_) { /* dispositivo sem nome: ignorado */ }
+            }
+            if (projectData.delivery) {
+                const dl = projectData.delivery;
+                this.projectService.setDelivery(newProjectId, { status: dl.status, deadline: dl.deadline, items: dl.items, destinations: dl.destinations, notes: dl.notes });
+            }
+            const activity = (projectData.activity || []).slice(-200);
+            for (const a of activity) {
+                if (a && typeof a.message === 'string') {
+                    this.projectService.db.prepare('INSERT INTO project_activity (project_id, kind, message, created_at) VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))')
+                        .run(newProjectId, typeof a.kind === 'string' ? a.kind.slice(0, 30) : 'editado', a.message.slice(0, 200), typeof a.created_at === 'string' ? a.created_at.slice(0, 30) : null);
+                }
+            }
+            this.projectService.logActivity(newProjectId, 'importado', 'Importado de um pacote .bdspro');
 
             this.projectService.db.exec('COMMIT');
             } catch (txErr) {

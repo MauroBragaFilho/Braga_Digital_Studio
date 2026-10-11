@@ -102,6 +102,8 @@ const projects_list = {
         id: p.id,
         nome: safeText(p.name, 80),
         situacao: safeText(p.status, 20),
+        ...(p.client ? { cliente: safeText(p.client, 60) } : {}),
+        ...(p.deadline ? { entrega: String(p.deadline).slice(0, 10) } : {}),
         midias: p.media_count || 0,
         criado: String(p.created_at || '').slice(0, 10)
       }))
@@ -147,11 +149,21 @@ const project_get = {
         marcadores: markers.filter((m) => m.sequence_id === s.id).length
       };
     };
+    // Dispositivos e entrega (tela Projetos): só nomes e estados, nunca caminhos
+    const devices = typeof ctx.projects.listDevices === 'function' ? ctx.projects.listDevices(args.id) : [];
+    const delivery = typeof ctx.projects.getDelivery === 'function' ? ctx.projects.getDelivery(args.id) : null;
     return {
       id: project.id,
       nome: safeText(project.name, 80),
       descricao: safeText(project.description, 300),
       situacao: safeText(project.status, 20),
+      ...(project.client ? { cliente: safeText(project.client, 60) } : {}),
+      ...(project.deadline ? { entrega: String(project.deadline).slice(0, 10) } : {}),
+      ...(devices.length ? { dispositivos: devices.slice(0, 20).map((d) => safeText(d.name, 60)) } : {}),
+      ...(delivery && delivery.saved ? {
+        entrega_status: safeText(delivery.status, 20),
+        entrega_itens: delivery.items.slice(0, 20).map((i) => `${i.done ? '[x]' : '[ ]'} ${safeText(i.label, 40)}`)
+      } : {}),
       pastas: bins.slice(0, MAX_BINS).map((b) => ({ id: b.id, nome: binName.get(b.id), pasta_pai: b.parent_id ? (binName.get(b.parent_id) || null) : null })),
       total_de_midias: media.length,
       midias: media.slice(0, MAX_PROJECT_MEDIA).map((m) => ({

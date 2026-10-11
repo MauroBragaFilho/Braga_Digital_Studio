@@ -1,568 +1,689 @@
-import { els, setAppStatus } from '../app.js';
-import { escapeHtml } from '../utils/escape.js';
+/**
+ * Tela "Projetos" (.docs/BDS_TELA_PROJETOS.md): cartões de projeto com capa, nome, cliente, status, prazo e
+ * última atividade; busca, filtro por situação e ordenação; formulário simples de novo projeto (com Observações e
+ * capa); menu ⋮ por projeto (abrir, renomear, alterar capa/status, duplicar, exportar informações, arquivar,
+ * excluir). Abrir um projeto leva à área interna (project_workspace). Textos entram por textContent.
+ */
+
+import { setAppStatus } from '../app.js';
 import { enhanceModals } from '../utils/modal.js';
 import { friendlyError } from '../utils/friendlyError.js';
 import { daysUntilLocal, formatLocalDate } from '../utils/localDate.js';
 import { toFileUrl } from '../utils/fileUrl.js';
 import { setContextProvider } from '../utils/assistantContext.js';
+import { STATUSES, STATUS_FILTERS, ACTIVE_STATUSES, normalizeStatus, statusInfo } from '../utils/projectStatus.js';
+
+const $ = (id) => document.getElementById(id);
+const DEFAULT_COLOR = '#3b82f6';
 
 /** Só aceita cor hexadecimal (#rgb, #rgba, #rrggbb, #rrggbbaa); qualquer outra coisa vira o padrão. */
-function safeHexColor(value, fallback = '#3b82f6') {
-    return typeof value === 'string' && /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value) ? value : fallback;
+function safeHexColor(value, fallback = DEFAULT_COLOR) {
+  return typeof value === 'string' && /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value) ? value : fallback;
 }
 
 /** Os diálogos devolvem string, array de caminhos ou { filePaths }: normaliza para o 1º caminho (ou null). */
 function firstDialogPath(res) {
-    if (!res) return null;
-    if (typeof res === 'string') return res;
-    const list = Array.isArray(res) ? res : (res.canceled ? [] : res.filePaths);
-    return Array.isArray(list) && list.length > 0 ? list[0] : null;
+  if (!res) return null;
+  if (typeof res === 'string') return res;
+  const list = Array.isArray(res) ? res : (res.canceled ? [] : res.filePaths);
+  return Array.isArray(list) && list.length > 0 ? list[0] : null;
 }
 
+function h(tag, props = {}, children = []) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k === 'disabled') el.disabled = !!v;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of (Array.isArray(children) ? children : [children])) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+const icon = (name) => h('span', { class: 'material-symbols-rounded', 'aria-hidden': 'true', text: name });
 
 let projectsList = [];
 let selectedProjectId = null;
+let query = '';
+let filter = 'active';   // a lista abre só com o que está em andamento
+let sort = 'deadline';   // o que vence primeiro
+let view = 'grid';       // 'grid' | 'list'
+let formCoverPath = '';
+let bound = false;
+const VIEW_KEY = 'bds.projects.view';
 
 export function initScreen() {
-    // Assistente de IA: o projeto selecionado na lista entra no contexto da tela (só o id)
-    setContextProvider('projectSelected', () => selectedProjectId);
-    loadProjects();
-    setupEventListeners();
-    enhanceModals(document.getElementById('projectsView') || document, '.proj-modal-overlay');
+  // Assistente de IA: o projeto selecionado na lista entra no contexto da tela (só o id)
+  setContextProvider('projectSelected', () => selectedProjectId);
+  try { view = localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch (_) { /* sem armazenamento */ }
+  bindOnce();
+  if ($('projFilter')) $('projFilter').value = filter;
+  if ($('projSort')) $('projSort').value = sort;
+  applyView();
+  loadProjects();
+  enhanceModals($('projectsView') || document, '.proj-modal-overlay');
 }
 
+function applyView() {
+  $('projViewGrid')?.classList.toggle('active', view === 'grid');
+  $('projViewList')?.classList.toggle('active', view === 'list');
+  $('projViewGrid')?.setAttribute('aria-pressed', String(view === 'grid'));
+  $('projViewList')?.setAttribute('aria-pressed', String(view === 'list'));
+  $('projectsGrid')?.classList.toggle('hidden', view !== 'grid');
+  $('projectsTable')?.classList.toggle('hidden', view !== 'list');
+}
+
+export async function onEnter() {
+  await loadProjects();
+}
+
+export function onKeyDown(e) {
+  if (e.key === 'Escape') { hideMenu(); }
+}
+
+// ------------------------------------------------------------------ utilitários
+
 function formatBytes(bytes) {
-    if (bytes === 0 || !bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 // Datas 'YYYY-MM-DD' são dias de calendário: o parse como data local fica em utils/localDate.js
-function formatDate(isoStr) {
-    return formatLocalDate(isoStr);
+const formatDate = (iso) => formatLocalDate(iso);
+
+/** Selo de prazo: texto e tom (cor só por --status-*). */
+function deadlinePill(deadline, status) {
+  if (!deadline) return { text: 'Sem prazo', tone: 'muted', icon: 'schedule' };
+  if (status === 'Concluído' || status === 'Arquivado') return { text: `Entrega ${formatDate(deadline)}`, tone: 'muted', icon: 'event_available' };
+  const d = daysUntilLocal(deadline);
+  if (d === null) return { text: 'Sem prazo', tone: 'muted', icon: 'schedule' };
+  if (d < 0) return { text: `${Math.abs(d)} ${Math.abs(d) === 1 ? 'dia' : 'dias'} de atraso`, tone: 'bad', icon: 'error' };
+  if (d === 0) return { text: 'Entrega hoje', tone: 'bad', icon: 'warning' };
+  if (d === 1) return { text: 'Entrega amanhã', tone: 'warn', icon: 'warning' };
+  if (d <= 5) return { text: `Entrega em ${d} dias`, tone: 'warn', icon: 'schedule' };
+  return { text: `Entrega ${formatDate(deadline)}`, tone: 'ok', icon: 'event' };
 }
 
-// exceção: cores do selo de prazo ficam sobre a capa escura do cartão (independentes de tema)
-function getDeadlinePill(deadlineStr) {
-    if (!deadlineStr) return { text: 'Sem Prazo', color: '#bdbdbd', icon: 'schedule' };
-
-    const diffDays = daysUntilLocal(deadlineStr);
-    if (diffDays === null) return { text: 'Sem Prazo', color: '#bdbdbd', icon: 'schedule' };
-
-    if (diffDays < 0) {
-        return { text: `${Math.abs(diffDays)} dias atrasado`, color: '#f44336', icon: 'error' }; // 🔴 Vermelho (Atrasado)
-    } else if (diffDays === 0) {
-        return { text: 'Hoje', color: '#f44336', icon: 'warning' }; // 🔴 Vermelho
-    } else if (diffDays === 1) {
-        return { text: 'Amanhã', color: '#ff9800', icon: 'warning' }; // 🟠 Laranja
-    } else if (diffDays <= 5) {
-        return { text: `${diffDays} dias`, color: '#ffc107', icon: 'schedule' }; // 🟡 Amarelo
-    } else {
-        return { text: `${diffDays} dias`, color: '#4caf50', icon: 'check_circle' }; // 🟢 Verde
-    }
+/** "Hoje, 22:41", "Ontem", "12/03/2026" a partir de um DATETIME do banco (UTC). */
+function relativeActivity(value) {
+  if (!value) return '';
+  const d = new Date(String(value).includes('T') ? value : `${value}Z`.replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return `Hoje, ${hm}`;
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return `Ontem, ${hm}`;
+  return d.toLocaleDateString('pt-BR');
 }
+
+// ------------------------------------------------------------------ dados
 
 async function loadProjects() {
-    try {
-        const grid = document.getElementById('projectsGrid');
-        if (grid && projectsList.length === 0) {
-            // Primeira carga: esqueletos no lugar da grade (substituídos por renderGrid)
-            grid.setAttribute('aria-busy', 'true');
-            grid.innerHTML = '<div class="proj-card bds-skeleton" aria-hidden="true"></div>'.repeat(3);
-        }
-        projectsList = await window.bds.listProjects();
-        renderGrid();
-    } catch (e) {
-        console.error('Erro ao listar projetos', e);
-        setAppStatus('Erro ao carregar projetos', 'error');
+  const grid = $('projectsGrid');
+  try {
+    if (grid && projectsList.length === 0) {
+      grid.setAttribute('aria-busy', 'true');
+      grid.textContent = '';
+      for (let i = 0; i < 3; i++) grid.append(h('div', { class: 'proj-card bds-skeleton', 'aria-hidden': 'true' }));
     }
+    projectsList = (await window.bds.listProjects()) || [];
+    renderGrid();
+    renderSummary();
+    renderRail();
+    loadRecentActivity();
+  } catch (e) {
+    console.error('Erro ao listar projetos', e);
+    setAppStatus('Erro ao carregar projetos', 'error');
+    if (grid) grid.removeAttribute('aria-busy');
+  }
 }
+
+function visibleProjects() {
+  const q = query.trim().toLowerCase();
+  const f = STATUS_FILTERS.find((x) => x.id === filter) || STATUS_FILTERS[0];
+  let list = projectsList.filter((p) => {
+    const st = normalizeStatus(p.status);
+    if (f.statuses && !f.statuses.includes(st)) return false;
+    if (filter === 'all' && st === 'Arquivado' && !q) return false; // arquivados só no filtro próprio (ou na busca)
+    if (!q) return true;
+    return [p.name, p.client, p.type, p.description, st, p.start_date, p.deadline].some((v) => String(v || '').toLowerCase().includes(q));
+  });
+  const byDate = (v) => (v ? new Date(String(v).includes('T') ? v : `${v}Z`.replace(' ', 'T')).getTime() || 0 : 0);
+  const sorters = {
+    recent: (a, b) => byDate(b.created_at) - byDate(a.created_at),
+    oldest: (a, b) => byDate(a.created_at) - byDate(b.created_at),
+    deadline: (a, b) => (a.deadline ? String(a.deadline) : '9999') .localeCompare(b.deadline ? String(b.deadline) : '9999'),
+    name: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'),
+    activity: (a, b) => byDate(b.last_activity_at || b.created_at) - byDate(a.last_activity_at || a.created_at)
+  };
+  list = list.slice().sort(sorters[sort] || sorters.recent);
+  return list;
+}
+
+// ------------------------------------------------------------------ cartões
 
 function renderGrid() {
-    const grid = document.getElementById('projectsGrid');
-    if (!grid) return;
-    
-    grid.innerHTML = '';
-    grid.removeAttribute('aria-busy');
-    bindGridDelegation();
-    
-    if (projectsList.length === 0) {
-        grid.innerHTML = '<div class="proj-empty-state bds-empty" role="status"><span class="material-symbols-rounded bds-empty-icon" aria-hidden="true">create_new_folder</span>'
-            + '<strong class="bds-empty-title">Nenhum projeto ainda</strong>'
-            + '<span class="bds-empty-text">Projetos reúnem os arquivos de um trabalho (vídeos, áudios, fotos e prazos) em um só lugar.</span>'
-            + '<button type="button" class="bds-empty-action" data-empty-action="new-project">Criar primeiro projeto</button></div>';
-        return;
-    }
-    
-    projectsList.forEach(proj => {
-        const pill = getDeadlinePill(proj.deadline);
-        const displayCount = proj.media_count || 0;
-        const displaySize = formatBytes(proj.total_size);
-        
-        // Cor do gradiente baseada na cor do projeto
-        const bgColor = safeHexColor(proj.color);
-        
-        const card = document.createElement('div');
-        card.className = `proj-card ${selectedProjectId === proj.id ? 'selected' : ''}`;
-        card.dataset.id = String(proj.id);
-        card.innerHTML = `
-            <div class="proj-card-cover">
-                <div class="proj-card-cover-gradient"></div>
-                <div class="proj-card-pill">
-                    <span class="proj-card-pill-dot" aria-hidden="true">●</span> ${pill.text}
-                </div>
-            </div>
-            <div class="proj-card-info">
-                <h4 class="proj-card-title" title="${escapeHtml(proj.name)}">${escapeHtml(proj.name)}</h4>
-                <div class="proj-card-dates">
-                    <span>📅 Início: ${formatDate(proj.start_date)}</span>
-                    <span>🎯 Entrega: ${formatDate(proj.deadline)}</span>
-                </div>
-                <div class="proj-card-stats">
-                    <span title="Vídeos"><span class="material-symbols-rounded">movie</span> ${displayCount} mídias</span>
-                    <span title="Espaço"><span class="material-symbols-rounded">hard_drive</span> ${displaySize}</span>
-                </div>
-            </div>
-        `;
-        
-        // Valores dinâmicos (capa, cores) via setters DOM: nada de string interpolada em style=
-        const cover = card.querySelector('.proj-card-cover');
-        if (cover && proj.cover_path) cover.style.backgroundImage = `url(${JSON.stringify(toFileUrl(proj.cover_path))})`;
-        const gradient = card.querySelector('.proj-card-cover-gradient');
-        if (gradient) gradient.style.background = `linear-gradient(0deg, ${bgColor}33 0%, transparent 100%)`;
-        const info = card.querySelector('.proj-card-info');
-        if (info) info.style.background = `linear-gradient(180deg, transparent 0%, ${bgColor}11 100%)`;
-        const dot = card.querySelector('.proj-card-pill-dot');
-        if (dot) dot.style.color = pill.color; // constante interna de getDeadlinePill (não vem de dados do usuário)
+  const grid = $('projectsGrid');
+  if (!grid) return;
+  grid.removeAttribute('aria-busy');
+  grid.textContent = '';
+  const list = visibleProjects();
+  const count = $('projCount');
 
-        grid.appendChild(card);
-    });
+  if (projectsList.length === 0) {
+    if (count) count.textContent = '';
+    grid.append(h('div', { class: 'bds-empty proj-empty', role: 'status' }, [
+      h('span', { class: 'material-symbols-rounded bds-empty-icon', 'aria-hidden': 'true', text: 'folder_special' }),
+      h('strong', { class: 'bds-empty-title', text: 'Nenhum projeto ainda' }),
+      h('span', { class: 'bds-empty-text', text: 'Cada projeto reúne as mídias, o cliente, as datas, os equipamentos e a entrega de um trabalho.' }),
+      h('button', { type: 'button', class: 'bds-empty-action', 'data-empty-action': 'new-project', onclick: () => $('btnNewProject')?.click() }, 'Criar primeiro projeto')
+    ]));
+    return;
+  }
+  const filterLabel = { active: 'em andamento', waiting: 'aguardando cliente', done: 'concluídos', archived: 'arquivados', all: '' }[filter] || '';
+  const hasArchived = projectsList.some((p) => normalizeStatus(p.status) === 'Arquivado');
+  if (count) count.textContent = `${list.length} ${list.length === 1 ? 'projeto' : 'projetos'}${filterLabel ? ` ${filterLabel}` : ''}${filter !== 'archived' && hasArchived ? ' · arquivados ficam no filtro' : ''}`;
+  renderTable(list);
+  if (list.length === 0) {
+    grid.append(h('div', { class: 'bds-empty proj-empty', role: 'status' }, [
+      h('span', { class: 'material-symbols-rounded bds-empty-icon', 'aria-hidden': 'true', text: 'search_off' }),
+      h('strong', { class: 'bds-empty-title', text: 'Nenhum projeto encontrado' }),
+      h('span', { class: 'bds-empty-text', text: 'Tente outra busca ou outro filtro.' })
+    ]));
+    return;
+  }
+  for (const p of list) grid.append(renderCard(p));
+  grid.append(h('button', { type: 'button', class: 'proj-card proj-card-new', 'aria-label': 'Novo projeto', onclick: () => openForm(null) }, [icon('add'), h('span', { text: 'Novo projeto' })]));
 }
 
-// Delegação única no grid (cliques/duplo clique) em vez de dois listeners por cartão
-function bindGridDelegation() {
-    const grid = document.getElementById('projectsGrid');
-    if (!grid || grid.dataset.delegated) return;
-    grid.dataset.delegated = '1';
-    const idOf = (e) => {
-        const card = e.target.closest('.proj-card');
-        return card && grid.contains(card) ? Number(card.dataset.id) : null;
-    };
-    grid.addEventListener('click', (e) => {
-        if (e.target.closest('[data-empty-action="new-project"]')) { document.getElementById('btnNewProject')?.click(); return; }
-        const id = idOf(e); if (id !== null) selectProject(id); });
-    grid.addEventListener('dblclick', (e) => { const id = idOf(e); if (id !== null) openProjectWorkspace(id); });
+/** Modo lista: uma linha por projeto. */
+function renderTable(list) {
+  const body = $('projectsTableBody');
+  if (!body) return;
+  body.textContent = '';
+  for (const p of list) {
+    const st = statusInfo(p.status);
+    const pill = deadlinePill(p.deadline, st.id);
+    const stripe = h('span', { class: 'proj-card-color', 'aria-hidden': 'true' });
+    stripe.style.background = safeHexColor(p.color);
+    const tr = h('tr', { class: p.id === selectedProjectId ? 'selected' : '', 'data-id': p.id, tabindex: '0' }, [
+      h('td', {}, [h('div', { class: 'proj-td-name' }, [stripe, h('span', { class: 'proj-td-title', text: p.name, title: p.name })]), p.type ? h('div', { class: 'proj-td-sub', text: p.type }) : null]),
+      h('td', { text: p.client || '—' }),
+      h('td', {}, [h('span', { class: `proj-pill tone-${st.tone}` }, [icon(st.icon), st.id])]),
+      h('td', {}, [h('span', { class: `proj-pill tone-${pill.tone}` }, [icon(pill.icon), pill.text])]),
+      h('td', { class: 'proj-td-num', text: `${p.media_count || 0}${p.total_size ? ` · ${formatBytes(p.total_size)}` : ''}` }),
+      h('td', { class: 'proj-td-muted', text: p.last_activity_at ? relativeActivity(p.last_activity_at) : '—' }),
+      h('td', { class: 'proj-td-actions' }, [h('button', { class: 'proj-icon-btn', type: 'button', title: 'Mais ações', 'aria-label': `Ações de ${p.name}`, onclick: (e) => { e.stopPropagation(); showMenu(e.currentTarget, p); } }, [icon('more_vert')])])
+    ]);
+    tr.addEventListener('click', () => selectProject(p.id));
+    tr.addEventListener('dblclick', () => openProjectWorkspace(p.id));
+    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') openProjectWorkspace(p.id); });
+    body.append(tr);
+  }
 }
 
-/** Atualiza só o destaque de seleção (cartão anterior e novo), sem reconstruir a grade. */
-function updateCardSelection() {
-    const grid = document.getElementById('projectsGrid');
-    if (!grid) return;
-    grid.querySelector('.proj-card.selected')?.classList.remove('selected');
-    if (selectedProjectId !== null) {
-        grid.querySelector(`.proj-card[data-id="${CSS.escape(String(selectedProjectId))}"]`)?.classList.add('selected');
-    }
+/** Faixa de resumo: em andamento, aguardando cliente, entregas em 7 dias e material referenciado. */
+function renderSummary() {
+  const st = (p) => normalizeStatus(p.status);
+  const active = projectsList.filter((p) => ACTIVE_STATUSES.includes(st(p))).length;
+  const waiting = projectsList.filter((p) => st(p) === 'Aguardando cliente').length;
+  const due = projectsList.filter((p) => {
+    if (!p.deadline || st(p) === 'Concluído' || st(p) === 'Arquivado') return false;
+    const d = daysUntilLocal(p.deadline);
+    return d !== null && d <= 7;
+  }).length;
+  const size = projectsList.reduce((sum, p) => sum + (Number(p.total_size) || 0), 0);
+  const set = (id, v) => { const n = $(id); if (n) n.textContent = String(v); };
+  set('projStatActive', active); set('projStatWaiting', waiting); set('projStatDue', due); set('projStatSize', formatBytes(size));
+  $('projSummary')?.classList.toggle('hidden', projectsList.length === 0);
+}
+
+/** Coluna lateral: próximas entregas (projetos em andamento com prazo, as 6 mais próximas). */
+function renderRail() {
+  const ul = $('projDueList');
+  if (!ul) return;
+  ul.textContent = '';
+  const st = (p) => normalizeStatus(p.status);
+  const due = projectsList.filter((p) => p.deadline && st(p) !== 'Concluído' && st(p) !== 'Arquivado')
+    .sort((a, b) => String(a.deadline).localeCompare(String(b.deadline))).slice(0, 6);
+  if (!due.length) { ul.append(h('li', { class: 'proj-rail-empty', text: 'Nenhuma entrega com prazo.' })); return; }
+  for (const p of due) {
+    const d = daysUntilLocal(p.deadline);
+    const when = d === null ? formatDate(p.deadline) : d < 0 ? `${Math.abs(d)} ${Math.abs(d) === 1 ? 'dia' : 'dias'} de atraso` : d === 0 ? 'Hoje' : d === 1 ? 'Amanhã' : `Em ${d} dias`;
+    const tone = d === null ? 'muted' : d <= 0 ? 'bad' : d <= 5 ? 'warn' : 'ok';
+    const stripe = h('span', { class: 'proj-rail-stripe', 'aria-hidden': 'true' });
+    stripe.style.background = safeHexColor(p.color);
+    const progress = p.delivery_total ? ` · ${p.delivery_done}/${p.delivery_total} itens` : '';
+    ul.append(h('li', { class: 'proj-rail-item', tabindex: '0', role: 'button', onclick: () => openProjectWorkspace(p.id), onkeydown: (e) => { if (e.key === 'Enter') openProjectWorkspace(p.id); } }, [
+      stripe,
+      h('div', { class: 'proj-rail-text' }, [h('b', { text: p.name }), h('span', { class: `tone-${tone}`, text: `${when}${progress}` })])
+    ]));
+  }
+}
+
+async function loadRecentActivity() {
+  const ul = $('projActivityList');
+  if (!ul || typeof window.bds.listProjectsRecentActivity !== 'function') return;
+  let rows = [];
+  try { rows = (await window.bds.listProjectsRecentActivity(8)) || []; } catch (_) { rows = []; }
+  ul.textContent = '';
+  if (!rows.length) { ul.append(h('li', { class: 'proj-rail-empty', text: 'Nada registrado ainda.' })); return; }
+  const icons = { criado: 'add_circle', editado: 'edit', status: 'flag', midia: 'perm_media', pasta: 'folder', dispositivo: 'devices', entrega: 'local_shipping', exportado: 'ios_share', importado: 'archive', sincronizado: 'graphic_eq', transcrito: 'subtitles', duplicado: 'content_copy' };
+  for (const a of rows) {
+    ul.append(h('li', { class: 'proj-rail-item proj-rail-act', tabindex: '0', role: 'button', onclick: () => openProjectWorkspace(a.project_id), onkeydown: (e) => { if (e.key === 'Enter') openProjectWorkspace(a.project_id); } }, [
+      icon(icons[a.kind] || 'history'),
+      h('div', { class: 'proj-rail-text' }, [h('span', { text: a.message }), h('span', { class: 'proj-rail-muted', text: `${a.project_name} · ${relativeActivity(a.created_at)}` })])
+    ]));
+  }
+}
+
+function renderCard(p) {
+  const st = statusInfo(p.status);
+  const pill = deadlinePill(p.deadline, st.id);
+  const color = safeHexColor(p.color);
+  const cover = h('div', { class: `proj-card-cover${p.cover_path ? '' : ' is-empty'}` });
+  if (p.cover_path) cover.style.backgroundImage = `url("${toFileUrl(p.cover_path)}")`;
+  else { cover.style.background = `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 35%, var(--card)))`; cover.append(icon('movie')); }
+  const stripe = h('span', { class: 'proj-card-color', 'aria-hidden': 'true' });
+  stripe.style.background = color;
+
+  // selo de prazo sobre a capa; faixa lateral com a cor do projeto; barra com o progresso da entrega
+  cover.append(h('span', { class: `proj-card-due tone-${pill.tone}` }, [icon(pill.icon), pill.text]));
+  const total = Number(p.delivery_total) || 0;
+  const done = Number(p.delivery_done) || 0;
+  const progress = h('div', { class: 'proj-card-progress', title: total ? `Entrega: ${done} de ${total} itens` : 'Entrega ainda não iniciada', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total || 1), 'aria-valuenow': String(done) });
+  const fill = h('span', { class: 'proj-card-progress-fill' });
+  fill.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
+  progress.append(fill);
+  const body = h('div', { class: 'proj-card-body' }, [
+    h('h3', { class: 'proj-card-title', text: p.name, title: p.name }),
+    h('p', { class: 'proj-card-client', text: [p.client, p.type].filter(Boolean).join(' · ') || 'Sem cliente' }),
+    h('div', { class: 'proj-card-meta' }, [h('span', { class: `proj-pill tone-${st.tone}` }, [icon(st.icon), st.id])]),
+    progress,
+    h('div', { class: 'proj-card-foot' }, [
+      h('span', { text: `${p.media_count || 0} ${p.media_count === 1 ? 'arquivo' : 'arquivos'}${p.total_size ? ` · ${formatBytes(p.total_size)}` : ''}` }),
+      h('span', { class: 'proj-card-activity', text: p.last_activity_at ? relativeActivity(p.last_activity_at) : '' })
+    ])
+  ]);
+  body.style.borderLeftColor = color;
+  const card = h('div', {
+    class: `proj-card${p.id === selectedProjectId ? ' selected' : ''}${st.id === 'Arquivado' ? ' is-archived' : ''}`,
+    role: 'listitem', tabindex: '0', 'data-id': p.id, 'aria-label': p.name
+  }, [
+    cover,
+    h('button', { class: 'proj-card-menu', type: 'button', title: 'Mais ações', 'aria-label': `Ações de ${p.name}`, onclick: (e) => { e.stopPropagation(); showMenu(e.currentTarget, p); } }, [icon('more_vert')]),
+    body
+  ]);
+  void stripe;
+  card.addEventListener('click', () => selectProject(p.id));
+  card.addEventListener('dblclick', () => openProjectWorkspace(p.id));
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') openProjectWorkspace(p.id);
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); showMenu(card.querySelector('.proj-card-menu'), p); }
+  });
+  card.addEventListener('contextmenu', (e) => { e.preventDefault(); selectProject(p.id); showMenu(card.querySelector('.proj-card-menu'), p); });
+  return card;
 }
 
 function selectProject(id) {
-    selectedProjectId = id;
-    updateCardSelection(); // update selection highlight
-    
-    const proj = projectsList.find(p => p.id === id);
-    if (!proj) return;
-    
-    const inspector = document.getElementById('projectInspector');
-    if (inspector) {
-        inspector.classList.add('open');
-        
-        // Popula inspector
-        const coverEl = document.getElementById('inspectorProjCover');
-        coverEl.style.backgroundImage = proj.cover_path ? `url('file:///${proj.cover_path.replace(/\\/g, '/')}')` : 'none';
-        
-        document.getElementById('inspectorProjName').textContent = proj.name;
-        document.getElementById('inspectorProjColor').value = proj.color || '#3b82f6';
-        document.getElementById('inspectorProjStatus').textContent = proj.status || 'Ativo';
-        document.getElementById('inspectorProjClient').textContent = proj.client || '-';
-        document.getElementById('inspectorProjType').textContent = proj.type || '-';
-        document.getElementById('inspectorProjStart').textContent = formatDate(proj.start_date);
-        document.getElementById('inspectorProjDeadline').textContent = formatDate(proj.deadline);
-        document.getElementById('inspectorProjCount').textContent = proj.media_count || 0;
-        document.getElementById('inspectorProjSize').textContent = formatBytes(proj.total_size);
+  selectedProjectId = id;
+  document.querySelectorAll('.proj-card[data-id], #projectsTableBody tr').forEach((c) => c.classList.toggle('selected', Number(c.dataset.id) === id));
+}
+
+// ------------------------------------------------------------------ menu ⋮
+
+function showMenu(anchor, p) {
+  const menu = $('projMenu');
+  if (!menu || !anchor) return;
+  selectProject(p.id);
+  const st = normalizeStatus(p.status);
+  const entries = [
+    { icon: 'open_in_new', label: 'Abrir projeto', run: () => openProjectWorkspace(p.id) },
+    { icon: 'edit', label: 'Renomear / editar', run: () => openForm(p) },
+    { icon: 'image', label: 'Alterar capa', run: () => changeCover(p) },
+    { icon: 'flag', label: 'Alterar status', submenu: STATUSES.map((s) => ({ icon: s.icon, label: s.id, selected: s.id === st, run: () => setStatus(p, s.id) })) },
+    { icon: 'content_copy', label: 'Duplicar', run: () => duplicate(p) },
+    { icon: 'description', label: 'Exportar informações', run: () => exportInfo(p) },
+    { icon: 'inventory_2', label: 'Exportar pacote .bdspro', run: () => exportBdspro(p) },
+    { separator: true },
+    st === 'Arquivado'
+      ? { icon: 'unarchive', label: 'Desarquivar', run: () => setStatus(p, 'Planejamento') }
+      : { icon: 'archive', label: 'Arquivar', run: () => archive(p) },
+    { icon: 'delete', label: 'Excluir', danger: true, run: () => remove(p) }
+  ];
+  renderMenu(menu, entries);
+  menu.classList.remove('hidden');
+  const r = anchor.getBoundingClientRect();
+  const w = menu.offsetWidth || 240;
+  const hgt = menu.offsetHeight || 300;
+  menu.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
+  menu.style.top = `${Math.min(r.bottom + 6, window.innerHeight - hgt - 8)}px`;
+  menu.querySelector('button')?.focus();
+}
+
+function renderMenu(menu, entries) {
+  menu.textContent = '';
+  for (const e of entries) {
+    if (e.separator) { menu.append(h('hr', { class: 'proj-menu-sep' })); continue; }
+    if (e.submenu) {
+      const details = h('details', { class: 'proj-menu-sub' }, [
+        h('summary', { role: 'menuitem' }, [icon(e.icon), h('span', { text: e.label }), icon('chevron_right')])
+      ]);
+      for (const s of e.submenu) {
+        details.append(h('button', { type: 'button', role: 'menuitemradio', 'aria-checked': String(!!s.selected), class: s.selected ? 'selected' : '', onclick: () => { hideMenu(); s.run(); } }, [icon(s.icon), s.label]));
+      }
+      menu.append(details);
+      continue;
     }
+    menu.append(h('button', { type: 'button', role: 'menuitem', class: e.danger ? 'danger' : '', onclick: () => { hideMenu(); e.run(); } }, [icon(e.icon), e.label]));
+  }
+}
+function hideMenu() { $('projMenu')?.classList.add('hidden'); }
+
+// ------------------------------------------------------------------ ações do menu
+
+async function setStatus(p, status) {
+  try {
+    await window.bds.updateProject(p.id, { status });
+    setAppStatus(`Status alterado para ${status}.`, 'success');
+    await loadProjects();
+  } catch (e) { window.bdsModal.alert(`Não foi possível alterar o status: ${friendlyError(e)}`); }
 }
 
-/** ESC fecha o inspector de projetos (roteado pelo despachante central do app.js). */
-export function onKeyDown(e) {
-    if (e.key !== 'Escape') return;
-    // Ignora se estiver editando um campo de texto ou com modal aberto
-    const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea') return;
-    if (document.querySelector('.proj-modal-overlay.open')) return;
-    const inspector = document.getElementById('projectInspector');
-    if (inspector && inspector.classList.contains('open')) {
-        inspector.classList.remove('open');
-        selectedProjectId = null;
-        updateCardSelection();
+async function archive(p) {
+  const ok = await window.bdsModal.confirm(`Arquivar o projeto "${p.name}"?\n\nEle sai da lista principal (fica no filtro "Arquivados") e nada é apagado.`);
+  if (ok) await setStatus(p, 'Arquivado');
+}
+
+async function duplicate(p) {
+  try {
+    setAppStatus('Duplicando projeto…', 'info');
+    const newId = await window.bds.duplicateProject(p.id);
+    await loadProjects();
+    selectProject(newId);
+    setAppStatus('Projeto duplicado.', 'success');
+  } catch (e) { window.bdsModal.alert(`Não foi possível duplicar: ${friendlyError(e)}`); }
+}
+
+async function exportInfo(p) {
+  try {
+    const r = await window.bds.exportProjectInfo(p.id);
+    if (r && r.filePath) setAppStatus('Informações do projeto exportadas.', 'success');
+  } catch (e) { window.bdsModal.alert(`Não foi possível exportar as informações: ${friendlyError(e)}`); }
+}
+
+async function exportBdspro(p) {
+  try {
+    const destFolder = firstDialogPath(await window.bds.selectFolder());
+    if (!destFolder) return;
+    // O processo principal monta o caminho (nome sanitizado + path.join) e confirma a sobrescrita
+    setAppStatus('Exportando pacote .bdspro…', 'info');
+    const result = await window.bds.exportBdspro(p.id, { folder: destFolder, name: p.name });
+    if (result && result.success) {
+      setAppStatus(`Projeto "${p.name}" exportado.`, 'success');
+      window.bdsModal.alert(`Pacote .bdspro exportado.\n\nSalvo em: ${result.filePath}`);
     }
+  } catch (e) {
+    setAppStatus('Erro ao exportar pacote .bdspro', 'error');
+    window.bdsModal.alert(`Erro ao exportar: ${friendlyError(e)}`);
+  }
 }
 
-// Sem listeners globais próprios: onLeave/onEnter apenas atualizam a lista ao voltar
-export function onLeave() {}
-
-export function onEnter() {
-    loadProjects();
+async function changeCover(p) {
+  try {
+    const fp = firstDialogPath(await window.bds.selectFile({ properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] }));
+    if (!fp) return;
+    await window.bds.updateProject(p.id, { cover_path: fp });
+    await loadProjects();
+  } catch (e) { window.bdsModal.alert(`Não foi possível alterar a capa: ${friendlyError(e)}`); }
 }
 
-function setupEventListeners() {
-    document.getElementById('btnNewProject')?.addEventListener('click', () => {
-        document.getElementById('modalProjectTitle').textContent = 'Novo Projeto';
-        document.getElementById('projFormId').value = '';
-        document.getElementById('projFormName').value = '';
-        document.getElementById('projFormClient').value = '';
-        document.getElementById('projFormType').value = '';
-        document.getElementById('projFormStart').value = '';
-        document.getElementById('projFormDeadline').value = '';
-        document.getElementById('projFormStatus').value = 'Ativo';
-        document.getElementById('projFormColor').value = '#3b82f6';
-        document.getElementById('modalProjectForm').classList.add('open');
-    });
-    
-    document.getElementById('btnCancelProjForm')?.addEventListener('click', () => {
-        document.getElementById('modalProjectForm').classList.remove('open');
-    });
-    
-    document.getElementById('btnSaveProjForm')?.addEventListener('click', async () => {
-        const id = document.getElementById('projFormId').value;
-        const data = {
-            name: document.getElementById('projFormName').value,
-            client: document.getElementById('projFormClient').value,
-            type: document.getElementById('projFormType').value,
-            start_date: document.getElementById('projFormStart').value || null,
-            deadline: document.getElementById('projFormDeadline').value || null,
-            status: document.getElementById('projFormStatus').value,
-            color: document.getElementById('projFormColor').value
-        };
-        
-        if (!data.name) return window.bdsModal.alert('O nome do projeto é obrigatório.');
-        
-        try {
-            if (id) {
-                await window.bds.updateProject(Number(id), data);
-                setAppStatus('Projeto atualizado com sucesso');
-            } else {
-                await window.bds.createProject(data);
-                setAppStatus('Projeto criado com sucesso');
-            }
-            document.getElementById('modalProjectForm').classList.remove('open');
-            await loadProjects();
-            if (id) selectProject(Number(id));
-        } catch(e) {
-            console.error(e);
-            window.bdsModal.alert('Erro ao salvar o projeto.');
-        }
-    });
-    
-    document.getElementById('btnEditProject')?.addEventListener('click', () => {
-        const proj = projectsList.find(p => p.id === selectedProjectId);
-        if (!proj) return;
-        
-        document.getElementById('modalProjectTitle').textContent = 'Editar Projeto';
-        document.getElementById('projFormId').value = proj.id;
-        document.getElementById('projFormName').value = proj.name;
-        document.getElementById('projFormClient').value = proj.client || '';
-        document.getElementById('projFormType').value = proj.type || '';
-        document.getElementById('projFormStart').value = proj.start_date ? proj.start_date.split('T')[0] : '';
-        document.getElementById('projFormDeadline').value = proj.deadline ? proj.deadline.split('T')[0] : '';
-        document.getElementById('projFormStatus').value = proj.status || 'Ativo';
-        document.getElementById('projFormColor').value = proj.color || '#3b82f6';
-        
-        document.getElementById('modalProjectForm').classList.add('open');
-    });
-    
-    document.getElementById('btnDeleteProject')?.addEventListener('click', async () => {
-        const proj = projectsList.find(p => p.id === selectedProjectId);
-        if (!proj) return;
-        
-        const conf = await window.bdsModal.confirm(`Deseja realmente excluir o projeto "${proj.name}"?\n(Isso não apagará as mídias do seu computador)`);
-        if (conf) {
-            try {
-                await window.bds.deleteProject(proj.id);
-                selectedProjectId = null;
-                document.getElementById('projectInspector').classList.remove('open');
-                await loadProjects();
-                setAppStatus('Projeto excluído');
-            } catch(e) {
-                console.error(e);
-                window.bdsModal.alert('Erro ao excluir projeto.');
-            }
-        }
-    });
-    
-    document.getElementById('closeProjInspectorBtn')?.addEventListener('click', () => {
-        document.getElementById('projectInspector').classList.remove('open');
-        selectedProjectId = null;
-        updateCardSelection();
-    });
-    
-    document.getElementById('inspectorProjCover')?.addEventListener('click', async () => {
-        if (!selectedProjectId) return;
-        const res = await window.bds.selectFile({
-            properties: ['openFile'],
-            filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
-        });
-        const coverPath = firstDialogPath(res);
-        if (coverPath) {
-            try {
-                await window.bds.updateProject(selectedProjectId, { cover_path: coverPath });
-                await loadProjects();
-                selectProject(selectedProjectId);
-            } catch(e) {
-                window.bdsModal.alert('Erro ao salvar a capa.');
-            }
-        }
-    });
-    
-    document.getElementById('inspectorProjColor')?.addEventListener('change', async (e) => {
-        if (!selectedProjectId) return;
-        try {
-            await window.bds.updateProject(selectedProjectId, { color: e.target.value });
-            await loadProjects();
-            selectProject(selectedProjectId);
-        } catch(e) {}
-    });
-    
-    document.getElementById('btnOpenProject')?.addEventListener('click', () => {
-        if (selectedProjectId) openProjectWorkspace(selectedProjectId);
-    });
-
-    // --- Exportar .bdspro ---
-    document.getElementById('btnExportBdspro')?.addEventListener('click', async () => {
-        if (!selectedProjectId) return;
-        const proj = projectsList.find(p => p.id === selectedProjectId);
-        if (!proj) return;
-
-        try {
-            const destFolder = await window.bds.selectFolder(); // caminho escolhido, ou null se cancelou
-            if (destFolder) {
-                // O processo principal monta o caminho (nome sanitizado + path.join) e confirma a sobrescrita
-                setAppStatus('Exportando pacote .bdspro...', 'info');
-                const result = await window.bds.exportBdspro(selectedProjectId, { folder: destFolder, name: proj.name });
-                if (result && result.success) {
-                    setAppStatus(`Projeto "${proj.name}" exportado com sucesso!`, 'success');
-                    window.bdsModal.alert(`Pacote .bdspro exportado com sucesso!\n\nSalvo em: ${result.filePath}`);
-                }
-            }
-        } catch (e) {
-            console.error('Erro ao exportar .bdspro:', e);
-            setAppStatus('Erro ao exportar pacote .bdspro', 'error');
-            window.bdsModal.alert(`Erro ao exportar projeto .bdspro: ${friendlyError(e)}`);
-        }
-    });
-
-    // --- Importar .bdspro ---
-    document.getElementById('btnImportBdspro')?.addEventListener('click', async () => {
-        try {
-            const fileRes = await window.bds.selectFile({
-                properties: ['openFile'],
-                filters: [{ name: 'Pacote de Projeto BDS (*.bdspro)', extensions: ['bdspro'] }]
-            });
-
-            const bdsproPath = firstDialogPath(fileRes);
-            if (bdsproPath) {
-                setAppStatus('Inspecionando pacote .bdspro...', 'info');
-                const inspectData = await window.bds.inspectBdspro(bdsproPath);
-                openRelinkModal(bdsproPath, inspectData);
-            }
-        } catch (e) {
-            console.error('Erro ao abrir .bdspro:', e);
-            setAppStatus('Erro ao ler pacote .bdspro', 'error');
-            window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${friendlyError(e)}`);
-        }
-    });
-
-    setupRelinkModalListeners();
+async function remove(p) {
+  const ok = await window.bdsModal.confirm(`Excluir o projeto "${p.name}"?\n\nAs mídias continuam na Biblioteca e no disco. Se quiser só tirá-lo da lista, use "Arquivar".`);
+  if (!ok) return;
+  try {
+    await window.bds.deleteProject(p.id);
+    if (selectedProjectId === p.id) selectedProjectId = null;
+    setAppStatus('Projeto excluído.', 'success');
+    await loadProjects();
+  } catch (e) { window.bdsModal.alert(`Não foi possível excluir: ${friendlyError(e)}`); }
 }
 
-// --- CONTROLE DO MODAL DE RELINK / IMPORTAÇÃO ---
+// ------------------------------------------------------------------ formulário
+
+function openForm(p = null) {
+  $('modalProjectTitle').textContent = p ? 'Editar projeto' : 'Novo projeto';
+  $('btnSaveProjForm').textContent = p ? 'Salvar' : 'Criar projeto';
+  $('projFormId').value = p ? p.id : '';
+  $('projFormName').value = p ? p.name || '' : '';
+  $('projFormClient').value = p ? p.client || '' : '';
+  $('projFormType').value = p ? p.type || '' : '';
+  $('projFormStart').value = p && p.start_date ? String(p.start_date).slice(0, 10) : '';
+  $('projFormDeadline').value = p && p.deadline ? String(p.deadline).slice(0, 10) : '';
+  $('projFormStatus').value = p ? normalizeStatus(p.status) : 'Planejamento';
+  $('projFormColor').value = safeHexColor(p ? p.color : DEFAULT_COLOR);
+  $('projFormNotes').value = p ? p.description || '' : '';
+  formCoverPath = p ? p.cover_path || '' : '';
+  renderFormCover();
+  $('modalProjectForm').classList.add('open');
+  const nameInput = $('projFormName');
+  setTimeout(() => { try { nameInput?.focus(); } catch (_) { /* tela já fechada */ } }, 50);
+}
+
+function closeForm() { $('modalProjectForm').classList.remove('open'); }
+
+function renderFormCover() {
+  const prev = $('projFormCoverPreview');
+  if (!prev) return;
+  prev.style.backgroundImage = formCoverPath ? `url("${toFileUrl(formCoverPath)}")` : 'none';
+  prev.classList.toggle('is-empty', !formCoverPath);
+  $('btnProjFormCoverClear')?.classList.toggle('hidden', !formCoverPath);
+}
+
+async function saveForm() {
+  const id = $('projFormId').value;
+  const data = {
+    name: $('projFormName').value.trim(),
+    client: $('projFormClient').value.trim(),
+    type: $('projFormType').value.trim(),
+    start_date: $('projFormStart').value || null,
+    deadline: $('projFormDeadline').value || null,
+    status: normalizeStatus($('projFormStatus').value),
+    color: safeHexColor($('projFormColor').value),
+    description: $('projFormNotes').value.trim(),
+    cover_path: formCoverPath || ''
+  };
+  if (!data.name) { window.bdsModal.alert('O nome do projeto é obrigatório.'); $('projFormName')?.focus(); return; }
+  try {
+    let newId = null;
+    if (id) await window.bds.updateProject(Number(id), data);
+    else newId = await window.bds.createProject(data);
+    closeForm();
+    await loadProjects();
+    if (newId) selectProject(newId);
+    setAppStatus(id ? 'Projeto salvo.' : 'Projeto criado.', 'success');
+  } catch (e) {
+    window.bdsModal.alert(`Não foi possível salvar o projeto: ${friendlyError(e)}`);
+  }
+}
+
+// ------------------------------------------------------------------ eventos
+
+function bindOnce() {
+  if (bound) return;
+  bound = true;
+  $('btnNewProject')?.addEventListener('click', () => openForm(null));
+  $('btnCancelProjForm')?.addEventListener('click', closeForm);
+  $('btnSaveProjForm')?.addEventListener('click', saveForm);
+  $('btnProjFormCover')?.addEventListener('click', async () => {
+    const fp = firstDialogPath(await window.bds.selectFile({ properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] }));
+    if (fp) { formCoverPath = fp; renderFormCover(); }
+  });
+  $('btnProjFormCoverClear')?.addEventListener('click', () => { formCoverPath = ''; renderFormCover(); });
+  $('projFormName')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveForm(); });
+
+  $('projSearch')?.addEventListener('input', (e) => { query = e.target.value; renderGrid(); });
+  $('projFilter')?.addEventListener('change', (e) => { filter = e.target.value; renderGrid(); });
+  $('projSort')?.addEventListener('change', (e) => { sort = e.target.value; renderGrid(); });
+  const setView = (v) => { view = v; try { localStorage.setItem(VIEW_KEY, view); } catch (_) { /* sem armazenamento */ } applyView(); };
+  $('projViewGrid')?.addEventListener('click', () => setView('grid'));
+  $('projViewList')?.addEventListener('click', () => setView('list'));
+  document.querySelectorAll('.proj-stat[data-filter]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.filter; $('projFilter').value = filter; renderGrid(); }));
+  document.querySelectorAll('.proj-stat[data-sort]').forEach((b) => b.addEventListener('click', () => { filter = 'active'; sort = b.dataset.sort; $('projFilter').value = filter; $('projSort').value = sort; renderGrid(); }));
+
+  document.addEventListener('pointerdown', (e) => {
+    const menu = $('projMenu');
+    if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) hideMenu();
+  }, true);
+
+  // --- Importar .bdspro ---
+  $('btnImportBdspro')?.addEventListener('click', async () => {
+    try {
+      const bdsproPath = firstDialogPath(await window.bds.selectFile({ properties: ['openFile'], filters: [{ name: 'Pacote de projeto (*.bdspro)', extensions: ['bdspro'] }] }));
+      if (!bdsproPath) return;
+      setAppStatus('Inspecionando pacote .bdspro…', 'info');
+      const inspectData = await window.bds.inspectBdspro(bdsproPath);
+      openRelinkModal(bdsproPath, inspectData);
+    } catch (e) {
+      setAppStatus('Erro ao ler pacote .bdspro', 'error');
+      window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${friendlyError(e)}`);
+    }
+  });
+  setupRelinkModalListeners();
+}
+
+// ------------------------------------------------------------------ importação / reconexão (.bdspro)
+
 let currentRelinkContext = null;
 
 function openRelinkModal(bdsproPath, data) {
-    currentRelinkContext = {
-        bdsproPath,
-        data,
-        relinkMap: {},
-        missingList: data.missingFiles || [],
-        matches: []
-    };
-
-    const modal = document.getElementById('modalRelinkBdspro');
-    if (!modal) return;
-
-    // Popula informações gerais
-    const meta = data.metadata || {};
-    document.getElementById('relinkProjectName').textContent = meta.name || 'Projeto BDS';
-    document.getElementById('relinkProjectDesc').textContent = meta.description || 'Sem descrição';
-
-    const coverEl = document.getElementById('relinkProjectCover');
-    if (meta.cover_path && !meta.cover_relative_path) {
-        coverEl.style.backgroundImage = `url('file:///${meta.cover_path.replace(/\\/g, '/')}')`;
-    } else {
-        coverEl.style.backgroundImage = 'none';
-    }
-
-    // Pills de status
-    document.getElementById('pillTotalMedia').textContent = `${data.totalMedia} mídias`;
-    
-    const pillMissing = document.getElementById('pillMissingMedia');
-    pillMissing.textContent = `${data.missingMediaCount} ausentes`;
-    if (data.missingMediaCount > 0) {
-        pillMissing.className = 'relink-pill relink-pill--warning';
-    } else {
-        pillMissing.className = 'relink-pill relink-pill--success';
-        pillMissing.textContent = 'Mídias 100% OK';
-    }
-
-    const alertBox = document.getElementById('relinkMissingAlert');
-    if (data.missingMediaCount > 0) {
-        alertBox.classList.remove('hidden');
-    } else {
-        alertBox.classList.add('hidden');
-    }
-
-    renderRelinkTable();
-    modal.classList.add('open');
+  currentRelinkContext = { bdsproPath, data, relinkMap: {}, missingList: data.missingFiles || [], matches: [] };
+  const modal = $('modalRelinkBdspro');
+  if (!modal) return;
+  const meta = data.metadata || {};
+  $('relinkProjectName').textContent = meta.name || 'Projeto';
+  $('relinkProjectDesc').textContent = meta.description || 'Sem observações';
+  const coverEl = $('relinkProjectCover');
+  coverEl.style.backgroundImage = meta.cover_path && !meta.cover_relative_path ? `url("${toFileUrl(meta.cover_path)}")` : 'none';
+  $('pillTotalMedia').textContent = `${data.totalMedia} mídias`;
+  const pillMissing = $('pillMissingMedia');
+  if (data.missingMediaCount > 0) { pillMissing.textContent = `${data.missingMediaCount} ausentes`; pillMissing.className = 'relink-pill relink-pill--warning'; }
+  else { pillMissing.className = 'relink-pill relink-pill--success'; pillMissing.textContent = 'Mídias 100% OK'; }
+  $('relinkMissingAlert').classList.toggle('hidden', !(data.missingMediaCount > 0));
+  renderRelinkTable();
+  modal.classList.add('open');
 }
 
 function renderRelinkTable() {
-    const tbody = document.getElementById('relinkMediaTableBody');
-    if (!tbody || !currentRelinkContext) return;
-    tbody.innerHTML = '';
-
-    const allMedia = currentRelinkContext.data.projectData?.media || [];
-    if (allMedia.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--muted); padding: 20px;">Nenhuma mídia registrada no projeto.</td></tr>';
-        return;
-    }
-
-    allMedia.forEach(m => {
-        const origPath = m.original_path || m.filepath;
-        const isMissingInitial = currentRelinkContext.data.missingFiles.some(mf => mf.original_path === origPath);
-        const relinkedPath = currentRelinkContext.relinkMap[origPath] || currentRelinkContext.relinkMap[m.filename];
-        
-        let statusBadge = '';
-        let displayPath = origPath;
-        let confidenceText = '-';
-
-        if (!isMissingInitial) {
-            statusBadge = '<span class="relink-badge-ok"><span class="material-symbols-rounded">check_circle</span> Conectado</span>';
-            confidenceText = '100%';
-        } else if (relinkedPath) {
-            statusBadge = '<span class="relink-badge-relinked"><span class="material-symbols-rounded">link</span> Reconectado</span>';
-            displayPath = relinkedPath;
-            const matchInfo = currentRelinkContext.matches.find(match => match.missing.original_path === origPath);
-            confidenceText = matchInfo ? `${matchInfo.confidence}%` : 'Manual';
-        } else {
-            statusBadge = '<span class="relink-badge-missing"><span class="material-symbols-rounded">error</span> Não encontrado</span>';
-            confidenceText = '0%';
-        }
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${statusBadge}</td>
-            <td style="font-weight: 600;">${escapeHtml(m.filename || 'Sem nome')}</td>
-            <td style="color: var(--muted); font-size: 11px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</td>
-            <td style="text-align: center;">${confidenceText}</td>
-        `;
-        tbody.appendChild(tr);
-    });
+  const tbody = $('relinkMediaTableBody');
+  if (!tbody || !currentRelinkContext) return;
+  tbody.textContent = '';
+  const allMedia = currentRelinkContext.data.projectData?.media || [];
+  if (allMedia.length === 0) {
+    tbody.append(h('tr', {}, [h('td', { colspan: '4', class: 'relink-empty', text: 'Nenhuma mídia registrada no projeto.' })]));
+    return;
+  }
+  for (const m of allMedia) {
+    const origPath = m.original_path || m.filepath;
+    const isMissingInitial = currentRelinkContext.data.missingFiles.some((mf) => mf.original_path === origPath);
+    const relinkedPath = currentRelinkContext.relinkMap[origPath] || currentRelinkContext.relinkMap[m.filename];
+    let badge; let displayPath = origPath; let confidence = '-';
+    if (!isMissingInitial) { badge = h('span', { class: 'relink-badge-ok' }, [icon('check_circle'), ' Conectado']); confidence = '100%'; }
+    else if (relinkedPath) {
+      badge = h('span', { class: 'relink-badge-relinked' }, [icon('link'), ' Reconectado']);
+      displayPath = relinkedPath;
+      const match = currentRelinkContext.matches.find((x) => x.missing.original_path === origPath);
+      confidence = match ? `${match.confidence}%` : 'Manual';
+    } else { badge = h('span', { class: 'relink-badge-missing' }, [icon('error'), ' Não encontrado']); confidence = '0%'; }
+    tbody.append(h('tr', {}, [
+      h('td', {}, [badge]),
+      h('td', { class: 'relink-name', text: m.filename || 'Sem nome' }),
+      h('td', { class: 'relink-path', title: displayPath, text: displayPath }),
+      h('td', { class: 'relink-conf', text: confidence })
+    ]));
+  }
 }
 
 function setupRelinkModalListeners() {
-    const modal = document.getElementById('modalRelinkBdspro');
-    if (!modal) return;
+  const modal = $('modalRelinkBdspro');
+  if (!modal) return;
+  const close = () => { modal.classList.remove('open'); currentRelinkContext = null; };
+  $('btnCloseRelinkModal')?.addEventListener('click', close);
+  $('btnCancelRelink')?.addEventListener('click', close);
 
-    document.getElementById('btnCloseRelinkModal')?.addEventListener('click', () => {
-        modal.classList.remove('open');
-        currentRelinkContext = null;
-    });
-
-    document.getElementById('btnCancelRelink')?.addEventListener('click', () => {
-        modal.classList.remove('open');
-        currentRelinkContext = null;
-    });
-
-    // Localizar Pasta de Mídias
-    document.getElementById('btnSelectRelinkFolder')?.addEventListener('click', async () => {
-        if (!currentRelinkContext) return;
-        try {
-            const folderRes = await window.bds.selectFolder();
-            const searchFolder = firstDialogPath(folderRes);
-            if (searchFolder) {
-                setAppStatus('Buscando mídias correspondentes...', 'info');
-
-                const scannedFiles = await window.bds.scanRelinkFolder(searchFolder);
-                const matches = await window.bds.matchMissingMedia(currentRelinkContext.missingList, scannedFiles);
-                currentRelinkContext.matches = matches;
-
-                let resolvedCount = 0;
-                for (const match of matches) {
-                    if (match.matched && match.resolved) {
-                        currentRelinkContext.relinkMap[match.missing.original_path] = match.matched.filepath;
-                        currentRelinkContext.relinkMap[match.missing.filename] = match.matched.filepath;
-                        resolvedCount++;
-                    }
-                }
-
-                renderRelinkTable();
-                setAppStatus(`Reconexão concluída: ${resolvedCount} de ${currentRelinkContext.missingList.length} mídias associadas`, 'success');
-            }
-        } catch (e) {
-            console.error('Erro ao buscar mídias para relink:', e);
-            window.bdsModal.alert('Erro ao escanear pasta de mídias.');
+  $('btnSelectRelinkFolder')?.addEventListener('click', async () => {
+    if (!currentRelinkContext) return;
+    try {
+      const searchFolder = firstDialogPath(await window.bds.selectFolder());
+      if (!searchFolder) return;
+      setAppStatus('Buscando mídias correspondentes…', 'info');
+      const scannedFiles = await window.bds.scanRelinkFolder(searchFolder);
+      const matches = await window.bds.matchMissingMedia(currentRelinkContext.missingList, scannedFiles);
+      currentRelinkContext.matches = matches;
+      let resolved = 0;
+      for (const match of matches) {
+        if (match.matched && match.resolved) {
+          currentRelinkContext.relinkMap[match.missing.original_path] = match.matched.filepath;
+          currentRelinkContext.relinkMap[match.missing.filename] = match.matched.filepath;
+          resolved++;
         }
-    });
+      }
+      renderRelinkTable();
+      setAppStatus(`Reconexão: ${resolved} de ${currentRelinkContext.missingList.length} mídias associadas`, 'success');
+    } catch (e) {
+      window.bdsModal.alert(`Erro ao procurar as mídias: ${friendlyError(e)}`);
+    }
+  });
 
-    // Confirmar Importação
-    document.getElementById('btnConfirmImportBdspro')?.addEventListener('click', async () => {
-        if (!currentRelinkContext) return;
-        try {
-            setAppStatus('Importando projeto BDS...', 'info');
-            const importRes = await window.bds.importBdspro(currentRelinkContext.bdsproPath, currentRelinkContext.relinkMap);
-            if (importRes && importRes.success) {
-                setAppStatus(`Projeto "${importRes.projectName}" importado com sucesso!`, 'success');
-                modal.classList.remove('open');
-                currentRelinkContext = null;
-                await loadProjects();
-                selectProject(importRes.projectId);
-            }
-        } catch (e) {
-            console.error('Erro ao confirmar importação:', e);
-            setAppStatus('Erro ao importar projeto', 'error');
-            window.bdsModal.alert(`Erro ao importar projeto: ${friendlyError(e)}`);
-        }
-    });
+  $('btnConfirmImportBdspro')?.addEventListener('click', async () => {
+    if (!currentRelinkContext) return;
+    try {
+      setAppStatus('Importando projeto…', 'info');
+      const res = await window.bds.importBdspro(currentRelinkContext.bdsproPath, currentRelinkContext.relinkMap);
+      if (res && res.success) {
+        setAppStatus(`Projeto "${res.projectName}" importado.`, 'success');
+        close();
+        await loadProjects();
+        selectProject(res.projectId);
+      }
+    } catch (e) {
+      setAppStatus('Erro ao importar projeto', 'error');
+      window.bdsModal.alert(`Erro ao importar projeto: ${friendlyError(e)}`);
+    }
+  });
 }
 
+// ------------------------------------------------------------------ abrir a área interna
+
 async function openProjectWorkspace(id) {
-    // Reutiliza o fluxo de loadScreen (onLeave da tela atual, CSS/HTML, init) do app.js
-    const app = await import('../app.js');
-    app.state.currentProjectId = id;
+  hideMenu();
+  // Reutiliza o fluxo de loadScreen (onLeave da tela atual, CSS/HTML, init) do app.js
+  const app = await import('../app.js');
+  app.state.currentProjectId = id;
 
-    // Workspace em cache pertence a outro projeto: limpa (onLeave antes de remover) para recarregar
-    const stale = document.getElementById('project_workspaceView');
-    if (stale) {
-        try {
-            const m = await import('./project_workspace.js');
-            if (typeof m.onLeave === 'function') await m.onLeave();
-        } catch (e) { console.error('Falha ao finalizar workspace anterior', e); }
-        stale.remove();
-    }
+  // Workspace em cache pertence a outro projeto: limpa (onLeave antes de remover) para recarregar
+  const stale = document.getElementById('project_workspaceView');
+  if (stale) {
+    try {
+      const m = await import('./project_workspace.js');
+      if (typeof m.onLeave === 'function') await m.onLeave();
+    } catch (e) { console.error('Falha ao finalizar workspace anterior', e); }
+    stale.remove();
+  }
 
-    if (typeof window.bdsLoadScreen === 'function') {
-        await window.bdsLoadScreen('project_workspace');
-        const title = document.getElementById('globalPageTitle');
-        if (title) title.textContent = 'Workspace do Projeto';
-    }
+  if (typeof window.bdsLoadScreen === 'function') {
+    await window.bdsLoadScreen('project_workspace');
+    const title = document.getElementById('globalPageTitle');
+    if (title) title.textContent = 'Projeto';
+  }
 }

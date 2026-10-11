@@ -16,7 +16,7 @@
  *                                                      no meio da resposta tinha entregue texto parcial, descartado)
  *
  * LAÇO DE FERRAMENTAS (function calling): se há `toolbox`, as definições vão junto da conversa; quando o modelo pede
- * ferramentas, o app as executa (ToolBox, com confirmação nativa nas ações), devolve cada resultado como mensagem de
+ * ferramentas, o app as executa (ToolBox, com a confirmação do app nas ações: modal do próprio app, diálogo nativo como reserva), devolve cada resultado como mensagem de
  * papel "tool" e repete até a resposta final. Limites: MAX_ITERATIONS rodadas de ferramentas, MAX_CALLS_PER_TURN
  * chamadas por resposta do modelo e MAX_CALLS_TOTAL por pergunta; depois disso o modelo é obrigado a responder em texto.
  * Servidor/modelo sem suporte a ferramentas: cai para só texto, com um aviso amigável (uma vez por servidor+modelo).

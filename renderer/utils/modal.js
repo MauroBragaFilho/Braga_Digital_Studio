@@ -48,23 +48,28 @@ export function enhanceModalOverlay(overlay, { isOpen = defaultIsOpen } = {}) {
     if (!items.length) { e.preventDefault(); return; }
     const first = items[0];
     const last = items[items.length - 1];
-    if (e.shiftKey && (document.activeElement === first || !overlay.contains(document.activeElement))) {
+    const doc = overlay.ownerDocument;
+    if (e.shiftKey && (doc.activeElement === first || !overlay.contains(doc.activeElement))) {
       e.preventDefault(); last.focus();
-    } else if (!e.shiftKey && (document.activeElement === last || !overlay.contains(document.activeElement))) {
+    } else if (!e.shiftKey && (doc.activeElement === last || !overlay.contains(doc.activeElement))) {
       e.preventDefault(); first.focus();
     }
   });
 
+  // O documento dono do overlay (não o global): o observador roda numa microtarefa, que pode chegar depois de a
+  // tela ter sido descartada (ex.: nos testes), e nunca deve depender de `document`.
   const observer = new MutationObserver(() => {
+    const doc = overlay.ownerDocument;
+    if (!doc) return;
     const open = isOpen(overlay);
     if (open === wasOpen) return;
     wasOpen = open;
     if (open) {
-      lastFocus = document.activeElement;
+      lastFocus = doc.activeElement;
       const target = focusables()[0] || overlay;
       if (target === overlay) overlay.setAttribute('tabindex', '-1');
-      setTimeout(() => target.focus(), 0);
-    } else if (lastFocus && document.contains(lastFocus)) {
+      setTimeout(() => { try { target.focus(); } catch (_) { /* tela descartada */ } }, 0);
+    } else if (lastFocus && doc.contains(lastFocus)) {
       try { lastFocus.focus(); } catch (_) { /* noop */ }
       lastFocus = null;
     }

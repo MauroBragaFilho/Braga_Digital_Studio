@@ -13,7 +13,7 @@
  *     aparecem quando o pedido tem a ver com elas.
  *
  * SEGURANÇA: isto só decide o que é OFERECIDO ao modelo. O ToolBox continua aceitando e validando QUALQUER nome da
- * lista fixa (esquema estrito + confirmação nativa nas ações); nada fora da lista fixa é executado. Escolher mal
+ * lista fixa (esquema estrito + confirmação do app nas ações); nada fora da lista fixa é executado. Escolher mal
  * o subconjunto nunca libera uma ação sem confirmação.
  */
 

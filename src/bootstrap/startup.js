@@ -1,10 +1,10 @@
 'use strict';
 
-const path = require('node:path');
 
 const perf = require('../infrastructure/diagnostics/startupPerf');
 const logger = require('../services/logService');
 const { externalTools } = require('../infrastructure/external-tools/ExternalToolsManager');
+const { moduleRuntime, HOOKS } = require('./moduleRuntime');
 
 /** Pausa curta que devolve o processo principal ao Chromium (IPC da Home, pintura) entre duas etapas. */
 const yieldToChromium = () => new Promise((resolve) => setImmediate(resolve));
@@ -18,64 +18,32 @@ const CACHE_MAINTENANCE_DELAY_MS = 1500;
  * `ctx` = { services, paths, appPaths, settingsManager, getMainWindow }.
  */
 function buildBackgroundSteps(ctx) {
+  // As tarefas de fundo de um módulo só rodam com ele LIGADO (e começam sozinhas quando ele é ligado depois,
+  // em Configurações → Módulos). Desligado: nada é carregado nem iniciado.
+  const on = (id) => moduleRuntime.isEnabled(id);
   return [
-    // 1. Watchers de bibliotecas (a reconciliação de arquivos é agendada à parte, só aqui no startup —
-    // reiniciar watchers ao trocar uma pasta não varre o disco de novo)
+    // 1. Biblioteca: watchers de pastas (a reconciliação de arquivos é agendada à parte, só aqui no startup —
+    // reiniciar watchers ao trocar uma pasta não varre o disco de novo) e regeneração de thumbnails ausentes
     ['watchers', () => {
-      if (!ctx.services.watcherService) {
-        ['watchers', 'reconcile', 'regen'].forEach((n) => perf.done(n));
-        return;
-      }
-      perf.time('bg:watchers.startAll', () => ctx.services.watcherService.startAll());
-      ctx.services.watcherService.startReconcile();
-      perf.done('watchers');
-
-      // [FIX] Regenera thumbnails ausentes em background — encadeado APÓS a
-      // reconciliação de arquivos terminar, para os processos ffmpeg do regen
-      // NÃO competirem por I/O com os fs.access() da reconciliação.
-      // (Antes rodavam concorrentes: reconciliação 1.6s→13.5s; regen sofria junto.)
-      const ws = ctx.services.watcherService;
-      Promise.resolve(ws.whenReconcileDone())
-        .then(() => {
-          perf.done('reconcile');
-          setTimeout(() => {
-            const { regenerateMissingThumbnails } = require('../core/library/ThumbnailRegenService');
-            regenerateMissingThumbnails({
-              paths: ctx.paths,
-              dbManager: require('../core/database/database'),
-              window: ctx.getMainWindow(),
-              batchSize: 10, // [PERF] maior paralelismo = regen ~2x mais rápido
-              logPrefix: '[Bootstrap] RegenThumbs',
-            }).catch((err) => {
-              logger.warn('Bootstrap:regenThumbs:error', { error: err.message });
-            }).finally(() => perf.done('regen'));
-          }, 500); // pequena folga pós-reconciliação
-        })
-        .catch(() => {});
+      if (on('library')) moduleRuntime.start('library', { startup: true });
+      else HOOKS.library.skipped();
     }],
 
-    // 2. Identidade e tokens de pareamento dos celulares (token criptografado por safeStorage), antes da primeira sondagem
+    // 2. Dispositivos: identidade e tokens de pareamento dos celulares (criptografados por safeStorage), antes da primeira sondagem
     ['bdsm-auth', () => {
-      try {
-        require('../core/integrations/bdsm/BdsmAuth').init({ configDir: ctx.appPaths.configDir, safeStorage: require('electron').safeStorage });
-      } catch (err) {
-        logger.warn('Bootstrap:bdsmAuth:error', { error: err.message });
-      }
+      if (on('devices')) HOOKS.devices.startAuth(ctx);
     }],
 
-    // 3. Descoberta de dispositivos (mDNS/Bonjour, ADB, SSDP da Sony)
+    // 3. Dispositivos: descoberta (mDNS/Bonjour, ADB, SSDP da Sony)
     ['discovery', () => {
-      perf.time('bg:deviceDiscovery.start', () => require('../core/devices/DeviceDiscoveryService').start());
-      perf.time('bg:sonyCamera.start', () => require('../core/devices/SonyCameraService').start());
-      perf.done('discovery');
+      if (on('devices')) moduleRuntime.start('devices', { startup: true, skipAuth: true });
+      else HOOKS.devices.skipped();
     }],
 
-    // 4. Verificação de prazos dos projetos (lembretes de deadline)
+    // 4. Projetos: lembretes de prazo
     ['deadlines', () => {
-      const deadlineNotifier = require('../infrastructure/desktop/DeadlineNotifier');
-      deadlineNotifier.setStateFile(path.join(ctx.appPaths.dataDir, 'deadline-reminders.json'));
-      deadlineNotifier.start(ctx.settingsManager.load());
-      perf.done('deadline');
+      if (on('projects')) moduleRuntime.start('projects', { startup: true });
+      else HOOKS.projects.skipped();
     }],
 
     // 5. Auto-limpeza de cache e temporários antigos — assíncrona e depois do primeiro paint,
@@ -94,6 +62,9 @@ function buildBackgroundSteps(ctx) {
  */
 async function startBackgroundServices(ctx, { steps = buildBackgroundSteps(ctx), yieldFn = yieldToChromium } = {}) {
   perf.mark('bg:start');
+  moduleRuntime.setContext(ctx);
+  // LUTs embutidas: só com LUTs ou Dispositivos ligados (a sincronização de LUTs usa a mesma pasta)
+  try { if (moduleRuntime.isEnabled('luts')) moduleRuntime.start('luts', { startup: true }); } catch (_) { /* opcional */ }
   const ran = [];
   for (const [name, run] of steps) {
     try {
@@ -144,9 +115,11 @@ async function checkInitialDependencies(ctx) {
 
 async function checkInitialDependenciesImpl(ctx) {
   const { updateService } = ctx.services;
+  moduleRuntime.setContext(ctx);
 
-  // Verifica apenas ferramentas essenciais de execução
-  const requiredTools = ['ytdlp', 'ffmpeg', 'ffprobe'];
+  // Verifica apenas ferramentas essenciais de execução; o yt-dlp só é exigido com o módulo Downloads ligado
+  // (ligar o módulo depois baixa o yt-dlp, ver moduleRuntime.js).
+  const requiredTools = ['ffmpeg', 'ffprobe', ...(moduleRuntime.isEnabled('download') ? ['ytdlp'] : [])];
   const missing = requiredTools.filter(tool => {
     try {
       if (tool === 'ytdlp') return !externalTools.ytdlp.exists();
