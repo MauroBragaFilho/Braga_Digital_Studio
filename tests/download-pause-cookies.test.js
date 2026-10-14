@@ -133,3 +133,39 @@ test('cookies: o arquivo relido muda de resultado quando é atualizado', () => {
   fs.utimesSync(f, later, later);
   assert.equal(inspectCookiesFile(f).valid, true);
 });
+
+// ---------------------------------------------------------------- codec do vídeo baixado
+
+test('codec do vídeo: automático mantém o seletor padrão de MP4', () => {
+  const { buildVideoFormat } = DownloadManager;
+  assert.equal(buildVideoFormat('best', 'auto'), 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best');
+  assert.equal(buildVideoFormat('1080', undefined), 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/best[height<=1080]');
+});
+
+test('codec do vídeo: H.264, H.265 e AV1 tentam o codec primeiro e caem no automático', () => {
+  const { buildVideoFormat } = DownloadManager;
+  const auto = buildVideoFormat('best', 'auto');
+  const h264 = buildVideoFormat('best', 'h264');
+  assert.ok(h264.startsWith('bv*[vcodec^=avc1]+ba[ext=m4a]/'));
+  assert.ok(h264.endsWith(`/${auto}`));
+  assert.ok(buildVideoFormat('720', 'av1').includes('bv*[height<=720][vcodec^=av01]+ba'));
+  const h265 = buildVideoFormat('best', 'h265');
+  assert.ok(h265.includes('[vcodec^=hev1]') && h265.includes('[vcodec^=hvc1]'));
+  assert.equal(buildVideoFormat('best', 'vp9'), auto, 'valor desconhecido vira automático');
+});
+
+test('codec do vídeo: configuração aceita só as quatro opções', () => {
+  const sm = Object.create(SettingsManager.prototype);
+  for (const c of DownloadManager.VIDEO_CODECS) assert.equal(sm._sanitize({ downloadVideoCodec: c }).downloadVideoCodec, c);
+  assert.equal('downloadVideoCodec' in sm._sanitize({ downloadVideoCodec: 'vp9' }), false);
+});
+
+test('codec do vídeo: rótulo lido do ffprobe (nome do codec e altura)', () => {
+  const { videoCodecLabel } = DownloadManager;
+  assert.equal(videoCodecLabel({ codec_type: 'video', codec_name: 'h264', height: 1080 }), 'H.264 · 1080p');
+  assert.equal(videoCodecLabel({ codec_type: 'video', codec_name: 'hevc', height: 2160 }), 'H.265 · 2160p');
+  assert.equal(videoCodecLabel({ codec_type: 'video', codec_name: 'av1', height: 720 }), 'AV1 · 720p');
+  assert.equal(videoCodecLabel({ codec_type: 'video', codec_name: 'prores' }), 'PRORES');
+  assert.equal(videoCodecLabel({ codec_type: 'audio', codec_name: 'aac' }), '');
+  assert.equal(videoCodecLabel(undefined), '');
+});

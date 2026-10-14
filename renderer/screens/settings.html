@@ -287,6 +287,24 @@
         </div>
 
         <div class="st-card" data-module="download">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">movie</span> Vídeo baixado</h4>
+          <div class="st-row">
+            <div class="st-row-text">
+              <label class="st-row-label" for="downloadVideoCodecSelect">Codec do vídeo</label>
+              <span class="st-row-hint">Automático baixa o melhor MP4. H.264 abre em qualquer lugar; H.265 e AV1 ocupam menos espaço, mas pedem um aparelho ou editor mais recente. Se o vídeo não tiver o codec escolhido, o app baixa o automático.</span>
+            </div>
+            <div class="st-row-control">
+              <select id="downloadVideoCodecSelect" class="settings-input" aria-label="Codec do vídeo baixado">
+                <option value="auto">Automático</option>
+                <option value="h264">H.264</option>
+                <option value="h265">H.265 (HEVC)</option>
+                <option value="av1">AV1</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="st-card" data-module="download">
           <h4 class="st-card-title"><span class="material-symbols-rounded">download</span> Lista de downloads</h4>
           <label class="st-row st-row-toggle">
             <div class="st-row-text">

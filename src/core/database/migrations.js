@@ -5,7 +5,7 @@ const dbManager = require('./database');
 const { mediaTypeCaseSql } = require('../media/MediaTypes');
 
 // [FASE 3.2] Controle de versao do schema com tabela de metadados.
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 function getAppliedMigrations(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -232,6 +232,13 @@ const MIGRATIONS = [
                 ['idx_project_devices_project_id', 'project_devices', 'project_id'],
                 ['idx_project_activity_project_id', 'project_activity', 'project_id, created_at']
             ]);
+        }
+    },
+    {
+        // Downloads: codec do vídeo que realmente foi baixado (lido do arquivo ao concluir), mostrado no card
+        version: 15,
+        up: (db) => {
+            addColumn(db, 'download_queue', 'video_codec', 'TEXT');
         }
     }
 ];

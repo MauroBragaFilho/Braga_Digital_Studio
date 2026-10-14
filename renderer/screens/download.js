@@ -376,7 +376,7 @@ function buildRowHtml(item, dyn) {
     } else {
       formatAndQualitySelectors = `
         <span class="download-card-format-badge">
-          ${escapeHtml(item.format)} • ${escapeHtml(item.quality)}
+          ${escapeHtml(item.format)} • ${escapeHtml(item.quality)}${item.videoCodec ? ` • ${escapeHtml(item.videoCodec)}` : ''}
         </span>
       `;
     }

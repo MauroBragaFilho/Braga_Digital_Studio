@@ -13,6 +13,7 @@ const { isHttpUrl, assertHttpUrl } = require('./urlValidator');
 const { friendlyYtDlpError, sanitizeUserMessage } = require('./ytdlpErrors');
 const { inspectCookiesFile, cookiesFileFor } = require('./youtubeCookies');
 const { uniqueSuffixPath } = require('./uniquePath');
+const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
 
 // Subpasta temporária de cada item, dentro da pasta de destino: o ponto inicial a deixa fora do escaneamento e
 // do observador da Biblioteca. Tudo é baixado ali e só o arquivo FINAL é movido para o destino, com nome único.
@@ -118,6 +119,36 @@ function pickPauseMs({ minSec, maxSec }, random = Math.random) {
   return Math.round((minSec + random() * (maxSec - minSec)) * 1000);
 }
 
+/** Codec do vídeo baixado (Configurações → Lista de downloads): prefixos de `vcodec` do yt-dlp de cada opção. */
+const VIDEO_CODEC_PREFIXES = { h264: ['avc1'], h265: ['hev1', 'hvc1'], av1: ['av01'] };
+const VIDEO_CODECS = ['auto', ...Object.keys(VIDEO_CODEC_PREFIXES)];
+
+/**
+ * Seletor de formato (-f) do vídeo. 'auto' mantém o comportamento padrão (melhor MP4). Com um codec escolhido,
+ * tenta primeiro só esse codec, na maior resolução em que ele existe (até `resolution`), e cai no 'auto' se o
+ * vídeo não tiver o codec — o download nunca falha por isso.
+ */
+function buildVideoFormat(resolution, codec) {
+  const limit = resolution && resolution !== 'best' ? `[height<=${resolution}]` : '';
+  const auto = limit
+    ? `bv*${limit}[ext=mp4]+ba[ext=m4a]/b${limit}[ext=mp4]/best${limit}`
+    : 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best';
+  const prefixes = VIDEO_CODEC_PREFIXES[codec];
+  if (!prefixes) return auto;
+  const preferred = prefixes.flatMap((p) => [`bv*${limit}[vcodec^=${p}]+ba[ext=m4a]`, `bv*${limit}[vcodec^=${p}]+ba`]);
+  return [...preferred, auto].join('/');
+}
+
+const CODEC_NAMES = { h264: 'H.264', hevc: 'H.265', av1: 'AV1', vp9: 'VP9', vp8: 'VP8', mpeg4: 'MPEG-4' };
+
+/** Rótulo do codec a partir do stream de vídeo do ffprobe: "H.264 · 1080p" (vazio se não for vídeo). */
+function videoCodecLabel(stream) {
+  if (!stream || stream.codec_type !== 'video' || !stream.codec_name) return '';
+  const name = CODEC_NAMES[stream.codec_name] || String(stream.codec_name).toUpperCase();
+  const height = Number(stream.height);
+  return Number.isFinite(height) && height > 0 ? `${name} · ${height}p` : name;
+}
+
 class DownloadManager extends EventEmitter {
   constructor({ paths, getSettings, historyService }) {
     super();
@@ -204,7 +235,8 @@ class DownloadManager extends EventEmitter {
           isSpotify: r.platform === 'Spotify',
           createdAt: r.created_at,
           startedAt: r.started_at,
-          completedAt: r.completed_at
+          completedAt: r.completed_at,
+          videoCodec: r.video_codec || ''
         };
       });
 
@@ -223,8 +255,8 @@ class DownloadManager extends EventEmitter {
       INSERT INTO download_queue (
         id, url, title, thumbnail, channel, platform, duration, format, quality, status, progress,
         downloaded_bytes, total_bytes, speed, eta, output_path, error,
-        position, created_at, started_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        position, created_at, started_at, completed_at, video_codec
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         url = excluded.url, title = excluded.title, thumbnail = excluded.thumbnail,
         channel = excluded.channel, platform = excluded.platform, duration = excluded.duration,
@@ -232,7 +264,8 @@ class DownloadManager extends EventEmitter {
         progress = excluded.progress, downloaded_bytes = excluded.downloaded_bytes,
         total_bytes = excluded.total_bytes, speed = excluded.speed, eta = excluded.eta,
         output_path = excluded.output_path, error = excluded.error, position = excluded.position,
-        started_at = excluded.started_at, completed_at = excluded.completed_at
+        started_at = excluded.started_at, completed_at = excluded.completed_at,
+        video_codec = excluded.video_codec
     `;
   }
 
@@ -245,7 +278,7 @@ class DownloadManager extends EventEmitter {
         item.format, item.quality, item.status, item.progress, item.downloadedBytes, item.totalBytes,
         item.speed, item.eta, item.outputPath, item.error, item.position,
         item.createdAt || new Date().toISOString(),
-        item.startedAt || null, item.completedAt || null
+        item.startedAt || null, item.completedAt || null, item.videoCodec || ''
       );
     } catch (err) {
       logger.error('[DownloadManager] Erro ao salvar item no banco:', err);
@@ -673,6 +706,7 @@ class DownloadManager extends EventEmitter {
         nextItem.error = 'Arquivo já existe na pasta de destino.';
         this.saveItemToDb(nextItem);
         this.emit('downloads:updated', this.queue);
+        this._detectVideoCodec(nextItem);
         await this._sleep(200);
         continue;
       }
@@ -806,7 +840,25 @@ class DownloadManager extends EventEmitter {
     }
 
     this.emit('downloads:completed', item);
+    this._detectVideoCodec(item);
     return true;
+  }
+
+  /**
+   * Lê o codec real do arquivo baixado (ffprobe) e guarda em item.videoCodec ("H.264 · 1080p"). Em segundo plano:
+   * nunca atrasa nem derruba o download; sem ffprobe ou sem vídeo, o campo fica vazio.
+   */
+  _detectVideoCodec(item) {
+    if (!item || item.format === 'MP3' || item.isSpotify || !item.outputPath) return Promise.resolve();
+    return ffprobeTool.probe(item.outputPath, ['-select_streams', 'v:0'])
+      .then((info) => {
+        const label = videoCodecLabel(info && info.streams && info.streams[0]);
+        if (!label) return;
+        item.videoCodec = label;
+        this.saveItemToDb(item);
+        this.emit('downloads:updated', this.queue);
+      })
+      .catch((err) => logger.warn('[DownloadManager] Não foi possível ler o codec do arquivo:', { error: err && err.message }));
   }
 
   /**
@@ -1210,9 +1262,7 @@ class DownloadManager extends EventEmitter {
       args.push('-P', targetFolder || settings.mp3Folder, '-o', '%(title)s.%(ext)s', '--', assertHttpUrl(item.url));
     } else {
       const resolution = item.quality && item.quality !== 'best' ? item.quality.replace('p', '') : 'best';
-      const format = resolution && resolution !== 'best'
-        ? `bv*[height<=${resolution}][ext=mp4]+ba[ext=m4a]/b[height<=${resolution}][ext=mp4]/best[height<=${resolution}]`
-        : 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best';
+      const format = buildVideoFormat(resolution, settings && settings.downloadVideoCodec);
 
       args.push('-f', format, '--merge-output-format', 'mp4', '--embed-metadata', '--embed-thumbnail');
       args.push('-P', targetFolder || settings.mp4Folder, '-o', '%(title)s.%(ext)s', '--', assertHttpUrl(item.url));
@@ -1236,6 +1286,9 @@ class DownloadManager extends EventEmitter {
 
 module.exports = DownloadManager;
 module.exports.readPauseSettings = readPauseSettings;
+module.exports.buildVideoFormat = buildVideoFormat;
+module.exports.videoCodecLabel = videoCodecLabel;
+module.exports.VIDEO_CODECS = VIDEO_CODECS;
 module.exports.pickPauseMs = pickPauseMs;
 module.exports.siteName = siteName;
 module.exports.neutralTitle = neutralTitle;

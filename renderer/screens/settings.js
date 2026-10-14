@@ -307,6 +307,7 @@ function renderSettings() {
   setChk('notifyDeadlinesInput', s.notifyDeadlines !== false);
 
   // Pausa entre downloads da lista
+  setVal('downloadVideoCodecSelect', ['h264', 'h265', 'av1'].includes(s.downloadVideoCodec) ? s.downloadVideoCodec : 'auto');
   setChk('downloadPauseEnabledInput', s.downloadPauseEnabled !== false);
   setVal('downloadPauseMinInput', s.downloadPauseMinSec ?? 10);
   setVal('downloadPauseMaxInput', s.downloadPauseMaxSec ?? 180);
@@ -640,6 +641,7 @@ async function saveSettings() {
       notifyConverter: document.getElementById('notifyConverterInput')?.checked,
       notifyCopy: document.getElementById('notifyCopyInput')?.checked,
       notifySilence: document.getElementById('notifySilenceInput')?.checked,
+      downloadVideoCodec: document.getElementById('downloadVideoCodecSelect')?.value || 'auto',
       downloadPauseEnabled: document.getElementById('downloadPauseEnabledInput')?.checked !== false,
       downloadPauseMinSec: Number(document.getElementById('downloadPauseMinInput')?.value),
       downloadPauseMaxSec: Number(document.getElementById('downloadPauseMaxInput')?.value),

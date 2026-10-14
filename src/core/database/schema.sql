@@ -165,7 +165,8 @@ CREATE TABLE IF NOT EXISTS download_queue (
     position INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     started_at DATETIME,
-    completed_at DATETIME
+    completed_at DATETIME,
+    video_codec TEXT
 );
 
 CREATE TABLE IF NOT EXISTS project_sequences (

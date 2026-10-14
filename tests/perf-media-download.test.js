@@ -36,7 +36,7 @@ test.before(async () => {
     duration REAL, format TEXT, quality TEXT, status TEXT DEFAULT 'queued', position INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, started_at DATETIME, completed_at DATETIME,
     progress REAL DEFAULT 0, downloaded_bytes INTEGER DEFAULT 0, total_bytes INTEGER DEFAULT 0,
-    speed TEXT, eta TEXT, output_path TEXT, error TEXT
+    speed TEXT, eta TEXT, output_path TEXT, error TEXT, video_codec TEXT
   )`);
   realGet = dbManager.get;
   dbManager.get = () => adapter(sqlDb);

@@ -62,6 +62,8 @@ class SettingsManager {
       downloadPauseEnabled: true,
       downloadPauseMinSec: 10,
       downloadPauseMaxSec: 180,
+      // Codec do vídeo baixado: 'auto' (melhor MP4) | 'h264' | 'h265' | 'av1'
+      downloadVideoCodec: 'auto',
       useYoutubeAccount: false,
       theme: 'dark',
       accentColor: DEFAULT_ACCENT,
@@ -352,6 +354,7 @@ class SettingsManager {
     oneOf('converterDefaultCodec', ['libx264', 'libx265']);
     oneOf('converterDefaultResolution', ['original', '2160', '1440', '1080', '720', '480']);
     oneOf('converterDefaultAudioBitrate', ['128k', '192k', '256k', '320k']);
+    oneOf('downloadVideoCodec', ['auto', 'h264', 'h265', 'av1']);
     // Cor de destaque: só a paleta fixa (inválido volta ao padrão, outro valor vira a opção mais próxima)
     if ('accentColor' in out) out.accentColor = normalizeAccentColor(out.accentColor);
     bool('reduceMotion');

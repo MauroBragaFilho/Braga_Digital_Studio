@@ -45,6 +45,10 @@ on:
 # deste repositório): token com permissão de escrita em "Contents" do repositório de releases.
 env:
   RELEASES_REPO: MauroBragaFilho/Braga_Digital_Studio
+  # Nome-base dos arquivos no padrão do ArtCraft Launcher (<stem>-<versão>-<os>-<arch>[-portable].<ext>), para o BDS poder
+  # entrar no catálogo dele: zip portátil no Windows (exe na raiz, com o nome do stem) e AppImage no Linux.
+  # Os instaladores atuais (BragaDigitalStudioSetup.*, lidos pelo atualizador do app) continuam na mesma release.
+  LAUNCHER_STEM: braga-digital-studio
 
 # Mínimo por padrão; só o job `release` (publica a Release e dá push da versão) recebe contents: write.
 permissions:
@@ -199,6 +203,30 @@ jobs:
           $hash = Get-FileHash "${{ steps.find_installer.outputs.installer_path }}" -Algorithm SHA256
           $hash.Hash | Out-File -Encoding ascii "${{ steps.find_installer.outputs.installer_path }}.sha256"
 
+      # Zip portátil no padrão do ArtCraft Launcher: o conteúdo de dist/win-unpacked (já gerado pelo build acima) com o
+      # exe renomeado para <stem>.exe na raiz do zip.
+      - name: Montar o zip portátil (padrão do launcher)
+        shell: pwsh
+        run: |
+          $version = "${{ needs.determine-version.outputs.version }}"
+          $unpacked = Join-Path $PWD 'dist\win-unpacked'
+          if (-not (Test-Path $unpacked)) {
+            Write-Error "dist/win-unpacked não encontrado após o build."
+            exit 1
+          }
+          $exe = Get-ChildItem -Path $unpacked -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "Nenhum .exe na raiz de dist/win-unpacked."
+            exit 1
+          }
+          $stage = Join-Path $env:RUNNER_TEMP 'bds-portable'
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          Copy-Item -Recurse -Path $unpacked -Destination $stage
+          Rename-Item -Path (Join-Path $stage $exe.Name) -NewName "$env:LAUNCHER_STEM.exe"
+          $zip = Join-Path $PWD "dist\$env:LAUNCHER_STEM-$version-windows-x64-portable.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          Write-Host "Zip portátil: $zip ($([math]::Round((Get-Item $zip).Length / 1MB)) MB)"
+
       - name: Publicar artefato do build Windows
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -206,6 +234,7 @@ jobs:
           path: |
             dist/*.exe
             dist/*.exe.sha256
+            dist/*-portable.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -335,6 +364,10 @@ jobs:
             exit 1
           fi
 
+      # Cópia do AppImage com o nome no padrão do ArtCraft Launcher (o original continua, o atualizador do app o conhece).
+      - name: Nomear o AppImage no padrão do launcher
+        run: cp "${{ steps.find_packages.outputs.appimage_path }}" "dist/${LAUNCHER_STEM}-${{ needs.determine-version.outputs.version }}-linux-x86_64.AppImage"
+
       - name: Publicar artefatos do build Linux
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -369,6 +402,14 @@ jobs:
         with:
           name: BDS-linux-packages
           path: release-files
+
+      # SHA256SUMS.txt (formato do sha256sum): é o que o ArtCraft Launcher usa para conferir os downloads quando o GitHub
+      # não informa o digest do arquivo. Cobre todos os arquivos da release, menos os .sha256 individuais.
+      - name: Gerar SHA256SUMS.txt
+        run: |
+          cd release-files
+          find . -maxdepth 1 -type f ! -name '*.sha256' ! -name 'SHA256SUMS.txt' -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Listar arquivos que serão publicados
         run: ls -la release-files/
