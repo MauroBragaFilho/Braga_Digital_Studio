@@ -7,10 +7,7 @@ name: Build BDS (Linux — AppImage + deb)
 # Como disparar:
 #   1) Manual: aba Actions -> "Build BDS (Linux — AppImage + deb)" -> "Run workflow".
 #      Os pacotes ficam disponíveis como artefato do run por 90 dias.
-#   2) Automático com Release: crie e envie uma tag "v*" (ex: v1.0.4):
-#        git tag v1.0.4 && git push origin v1.0.4
-#      Isso builda E publica na Release do GitHub — a MESMA tag "v*" também dispara o build
-#      do Windows (workflow separado), então os dois pacotes acabam anexados à mesma Release.
+#   2) Release por tag: use o workflow "Release BDS (Windows + Linux)" (release-bds.yml), que roda ao enviar uma tag vX.Y.Z.
 #
 # Pré-requisitos deste workflow (mesma ressalva do build Windows):
 #   - assets/icon.png deve existir no repositório (ícone usado pelo target Linux do
@@ -20,9 +17,6 @@ name: Build BDS (Linux — AppImage + deb)
 
 on:
   workflow_dispatch: {}
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: read

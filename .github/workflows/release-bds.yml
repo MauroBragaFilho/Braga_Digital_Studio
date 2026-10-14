@@ -2,28 +2,19 @@ name: Release BDS (Windows + Linux)
 
 # Builda o BDS para Windows E Linux em paralelo e publica os dois numa ÚNICA Release do GitHub.
 #
-# Quando roda (automático):
-#   - A cada push na branch main (ex.: merge de uma branch de trabalho). Commits em outras
-#     branches só rodam o CI (ci.yml), sem gerar instalador.
-#   - Manual: aba Actions -> "Release BDS (Windows + Linux)" -> "Run workflow".
-#   - Para um commit na main NÃO gerar release, coloque [skip release] na mensagem do commit.
-#   - Alterações só de documentação (*.md, .docs/) não disparam o build.
+# Quando roda:
+#   - Ao enviar uma TAG de versão (vX.Y.Z), por exemplo:
+#        git tag v1.0.5
+#        git push origin v1.0.5
+#     A versão da Release é a da tag (sem o "v"); os instaladores já saem com ela. Reenviar a mesma tag
+#     (git push --force origin v1.0.5) refaz a Release e substitui os arquivos.
+#   - Manual: aba Actions -> "Release BDS (Windows + Linux)" -> "Run workflow". Sem tag, a versão é a próxima livre
+#     a partir do package.json (1.0.4 -> 1.0.5 ...) e o workflow registra a versão nova no package.json, com um commit
+#     "chore(release): vX.Y.Z [skip release]" na main.
+#   - Pushes na main NÃO geram release (só o CI roda).
 #
-# Versão (automática):
-#   - Parte da versão do package.json. Se a tag dessa versão já existir, usa a próxima versão
-#     de correção livre (1.0.1 -> 1.0.2 -> ...). Os instaladores já saem com essa versão.
-#   - Depois que a Release é publicada, o workflow registra a versão nova no package.json e
-#     dá push em main com a mensagem "chore(release): vX.Y.Z [skip release]" (não gera outro build).
-#   - Para uma versão maior (minor/major), suba antes no package.json: `npm version minor --no-git-tag-version`.
-#
-# Por que um workflow único em vez dos dois separados (build-bds-release.yml /
-# build-bds-linux.yml) disparados por tag: criar uma tag automaticamente usando o token padrão
-# do GitHub Actions NÃO dispara outros workflows (proteção anti-recursão do próprio GitHub).
-# Este workflow builda os dois sistemas como jobs paralelos e só cria a tag/Release no final,
-# quando os dois builds já terminaram com sucesso.
-#
-# Os workflows build-bds-release.yml e build-bds-linux.yml continuam existindo à parte, para
-# quem preferir empurrar uma tag manualmente ou rebuildar uma única plataforma isolada.
+# Os workflows build-bds-release.yml e build-bds-linux.yml (uma plataforma só) ficam apenas como execução manual,
+# para não rodarem em duplicidade quando a tag é enviada.
 #
 # Pré-requisitos (mesmos dos workflows individuais):
 #   - assets/icon.ico (Windows) e assets/icon.png (Linux) precisam existir no repositório.
@@ -34,11 +25,8 @@ name: Release BDS (Windows + Linux)
 on:
   workflow_dispatch: {}
   push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.docs/**'
-      - 'LICENSE'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 # As RELEASES (instaladores) são publicadas em um repositório SEPARADO do código: é de lá que o atualizador do app
 # baixa (src/config/appUpdate.config.json). Precisa do segredo RELEASES_TOKEN (Settings -> Secrets and variables -> Actions
@@ -66,8 +54,8 @@ jobs:
   # diferentes (ex: se o package.json mudasse entre um job e outro).
   # ------------------------------------------------------------------------------------
   determine-version:
-    # [skip release] na mensagem do commit pula o build (e, por dependência, todos os jobs abaixo).
-    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    # Tag de versão sempre gera a Release. [skip release] na mensagem só vale para execuções sem tag.
+    if: ${{ github.ref_type == 'tag' || !contains(github.event.head_commit.message, '[skip release]') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -86,19 +74,29 @@ jobs:
             echo "::error::Falta o segredo RELEASES_TOKEN (token com escrita em Contents de $RELEASES_REPO). Crie em Settings -> Secrets and variables -> Actions."
             exit 1
           fi
-          VERSION=$(node -p "require('./package.json').version")
-          BASE="$VERSION"
-          # As tags de versão vivem no repositório de releases (é onde as Releases são publicadas)
-          TAGS=$(git ls-remote --tags "https://x-access-token:${RELEASES_TOKEN}@github.com/${RELEASES_REPO}.git")
           BUMPED=false
-          while echo "$TAGS" | grep -q "refs/tags/v$VERSION$"; do
-            if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-              echo "::error::A tag 'v$VERSION' já existe e a versão não é X.Y.Z; ajuste o package.json manualmente."
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            # Disparo por tag: a versão é a da tag (vX.Y.Z), sem bump automático
+            if ! echo "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::A tag '$GITHUB_REF_NAME' não está no formato vX.Y.Z."
               exit 1
             fi
-            VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')
-            BUMPED=true
-          done
+            VERSION="${GITHUB_REF_NAME#v}"
+            BASE="$VERSION"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+            BASE="$VERSION"
+            # As tags de versão vivem no repositório de releases (é onde as Releases são publicadas)
+            TAGS=$(git ls-remote --tags "https://x-access-token:${RELEASES_TOKEN}@github.com/${RELEASES_REPO}.git")
+            while echo "$TAGS" | grep -q "refs/tags/v$VERSION$"; do
+              if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                echo "::error::A tag 'v$VERSION' já existe e a versão não é X.Y.Z; ajuste o package.json manualmente."
+                exit 1
+              fi
+              VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')
+              BUMPED=true
+            done
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
