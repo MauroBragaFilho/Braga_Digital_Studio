@@ -300,20 +300,6 @@ class WhisperCppRunner {
           made.push({ source, kind: 'txt', path: writeUnique(path.join(dir, `${stem}.txt`), text) });
           onEvent({ type: 'line', text: `Texto criado: ${path.basename(made[made.length - 1].path)}` });
         }
-        // Tempos medidos por palavra, ao lado da legenda, para outros programas (ex.: OpenCut) reaproveitarem
-        // sem transcrever de novo. Não entra em `outputs`: é um arquivo auxiliar, não um resultado para o usuário.
-        try {
-          const wordsDoc = {
-            schema: 1,
-            generator: 'braga-digital-studio',
-            model: label,
-            language: parsed.language || opts.language || '',
-            duration: seconds,
-            segments: parsed.segments,
-            words: parsed.words
-          };
-          writeUnique(path.join(dir, `${stem}.words.json`), JSON.stringify(wordsDoc));
-        } catch (_) { /* auxiliar: a falha em gravá-lo não invalida a legenda já criada */ }
         outputs.push(...made);
         ok++;
         emitFile(index, 'progress', { percent: 100 });
