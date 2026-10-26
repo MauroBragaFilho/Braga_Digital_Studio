@@ -138,7 +138,7 @@ jobs:
             dist/*.exe
             dist/*.exe.sha256
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7   # a cota de armazenamento de artefatos é de 500 MB; a release oficial sai pelo release-bds.yml
 
       - name: Publicar Release (apenas em push de tag)
         if: startsWith(github.ref, 'refs/tags/v')

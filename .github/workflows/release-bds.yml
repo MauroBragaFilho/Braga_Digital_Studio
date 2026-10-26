@@ -234,7 +234,7 @@ jobs:
             dist/*.exe.sha256
             dist/*-portable.zip
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 1   # só serve para passar ao job de release, que apaga os artefatos ao terminar (cota de 500 MB)
 
   # ------------------------------------------------------------------------------------
   # Build Linux (mesmos passos validados em build-bds-linux.yml, incluindo smoke-test)
@@ -376,7 +376,7 @@ jobs:
             dist/*.deb
             dist/*.deb.sha256
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 1   # só serve para passar ao job de release, que apaga os artefatos ao terminar (cota de 500 MB)
 
   # ------------------------------------------------------------------------------------
   # Só publica a Release depois que os DOIS builds tiverem terminado com sucesso — se
@@ -388,6 +388,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # push do package.json neste repositório (a Release usa o RELEASES_TOKEN, no repositório de releases)
+      actions: write    # apagar os artefatos deste run depois de publicar (a cota de armazenamento é de 500 MB)
     steps:
       - name: Baixar artefato Windows
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -421,6 +422,22 @@ jobs:
           name: BDS ${{ needs.determine-version.outputs.tag }}
           files: release-files/*
           generate_release_notes: true
+
+      # Cada release pesa ~500 MB em artefatos (instaladores + pacotes Linux), e a cota de armazenamento do plano
+      # gratuito é de 500 MB: com a retenção antiga (90 dias) a segunda release já falhava com "Artifact storage
+      # quota has been hit". Os artefatos só existem para chegar até aqui; publicada (ou não) a Release, são apagados.
+      - name: Apagar os artefatos deste run (liberar a cota de armazenamento)
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts"
+          IDS=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API" | jq -r '.artifacts[].id')
+          for ID in $IDS; do
+            echo "Apagando artefato $ID"
+            curl -sS -X DELETE -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ID}" || echo "::warning::Não foi possível apagar o artefato $ID"
+          done
 
       # Registra no package.json a versão que acabou de ser publicada, para o repositório não
       # ficar para trás. Se falhar (ex.: main protegida), a Release continua válida: o próximo
