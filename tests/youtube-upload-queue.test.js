@@ -96,7 +96,7 @@ test('SettingsManager guarda as preferências de envio com faixas seguras', () =
 });
 
 test('título padrão: nome do arquivo sem extensão, "_" vira espaço, limitado a 100 caracteres', () => {
-  assert.equal(defaultTitle('C:\\v\\meu_video_final.mp4'), 'meu video final');
+  assert.equal(defaultTitle('/v/meu_video_final.mp4'), 'meu video final');
   assert.equal(defaultTitle('/x/' + 'a'.repeat(150) + '.mov').length, 100);
 });
 
@@ -104,7 +104,7 @@ test('título padrão: nome do arquivo sem extensão, "_" vira espaço, limitado
 
 test('add: título padrão, visibilidade das preferências, sem duplicar o mesmo arquivo; update e remove', () => {
   const { q } = makeQueue({ uploadDefaultVisibility: 'unlisted' });
-  const added = q.add(['C:\\v\\a.mp4', { path: 'C:\\v\\b.mp4', title: 'B', description: 'desc', visibility: 'public' }, 'C:\\v\\a.mp4']);
+  const added = q.add(['/v/a.mp4', { path: '/v/b.mp4', title: 'B', description: 'desc', visibility: 'public' }, '/v/a.mp4']);
   assert.equal(added.length, 2);
   assert.deepEqual([added[0].title, added[0].visibility, added[0].status], ['a', 'unlisted', 'queued']);
   assert.deepEqual([added[1].title, added[1].description, added[1].visibility], ['B', 'desc', 'public']);
@@ -115,7 +115,7 @@ test('add: título padrão, visibilidade das preferências, sem duplicar o mesmo
 
   assert.equal(q.remove(added[1].id).ok, true);
   assert.equal(q.items.length, 1);
-  assert.equal(q.add('C:\\v\\b.mp4').length, 1, 'removido pode voltar');
+  assert.equal(q.add('/v/b.mp4').length, 1, 'removido pode voltar');
 });
 
 test('start: recusa com envio automático desligado ou sem a página do Studio', () => {
@@ -129,11 +129,11 @@ test('fila: envia em ordem, um por vez, com pausa aleatória entre os envios e s
   const { q, c } = makeQueue({ uploadPauseEnabled: true, uploadPauseMinSec: 100, uploadPauseMaxSec: 200 });
   const waits = [];
   q.on('wait', (w) => waits.push(w));
-  q.add(['C:\\v\\1.mp4', 'C:\\v\\2.mp4', 'C:\\v\\3.mp4']);
+  q.add(['/v/1.mp4', '/v/2.mp4', '/v/3.mp4']);
   const d = fakeDriver();
   assert.equal(q.start(d).ok, true);
   await finished(q);
-  assert.deepEqual(d.calls.map((x) => x.path), ['C:\\v\\1.mp4', 'C:\\v\\2.mp4', 'C:\\v\\3.mp4']);
+  assert.deepEqual(d.calls.map((x) => x.path), ['/v/1.mp4', '/v/2.mp4', '/v/3.mp4']);
   assert.deepEqual(q.items.map((i) => i.status), ['done', 'done', 'done']);
   assert.equal(q.items[0].videoUrl, 'https://youtu.be/1');
   // 2 pausas (entre 1-2 e 2-3), cada uma com início e fim; random=0.5 → 150 s
@@ -147,7 +147,7 @@ test('fila: envia em ordem, um por vez, com pausa aleatória entre os envios e s
 
 test('fila: skipWait encurta a pausa; pause interrompe antes do próximo', async () => {
   const { q } = makeQueue({ uploadPauseEnabled: true, uploadPauseMinSec: 3000, uploadPauseMaxSec: 3000 });
-  q.add(['C:\\v\\1.mp4', 'C:\\v\\2.mp4', 'C:\\v\\3.mp4']);
+  q.add(['/v/1.mp4', '/v/2.mp4', '/v/3.mp4']);
   const d = fakeDriver();
   let pulled = false;
   q.on('wait', (w) => {
@@ -166,7 +166,7 @@ test('fila: skipWait encurta a pausa; pause interrompe antes do próximo', async
 
 test('fila: falha de um vídeo não para os outros; retry devolve à fila', async () => {
   const { q } = makeQueue();
-  q.add(['C:\\v\\1.mp4', 'C:\\v\\2.mp4']);
+  q.add(['/v/1.mp4', '/v/2.mp4']);
   const failed = [];
   q.on('item-failed', (i) => failed.push(i.name));
   q.start(fakeDriver([new Error('O YouTube recusou o envio: formato inválido')]));
@@ -182,7 +182,7 @@ test('fila: falha de um vídeo não para os outros; retry devolve à fila', asyn
 
 test('fila: pedido de atenção (verificação do Google) para a fila sem marcar o vídeo como falha', async () => {
   const { q } = makeQueue();
-  q.add(['C:\\v\\1.mp4', 'C:\\v\\2.mp4']);
+  q.add(['/v/1.mp4', '/v/2.mp4']);
   const att = [];
   q.on('attention', (a) => att.push(a));
   const d = fakeDriver([new AttentionError('Confirme a conta.')]);
@@ -203,7 +203,7 @@ test('fila: limite diário para a fila e persiste entre instâncias (arquivo de 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bds-upl-'));
   const store = path.join(dir, 'youtube-uploads.json');
   const { q } = makeQueue({ uploadDailyLimit: 2 }, { storeFile: store });
-  q.add(['C:\\v\\1.mp4', 'C:\\v\\2.mp4', 'C:\\v\\3.mp4']);
+  q.add(['/v/1.mp4', '/v/2.mp4', '/v/3.mp4']);
   q.start(fakeDriver());
   await finished(q);
   assert.deepEqual(q.items.map((i) => i.status), ['done', 'done', 'queued']);
@@ -217,7 +217,7 @@ test('fila: limite diário para a fila e persiste entre instâncias (arquivo de 
 
 test('fila: remover o vídeo em envio cancela no driver e marca como cancelado', async () => {
   const { q } = makeQueue();
-  const [a] = q.add(['C:\\v\\1.mp4']);
+  const [a] = q.add(['/v/1.mp4']);
   let release;
   const d = fakeDriver([() => new Promise((r) => { release = r; })]);
   q.start(d);
@@ -234,7 +234,7 @@ test('fila: remover o vídeo em envio cancela no driver e marca como cancelado',
 
 test('getState devolve cópias (mudar o retorno não altera a fila)', () => {
   const { q } = makeQueue();
-  q.add(['C:\\v\\1.mp4']);
+  q.add(['/v/1.mp4']);
   const st = q.getState();
   st.items[0].title = 'hack';
   assert.notEqual(q.items[0].title, 'hack');
@@ -246,11 +246,13 @@ test('getState devolve cópias (mudar o retorno não altera a fila)', () => {
 
 test('miniatura automática: imagem com o mesmo nome do vídeo na mesma pasta (jpg, jpeg, png, webp)', () => {
   const { findThumbnail } = YoutubeUploadQueue;
-  const have = new Set(['C:\\v\\a.png', 'C:\\v\\b.JPG']);
+  // path.join normaliza os separadores do sistema: as comparações precisam usar o mesmo formato
+  const P = (f) => path.join('/v', f);
+  const have = new Set([P('a.png'), P('b.JPG')]);
   const exists = (p) => have.has(p);
-  assert.equal(findThumbnail('C:\\v\\a.mp4', exists), 'C:\\v\\a.png');
-  assert.equal(findThumbnail('C:\\v\\b.mp4', exists), 'C:\\v\\b.JPG');
-  assert.equal(findThumbnail('C:\\v\\c.mp4', exists), '');
+  assert.equal(findThumbnail(P('a.mp4'), exists), P('a.png'));
+  assert.equal(findThumbnail(P('b.mp4'), exists), P('b.JPG'));
+  assert.equal(findThumbnail(P('c.mp4'), exists), '');
   assert.equal(findThumbnail('', exists), '');
 });
 
@@ -274,14 +276,14 @@ test('padrões da fila: descrição e playlist valem para os novos; applyToQueue
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bds-upl-'));
   const store = path.join(dir, 'youtube-uploads.json');
   const { q } = makeQueue({}, { storeFile: store });
-  const [a] = q.add(['C:\\v\\1.mp4']);
+  const [a] = q.add(['/v/1.mp4']);
   q.start(fakeDriver());
   await finished(q);
-  const [b] = q.add(['C:\\v\\2.mp4']);
+  const [b] = q.add(['/v/2.mp4']);
   assert.equal(b.description, '');
 
   q.setDefaults({ description: 'Inscreva-se!', playlist: 'Lives' });
-  const [c] = q.add(['C:\\v\\3.mp4']);
+  const [c] = q.add(['/v/3.mp4']);
   assert.deepEqual([c.description, c.playlist], ['Inscreva-se!', 'Lives']);
   assert.equal(q.items.find((i) => i.id === b.id).description, '', 'sem applyToQueued os antigos ficam');
 
@@ -299,11 +301,11 @@ test('padrões da fila: descrição e playlist valem para os novos; applyToQueue
 
 test('driver recebe miniatura e playlist; avisos não fatais ficam no item', async () => {
   const { q } = makeQueue();
-  q.add([{ path: 'C:\\v\\1.mp4', thumbnail: 'C:\\v\\1.png', playlist: 'Lives' }]);
+  q.add([{ path: '/v/1.mp4', thumbnail: '/v/1.png', playlist: 'Lives' }]);
   const d = fakeDriver([() => ({ videoUrl: 'https://youtu.be/x', warnings: ['Playlist não aplicada: não há playlist chamada "Lives" na conta.'] })]);
   q.start(d);
   await finished(q);
-  assert.deepEqual([d.calls[0].thumbnail, d.calls[0].playlist], ['C:\\v\\1.png', 'Lives']);
+  assert.deepEqual([d.calls[0].thumbnail, d.calls[0].playlist], ['/v/1.png', 'Lives']);
   assert.equal(q.items[0].status, 'done');
   assert.match(q.items[0].warnings[0], /Playlist não aplicada/);
 });
