@@ -1,15 +1,18 @@
 <div class="ws-root">
 
-  <!-- Cabeçalho do projeto -->
+  <!-- Cabeçalho do projeto: nome editável, detalhes, status e a ação principal (Adicionar arquivos) -->
   <header class="ws-header">
     <button id="wsBtnBack" class="ws-icon-btn ws-back" type="button" title="Voltar para Projetos" aria-label="Voltar para Projetos"><span class="material-symbols-rounded">arrow_back</span></button>
-    <div id="wsCoverWrapper" class="ws-cover" title="Clique para trocar a capa" role="button" tabindex="0">
+    <div id="wsCoverWrapper" class="ws-cover" title="Trocar a capa" aria-label="Trocar a capa" role="button" tabindex="0">
       <div id="wsCoverImg" class="ws-cover-img empty"><span class="material-symbols-rounded">image</span></div>
       <span class="material-symbols-rounded ws-cover-edit" aria-hidden="true">photo_camera</span>
     </div>
     <span id="wsHeaderColor" class="ws-header-color" aria-hidden="true"></span>
     <div class="ws-header-info">
-      <h2 id="wsProjectName" class="ws-title">Projeto</h2>
+      <div class="ws-title-row">
+        <h2 id="wsProjectName" class="ws-title">Projeto</h2>
+        <button id="wsBtnRename" class="ws-icon-btn ws-title-edit" type="button" title="Renomear" aria-label="Renomear o projeto"><span class="material-symbols-rounded">edit</span></button>
+      </div>
       <div class="ws-header-meta">
         <span id="wsHeaderClient"></span>
         <span id="wsHeaderType"></span>
@@ -27,46 +30,54 @@
         <option value="Problema">Problema</option>
         <option value="Arquivado">Arquivado</option>
       </select>
+      <button id="wsBtnEditDetails" class="ws-btn-outline" type="button">Editar detalhes</button>
+      <button id="wsBtnAddFiles" class="ws-btn-accent" type="button" aria-haspopup="menu"><span class="material-symbols-rounded">add</span> Adicionar arquivos</button>
     </div>
   </header>
 
   <nav class="ws-proj-tabs" role="tablist" aria-label="Áreas do projeto">
     <button class="ws-proj-tab active" type="button" role="tab" aria-selected="true" data-proj-tab="overview"><span class="material-symbols-rounded">dashboard</span> Visão geral</button>
-    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="files"><span class="material-symbols-rounded">folder_open</span> Arquivos</button>
-    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="audio"><span class="material-symbols-rounded">graphic_eq</span> Áudio</button>
-    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="devices"><span class="material-symbols-rounded">devices</span> Dispositivos</button>
-    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="delivery"><span class="material-symbols-rounded">local_shipping</span> Entrega</button>
+    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="files"><span class="material-symbols-rounded">folder_open</span> Arquivos <span id="wsTabFilesCount" class="ws-tab-count"></span></button>
+    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="audio"><span class="material-symbols-rounded">graphic_eq</span> Sincronizar câmeras</button>
+    <button class="ws-proj-tab" type="button" role="tab" aria-selected="false" data-proj-tab="delivery"><span class="material-symbols-rounded">local_shipping</span> Entrega e exportação</button>
+    <span id="wsSaveState" class="ws-save-state" role="status" aria-live="polite"></span>
   </nav>
 
-  <!-- VISÃO GERAL -->
+  <!-- VISÃO GERAL: o que fazer em seguida, observações, equipamentos e atividade -->
   <section class="ws-panel" data-proj-panel="overview">
-    <div class="ws-grid ws-grid-3">
-      <div class="ws-card">
-        <h3 class="ws-card-title">Resumo</h3>
-        <div class="ws-stats">
-          <div class="ws-stat"><b id="wsOvVideos">0</b><span>Vídeos</span></div>
-          <div class="ws-stat"><b id="wsOvAudios">0</b><span>Áudios</span></div>
-          <div class="ws-stat"><b id="wsOvPhotos">0</b><span>Fotos</span></div>
-          <div class="ws-stat"><b id="wsOvSize">0 B</b><span>Espaço</span></div>
-          <div class="ws-stat"><b id="wsOvTranscripts">0</b><span>Transcrições</span></div>
-          <div class="ws-stat"><b id="wsOvDevices">0</b><span>Dispositivos</span></div>
-        </div>
+    <div class="ws-overview">
+      <div class="ws-card ws-steps-card">
+        <h3 class="ws-card-title">Próximos passos</h3>
+        <ol id="wsSteps" class="ws-steps"></ol>
         <p id="wsOvMissing" class="ws-note tone-warn hidden"></p>
-        <p id="wsOvActivity" class="ws-muted">Última atividade: —</p>
-        <ul class="ws-links">
-          <li><span class="material-symbols-rounded" aria-hidden="true">local_shipping</span><span id="wsOvDeliveryText">Entrega: não iniciada</span><button id="wsOvGoDelivery" class="ws-link" type="button">Abrir</button></li>
-          <li><span class="material-symbols-rounded" aria-hidden="true">graphic_eq</span><span id="wsOvSync">Nenhuma sincronização ainda</span><button id="wsOvGoAudio" class="ws-link" type="button">Abrir</button></li>
-          <li><span class="material-symbols-rounded" aria-hidden="true">folder_open</span><span>Arquivos e pastas do projeto</span><button id="wsOvGoFiles" class="ws-link" type="button">Abrir</button></li>
-        </ul>
+        <div class="ws-ov-stats" aria-label="Resumo do material">
+          <span><b id="wsOvVideos">0</b> vídeos</span>
+          <span><b id="wsOvAudios">0</b> áudios</span>
+          <span><b id="wsOvPhotos">0</b> fotos</span>
+          <span><b id="wsOvSize">0 B</b></span>
+          <span><b id="wsOvTranscripts">0</b> transcrições</span>
+        </div>
       </div>
-      <div class="ws-card">
-        <h3 class="ws-card-title">Observações</h3>
-        <textarea id="wsOvNotes" class="ws-textarea" rows="8" maxlength="2000" placeholder="Ex.: Cerimônia + recepção. Entrega final em 4K."></textarea>
-        <div class="ws-actions-right"><button id="wsOvSaveNotes" class="ws-btn-outline" type="button" disabled>Salvar observações</button></div>
-      </div>
-      <div class="ws-card">
-        <h3 class="ws-card-title">Atividade recente</h3>
-        <ul id="wsActivityList" class="ws-activity-list" aria-live="polite"></ul>
+      <div class="ws-overview-side">
+        <div class="ws-card">
+          <h3 class="ws-card-title">Observações</h3>
+          <textarea id="wsOvNotes" class="ws-textarea" rows="5" maxlength="2000" placeholder="Cerimônia e recepção. Entrega final em 4K." aria-label="Observações do projeto"></textarea>
+          <p class="ws-muted">Salva sozinha enquanto você digita.</p>
+        </div>
+        <div class="ws-card">
+          <h3 class="ws-card-title">Equipamentos</h3>
+          <div id="wsDevicesGroups" class="ws-chips"></div>
+          <form id="wsDeviceForm" class="ws-device-add" autocomplete="off">
+            <select id="wsDeviceCategory" class="ws-field-input ws-select-xs" aria-label="Tipo de equipamento"><option value="camera">Câmera</option><option value="audio">Áudio</option><option value="other">Outro</option></select>
+            <input id="wsDeviceName" class="ws-field-input" type="text" maxlength="80" placeholder="Sony A6000" aria-label="Nome do equipamento" required />
+            <input id="wsDeviceNote" class="ws-field-input ws-device-note-input" type="text" maxlength="200" placeholder="Observação (opcional)" aria-label="Observação do equipamento" />
+            <button class="ws-btn-outline" type="submit">Adicionar</button>
+          </form>
+        </div>
+        <div class="ws-card">
+          <h3 class="ws-card-title">Atividade</h3>
+          <ul id="wsActivityList" class="ws-activity-list" aria-live="polite"></ul>
+        </div>
       </div>
     </div>
   </section>
@@ -78,16 +89,14 @@
       <span id="wsFilesCount" class="ws-muted"></span>
       <button id="wsMissingPill" class="ws-pill tone-warn hidden" type="button" title="Localizar os arquivos ausentes" aria-label="Localizar arquivos ausentes"></button>
       <div class="ws-files-actions">
-        <button id="wsBtnImportLibrary" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">video_library</span> Da Biblioteca</button>
-        <button id="wsBtnImportFiles" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">upload_file</span> Do computador</button>
-        <button id="wsBtnNewBin" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">create_new_folder</span> Nova pasta</button>
+        <button id="wsBtnAddMenu" class="ws-btn-outline" type="button" aria-haspopup="menu"><span class="material-symbols-rounded">add</span> Adicionar <span class="material-symbols-rounded">expand_more</span></button>
       </div>
     </div>
-    <div class="ws-files-layout">
+    <div id="wsFilesLayout" class="ws-files-layout">
       <aside class="ws-files-left">
-        <p class="ws-side-title">Estrutura</p>
+        <p class="ws-side-title">Pastas</p>
         <div id="wsStructure" class="ws-tree"></div>
-        <button id="wsBtnDefaultBins" class="ws-link ws-side-action hidden" type="button">Criar estrutura padrão (BRUTOS, FOTOS, ÁUDIO, EXPORTAÇÕES, PROJETO)</button>
+        <button id="wsBtnDefaultBins" class="ws-link ws-side-action hidden" type="button">Criar as pastas padrão</button>
         <div id="wsBinTools" class="ws-bin-tools hidden">
           <button id="wsBinRename" class="ws-link" type="button">Renomear pasta</button>
           <button id="wsBinDelete" class="ws-link tone-bad" type="button">Excluir pasta</button>
@@ -95,7 +104,11 @@
       </aside>
       <div id="wsFilesCenter" class="ws-files-center">
         <div class="ws-files-filters">
-          <div class="ws-search"><span class="material-symbols-rounded" aria-hidden="true">search</span><input id="wsFilesSearch" type="search" placeholder="Buscar na pasta" autocomplete="off" aria-label="Buscar arquivos" /></div>
+          <label class="ws-select-all" title="Selecionar todos os arquivos desta pasta (Ctrl+A)">
+            <input id="wsSelectAll" type="checkbox" aria-label="Selecionar todos os arquivos desta pasta" />
+            <span>Selecionar todos</span>
+          </label>
+          <div class="ws-search"><span class="material-symbols-rounded" aria-hidden="true">search</span><input id="wsFilesSearch" type="search" placeholder="Buscar nesta pasta" autocomplete="off" aria-label="Buscar arquivos" /></div>
           <button class="ws-type-filter active" type="button" data-filter="all">Todos</button>
           <button class="ws-type-filter" type="button" data-filter="video">Vídeos</button>
           <button class="ws-type-filter" type="button" data-filter="audio">Áudios</button>
@@ -107,21 +120,26 @@
         </div>
         <div id="wsMediaGrid" class="ws-media-grid" role="listbox" aria-multiselectable="true"></div>
         <table id="wsMediaTable" class="ws-media-table hidden">
-          <thead><tr><th></th><th>Nome</th><th>Pasta</th><th>Duração</th><th>Resolução</th><th>Tamanho</th><th>Estado</th></tr></thead>
+          <thead><tr><th><input id="wsSelectAllTable" type="checkbox" aria-label="Selecionar todos os arquivos desta pasta" /></th><th>Nome</th><th>Pasta</th><th>Duração</th><th>Resolução</th><th>Tamanho</th><th>Estado</th></tr></thead>
           <tbody id="wsMediaTableBody"></tbody>
         </table>
         <div id="wsSelectionBar" class="ws-selection-bar hidden">
           <span id="wsSelCount">0 selecionados</span>
           <button id="wsSelMove" class="ws-btn-outline" type="button">Mover para…</button>
-          <button id="wsSelSync" class="ws-btn-outline" type="button">Sincronizar por áudio</button>
+          <button id="wsSelSync" class="ws-btn-outline" type="button">Sincronizar câmeras</button>
           <button id="wsSelRemove" class="ws-btn-outline tone-bad" type="button">Remover do projeto</button>
           <button id="wsSelClear" class="ws-link" type="button">Limpar seleção</button>
         </div>
         <div id="wsDropOverlay" class="ws-drop-overlay hidden"><span class="material-symbols-rounded">upload_file</span><p>Solte os arquivos para adicionar ao projeto</p></div>
       </div>
-      <aside class="ws-files-right">
-        <div id="wsInspEmpty" class="ws-empty-line">Clique num arquivo para ver os detalhes.</div>
+      <!-- Detalhes do arquivo: painel que só aparece quando um arquivo é clicado -->
+      <aside class="ws-files-right" aria-label="Detalhes do arquivo">
+        <div id="wsInspEmpty" class="ws-empty-line hidden">Clique num arquivo para ver os detalhes.</div>
         <div id="wsInspBody" class="hidden">
+          <div class="ws-insp-head">
+            <span class="ws-side-title">Detalhes</span>
+            <button id="wsInspClose" class="ws-icon-btn" type="button" title="Fechar detalhes" aria-label="Fechar detalhes"><span class="material-symbols-rounded">close</span></button>
+          </div>
           <div id="wsInspPreview" class="ws-insp-preview"></div>
           <div class="ws-insp-name-row">
             <input id="wsInspName" class="ws-field-input" type="text" maxlength="200" aria-label="Nome no projeto" />
@@ -131,7 +149,7 @@
           <div id="wsInspRows" class="ws-insp-rows"></div>
           <div id="wsInspLinks" class="ws-insp-links"></div>
           <div class="ws-insp-actions">
-            <button id="wsInspOpenMonitor" class="ws-btn-accent" type="button"><span class="material-symbols-rounded">play_arrow</span> Abrir no monitor</button>
+            <button id="wsInspOpenMonitor" class="ws-btn-accent" type="button"><span class="material-symbols-rounded">play_arrow</span> Assistir</button>
             <button id="wsInspReveal" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">folder</span> Mostrar na pasta</button>
             <button id="wsInspRemove" class="ws-link tone-bad" type="button">Remover do projeto</button>
           </div>
@@ -140,24 +158,46 @@
     </div>
   </section>
 
-  <!-- ÁUDIO: sincronização multicâmera -->
+  <!-- SINCRONIZAR CÂMERAS: assistente em 3 passos e a linha do tempo do resultado -->
   <section class="ws-panel hidden" data-proj-panel="audio">
     <div class="ws-grid ws-grid-audio">
-      <div class="ws-card">
-        <div class="ws-card-head"><h3 class="ws-card-title">Fontes</h3><button id="wsSyncGoFiles" class="ws-link" type="button">Organizar pastas</button></div>
+      <div class="ws-card ws-sync-wizard">
+        <div class="ws-card-head"><h3 class="ws-card-title">Sincronizar câmeras</h3><button id="wsSyncGoFiles" class="ws-link" type="button">Organizar pastas</button></div>
         <p id="wsSyncHint" class="ws-muted"></p>
-        <div id="wsSyncSources" class="ws-sources"></div>
-        <div class="ws-actions-right">
-          <button id="wsSyncRun" class="ws-btn-accent" type="button" disabled><span class="material-symbols-rounded">graphic_eq</span> Sincronizar</button>
+        <div class="ws-wizard-step">
+          <span class="ws-step-num" aria-hidden="true">1</span>
+          <div class="ws-wizard-body">
+            <b>Quais câmeras entram</b>
+            <span class="ws-muted">Cada pasta do projeto é uma câmera ou gravador.</span>
+            <div id="wsSyncSources" class="ws-sources"></div>
+          </div>
         </div>
-        <div id="wsSyncProgressBox" class="ws-progress hidden" role="status" aria-live="polite">
-          <span class="ws-spinner" aria-hidden="true"></span>
-          <span id="wsSyncProgress">Preparando…</span>
+        <div class="ws-wizard-step">
+          <span class="ws-step-num" aria-hidden="true">2</span>
+          <div class="ws-wizard-body">
+            <b>Áudio de referência</b>
+            <span class="ws-muted">A gravação com o áudio mais contínuo. As outras são encaixadas nela.</span>
+            <select id="wsSyncMasterSelect" class="ws-field-input" aria-label="Áudio de referência"></select>
+          </div>
+        </div>
+        <div class="ws-wizard-step">
+          <span class="ws-step-num" aria-hidden="true">3</span>
+          <div class="ws-wizard-body">
+            <b>Sincronizar e revisar</b>
+            <span class="ws-muted">Leva de segundos a alguns minutos, conforme a duração do material.</span>
+            <div class="ws-actions-left">
+              <button id="wsSyncRun" class="ws-btn-accent" type="button" disabled><span class="material-symbols-rounded">graphic_eq</span> Sincronizar</button>
+            </div>
+            <div id="wsSyncProgressBox" class="ws-progress hidden" role="status" aria-live="polite">
+              <span class="ws-spinner" aria-hidden="true"></span>
+              <span id="wsSyncProgress">Preparando…</span>
+            </div>
+          </div>
         </div>
       </div>
       <div id="wsSyncResult" class="ws-card hidden">
         <div class="ws-card-head">
-          <h3 class="ws-card-title">Linha do tempo</h3>
+          <h3 class="ws-card-title">Resultado</h3>
           <div class="ws-card-tools">
             <select id="wsSyncGroupSelect" class="ws-field-input ws-select-sm" aria-label="Sincronização"></select>
             <button id="wsSyncZoomOut" class="ws-icon-btn" type="button" title="Menos zoom" aria-label="Menos zoom"><span class="material-symbols-rounded">zoom_out</span></button>
@@ -167,85 +207,100 @@
         </div>
         <p id="wsSyncMeta" class="ws-muted"></p>
         <div id="wsSyncTimeline" class="ws-timeline"></div>
-        <p class="ws-muted ws-tl-legend"><span class="ws-tl-swatch tone-master"></span> mestre <span class="ws-tl-swatch tone-ok"></span> confiança alta <span class="ws-tl-swatch tone-warn"></span> média <span class="ws-tl-swatch tone-bad"></span> baixa · clique num clipe para ajustar a posição</p>
+        <p class="ws-muted ws-tl-legend"><span class="ws-tl-swatch tone-master"></span> referência <span class="ws-tl-swatch tone-ok"></span> encaixe certeiro <span class="ws-tl-swatch tone-warn"></span> confira <span class="ws-tl-swatch tone-bad"></span> duvidoso · clique num clipe para ajustar a posição</p>
         <div id="wsSyncPendingBox" class="ws-pending hidden">
           <h4 class="ws-subtitle">Sem posição</h4>
           <ul id="wsSyncPending" class="ws-pending-list"></ul>
         </div>
         <div class="ws-actions-right">
-          <button id="wsSyncExport" class="ws-btn-accent" type="button" disabled><span class="material-symbols-rounded">ios_share</span> Exportar sequência multicâmera (XML)</button>
+          <button id="wsSyncExport" class="ws-btn-accent" type="button" disabled><span class="material-symbols-rounded">ios_share</span> Exportar para o Premiere (XML)</button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- DISPOSITIVOS -->
-  <section class="ws-panel hidden" data-proj-panel="devices">
-    <div class="ws-grid ws-grid-2">
-      <div class="ws-card">
-        <h3 class="ws-card-title">Equipamentos do projeto</h3>
-        <p class="ws-muted">Câmeras, gravadores e outros equipamentos usados neste trabalho. Servem para identificar o material e organizar os arquivos.</p>
-        <div id="wsDevicesGroups" class="ws-devices-groups"></div>
-      </div>
-      <div class="ws-card">
-        <h3 class="ws-card-title">Adicionar</h3>
-        <form id="wsDeviceForm" class="ws-form" autocomplete="off">
-          <label class="ws-field-label" for="wsDeviceCategory">Categoria</label>
-          <select id="wsDeviceCategory" class="ws-field-input"><option value="camera">Câmera</option><option value="audio">Áudio</option><option value="other">Outro</option></select>
-          <label class="ws-field-label" for="wsDeviceName">Nome</label>
-          <input id="wsDeviceName" class="ws-field-input" type="text" maxlength="80" placeholder="Ex.: Sony A6300" required />
-          <label class="ws-field-label" for="wsDeviceNote">Observação (opcional)</label>
-          <input id="wsDeviceNote" class="ws-field-input" type="text" maxlength="200" placeholder="Ex.: cartão A, 4K 25p" />
-          <button class="ws-btn-accent ws-self-start" type="submit">Adicionar dispositivo</button>
-        </form>
-      </div>
-    </div>
-  </section>
-
-  <!-- ENTREGA -->
+  <!-- ENTREGA E EXPORTAÇÃO: tudo salva sozinho -->
   <section class="ws-panel hidden" data-proj-panel="delivery">
     <div class="ws-grid ws-grid-3">
       <div class="ws-card">
-        <h3 class="ws-card-title">Estado da entrega</h3>
+        <h3 class="ws-card-title">O que entregar</h3>
         <div class="ws-two">
-          <div><label class="ws-field-label" for="wsDeliveryStatus">Status</label>
+          <div><label class="ws-field-label" for="wsDeliveryStatus">Situação</label>
             <select id="wsDeliveryStatus" class="ws-field-input"><option value="Não iniciada">Não iniciada</option><option value="Em preparação">Em preparação</option><option value="Pronta">Pronta</option><option value="Entregue">Entregue</option></select></div>
           <div><label class="ws-field-label" for="wsDeliveryDeadline">Prazo</label><input id="wsDeliveryDeadline" class="ws-field-input" type="date" /></div>
         </div>
         <div class="ws-progressbar" aria-hidden="true"><span id="wsDeliveryProgress"></span></div>
         <p id="wsDeliveryProgressText" class="ws-muted"></p>
-        <h4 class="ws-subtitle">Arquivos</h4>
         <ul id="wsDeliveryItems" class="ws-check-list"></ul>
         <div class="ws-add-row">
-          <input id="wsDeliveryNewItem" class="ws-field-input" type="text" maxlength="80" placeholder="Novo item (ex.: Vídeo de 1 minuto)" />
+          <input id="wsDeliveryNewItem" class="ws-field-input" type="text" maxlength="80" placeholder="Vídeo de 1 minuto para o Instagram" aria-label="Novo item da entrega" />
           <button id="wsDeliveryAddItem" class="ws-btn-outline" type="button">Adicionar</button>
         </div>
       </div>
       <div class="ws-card">
-        <h3 class="ws-card-title">Destino e observações</h3>
-        <h4 class="ws-subtitle">Destino</h4>
+        <h3 class="ws-card-title">Para onde e observações</h3>
         <ul id="wsDeliveryDestinations" class="ws-check-list ws-check-inline"></ul>
         <label class="ws-field-label" for="wsDeliveryNotes">Observações</label>
-        <textarea id="wsDeliveryNotes" class="ws-textarea" rows="5" maxlength="2000" placeholder="Ex.: enviar o teaser antes do vídeo principal."></textarea>
-        <div class="ws-actions-right"><button id="wsDeliverySave" class="ws-btn-accent" type="button" disabled>Salvar entrega</button></div>
+        <textarea id="wsDeliveryNotes" class="ws-textarea" rows="5" maxlength="2000" placeholder="Enviar o teaser antes do vídeo principal."></textarea>
+        <p class="ws-muted">Tudo nesta aba salva sozinho.</p>
       </div>
       <div class="ws-card">
         <h3 class="ws-card-title">Exportar</h3>
         <div class="ws-export">
           <button id="wsExportBinsXml" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">account_tree</span> Pastas para o Premiere (XML)</button>
-          <p class="ws-muted">Recria no Premiere a estrutura de pastas do projeto com todos os clipes, sem sequência.</p>
+          <p class="ws-muted">Recria no Premiere as pastas do projeto com todos os clipes, sem sequência.</p>
           <div class="ws-export-multicam">
             <select id="wsExportSyncGroup" class="ws-field-input ws-select-sm" aria-label="Sincronização a exportar"></select>
-            <button id="wsExportMulticamXml" class="ws-btn-outline" type="button" disabled><span class="material-symbols-rounded">graphic_eq</span> Sequência multicâmera (XML)</button>
+            <button id="wsExportMulticamXml" class="ws-btn-outline" type="button" disabled><span class="material-symbols-rounded">graphic_eq</span> Câmeras sincronizadas (XML)</button>
           </div>
           <p id="wsExportMulticamHint" class="ws-muted"></p>
           <button id="wsExportBdspro" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">inventory_2</span> Pacote do projeto (.bdspro)</button>
-          <p class="ws-muted">Leva o projeto inteiro (referências, pastas, sincronizações, dispositivos, entrega) para outro computador.</p>
+          <p class="ws-muted">Leva o projeto inteiro (pastas, sincronizações, equipamentos e entrega) para outro computador.</p>
           <button id="wsExportInfo" class="ws-btn-outline" type="button"><span class="material-symbols-rounded">description</span> Informações do projeto (texto)</button>
         </div>
       </div>
     </div>
   </section>
+
+  <!-- Menu de ações (Adicionar arquivos); montado pelo JS -->
+  <div id="wsMenu" class="ws-menu hidden" role="menu"></div>
+
+  <!-- MODAL: EDITAR DETALHES DO PROJETO -->
+  <div id="wsEditModal" class="ws-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wsEditTitle">
+    <div class="ws-modal-box">
+      <div class="ws-modal-header">
+        <h3 id="wsEditTitle">Detalhes do projeto</h3>
+        <button id="wsEditClose" class="ws-icon-btn" type="button" title="Fechar" aria-label="Fechar"><span class="material-symbols-rounded">close</span></button>
+      </div>
+      <label class="ws-field-label" for="wsEditName">Nome</label>
+      <input id="wsEditName" class="ws-field-input" type="text" maxlength="200" />
+      <div class="ws-two">
+        <div><label class="ws-field-label" for="wsEditClient">Cliente</label><input id="wsEditClient" class="ws-field-input" type="text" maxlength="120" /></div>
+        <div><label class="ws-field-label" for="wsEditType">Tipo</label><input id="wsEditType" class="ws-field-input" type="text" maxlength="60" placeholder="Casamento" /></div>
+      </div>
+      <div class="ws-two">
+        <div><label class="ws-field-label" for="wsEditStart">Data do projeto</label><input id="wsEditStart" class="ws-field-input" type="date" /></div>
+        <div><label class="ws-field-label" for="wsEditDeadline">Data de entrega</label><input id="wsEditDeadline" class="ws-field-input" type="date" /></div>
+      </div>
+      <div class="ws-edit-row">
+        <div><label class="ws-field-label" for="wsEditColor">Cor</label><input id="wsEditColor" class="ws-color-input" type="color" value="#3b82f6" /></div>
+        <div class="ws-edit-cover">
+          <span class="ws-field-label">Capa</span>
+          <div class="ws-edit-cover-row">
+            <button id="wsEditCoverPick" class="ws-btn-outline" type="button">Trocar capa</button>
+            <button id="wsEditCoverClear" class="ws-link" type="button">Remover capa</button>
+          </div>
+        </div>
+      </div>
+      <div class="ws-modal-footer">
+        <span class="ws-muted">Observações ficam na Visão geral.</span>
+        <div class="ws-actions-right">
+          <button id="wsEditCancel" class="ws-btn-outline" type="button">Cancelar</button>
+          <button id="wsEditSave" class="ws-btn-accent" type="button">Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- MONITOR DE ORIGEM (sobreposição) -->
   <div id="wsMonitorOverlay" class="ws-modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Monitor de origem">
@@ -282,10 +337,38 @@
         <button id="wsBtnCloseImportModal" class="ws-icon-btn" type="button" title="Fechar" aria-label="Fechar"><span class="material-symbols-rounded">close</span></button>
       </div>
       <div class="ws-search"><span class="material-symbols-rounded" aria-hidden="true">search</span><input type="search" id="wsImportModalSearch" placeholder="Pesquisar na Biblioteca" autocomplete="off" aria-label="Pesquisar na Biblioteca" /></div>
+      <label class="ws-select-all ws-select-all-modal">
+        <input id="wsImportSelectAll" type="checkbox" aria-label="Selecionar todas as mídias da lista" />
+        <span>Selecionar todas</span>
+      </label>
       <div id="wsImportModalList" class="ws-import-list"></div>
+      <div class="ws-dest-row">
+        <label class="ws-field-label" for="wsImportModalBin">Colocar na pasta</label>
+        <select id="wsImportModalBin" class="ws-field-input"></select>
+      </div>
       <div class="ws-modal-footer">
         <span id="wsImportModalCount" class="ws-muted">0 selecionadas</span>
         <button id="wsBtnConfirmImportLibrary" class="ws-btn-accent" type="button">Adicionar ao projeto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ESCOLHER A PASTA DE DESTINO (importar do computador / soltar arquivos) -->
+  <div id="wsPickBinModal" class="ws-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wsPickBinTitle">
+    <div class="ws-modal-box ws-modal-narrow">
+      <div class="ws-modal-header">
+        <h3 id="wsPickBinTitle">Em qual pasta colocar?</h3>
+        <button id="wsPickBinClose" class="ws-icon-btn" type="button" title="Cancelar" aria-label="Cancelar"><span class="material-symbols-rounded">close</span></button>
+      </div>
+      <p id="wsPickBinText" class="ws-muted"></p>
+      <label class="ws-field-label" for="wsPickBinSelect">Pasta</label>
+      <select id="wsPickBinSelect" class="ws-field-input"></select>
+      <div class="ws-modal-footer">
+        <span class="ws-muted">Dá para mover depois, arrastando para outra pasta.</span>
+        <div class="ws-actions-right">
+          <button id="wsPickBinCancel" class="ws-btn-outline" type="button">Cancelar</button>
+          <button id="wsPickBinOk" class="ws-btn-accent" type="button">Continuar</button>
+        </div>
       </div>
     </div>
   </div>

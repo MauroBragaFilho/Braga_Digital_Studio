@@ -149,7 +149,7 @@
   background-position: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  transition: border-color 0.2s var(--ease);
+  transition: border-color var(--dur-base) var(--ease);
 }
 .recent-carousel-thumb::after {
   content: 'play_arrow';
@@ -163,7 +163,7 @@
   color: #fff;
   background: rgba(0, 0, 0, 0.4);
   opacity: 0;
-  transition: opacity 0.2s var(--ease);
+  transition: opacity var(--dur-base) var(--ease);
 }
 .recent-carousel-card:hover .recent-carousel-thumb { border-color: var(--accent); }
 .recent-carousel-card:hover .recent-carousel-thumb::after { opacity: 1; }
@@ -211,7 +211,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
+  transition: border-color var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
 }
 .qa-card:hover:not([disabled]) { border-color: var(--accent); background: var(--card-2); }
 .qa-card[disabled] { opacity: 0.4; cursor: not-allowed; }
@@ -250,7 +250,7 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: background var(--dur-base) var(--ease), color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .job-tab:hover { color: var(--text); border-color: var(--muted); }
 .job-tab.active {
@@ -303,7 +303,7 @@
 .jobs-table tr:last-child td { border-bottom: none; }
 .jobs-table .muted-cell { color: var(--muted); }
 
-.recent-job-row { cursor: pointer; transition: background 0.2s var(--ease); }
+.recent-job-row { cursor: pointer; transition: background var(--dur-base) var(--ease); }
 .recent-job-row:hover { background: var(--card-2); }
 .job-name-cell { display: flex; align-items: center; gap: 12px; }
 .job-name-cell .material-symbols-rounded { flex-shrink: 0; color: var(--muted); font-size: 20px; }
@@ -323,7 +323,7 @@
   font-size: 18px;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+  transition: background var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
 .job-actions-cell .material-symbols-rounded:hover { color: var(--text); background: var(--card-2); }
 .jobs-empty-state { padding: 40px 24px; text-align: center; color: var(--muted); font-size: var(--fs-body); }

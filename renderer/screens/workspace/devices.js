@@ -1,7 +1,7 @@
-/** Aba Dispositivos: equipamentos usados ou associados ao projeto. */
+/** Equipamentos do projeto (na Visão geral): etiquetas por equipamento e um formulário curto para adicionar. */
 import { ws, $, mk, icon, setAppStatus, friendlyError } from './state.js';
 
-const GROUPS = [['camera', 'Câmeras', 'photo_camera'], ['audio', 'Áudio', 'mic'], ['other', 'Outros', 'devices_other']];
+const ICON = { camera: 'photo_camera', audio: 'mic', other: 'devices_other' };
 
 /** Liga os eventos aos elementos desta abertura (a tela é recriada a cada projeto aberto). */
 export function bindDevices() {
@@ -14,20 +14,16 @@ export async function renderDevices() {
   host.textContent = '';
   let devices = [];
   try { devices = (await window.bds.listProjectDevices(ws.projectId)) || []; } catch (e) { console.error('[WORKSPACE] dispositivos:', e); }
-  if (!devices.length) host.append(mk('p', { class: 'ws-empty-line', text: 'Nenhum equipamento registrado. Adicione ao lado.' }));
-  for (const [id, label, ic] of GROUPS) {
-    const items = devices.filter((d) => d.category === id);
-    if (!items.length) continue;
-    const ul = mk('ul', { class: 'ws-device-list' });
-    for (const d of items) {
-      ul.append(mk('li', { class: 'ws-device-item' }, [
-        icon('check'),
-        mk('span', { class: 'ws-device-name', text: d.name }),
-        d.note ? mk('span', { class: 'ws-device-note', text: d.note }) : null,
-        mk('button', { type: 'button', class: 'ws-icon-btn', title: 'Remover', 'aria-label': `Remover ${d.name}`, onclick: () => removeDevice(d) }, [icon('close')])
-      ]));
-    }
-    host.append(mk('div', { class: 'ws-device-group' }, [mk('h4', { class: 'ws-subtitle' }, [icon(ic), ` ${label}`]), ul]));
+  if (!devices.length) {
+    host.append(mk('p', { class: 'ws-empty-line', text: 'Câmeras, gravadores e outros equipamentos usados neste trabalho.' }));
+    return;
+  }
+  for (const d of devices) {
+    host.append(mk('span', { class: 'ws-chip', title: d.note || '' }, [
+      icon(ICON[d.category] || ICON.other),
+      mk('span', { class: 'ws-chip-text', text: d.note ? `${d.name} · ${d.note}` : d.name }),
+      mk('button', { type: 'button', class: 'ws-chip-remove', title: 'Remover', 'aria-label': `Remover ${d.name}`, onclick: () => removeDevice(d) }, [icon('close')])
+    ]));
   }
 }
 
@@ -39,12 +35,12 @@ async function addDevice(e) {
     await window.bds.addProjectDevice(ws.projectId, { category: $('wsDeviceCategory').value, name, note: $('wsDeviceNote').value.trim() });
     $('wsDeviceName').value = ''; $('wsDeviceNote').value = '';
     await renderDevices();
-    setAppStatus('Dispositivo adicionado.', 'success');
+    setAppStatus('Equipamento adicionado.', 'success');
   } catch (err) { window.bdsModal.alert(`Não foi possível adicionar: ${friendlyError(err)}`); }
 }
 
 async function removeDevice(d) {
-  const ok = await window.bdsModal.confirm(`Remover "${d.name}" dos dispositivos do projeto?`);
+  const ok = await window.bdsModal.confirm(`Remover "${d.name}" dos equipamentos do projeto?`);
   if (!ok) return;
   try { await window.bds.removeProjectDevice(d.id); await renderDevices(); }
   catch (err) { window.bdsModal.alert(`Não foi possível remover: ${friendlyError(err)}`); }

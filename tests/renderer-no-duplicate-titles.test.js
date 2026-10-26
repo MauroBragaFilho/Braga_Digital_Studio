@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const RENDERER = path.join(__dirname, '..', 'renderer');
-const DEV_ONLY = new Set(['recovery', 'montage']);
+const DEV_ONLY = new Set(); // inclusive as telas só de desenvolvimento
 
 function navLabels() {
   const html = fs.readFileSync(path.join(RENDERER, 'index.html'), 'utf8');

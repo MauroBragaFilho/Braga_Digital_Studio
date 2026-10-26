@@ -39,7 +39,7 @@
   font-weight: 600;
   letter-spacing: 0.2px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
   user-select: none;
   white-space: nowrap;
 }
@@ -158,7 +158,7 @@
   font-size: 11px; font-weight: 800;
   color: var(--mg-muted);
   background: transparent;
-  transition: all 0.2s;
+  transition: background-color var(--dur-base), color var(--dur-base), border-color var(--dur-base), opacity var(--dur-base), transform var(--dur-base), box-shadow var(--dur-base);
 }
 .mg-step .step-title { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: var(--mg-text); }
 .mg-step .step-subtitle { font-size: 10.5px; color: var(--mg-muted); }
@@ -238,7 +238,7 @@
   font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast), opacity var(--dur-fast), transform var(--dur-fast), box-shadow var(--dur-fast);
 }
 .mg-seg-btn.active {
   background: var(--mg-accent);
@@ -286,7 +286,7 @@
   font-size: 12px;
   padding: 7px 9px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-fast);
 }
 .mg-select:focus, .mg-input:focus { border-color: var(--mg-accent-border); }
 .mg-input-group { display: flex; gap: 6px; }
@@ -359,7 +359,7 @@
   padding: 0 10px;
   border-bottom: 1px solid var(--mg-line-soft);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--dur-fast);
   box-sizing: border-box;
 }
 .mg-row:hover { background: color-mix(in srgb, var(--mg-text) 4%, transparent); }
@@ -431,7 +431,7 @@
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--mg-orange), var(--mg-accent));
-  transition: width 0.3s linear;
+  transition: width var(--dur-slow) linear;
 }
 
 /* Percentual e info do arquivo na barra de ações */
@@ -506,7 +506,7 @@
   font-weight: 650;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .montage-lib-option:hover { border-color: var(--mg-accent-border); background: var(--mg-card-2); }
 .mg-lib-icon { font-size: 20px; }
@@ -552,7 +552,7 @@
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
 }
 .mg-col-check input:hover,
 .mg-row-check input:hover { border-color: var(--mg-accent); }
@@ -609,7 +609,7 @@
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--mg-card); border: 1px solid var(--mg-line);
   border-radius: 7px; padding: 2px 3px 2px 8px;
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-fast);
 }
 .mg-use-edit:focus-within { border-color: var(--mg-accent); }
 .mg-te-input {
@@ -629,7 +629,7 @@
   font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase;
   color: var(--mg-muted); background: color-mix(in srgb, var(--mg-text) 7%, transparent);
   border-radius: 5px; cursor: pointer; user-select: none;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .mg-te-type:hover { color: #fff; background: var(--mg-accent); }
 
@@ -658,7 +658,7 @@
 .mg-x-btn {
   background: transparent; border: none; color: var(--mg-muted);
   cursor: pointer; padding: 4px; border-radius: 6px; font-size: 16px;
-  opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s;
+  opacity: 0; transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
 .mg-row:hover .mg-x-btn, .mg-x-btn:focus-visible { opacity: 1; }
 .mg-x-btn:hover { color: var(--danger-fg); background: color-mix(in srgb, var(--danger) 14%, transparent); }

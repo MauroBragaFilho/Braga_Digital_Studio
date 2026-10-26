@@ -15,7 +15,7 @@
   font-family: inherit;
   user-select: none;
   opacity: 1;
-  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity var(--dur-base) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .photo-preview-overlay.hidden {
@@ -33,7 +33,7 @@
   justify-content: space-between;
   padding: 0 16px;
   z-index: 10;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity var(--dur-slow) var(--ease), transform var(--dur-slow) var(--ease);
 }
 
 .photo-preview-header.idle-hidden {
@@ -105,7 +105,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 .photo-tool-btn:hover {
@@ -161,7 +161,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 .photo-close-btn:hover {
@@ -207,7 +207,7 @@
   max-height: none;
   pointer-events: none;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-  transition: filter 0.2s ease;
+  transition: filter var(--dur-base) var(--ease);
 }
 
 /* Composition Grid (3x3 Rule of Thirds) */
@@ -219,7 +219,7 @@
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--dur-base) var(--ease);
 }
 
 .photo-grid-overlay.active {
@@ -247,7 +247,7 @@
   justify-content: center;
   cursor: pointer;
   z-index: 5;
-  transition: all 0.2s ease;
+  transition: background-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
 }
 
 .photo-nav-arrow:hover {
@@ -386,7 +386,7 @@
   padding: 2px 8px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 .photo-hist-btn:hover {
@@ -453,7 +453,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   z-index: 10;
-  transition: transform 0.25s ease, opacity 0.25s ease;
+  transition: transform var(--dur-slow) var(--ease), opacity var(--dur-slow) var(--ease);
 }
 
 .photo-filmstrip-panel::-webkit-scrollbar {
@@ -484,7 +484,7 @@
   position: relative;
   background: #18181b;
   border: 2px solid transparent;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 .photo-filmstrip-item img {
@@ -526,12 +526,9 @@
   border: 3px solid rgba(255, 255, 255, 0.1);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: photoSpin 0.7s linear infinite;
+  animation: bds-spin 0.7s linear infinite;
 }
 
-@keyframes photoSpin {
-  to { transform: rotate(360deg); }
-}
 
 .photo-loading-text {
   font-size: 12px;

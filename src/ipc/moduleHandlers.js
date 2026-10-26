@@ -1,6 +1,6 @@
 'use strict';
 
-const { BrowserWindow, shell } = require('electron');
+const { BrowserWindow, shell, safeStorage } = require('electron');
 const { handle } = require('./channelRegistry');
 const { appConfirm } = require('../infrastructure/desktop/AppConfirm');
 const path = require('node:path');
@@ -8,6 +8,7 @@ const { ModuleManager } = require('../core/modules/ModuleManager');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const moduleConfig = require('../config/modules.config.json');
 const { sanitizeSilenceOptions } = require('../core/transcription/silenceTrim');
+const { CloudConfig } = require('../core/transcription/CloudConfig');
 const registry = require('../core/modules/ModuleRegistry');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
 
@@ -27,10 +28,14 @@ module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, 
   const dataDir = (paths && paths.dataDir) || appPaths.dataDir;
   const tempDir = (paths && paths.tempDir) || appPaths.tempDir;
 
+  // Transcrição na nuvem (Groq/ElevenLabs): chaves próprias, separadas do assistente de IA, criptografadas no disco
+  const cloudConfig = new CloudConfig({ configDir: (paths && paths.configDir) || appPaths.configDir, safeStorage });
+
   const manager = new ModuleManager({
     rootDir: dataDir,
     tempDir,
-    config: { ...moduleConfig, ffmpegPath: getFfmpegPath || (() => process.env.WL_FFMPEG || null) }
+    config: { ...moduleConfig, ffmpegPath: getFfmpegPath || (() => process.env.WL_FFMPEG || null) },
+    cloudConfig
   });
 
   const broadcast = (channel, payload) => {
@@ -72,9 +77,25 @@ Arquivo: ${zipPath}`,
   handle('modules:installCuda', (_, payload) => manager.installCuda({ acceptLicense: !!(payload && payload.acceptLicense === true) }));
   handle('modules:removeCuda', () => manager.removeCuda());
   handle('modules:cancel', () => manager.cancel());
+  handle('modules:cloudGet', () => cloudConfig.getPublic());
+  // A chave só entra aqui e fica criptografada no disco; nunca volta para a interface.
+  handle('modules:cloudSet', (_, patch) => {
+    const p = patch || {};
+    return cloudConfig.set({
+      provider: p.provider,
+      apiKey: typeof p.apiKey === 'string' ? p.apiKey : undefined,
+      clearApiKey: p.clearApiKey === true,
+      model: typeof p.model === 'string' ? p.model : undefined
+    });
+  });
+  handle('modules:cloudTest', (_, provider) => cloudConfig.test(provider));
   handle('modules:transcribe', (_, options) => {
     const o = options || {};
+    const saved = settingsManager && settingsManager.load ? settingsManager.load() : {};
     return manager.transcribe({
+      engine: ['groq', 'elevenlabs'].includes(o.engine) ? o.engine : 'local',
+      // Para onde tentar de novo se o serviço escolhido falhar (Configurações → Transcrição). Com motor local, não vale.
+      fallback: Array.isArray(saved.transcriptionFallback) ? saved.transcriptionFallback : [],
       files: Array.isArray(o.files) ? o.files : [],
       srt: o.srt !== false,
       md: o.md === true,

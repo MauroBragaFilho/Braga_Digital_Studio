@@ -124,6 +124,15 @@ test('Conversor: finished sem falhas continua anunciando sucesso; cancelado não
 // Projetos: diálogos devolvem string, array ou { filePaths } (firstDialogPath)
 // ---------------------------------------------------------------------------
 
+/** "Importar pacote .bdspro…" fica no menu ▾ do botão Novo projeto. */
+async function clickImport(h) {
+  click(h, h.document.getElementById('btnNewProjectMore'));
+  await settle(10);
+  const item = [...h.document.querySelectorAll('#projMenu button')].find((b) => /Importar/.test(b.textContent));
+  assert.ok(item, 'menu ▾ tem "Importar pacote .bdspro…"');
+  click(h, item);
+}
+
 for (const [nome, retorno, esperado] of [
   ['string', 'C:\\pacotes\\a.bdspro', 'C:\\pacotes\\a.bdspro'],
   ['array', ['C:\\pacotes\\b.bdspro', 'C:\\outro.bdspro'], 'C:\\pacotes\\b.bdspro'],
@@ -138,7 +147,7 @@ for (const [nome, retorno, esperado] of [
     });
     try {
       await settle(30);
-      click(h, h.document.getElementById('btnImportBdspro'));
+      await clickImport(h);
       await settle(40);
       assert.equal(h.bds.calls.inspectBdspro?.[0]?.[0], esperado);
     } finally {
@@ -152,7 +161,7 @@ test('Projetos: diálogo cancelado ({ canceled: true } / null / []) não inspeci
     const h = await mountScreen('projects', { bds: { selectFile: async () => retorno } });
     try {
       await settle(30);
-      click(h, h.document.getElementById('btnImportBdspro'));
+      await clickImport(h);
       await settle(30);
       assert.equal(h.bds.calls.inspectBdspro, undefined);
     } finally {

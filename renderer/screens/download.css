@@ -32,7 +32,7 @@
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
-  transition: border-color 0.2s var(--ease);
+  transition: border-color var(--dur-base) var(--ease);
 }
 .url-input-row:hover { border-color: var(--muted); }
 .url-input-row:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -67,7 +67,7 @@
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .url-add-btn,
 .queue-btn-start {
@@ -241,7 +241,7 @@
   background: var(--card-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  transition: border-color 0.2s var(--ease);
+  transition: border-color var(--dur-base) var(--ease);
 }
 .download-card:hover { border-color: var(--line); }
 .download-card.status-downloading { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
@@ -318,7 +318,7 @@
   overflow: hidden;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  transition: width 0.2s var(--ease);
+  transition: width var(--dur-base) var(--ease);
 }
 .download-card-progress-info {
   display: flex;
@@ -343,13 +343,9 @@
   border-radius: var(--radius-sm);
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 10%, transparent), transparent);
   background-size: 200% 100%;
-  animation: dlSkeleton 1.6s ease-in-out infinite;
+  animation: bds-shimmer 1.6s ease-in-out infinite;
 }
-@keyframes dlSkeleton {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
-.download-card.is-loading .download-card-thumb-placeholder { background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 8%, transparent), transparent); background-size: 200% 100%; animation: dlSkeleton 1.6s ease-in-out infinite; }
+.download-card.is-loading .download-card-thumb-placeholder { background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 8%, transparent), transparent); background-size: 200% 100%; animation: bds-shimmer 1.6s ease-in-out infinite; }
 :root.reduce-motion .download-card.is-loading .download-card-thumb-placeholder { animation: none; }
 @media (prefers-reduced-motion: reduce) { .download-card.is-loading .download-card-thumb-placeholder { animation: none; } }
 
@@ -393,7 +389,7 @@
   border: none;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+  transition: color var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
 }
 .card-action-btn:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .card-action-btn .material-symbols-rounded { font-size: 20px; }
@@ -431,7 +427,7 @@
   align-items: center;
   background: rgba(0, 0, 0, 0.6); /* exceção: véu escuro do modal, igual nos dois temas */
   backdrop-filter: blur(4px);
-  animation: fadeIn 0.2s ease-out;
+  animation: bds-fade-in 0.2s ease-out;
 }
 .multiple-links-modal {
   display: flex;
@@ -490,7 +486,7 @@
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s var(--ease);
+  transition: background var(--dur-fast) var(--ease);
 }
 .btn-modal-cancel { color: var(--text); background: transparent; border: 2px solid color-mix(in srgb, var(--text) 25%, transparent); font-weight: 600; }
 .btn-modal-cancel:hover { background: var(--card-2); }
@@ -500,10 +496,6 @@
 .btn-modal-cancel:focus-visible,
 .btn-modal-confirm:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .status-badge-downloading::before,

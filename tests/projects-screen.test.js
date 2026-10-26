@@ -162,17 +162,21 @@ async function mountProjects(extra = {}) {
 }
 const cardNames = (h) => [...h.document.querySelectorAll('.proj-card[data-id]')].map((c) => c.querySelector('.proj-card-title').textContent);
 
-test('lista: abre em "Em andamento" por prazo; resumo e coluna lateral; "Todos" sem arquivados; busca, filtros e ordenação', async () => {
-  const { h } = await mountProjects({ listProjectsRecentActivity: async () => [{ id: 1, project_id: 1, project_name: 'Casamento João', kind: 'exportado', message: 'XML exportado', created_at: '2026-10-05 10:00:00' }] });
+test('lista: abas com contagem (abre em "Em andamento"), próximo passo no cartão, "Todos" sem arquivados; busca e ordenação', async () => {
+  const { h } = await mountProjects();
   try {
     const d = h.document;
+    const tab = (f) => d.querySelector(`.proj-tab[data-filter="${f}"]`);
+    const count = (f) => d.querySelector(`.proj-tab-count[data-count="${f}"]`).textContent;
     assert.deepEqual(cardNames(h), ['Casamento João'], 'padrão: só em andamento (Aguardando cliente, Concluído e Arquivado ficam fora)');
-    assert.equal(d.getElementById('projStatActive').textContent, '1');
-    assert.equal(d.getElementById('projStatWaiting').textContent, '1');
-    assert.match(d.getElementById('projDueList').textContent, /Casamento João/);
-    assert.match(d.getElementById('projActivityList').textContent, /XML exportado/);
+    assert.equal(tab('active').classList.contains('active'), true);
+    assert.deepEqual([count('active'), count('waiting'), count('done'), count('archived')], ['1', '1', '1', '1']);
+    assert.equal(d.getElementById('projDueBanner').classList.contains('hidden'), true, 'sem entrega nos próximos 7 dias: sem aviso');
+    assert.equal(d.getElementById('projRecentSection').classList.contains('hidden'), true, 'poucos projetos: sem "Continuar de onde parou"');
     assert.ok(d.querySelector('.proj-card-new'), 'cartão "Novo projeto" no fim da grade');
-    assert.ok(d.querySelector('.proj-card[data-id="1"] .proj-card-progress'), 'barra de progresso da entrega');
+    assert.match(d.querySelector('.proj-card[data-id="1"] .proj-card-next').textContent, /Próximo: Preparar a lista de entrega/);
+    assert.equal(d.getElementById('projSummary'), null, 'a faixa de resumo saiu (as abas mostram as contagens)');
+    assert.equal(d.querySelector('.proj-rail'), null, 'a coluna lateral saiu');
 
     // modo lista
     d.getElementById('projViewList').dispatchEvent(new h.window.Event('click', { bubbles: true }));
@@ -180,12 +184,10 @@ test('lista: abre em "Em andamento" por prazo; resumo e coluna lateral; "Todos" 
     assert.equal(d.querySelectorAll('#projectsTableBody tr').length, 1);
     d.getElementById('projViewGrid').dispatchEvent(new h.window.Event('click', { bubbles: true }));
 
-    const filter = d.getElementById('projFilter');
     const sort = d.getElementById('projSort');
-    filter.value = 'all'; filter.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    tab('all').dispatchEvent(new h.window.Event('click', { bubbles: true }));
     sort.value = 'recent'; sort.dispatchEvent(new h.window.Event('change', { bubbles: true }));
     assert.deepEqual(cardNames(h), ['Casamento João', 'Evento Cultural', 'Legado'], 'Todos: mais recentes primeiro, sem o arquivado');
-    assert.match(d.getElementById('projCount').textContent, /3 projetos/);
     const first = d.querySelector('.proj-card[data-id]');
     assert.match(first.textContent, /João Silva/);
     assert.match(first.textContent, /Em produção/);
@@ -195,20 +197,51 @@ test('lista: abre em "Em andamento" por prazo; resumo e coluna lateral; "Todos" 
     const search = d.getElementById('projSearch');
     search.value = 'recepção'; search.dispatchEvent(new h.window.Event('input', { bubbles: true }));
     assert.deepEqual(cardNames(h), ['Antigo'], 'busca pelas observações encontra até arquivados');
+    assert.match(d.getElementById('projCount').textContent, /1 projeto encontrado/);
     search.value = 'circuito'; search.dispatchEvent(new h.window.Event('input', { bubbles: true }));
     assert.deepEqual(cardNames(h), ['Evento Cultural']);
     search.value = ''; search.dispatchEvent(new h.window.Event('input', { bubbles: true }));
 
-    filter.value = 'archived'; filter.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    tab('archived').dispatchEvent(new h.window.Event('click', { bubbles: true }));
     assert.deepEqual(cardNames(h), ['Antigo']);
-    filter.value = 'done'; filter.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    tab('done').dispatchEvent(new h.window.Event('click', { bubbles: true }));
     assert.deepEqual(cardNames(h), ['Evento Cultural']);
-    filter.value = 'all'; filter.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    tab('all').dispatchEvent(new h.window.Event('click', { bubbles: true }));
 
     sort.value = 'name'; sort.dispatchEvent(new h.window.Event('change', { bubbles: true }));
     assert.deepEqual(cardNames(h), ['Casamento João', 'Evento Cultural', 'Legado']);
     sort.value = 'deadline'; sort.dispatchEvent(new h.window.Event('change', { bubbles: true }));
     assert.deepEqual(cardNames(h)[0], 'Evento Cultural', 'prazo mais próximo primeiro; sem prazo por último');
+  } finally { await h.cleanup(); }
+});
+
+test('lista: "Continuar de onde parou" com os 3 mais recentes, aviso de entrega próxima e novo projeto com pastas padrão', async () => {
+  const day = (n) => { const t = new Date(); t.setDate(t.getDate() + n); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+  const many = [1, 2, 3, 4, 5].map((i) => ({ id: i, name: `Projeto ${i}`, client: 'C', status: 'Em produção', deadline: i === 5 ? day(1) : null, created_at: '2026-10-01 10:00:00', last_activity_at: `2026-10-0${i} 10:00:00`, media_count: i === 2 ? 0 : 2, delivery_total: i === 3 ? 4 : 0, delivery_done: i === 3 ? 1 : 0 }));
+  const bins = [];
+  const { h, calls } = await mountProjects({ listProjects: async () => many.map((p) => ({ ...p })), createProjectDefaultBins: async (id) => { bins.push(id); return ['BRUTOS']; } });
+  try {
+    const d = h.document;
+    assert.equal(d.getElementById('projRecentSection').classList.contains('hidden'), false);
+    const recent = [...d.querySelectorAll('#projRecent .proj-card .proj-card-title')].map((n) => n.textContent);
+    assert.deepEqual(recent, ['Projeto 5', 'Projeto 4', 'Projeto 3'], 'os 3 com atividade mais recente');
+    const rest = [...d.querySelectorAll('#projectsGrid .proj-card[data-id] .proj-card-title')].map((n) => n.textContent);
+    assert.deepEqual(rest.sort(), ['Projeto 1', 'Projeto 2'], 'a lista abaixo não repete os recentes');
+    assert.match(d.querySelector('#projRecent .proj-card[data-id="3"]').textContent, /Entrega: 1 de 4 itens prontos/);
+    assert.match(d.querySelector('.proj-card[data-id="2"]').textContent, /Próximo: Adicionar o material/);
+    const banner = d.getElementById('projDueBanner');
+    assert.equal(banner.classList.contains('hidden'), false);
+    assert.match(banner.textContent, /1 entrega nos próximos 7 dias · Projeto 5 amanhã/);
+
+    // novo projeto: só o essencial à vista, pastas padrão marcadas
+    d.getElementById('btnNewProject').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+    assert.equal(d.getElementById('projFormMore').open, false, '"Mais detalhes" começa fechado');
+    assert.equal(d.getElementById('projFormDefaultBins').checked, true);
+    d.getElementById('projFormName').value = 'Novo trabalho';
+    d.getElementById('btnSaveProjForm').dispatchEvent(new h.window.Event('click', { bubbles: true }));
+    await settle(40);
+    assert.equal(calls.find((c) => c[0] === 'create')[1].name, 'Novo trabalho');
+    assert.deepEqual(bins, [5], 'as pastas padrão foram criadas no projeto novo');
   } finally { await h.cleanup(); }
 });
 

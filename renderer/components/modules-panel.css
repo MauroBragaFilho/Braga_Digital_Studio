@@ -24,7 +24,7 @@
 }
 .mod-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mod-bar { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
-.mod-bar-fill { height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width 0.25s var(--ease); }
+.mod-bar-fill { height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width var(--dur-slow) var(--ease); }
 .mod-bar-fill.mod-indeterminate { animation: modSlide 1.2s ease-in-out infinite; }
 @keyframes modSlide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 .mod-progress-info { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-label); flex-wrap: wrap; }
@@ -61,7 +61,7 @@
 .mod-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 20px;
   border-radius: var(--radius-pill); border: 2px solid transparent; font: inherit; font-size: var(--fs-body); font-weight: 700;
-  cursor: pointer; white-space: nowrap; transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  cursor: pointer; white-space: nowrap; transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .mod-btn .material-symbols-rounded { font-size: 20px; }
 .mod-btn:disabled { opacity: 0.45; cursor: not-allowed; }

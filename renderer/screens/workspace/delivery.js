@@ -1,16 +1,24 @@
-/** Aba Entrega: controle de entrega (status, prazo, checklist, destinos, observações) e exportações do projeto. */
-import { ws, $, mk, icon, setAppStatus, friendlyError } from './state.js';
+/**
+ * Aba Entrega e exportação: o que entregar (situação, prazo, lista de itens), para onde, observações e as exportações.
+ * Tudo salva sozinho (sem botão "Salvar"): marcar um item ou trocar a situação grava na hora; textos gravam ao parar
+ * de digitar. O indicador "Salvo" fica na barra de abas.
+ */
+import { ws, $, mk, icon, setAppStatus, friendlyError, debounce, autosave, emitChange } from './state.js';
 
 let draft = null;
+let pending = false;
+const saveSoon = debounce(() => save(), 700);
 
 /** Liga os eventos aos elementos desta abertura (a tela é recriada a cada projeto aberto). */
 export function bindDelivery() {
   draft = null;
-  ['wsDeliveryStatus', 'wsDeliveryDeadline', 'wsDeliveryNotes'].forEach((id) => $(id)?.addEventListener('input', () => setDirty(true)));
-  $('wsDeliveryStatus')?.addEventListener('change', () => setDirty(true));
+  pending = false;
+  $('wsDeliveryStatus')?.addEventListener('change', () => change(true));
+  $('wsDeliveryDeadline')?.addEventListener('change', () => change(true));
+  $('wsDeliveryNotes')?.addEventListener('input', () => change(false));
+  $('wsDeliveryNotes')?.addEventListener('blur', () => { if (pending) save(); });
   $('wsDeliveryAddItem')?.addEventListener('click', addItem);
   $('wsDeliveryNewItem')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
-  $('wsDeliverySave')?.addEventListener('click', save);
 
   $('wsExportBinsXml')?.addEventListener('click', () => exportXmeml('bins'));
   $('wsExportMulticamXml')?.addEventListener('click', () => exportXmeml('multicam'));
@@ -18,34 +26,47 @@ export function bindDelivery() {
   $('wsExportInfo')?.addEventListener('click', exportInfo);
 }
 
+/** Grava o que estiver pendente (ao sair da tela, por exemplo). */
+export function flushDelivery() { if (pending) return save(); return null; }
+
 export async function renderDelivery() {
   try { draft = await window.bds.getProjectDelivery(ws.projectId); }
   catch (e) { console.error('[WORKSPACE] entrega:', e); return; }
+  pending = false;
   $('wsDeliveryStatus').value = draft.status;
   $('wsDeliveryDeadline').value = draft.deadline ? String(draft.deadline).slice(0, 10) : '';
   $('wsDeliveryNotes').value = draft.notes || '';
   renderLists();
-  setDirty(false);
   renderExportOptions();
 }
 
-function setDirty(dirty) { const b = $('wsDeliverySave'); if (b) b.disabled = !dirty; }
+/** Algo mudou: grava já (escolhas) ou logo depois de parar de digitar (texto). */
+function change(now) {
+  pending = true;
+  if (now) save(); else saveSoon();
+}
 
 function renderLists() {
   const items = $('wsDeliveryItems'); const dests = $('wsDeliveryDestinations');
   if (!items || !dests || !draft) return;
   items.textContent = ''; dests.textContent = '';
+  if (!draft.items.length) items.append(mk('li', { class: 'ws-empty-line', text: 'Liste o que vai ser entregue: vídeo principal, teaser, fotos…' }));
   draft.items.forEach((it, i) => {
-    const cb = mk('input', { type: 'checkbox', checked: it.done, 'aria-label': it.label, onchange: (e) => { draft.items[i].done = e.target.checked; setDirty(true); } });
+    const cb = mk('input', { type: 'checkbox', checked: it.done, 'aria-label': it.label, onchange: (e) => { draft.items[i].done = e.target.checked; renderProgress(); change(true); } });
     items.append(mk('li', { class: 'ws-check-item' }, [
       mk('label', {}, [cb, mk('span', { text: it.label })]),
-      mk('button', { type: 'button', class: 'ws-icon-btn', title: 'Remover item', 'aria-label': `Remover ${it.label}`, onclick: () => { draft.items.splice(i, 1); renderLists(); setDirty(true); } }, [icon('close')])
+      mk('button', { type: 'button', class: 'ws-icon-btn', title: 'Remover item', 'aria-label': `Remover ${it.label}`, onclick: () => { draft.items.splice(i, 1); renderLists(); change(true); } }, [icon('close')])
     ]));
   });
   draft.destinations.forEach((d, i) => {
-    const cb = mk('input', { type: 'checkbox', checked: d.checked, 'aria-label': d.label, onchange: (e) => { draft.destinations[i].checked = e.target.checked; setDirty(true); } });
+    const cb = mk('input', { type: 'checkbox', checked: d.checked, 'aria-label': d.label, onchange: (e) => { draft.destinations[i].checked = e.target.checked; change(true); } });
     dests.append(mk('li', { class: 'ws-check-item' }, [mk('label', {}, [cb, mk('span', { text: d.label })])]));
   });
+  renderProgress();
+}
+
+function renderProgress() {
+  if (!draft) return;
   const done = draft.items.filter((i) => i.done).length;
   const p = $('wsDeliveryProgress');
   if (p) { p.style.width = `${draft.items.length ? Math.round((done / draft.items.length) * 100) : 0}%`; }
@@ -61,19 +82,19 @@ function addItem() {
   draft.items.push({ label, done: false });
   input.value = '';
   renderLists();
-  setDirty(true);
+  change(true);
 }
 
 async function save() {
-  if (!draft) return;
-  try {
-    draft = await window.bds.setProjectDelivery(ws.projectId, {
-      status: $('wsDeliveryStatus').value, deadline: $('wsDeliveryDeadline').value || '',
-      items: draft.items, destinations: draft.destinations, notes: $('wsDeliveryNotes').value.trim()
-    });
-    renderLists(); setDirty(false);
-    setAppStatus('Entrega salva.', 'success');
-  } catch (e) { window.bdsModal.alert(`Não foi possível salvar a entrega: ${friendlyError(e)}`); }
+  if (!draft || !pending) return;
+  pending = false;
+  const r = await autosave(() => window.bds.setProjectDelivery(ws.projectId, {
+    status: $('wsDeliveryStatus').value, deadline: $('wsDeliveryDeadline').value || '',
+    items: draft.items, destinations: draft.destinations, notes: $('wsDeliveryNotes').value.trim()
+  }));
+  if (r === null) { pending = true; return; }
+  if (r && Array.isArray(r.items)) { draft = { ...r, notes: draft.notes }; }
+  emitChange('delivery');
 }
 
 // ------------------------------------------------------------------ exportações
@@ -88,7 +109,7 @@ function renderExportOptions() {
   const btn = $('wsExportMulticamXml');
   if (btn) btn.disabled = !has;
   const hint = $('wsExportMulticamHint');
-  if (hint) hint.textContent = has ? 'Uma camada de vídeo por fonte e um par de trilhas de áudio por fonte, com os clipes já posicionados.' : 'Faça uma sincronização na aba Áudio para liberar esta exportação.';
+  if (hint) hint.textContent = has ? 'Uma camada de vídeo e um par de trilhas de áudio por câmera, com os clipes já encaixados.' : 'Sincronize as câmeras (aba Sincronizar câmeras) para liberar esta exportação.';
 }
 
 async function exportXmeml(mode) {

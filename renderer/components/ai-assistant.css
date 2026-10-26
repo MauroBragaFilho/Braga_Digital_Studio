@@ -42,7 +42,7 @@ body:has(dialog[open]) .aia-root {
   color: var(--btn-fg);
   border: 1px solid var(--line);
   box-shadow: 0 8px 24px var(--shadow);
-  transition: transform 0.15s var(--ease), background-color 0.2s var(--ease);
+  transition: transform var(--dur-fast) var(--ease), background-color var(--dur-base) var(--ease);
 }
 .aia-fab .material-symbols-rounded { font-size: 26px; }
 .aia-fab:hover { background: var(--btn-bg-hover); transform: translateY(-1px); }
@@ -187,7 +187,7 @@ body:has(dialog[open]) .aia-root {
   font-size: var(--fs-label);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s var(--ease);
+  transition: background-color var(--dur-base) var(--ease);
 }
 .aia-action-btn:hover:not(:disabled) { background: var(--btn-bg-hover); }
 .aia-action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -255,7 +255,7 @@ body:has(dialog[open]) .aia-root {
   background: var(--btn-bg);
   color: var(--btn-fg);
   cursor: pointer;
-  transition: background-color 0.2s var(--ease);
+  transition: background-color var(--dur-base) var(--ease);
 }
 .aia-send .material-symbols-rounded { font-size: 20px; }
 .aia-send:hover:not(:disabled) { background: var(--btn-bg-hover); }

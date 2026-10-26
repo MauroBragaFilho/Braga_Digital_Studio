@@ -18,6 +18,12 @@
  * trabalho como diretório atual e só recebe nomes relativos em ASCII (ver `asciiArgs`); os caminhos reais
  * (vídeo de origem, destino das legendas) ficam com o ffmpeg e com o Node, que lidam bem com Unicode.
  *
+ * Outros motores (opcionais): na nuvem, Groq e ElevenLabs (core/transcription/*Transcriber.js), escolhidos com
+ * `engine: 'groq' | 'elevenlabs'`. O WAV (já sem silêncios, se ligado) vai ao motor de nuvem em vez do whisper-cli e o
+ * resultado volta no mesmo formato, então legendas e tempos não mudam de lógica. `fallback` é a lista de motores a
+ * tentar, em ordem, quando o escolhido falhar por causa do serviço (rede, limite, chave, créditos). Regra de
+ * privacidade: com o motor local escolhido NÃO há fallback (o áudio nunca sai do computador sem o usuário pedir).
+ *
  * Eventos (onEvent): { type:'progress', percent } | { type:'status', text } | { type:'device', text } |
  *   { type:'line', text } | { type:'error', text } | { type:'file', index, state:'start'|'progress'|'done'|'error', percent?, text? }
  * Cancelar (AbortSignal) encerra o processo em andamento (e os filhos).
@@ -89,8 +95,20 @@ function normalizeOptions(options = {}) {
     outDir = String(options.outDir);
     if (!path.isAbsolute(outDir)) throw new RunnerError('A pasta de saída deve ser um caminho completo.', 'BAD_PATH');
   }
-  return { files, srt, md, maxWords, lines, language, outDir, forceCpu: options.forceCpu === true, skipSilence: options.skipSilence !== false, silence: sanitizeSilenceOptions(options.silence) };
+  const ENGINES = ['local', 'groq', 'elevenlabs'];
+  const engine = ENGINES.includes(options.engine) ? options.engine : 'local';
+  const fallback = Array.isArray(options.fallback) ? options.fallback.filter((id) => ENGINES.includes(id) && id !== engine) : [];
+  return { files, srt, md, maxWords, lines, language, outDir, engine, fallback, forceCpu: options.forceCpu === true, skipSilence: options.skipSilence !== false, silence: sanitizeSilenceOptions(options.silence) };
 }
+
+/** O erro veio do serviço (rede, limite, chave, créditos…) e outro motor pode resolver? Cancelamento e arquivo ruim, não. */
+function isFallbackError(err, engineId) {
+  if (!(err instanceof RunnerError)) return false;
+  if (engineId === 'local') return err.code === 'ENGINE_FAILED' || err.code === 'SPAWN' || err.code === 'NO_PROGRAM';
+  return /^CLOUD_/.test(err.code || '') || err.code === 'NO_KEY';
+}
+
+const engineName = (id, clouds) => (id === 'local' ? 'O motor deste computador' : `O ${clouds[id] ? clouds[id].providerLabel : id}`);
 
 /** Encerra um processo e seus filhos (via ProcessRunner: taskkill no Windows, grupo em POSIX). */
 function killTree(child) {
@@ -167,7 +185,7 @@ class WhisperCppRunner {
    *   temporários de cada transcrição (o ideal é junto dos modelos, para o caminho relativo do modelo ser curto
    *   e em ASCII) · cliCommand/cliBaseArgs: trocar o executável (usado nos testes com um motor falso).
    */
-  constructor({ engineDir = null, cudaDir = null, tempDir, workRoot = null, ffmpegPath = null, cliName = CLI_NAME, cliCommand = null, cliBaseArgs = [], ffmpegBaseArgs = [] }) {
+  constructor({ engineDir = null, cudaDir = null, tempDir, workRoot = null, ffmpegPath = null, cliName = CLI_NAME, cliCommand = null, cliBaseArgs = [], ffmpegBaseArgs = [], clouds = {} }) {
     this.engineDir = engineDir;
     this.cudaDir = cudaDir;
     this.tempDir = tempDir;
@@ -177,6 +195,7 @@ class WhisperCppRunner {
     this.cliCommand = cliCommand;
     this.cliBaseArgs = cliBaseArgs;
     this.ffmpegBaseArgs = ffmpegBaseArgs;
+    this.clouds = clouds; // motores de nuvem prontos (com chave): { groq?, elevenlabs? }
   }
 
   /** Quais motores existem: o da GPU (CUDA) e o da CPU. Sem motor da CPU, o da GPU roda com -ng. */
@@ -193,18 +212,26 @@ class WhisperCppRunner {
   async run(options, { modelDir, modelId = '', modelName = '', dtwPreset, signal = null, onEvent = () => {} } = {}) {
     const opts = normalizeOptions(options);
     const modelFile = modelDir ? path.join(modelDir, 'model.bin') : '';
-    if (!modelFile || !fs.existsSync(modelFile)) {
-      throw new RunnerError('Nenhum modelo instalado. Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
-    }
     const engines = this._engines();
-    if (!this.cliCommand && !engines.cuda && !engines.cpu) throw new RunnerError('O motor de transcrição não está instalado.', 'NO_ENGINE');
+    const localReady = Boolean(modelFile) && fs.existsSync(modelFile) && (Boolean(this.cliCommand) || Boolean(engines.cuda) || Boolean(engines.cpu));
+    // Ordem de tentativa: o motor escolhido e, se ele for de nuvem, os de fallback que estão prontos.
+    const chain = [opts.engine, ...(opts.engine === 'local' ? [] : opts.fallback)]
+      .filter((id, i, all) => all.indexOf(id) === i)
+      .filter((id) => (id === 'local' ? localReady : Boolean(this.clouds[id])));
+    if (!chain.length || chain[0] !== opts.engine) {
+      if (opts.engine === 'local') {
+        if (!modelFile || !fs.existsSync(modelFile)) throw new RunnerError('Nenhum modelo instalado. Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
+        throw new RunnerError('O motor de transcrição não está instalado.', 'NO_ENGINE');
+      }
+      throw new RunnerError('A transcrição na nuvem não está disponível. Informe a chave em Configurações → Transcrição.', 'NO_KEY');
+    }
     if (!this.ffmpegPath && !this.ffmpegBaseArgs.length) throw new RunnerError('O componente de mídia não foi encontrado. Ele é necessário para ler vídeos e áudios; instale-o em Configurações > Módulos.', 'NO_FFMPEG');
     if (opts.outDir) fs.mkdirSync(opts.outDir, { recursive: true });
     if (signal && signal.aborted) throw cancelledError();
 
     const dtw = dtwPreset !== undefined ? dtwPreset : (getModel(modelId) || {}).dtw || null;
-    const label = modelName || modelId || 'whisper';
-    const wantGpu = !opts.forceCpu && Boolean(engines.cuda);
+    const localLabel = modelName || modelId || 'whisper';
+    const wantGpu = !opts.forceCpu && Boolean(engines.cuda) && chain.includes('local');
     let gpuBroken = false;
     let device = '';
 
@@ -241,6 +268,7 @@ class WhisperCppRunner {
 
         // Filtro de silêncio: o whisper recebe só os trechos com fala; os tempos voltam ao original no fim.
         let audioName = 'audio.wav';
+        let audioSeconds = seconds;
         let timeMap = null;
         if (opts.skipSilence) {
           onEvent({ type: 'status', text: 'Removendo silêncios…' });
@@ -249,6 +277,7 @@ class WhisperCppRunner {
             if (trim) {
               audioName = trim.audioName;
               timeMap = trim.timeMap;
+              audioSeconds = trim.duration;
               onEvent({ type: 'line', text: `Trechos sem fala ignorados: ${formatSeconds(seconds - trim.duration)} de ${formatSeconds(seconds)}.` });
             }
           } catch (err) {
@@ -257,28 +286,54 @@ class WhisperCppRunner {
             onEvent({ type: 'status', text: 'Não foi possível ignorar os silêncios; transcrevendo o áudio inteiro.' });
           }
         }
-        onEvent({ type: 'status', text: `Carregando o modelo (${name})` }); // pode levar de poucos segundos a mais de 1 minuto
-        const onLoaded = () => onEvent({ type: 'status', text: `Transcrevendo ${name}` });
+        // Um motor por vez; se o escolhido falhar por causa do serviço, tenta o próximo da lista (fallback).
+        const runLocal = async () => {
+          onEvent({ type: 'status', text: `Carregando o modelo (${name})` }); // pode levar de poucos segundos a mais de 1 minuto
+          const onLoaded = () => onEvent({ type: 'status', text: `Transcrevendo ${name}` });
 
-        let useGpu = wantGpu && !gpuBroken;
-        let run;
-        for (;;) {
+          let useGpu = wantGpu && !gpuBroken;
+          let run;
+          for (;;) {
+            try {
+              run = await this._runCli({ work, modelFile, useGpu, language: opts.language, dtw, engines, signal, audioName, onProgress: fileProgress, onLoaded });
+              break;
+            } catch (err) {
+              if (!(err instanceof RunnerError) || err.code !== 'ENGINE_FAILED' || !useGpu) throw err;
+              // A GPU falhou (driver, memória…): tenta de novo na CPU e não insiste nela nos próximos arquivos.
+              gpuBroken = true;
+              useGpu = false;
+              onEvent({ type: 'line', text: `A GPU não respondeu (${err.detail || err.message}); usando a CPU.` });
+              fileProgress(0);
+              onEvent({ type: 'status', text: `Carregando o modelo na CPU (${name})` });
+            }
+          }
+          if (run.device !== device) { device = run.device; onEvent({ type: 'device', text: device }); }
+
+          return parseWhisperCppJson(fs.readFileSync(path.join(work, 'out.json')), { preferDtw: Boolean(dtw) });
+        };
+        const runCloud = async (id) => {
+          onEvent({ type: 'status', text: `Transcrevendo ${name} na nuvem` });
+          return this.clouds[id].transcribe({
+            wav: path.join(work, audioName), seconds: audioSeconds, work, language: opts.language, signal, onEvent, onProgress: fileProgress
+          });
+        };
+        let parsed = null;
+        let label = localLabel;
+        for (let k = 0; k < chain.length; k++) {
+          const id = chain[k];
           try {
-            run = await this._runCli({ work, modelFile, useGpu, language: opts.language, dtw, engines, signal, audioName, onProgress: fileProgress, onLoaded });
+            if (id === 'local') { parsed = await runLocal(); label = localLabel; } else {
+              const text = `Nuvem (${this.clouds[id].providerLabel})`;
+              if (device !== text) { device = text; onEvent({ type: 'device', text }); }
+              parsed = await runCloud(id);
+              label = this.clouds[id].label;
+            }
             break;
           } catch (err) {
-            if (!(err instanceof RunnerError) || err.code !== 'ENGINE_FAILED' || !useGpu) throw err;
-            // A GPU falhou (driver, memória…): tenta de novo na CPU e não insiste nela nos próximos arquivos.
-            gpuBroken = true;
-            useGpu = false;
-            onEvent({ type: 'line', text: `A GPU não respondeu (${err.detail || err.message}); usando a CPU.` });
-            fileProgress(0);
-            onEvent({ type: 'status', text: `Carregando o modelo na CPU (${name})` });
+            if (k === chain.length - 1 || !isFallbackError(err, id) || (signal && signal.aborted)) throw err;
+            onEvent({ type: 'line', text: `${engineName(id, this.clouds)} não conseguiu (${err.message}) Tentando ${engineName(chain[k + 1], this.clouds)}.` });
           }
         }
-        if (run.device !== device) { device = run.device; onEvent({ type: 'device', text: device }); }
-
-        let parsed = parseWhisperCppJson(fs.readFileSync(path.join(work, 'out.json')), { preferDtw: Boolean(dtw) });
         if (timeMap) parsed = remapResult(parsed, timeMap);
         if (!parsed.segments.length) throw new RunnerError('Nenhuma fala foi detectada no arquivo.', 'NO_SPEECH');
 

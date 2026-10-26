@@ -31,6 +31,8 @@ const { extractZip, extractTarball, walkFiles } = require('./ZipExtractor');
 const { WhisperCppSource, HuggingFaceSource, engineFiles, unavailableReason, CUDA_LICENSE_LINKS } = require('./sources');
 const { WHISPER_MODELS, DEFAULT_MODEL_ID, REFERENCE_NOTE, getModel } = require('./WhisperCatalog');
 const { WhisperCppRunner } = require('./WhisperCppRunner');
+const { GroqTranscriber } = require('../transcription/GroqTranscriber');
+const { ElevenLabsTranscriber } = require('../transcription/ElevenLabsTranscriber');
 
 const MODULE_API_VERSION = 2;
 
@@ -54,8 +56,9 @@ class ModuleManager extends EventEmitter {
    *   config: { huggingFaceBaseUrl, githubBaseUrl, release, ffmpegPath (texto ou função), platform,
    *             cliCommand, cliBaseArgs, ffmpegBaseArgs, downloadAttempts (os quatro últimos, para testes) }
    */
-  constructor({ rootDir, tempDir, config = {}, getJson = fetchJson }) {
+  constructor({ rootDir, tempDir, config = {}, getJson = fetchJson, cloudConfig = null }) {
     super();
+    this.cloudConfig = cloudConfig; // chaves da transcrição na nuvem (CloudConfig); null = sem motores de nuvem
     if (!rootDir || !tempDir) throw new Error('ModuleManager: rootDir e tempDir são obrigatórios.');
     this.config = config;
     this.root = path.join(rootDir, 'modules');
@@ -482,6 +485,22 @@ class ModuleManager extends EventEmitter {
 
   // ------------------------------------------------------------------ transcrição
 
+  /** Motores de nuvem prontos para uso (só os que têm chave guardada), prontos para o WhisperCppRunner. */
+  _buildClouds() {
+    const out = {};
+    if (!this.cloudConfig) return out;
+    const deps = {
+      config: this.cloudConfig,
+      ffmpegPath: this._ffmpegPath(),
+      ffmpegBaseArgs: this.config.ffmpegBaseArgs || [],
+      fetchImpl: this.config.fetchImpl || undefined
+    };
+    for (const [id, Engine] of [['groq', GroqTranscriber], ['elevenlabs', ElevenLabsTranscriber]]) {
+      if (this.cloudConfig.readKey(id)) out[id] = new Engine(deps);
+    }
+    return out;
+  }
+
   /**
    * Gera legendas/transcrição com o modelo ativo. Usa a GPU se a aceleração NVIDIA estiver instalada
    * (e volta para a CPU sozinho se a placa falhar).
@@ -489,10 +508,17 @@ class ModuleManager extends EventEmitter {
    */
   async transcribe(options) {
     const custom = Boolean(this.config.cliCommand);
-    if (!custom) this._requireSource('cpu');
-    if (!custom && !this._engineInstalled() && !this._cudaInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
-    const modelId = this._activeModelId();
-    if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
+    const engine = ['groq', 'elevenlabs'].includes(options.engine) ? options.engine : 'local';
+    const clouds = this._buildClouds();
+    let modelId = this._activeModelId();
+    if (engine === 'local') {
+      if (!custom) this._requireSource('cpu');
+      if (!custom && !this._engineInstalled() && !this._cudaInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
+      if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
+    } else if (!clouds[engine]) {
+      throw new ModuleError('Falta a chave de API do serviço de transcrição. Informe-a em Configurações → Transcrição.', 'NO_KEY');
+    }
+    modelId = modelId || '';
 
     return this._run('transcribe', 'Gerando legendas/transcrição', async (op) => {
       op.files = Array.isArray(options.files) ? options.files.map(String) : [];
@@ -504,10 +530,11 @@ class ModuleManager extends EventEmitter {
         ffmpegPath: this._ffmpegPath(),
         cliCommand: this.config.cliCommand || null,
         cliBaseArgs: this.config.cliBaseArgs || [],
-        ffmpegBaseArgs: this.config.ffmpegBaseArgs || []
+        ffmpegBaseArgs: this.config.ffmpegBaseArgs || [],
+        clouds
       });
       const result = await runner.run(options, {
-        modelDir: this._modelDir(modelId),
+        modelDir: modelId ? this._modelDir(modelId) : '',
         modelId,
         modelName: modelId,
         signal: op.controller.signal,

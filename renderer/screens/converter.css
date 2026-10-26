@@ -121,7 +121,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  transition: opacity 0.3s, transform 0.3s;
+  transition: opacity var(--dur-slow), transform var(--dur-slow);
 }
 
 .converter-stepper .step-item {
@@ -143,7 +143,7 @@
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--muted);
-  transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+  transition: background-color var(--dur-slow), border-color var(--dur-slow), color var(--dur-slow);
 }
 
 .step-badge-pending {
@@ -173,7 +173,7 @@
 .step-subtitle {
   font-size: var(--fs-label);
   color: var(--muted);
-  transition: color 0.3s;
+  transition: color var(--dur-slow);
 }
 
 .step-text-done { color: var(--status-ok); }
@@ -207,7 +207,7 @@
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  transition: border-color 0.15s, background-color 0.15s;
+  transition: border-color var(--dur-fast), background-color var(--dur-fast);
 }
 
 .converter-content-panel.drag-active {
@@ -270,7 +270,7 @@
   gap: var(--space-1);
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  transition: background-color var(--dur-base), border-color var(--dur-base), color var(--dur-base);
 }
 
 .converter-btn:disabled,
@@ -350,7 +350,7 @@
 
 .converter-table-row {
   border-bottom: 1px solid var(--line);
-  transition: background 0.2s;
+  transition: background var(--dur-base);
 }
 
 .converter-table-row:last-child { border-bottom: none; }
@@ -395,7 +395,7 @@
   align-items: center;
   border-radius: var(--radius-sm);
   opacity: 0.6;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: opacity var(--dur-fast), color var(--dur-fast), background var(--dur-fast);
 }
 
 .converter-table-row:hover .btn-remove-converter-item,
@@ -511,7 +511,7 @@
 .converter-progress-fill {
   height: 100%;
   border-radius: var(--radius-pill);
-  transition: width 0.25s ease;
+  transition: width var(--dur-slow) var(--ease);
 }
 
 .converter-progress-fill-pending { background: var(--muted); }
@@ -574,7 +574,7 @@
   width: 0%;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  transition: width 0.3s ease;
+  transition: width var(--dur-slow) var(--ease);
 }
 
 .converter-batch-eta {
@@ -637,7 +637,7 @@
   border-radius: var(--radius-sm);
   padding: 0 12px;
   font-size: 13px;
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-fast);
 }
 
 .converter-input { flex: 1; width: auto; min-width: 0; }
@@ -665,7 +665,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-fast);
 }
 
 .converter-icon-btn:hover { background: color-mix(in srgb, var(--text) 10%, var(--card-2)); }
@@ -786,7 +786,7 @@
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition: background-color var(--dur-base), border-color var(--dur-base);
 }
 
 .converter-lib-option:hover { border-color: var(--muted); }
@@ -817,7 +817,7 @@
   padding: 34px 20px;
   border: 2px dashed var(--line);
   border-radius: var(--radius-md);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 
 .converter-empty-content strong { color: var(--text); font-size: var(--fs-body); }
@@ -872,7 +872,7 @@
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
+  transition: background-color var(--dur-base), color var(--dur-base);
 }
 
 .converter-format-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
@@ -899,7 +899,7 @@
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  transition: background-color var(--dur-base), border-color var(--dur-base), color var(--dur-base);
 }
 
 .converter-codec-btn:hover:not(:disabled):not(.active) { border-color: var(--muted); }

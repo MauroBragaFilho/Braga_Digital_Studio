@@ -111,7 +111,7 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
 }
 
 .meta-tab:hover:not(.active) {
@@ -135,15 +135,11 @@
 /* --- PAINÉIS DAS ABAS --- */
 .meta-panel {
   display: none;
-  animation: fadeIn 0.2s ease-in-out;
+  animation: bds-fade-in 0.2s ease-in-out;
 }
 
 .meta-panel.active { display: block; }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 
 /* --- TAGS --- */
 .meta-grid-header {
@@ -202,7 +198,7 @@
 .meta-tag-editable {
   background: var(--input-bg);
   color: var(--text);
-  transition: border-color 0.15s ease;
+  transition: border-color var(--dur-fast) var(--ease);
 }
 
 .meta-tag-editable:hover { border-color: var(--muted); }
@@ -642,7 +638,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
 .meta-btn-primary {

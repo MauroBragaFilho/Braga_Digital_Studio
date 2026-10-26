@@ -1,6 +1,6 @@
 /**
  * Estado compartilhado e utilitários da área interna do projeto (project_workspace).
- * Cada aba (overview, files, audio, devices, delivery) é um módulo que lê/escreve aqui.
+ * Cada aba (overview + equipamentos, files, audio, delivery) é um módulo que lê/escreve aqui.
  */
 import { setAppStatus } from '../../app.js';
 import { friendlyError } from '../../utils/friendlyError.js';
@@ -152,6 +152,48 @@ export async function reloadSyncGroups() {
 export async function reloadMissing() {
   try { ws.missing = (await window.bds.getMissingProjectMedia(ws.projectId)) || []; } catch (_) { ws.missing = []; }
 }
+
+/**
+ * Indicador "Salvo" na barra de abas: tudo na área interna salva sozinho (observações, entrega, status), e este
+ * é o único retorno visual. saving → "Salvando…"; saved → "Salvo" (some depois de alguns segundos); error → aviso.
+ */
+let saveTimer = null;
+export function saveState(state) {
+  const el = $('wsSaveState');
+  if (!el) return;
+  clearTimeout(saveTimer);
+  el.className = `ws-save-state is-${state}`;
+  el.textContent = state === 'saving' ? 'Salvando…' : state === 'saved' ? 'Salvo' : state === 'error' ? 'Não foi possível salvar' : '';
+  if (state === 'saved') saveTimer = setTimeout(() => { el.textContent = ''; el.className = 'ws-save-state'; }, 3000);
+}
+
+/** Executa uma gravação mostrando o indicador; devolve o resultado ou null (e avisa) se falhar. */
+export async function autosave(fn) {
+  saveState('saving');
+  try { const r = await fn(); saveState('saved'); return r; }
+  catch (e) { saveState('error'); setAppStatus(`Não foi possível salvar: ${friendlyError(e)}`, 'error'); return null; }
+}
+
+/** Menu flutuante (#wsMenu) junto de um botão: [{ icon, label, sub?, run }] ou { separator: true }. */
+export function showMenu(anchor, entries) {
+  const menu = $('wsMenu');
+  if (!menu || !anchor) return;
+  menu.textContent = '';
+  for (const e of entries) {
+    if (e.separator) { menu.append(mk('hr', { class: 'ws-menu-sep' })); continue; }
+    menu.append(mk('button', { type: 'button', role: 'menuitem', onclick: () => { hideMenu(); e.run(); } }, [
+      icon(e.icon), mk('span', { class: 'ws-menu-text' }, [mk('span', { text: e.label }), e.sub ? mk('small', { text: e.sub }) : null])
+    ]));
+  }
+  menu.classList.remove('hidden');
+  const r = anchor.getBoundingClientRect();
+  const w = menu.offsetWidth || 260;
+  const h = menu.offsetHeight || 160;
+  menu.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
+  menu.style.top = `${Math.min(r.bottom + 6, window.innerHeight - h - 8)}px`;
+  menu.querySelector('button')?.focus();
+}
+export function hideMenu() { $('wsMenu')?.classList.add('hidden'); }
 
 /** Pequeno evento interno para as abas se atualizarem quando os dados mudam. */
 const listeners = new Set();

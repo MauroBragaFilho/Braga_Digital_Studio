@@ -179,3 +179,22 @@ A pesquisa do topo e o contador de mídias dependem da Biblioteca. As abas ficam
 - IPC (`moduleHandlers.js`): `modules:list` (estado, `installed`, `available`), `modules:setEnabled(id, enabled)`
   e evento `modules:changed`. Desligar um módulo com tarefa em andamento a cancela (transcrição, silêncios,
   metadados). O main é a fonte da verdade; `renderer/app.js` aplica o resultado.
+
+## Transcrição na nuvem (Groq e ElevenLabs) e fallback
+
+Além do motor local (whisper.cpp), a transcrição pode ser feita por um serviço de nuvem, escolhido no botão de status da tela
+de transcrição. É opcional, desligado por padrão e **separado do assistente de IA**: as chaves ficam em
+`config/transcricao-nuvem.json`, criptografadas (Electron `safeStorage`), uma por serviço, e nunca voltam para a interface
+(`modules:cloudGet` devolve só `hasKey`). Os endereços são fixos (`api.groq.com`, `api.elevenlabs.io`).
+
+- `src/core/transcription/CloudConfig.js`: chaves, modelo de cada serviço e teste da chave (`modules:cloudGet/Set/Test`).
+- `CloudBase.js`: preparo do áudio (AAC mono via ffmpeg), envio com novas tentativas (429/5xx/rede) e mensagens de erro.
+- `GroqTranscriber.js`: blocos de ~10 min (limite de tamanho do Groq), tempo por palavra e por trecho.
+- `ElevenLabsTranscriber.js`: um envio só (Scribe, `/v1/speech-to-text`); os trechos são montados a partir das palavras.
+- `WhisperCppRunner.run({ engine, fallback })`: tenta o motor escolhido e, se ele falhar por causa do serviço (rede, limite,
+  chave, créditos), os da lista `transcriptionFallback` (Configurações → Transcrição), nesta ordem. O formato de saída é o do
+  whisper.cpp, então legendas, texto, corte de silêncio e tempos não mudam.
+- **Privacidade:** com o motor local escolhido não há fallback para a nuvem (o áudio nunca sai do computador sem o usuário pedir).
+  Ao escolher um serviço de nuvem pela primeira vez, a tela confirma que o áudio será enviado a ele.
+- Não verificado com as contas reais: preços e limites do plano gratuito de cada serviço (confira nos sites) e o alinhamento por
+  palavra em comparação com o local.

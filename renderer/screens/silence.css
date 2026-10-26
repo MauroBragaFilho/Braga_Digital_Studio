@@ -53,7 +53,7 @@
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .sil-btn .material-symbols-rounded { font-size: 20px; }
 .sil-btn-primary { color: var(--btn-fg); background: var(--btn-bg); }
@@ -77,7 +77,7 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+  transition: background var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
 .sil-icon-btn .material-symbols-rounded { font-size: 20px; }
 .sil-icon-btn:hover:not(:disabled) { background: var(--card-2); color: var(--text); }
@@ -122,7 +122,7 @@
 .step-badge {
   width: 28px; height: 28px; flex: none; display: flex; align-items: center; justify-content: center;
   border: 2px solid var(--muted); border-radius: 50%; color: var(--muted);
-  font-size: var(--fs-label); font-weight: 700; transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  font-size: var(--fs-label); font-weight: 700; transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .step-title { color: var(--text); font-size: var(--fs-body); font-weight: 700; }
@@ -160,7 +160,7 @@
 }
 .sil-table td { padding: 12px; vertical-align: middle; border-bottom: 1px solid var(--line); }
 .sil-table tbody tr:last-child td { border-bottom: 0; }
-.silence-row { transition: background 0.15s var(--ease); }
+.silence-row { transition: background var(--dur-fast) var(--ease); }
 .silence-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
 .sil-col-num { width: 40px; }
 .sil-col-dur { width: 130px; }
@@ -194,7 +194,7 @@
 .sil-st-bad .sil-st-label { color: var(--status-bad); }
 .sil-st-warn .sil-st-label { color: var(--status-warn); }
 .sil-bar { width: 100%; height: 6px; overflow: hidden; border-radius: 3px; background: color-mix(in srgb, var(--text) 12%, transparent); }
-.sil-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.25s var(--ease); }
+.sil-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width var(--dur-slow) var(--ease); }
 .sil-st-done .sil-bar-fill { background: var(--status-ok); }
 .sil-st-bad .sil-bar-fill { background: var(--danger); }
 
@@ -236,7 +236,7 @@
   display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 16px;
   border: 1px solid var(--line); border-radius: var(--radius-md); background: transparent; color: var(--text);
   font-size: var(--fs-body); font-weight: 600; text-align: left; cursor: pointer;
-  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .btn-silence-lib-option:hover { background: var(--card-2); border-color: var(--accent); }
 .sil-opt-main { display: flex; align-items: center; gap: 12px; }

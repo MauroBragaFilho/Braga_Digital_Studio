@@ -1,6 +1,7 @@
 /* ==========================================================================
-   ÁREA INTERNA DO PROJETO (.docs/BDS_TELA_PROJETOS.md): cabeçalho com capa, cliente, entrega e status;
-   abas Visão geral / Arquivos / Áudio / Dispositivos / Entrega; cartões planos de 24px; botões em pílula
+   ÁREA INTERNA DO PROJETO (.docs/BDS_TELA_PROJETOS.md): cabeçalho com capa, nome editável, status, "Editar detalhes"
+   e "Adicionar arquivos"; abas Visão geral / Arquivos / Sincronizar câmeras / Entrega e exportação, com o indicador
+   "Salvo"; cartões planos de 24px; botões em pílula
    (primário --btn-bg/--btn-fg); campos de 8px; cores de estado só por --status-* (classes .tone-*).
    ========================================================================== */
 
@@ -10,7 +11,7 @@
 .ws-btn-outline, .ws-btn-accent {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 16px;
   border: 2px solid transparent; border-radius: var(--radius-pill); font-family: var(--font-body); font-size: var(--fs-label);
-  font-weight: 700; cursor: pointer; white-space: nowrap; transition: background 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s var(--ease);
+  font-weight: 700; cursor: pointer; white-space: nowrap; transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
 .ws-btn-outline .material-symbols-rounded, .ws-btn-accent .material-symbols-rounded { font-size: 18px; }
 .ws-btn-accent { color: var(--btn-fg); background: var(--btn-bg); }
@@ -120,8 +121,13 @@
 .ws-files-bar { display: flex; align-items: center; gap: 12px; padding: 10px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .ws-files-title { margin: 0; font-family: var(--font-title); font-size: var(--fs-section); font-weight: 700; color: var(--text); }
 .ws-files-actions { margin-left: auto; display: flex; gap: 8px; }
-.ws-files-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr) 260px; }
-@media (max-width: 1200px) { .ws-files-layout { grid-template-columns: 200px minmax(0, 1fr); } .ws-files-right { display: none; } }
+.ws-files-layout { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+.ws-files-layout.has-inspector { grid-template-columns: 220px minmax(0, 1fr) 280px; }
+.ws-files-layout:not(.has-inspector) .ws-files-right { display: none; }
+@media (max-width: 1200px) {
+  .ws-files-layout, .ws-files-layout.has-inspector { grid-template-columns: 200px minmax(0, 1fr); }
+  .ws-files-layout.has-inspector .ws-files-right { position: absolute; top: 0; right: 0; bottom: 0; width: 300px; z-index: 6; background: var(--card); box-shadow: -12px 0 32px rgba(0, 0, 0, 0.3); }
+}
 .ws-files-left, .ws-files-right { padding: 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .ws-files-left { border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 .ws-files-right { border-left: 1px solid var(--line); }
@@ -205,8 +211,7 @@
 .ws-source-text span { color: var(--muted); }
 .ws-source-badge { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--btn-bg); color: var(--btn-fg); font-size: 11px; font-weight: 700; }
 .ws-progress { display: flex; align-items: center; gap: 10px; font-size: var(--fs-label); color: var(--text); }
-.ws-spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: ws-spin 0.9s linear infinite; }
-@keyframes ws-spin { to { transform: rotate(360deg); } }
+.ws-spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: bds-spin 0.9s linear infinite; }
 .ws-timeline { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--card-2); padding: 8px 0; }
 .ws-tl-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .ws-tl-inner { min-width: 100%; }
@@ -282,3 +287,110 @@
 .ws-monitor-labels { display: flex; justify-content: space-between; font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) { .ws-btn-outline, .ws-btn-accent, .ws-spinner { transition: none; animation: none; } }
+
+/* --- MOVIMENTO (tokens e keyframes compartilhados de style.css; "Reduzir animações" zera tudo) --- */
+.ws-panel:not(.hidden) { animation: bds-fade-in var(--dur-base) var(--ease); }
+.ws-proj-tab { transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.ws-media-card { transition: border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.ws-media-card:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22); }
+.ws-modal-overlay:not(.hidden) { animation: bds-fade-in var(--dur-fast) var(--ease); }
+
+/* ==========================================================================
+   INTERFACE REVISTA: cabeçalho com ações, "Salvo", próximos passos, equipamentos em etiquetas,
+   assistente de sincronização, menu e janela de detalhes
+   ========================================================================== */
+.ws-header { flex-wrap: wrap; row-gap: 10px; }
+.ws-title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ws-title-edit { width: 30px; height: 30px; opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.ws-title-edit .material-symbols-rounded { font-size: 18px; }
+.ws-header-info:hover .ws-title-edit, .ws-title-edit:focus-visible { opacity: 1; }
+.ws-header-meta span + span::before { content: '·'; margin-right: 14px; margin-left: -8px; color: var(--muted); }
+.ws-header-actions { flex-wrap: wrap; }
+.ws-cover-edit { opacity: 0.85; }
+
+/* status como etiqueta colorida (mesmos tons dos cartões de Projetos) */
+.ws-status-select { min-width: 0; padding: 0 30px 0 14px; border-color: var(--line); }
+.ws-status-select[data-status="Em produção"], .ws-status-select[data-status="Pós-produção"] { color: var(--status-info); border-color: color-mix(in srgb, var(--status-info) 45%, transparent); background-color: color-mix(in srgb, var(--status-info) 10%, var(--card)); }
+.ws-status-select[data-status="Aguardando cliente"] { color: var(--status-warn); border-color: color-mix(in srgb, var(--status-warn) 45%, transparent); background-color: color-mix(in srgb, var(--status-warn) 10%, var(--card)); }
+.ws-status-select[data-status="Concluído"] { color: var(--status-ok); border-color: color-mix(in srgb, var(--status-ok) 45%, transparent); background-color: color-mix(in srgb, var(--status-ok) 10%, var(--card)); }
+.ws-status-select[data-status="Problema"] { color: var(--status-bad); border-color: color-mix(in srgb, var(--status-bad) 45%, transparent); background-color: color-mix(in srgb, var(--status-bad) 10%, var(--card)); }
+.ws-status-select[data-status="Arquivado"] { color: var(--muted); }
+
+/* abas: contagem e indicador "Salvo" */
+.ws-proj-tabs { align-items: center; }
+.ws-tab-count { min-width: 18px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--card-2); color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; }
+.ws-tab-count:empty { display: none; }
+.ws-save-state { margin-left: auto; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-label); font-weight: 600; color: var(--muted); white-space: nowrap; }
+.ws-save-state.is-saved { color: var(--status-ok); }
+.ws-save-state.is-saved::before { content: '✓'; }
+.ws-save-state.is-error { color: var(--status-bad); }
+
+/* Visão geral */
+.ws-overview { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .ws-overview { grid-template-columns: 1fr; } }
+.ws-overview-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ws-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ws-step { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.ws-step:last-child { border-bottom: 0; }
+.ws-step > .material-symbols-rounded { font-size: 22px; color: var(--muted); flex-shrink: 0; }
+.ws-step-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-label); }
+.ws-step-text b { color: var(--text); font-size: var(--fs-body); font-weight: 600; }
+.ws-step-text span { color: var(--muted); }
+.ws-step.is-done > .material-symbols-rounded { color: var(--status-ok); }
+.ws-step.is-done .ws-step-text b { color: var(--muted); font-weight: 500; }
+.ws-step.is-current > .material-symbols-rounded { color: var(--accent-text); }
+.ws-step.is-current .ws-step-text b { font-weight: 700; }
+.ws-step.is-skip { opacity: 0.7; }
+.ws-ov-stats { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-label); }
+.ws-ov-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* equipamentos em etiquetas */
+.ws-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--card-2); color: var(--text); font-size: var(--fs-label); }
+.ws-chip > .material-symbols-rounded { font-size: 16px; color: var(--muted); }
+.ws-chip-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-chip-remove { width: 22px; height: 22px; border: 0; border-radius: 50%; background: none; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.ws-chip-remove .material-symbols-rounded { font-size: 14px; }
+.ws-chip-remove:hover { background: var(--line); color: var(--text); }
+.ws-chip-remove:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.ws-device-add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 8px; }
+.ws-device-add .ws-device-note-input { grid-column: 1 / 3; }
+.ws-select-xs { width: 100%; }
+
+/* Arquivos: cabeçalho do painel de detalhes */
+.ws-insp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ws-insp-head .ws-side-title { margin: 0; }
+
+/* Sincronizar câmeras: assistente em 3 passos */
+.ws-wizard-step { display: flex; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ws-step-num { width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--card-2); border: 1px solid var(--line); color: var(--text); font-size: var(--fs-label); font-weight: 700; }
+.ws-wizard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-label); }
+.ws-wizard-body > b { color: var(--text); font-size: var(--fs-body); font-weight: 600; }
+.ws-actions-left { display: flex; gap: 10px; flex-wrap: wrap; }
+.ws-source.is-off { opacity: 0.55; }
+.ws-source.is-off .ws-source-badge { display: none; }
+
+/* menu de ações */
+.ws-menu { position: fixed; z-index: 10000; min-width: 260px; padding: 6px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35)); display: flex; flex-direction: column; }
+.ws-menu:not(.hidden) { animation: bds-pop-in var(--dur-fast) var(--ease); transform-origin: top right; }
+.ws-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text); font-family: var(--font-body); font-size: var(--fs-body); text-align: left; cursor: pointer; }
+.ws-menu button:hover, .ws-menu button:focus-visible { background: var(--card-2); outline: none; }
+.ws-menu button > .material-symbols-rounded { font-size: 20px; color: var(--muted); }
+.ws-menu-text { display: flex; flex-direction: column; min-width: 0; }
+.ws-menu-text small { color: var(--muted); font-size: 11px; }
+.ws-menu-sep { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+
+/* janela de detalhes */
+.ws-edit-row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; align-items: end; }
+.ws-color-input { width: 100%; height: 36px; padding: 0 4px; background: var(--input-bg); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.ws-edit-cover-row { display: flex; align-items: center; gap: 12px; }
+
+/* Arquivos: "Selecionar todos" e a escolha da pasta de destino na importação */
+.ws-select-all { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px 0 4px; color: var(--text); font-size: var(--fs-label); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ws-select-all input { width: 16px; height: 16px; accent-color: var(--accent); }
+.ws-select-all input:disabled + span { color: var(--muted); }
+.ws-select-all-modal { padding-left: 8px; }
+.ws-media-table th input { width: 16px; height: 16px; accent-color: var(--accent); }
+.ws-dest-row { display: flex; flex-direction: column; }
+.ws-dest-row .ws-field-label { margin-top: 0; }
+.ws-modal-narrow { width: 440px; }

@@ -1,99 +1,86 @@
 <div class="proj-screen" id="projRoot">
 
-  <!-- Barra: busca, filtro, ordenação, grade/lista e ações (o título da tela fica só na barra do app) -->
+  <!-- Barra: busca, ordenação, grade/lista e um botão principal (Importar fica no menu dele). O título da tela fica só na barra do app. -->
   <div class="proj-toolbar">
     <div class="proj-search">
       <span class="material-symbols-rounded" aria-hidden="true">search</span>
-      <input type="search" id="projSearch" placeholder="Buscar por nome, cliente, observações…" autocomplete="off" aria-label="Buscar projetos" />
+      <input type="search" id="projSearch" placeholder="Buscar projeto ou cliente" autocomplete="off" aria-label="Buscar projetos" />
     </div>
-    <select id="projFilter" class="proj-select" aria-label="Filtrar por situação">
-      <option value="active">Em andamento</option>
-      <option value="all">Todos</option>
-      <option value="waiting">Aguardando cliente</option>
-      <option value="done">Concluídos</option>
-      <option value="archived">Arquivados</option>
-    </select>
     <select id="projSort" class="proj-select" aria-label="Ordenar">
       <option value="deadline">Próximo prazo</option>
+      <option value="activity">Última atividade</option>
       <option value="recent">Mais recentes</option>
       <option value="oldest">Mais antigos</option>
       <option value="name">Nome</option>
-      <option value="activity">Última atividade</option>
     </select>
     <div class="proj-view-toggle" role="group" aria-label="Modo de exibição">
-      <button id="projViewGrid" class="proj-icon-btn active" type="button" title="Grade" aria-pressed="true"><span class="material-symbols-rounded">grid_view</span></button>
-      <button id="projViewList" class="proj-icon-btn" type="button" title="Lista" aria-pressed="false"><span class="material-symbols-rounded">view_list</span></button>
+      <button id="projViewGrid" class="proj-icon-btn active" type="button" title="Grade" aria-label="Grade" aria-pressed="true"><span class="material-symbols-rounded">grid_view</span></button>
+      <button id="projViewList" class="proj-icon-btn" type="button" title="Lista" aria-label="Lista" aria-pressed="false"><span class="material-symbols-rounded">view_list</span></button>
     </div>
-    <div class="proj-toolbar-actions">
-      <button id="btnImportBdspro" class="proj-btn proj-btn-outline" type="button" title="Importar um pacote .bdspro">
-        <span class="material-symbols-rounded" aria-hidden="true">archive</span> Importar
-      </button>
-      <button id="btnNewProject" class="proj-btn proj-btn-primary" type="button">
+    <div class="proj-split">
+      <button id="btnNewProject" class="proj-btn proj-btn-primary proj-split-main" type="button">
         <span class="material-symbols-rounded" aria-hidden="true">add</span> Novo projeto
       </button>
+      <button id="btnNewProjectMore" class="proj-btn proj-btn-primary proj-split-more" type="button" title="Mais opções" aria-label="Mais opções de novo projeto" aria-haspopup="menu">
+        <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
+      </button>
     </div>
   </div>
 
-  <!-- Resumo: como está o trabalho hoje -->
-  <div class="proj-summary" id="projSummary">
-    <button class="proj-stat" type="button" data-filter="active"><span class="proj-stat-label">Em andamento</span><b id="projStatActive">0</b></button>
-    <button class="proj-stat" type="button" data-filter="waiting"><span class="proj-stat-label">Aguardando cliente</span><b id="projStatWaiting">0</b></button>
-    <button class="proj-stat proj-stat-warn" type="button" data-sort="deadline"><span class="proj-stat-label">Entregas em 7 dias</span><b id="projStatDue">0</b></button>
-    <div class="proj-stat proj-stat-static"><span class="proj-stat-label">Material referenciado</span><b id="projStatSize">0 B</b></div>
+  <!-- Situação: um único conjunto de abas, com a contagem de cada uma -->
+  <div id="projTabs" class="proj-tabs" role="tablist" aria-label="Situação dos projetos">
+    <button class="proj-tab active" type="button" role="tab" aria-selected="true" data-filter="active">Em andamento <span class="proj-tab-count" data-count="active">0</span></button>
+    <button class="proj-tab" type="button" role="tab" aria-selected="false" data-filter="waiting">Aguardando cliente <span class="proj-tab-count" data-count="waiting">0</span></button>
+    <button class="proj-tab" type="button" role="tab" aria-selected="false" data-filter="done">Concluídos <span class="proj-tab-count" data-count="done">0</span></button>
+    <button class="proj-tab" type="button" role="tab" aria-selected="false" data-filter="archived">Arquivados <span class="proj-tab-count" data-count="archived">0</span></button>
+    <button class="proj-tab" type="button" role="tab" aria-selected="false" data-filter="all">Todos</button>
   </div>
 
-  <div class="proj-main">
-    <div class="proj-list-col">
-      <p id="projCount" class="proj-count" aria-live="polite"></p>
-      <div id="projectsGrid" class="proj-grid" role="list"></div>
-      <table id="projectsTable" class="proj-table hidden">
-        <thead>
-          <tr><th>Projeto</th><th>Cliente</th><th>Status</th><th>Entrega</th><th>Arquivos</th><th>Atividade</th><th class="proj-th-actions"></th></tr>
-        </thead>
-        <tbody id="projectsTableBody"></tbody>
-      </table>
-    </div>
+  <!-- Aviso de prazo: só aparece quando há entrega próxima -->
+  <button id="projDueBanner" class="proj-due-banner hidden" type="button">
+    <span class="material-symbols-rounded" aria-hidden="true">schedule</span>
+    <span id="projDueText" class="proj-due-text"></span>
+    <span class="proj-due-action">Ver</span>
+  </button>
 
-    <!-- Coluna lateral: o que vence primeiro e o que aconteceu por último, em todos os projetos -->
-    <aside class="proj-rail" aria-label="Próximas entregas e atividade recente">
-      <h3 class="proj-rail-title">Próximas entregas</h3>
-      <ul id="projDueList" class="proj-rail-list"></ul>
-      <h3 class="proj-rail-title">Atividade recente</h3>
-      <ul id="projActivityList" class="proj-rail-list proj-rail-activity"></ul>
-    </aside>
-  </div>
+  <!-- Continuar de onde parou: os projetos abertos por último, com o próximo passo -->
+  <section id="projRecentSection" class="proj-section hidden" aria-labelledby="projRecentLabel">
+    <p id="projRecentLabel" class="proj-section-label">Continuar de onde parou</p>
+    <div id="projRecent" class="proj-grid proj-grid-recent" role="list"></div>
+  </section>
 
-  <!-- Menu contextual (⋮) de um projeto; montado pelo JS -->
+  <section class="proj-section" aria-labelledby="projListLabel">
+    <p id="projListLabel" class="proj-section-label hidden"></p>
+    <p id="projCount" class="proj-count" aria-live="polite"></p>
+    <div id="projectsGrid" class="proj-grid" role="list"></div>
+    <table id="projectsTable" class="proj-table hidden">
+      <thead>
+        <tr><th>Projeto</th><th>Cliente</th><th>Status</th><th>Entrega</th><th>Arquivos</th><th>Atividade</th><th class="proj-th-actions"></th></tr>
+      </thead>
+      <tbody id="projectsTableBody"></tbody>
+    </table>
+  </section>
+
+  <!-- Menus (⋮ de um projeto e opções do botão Novo projeto); montados pelo JS -->
   <div id="projMenu" class="proj-menu hidden" role="menu"></div>
 </div>
 
-<!-- Modal Novo/Editar Projeto -->
+<!-- Modal Novo/Editar Projeto: o essencial primeiro; o resto em "Mais detalhes" -->
 <div id="modalProjectForm" class="proj-modal-overlay">
-  <div class="proj-modal">
+  <div class="proj-modal" role="dialog" aria-modal="true" aria-labelledby="modalProjectTitle">
     <h3 id="modalProjectTitle" class="proj-modal-title">Novo projeto</h3>
 
     <input type="hidden" id="projFormId">
 
     <div class="proj-field">
       <label class="proj-form-label" for="projFormName">Nome do projeto</label>
-      <input type="text" id="projFormName" class="proj-form-input" maxlength="200" />
+      <input type="text" id="projFormName" class="proj-form-input" maxlength="200" placeholder="Casamento Ana e Leo" />
     </div>
 
     <div class="proj-form-row">
       <div class="proj-field">
         <label class="proj-form-label" for="projFormClient">Cliente</label>
-        <input type="text" id="projFormClient" class="proj-form-input" maxlength="120" />
-      </div>
-      <div class="proj-field">
-        <label class="proj-form-label" for="projFormType">Tipo</label>
-        <input type="text" id="projFormType" placeholder="Ex.: Casamento" class="proj-form-input" maxlength="60" />
-      </div>
-    </div>
-
-    <div class="proj-form-row">
-      <div class="proj-field">
-        <label class="proj-form-label" for="projFormStart">Data do projeto</label>
-        <input type="date" id="projFormStart" class="proj-form-input" />
+        <input type="text" id="projFormClient" class="proj-form-input" maxlength="120" placeholder="Ana Souza" />
       </div>
       <div class="proj-field">
         <label class="proj-form-label" for="projFormDeadline">Data de entrega</label>
@@ -101,38 +88,59 @@
       </div>
     </div>
 
-    <div class="proj-form-row">
-      <div class="proj-field">
-        <label class="proj-form-label" for="projFormStatus">Status</label>
-        <select id="projFormStatus" class="proj-form-input">
-          <option value="Planejamento">Planejamento</option>
-          <option value="Em produção">Em produção</option>
-          <option value="Pós-produção">Pós-produção</option>
-          <option value="Aguardando cliente">Aguardando cliente</option>
-          <option value="Concluído">Concluído</option>
-          <option value="Problema">Problema</option>
-          <option value="Arquivado">Arquivado</option>
-        </select>
-      </div>
-      <div class="proj-field proj-field-color">
-        <label class="proj-form-label" for="projFormColor">Cor do projeto</label>
-        <input type="color" id="projFormColor" value="#3b82f6" class="proj-form-color-input" />
-      </div>
-    </div>
+    <label id="projFormDefaultBinsRow" class="proj-check">
+      <input type="checkbox" id="projFormDefaultBins" checked />
+      <span>Criar as pastas padrão <small>BRUTOS, FOTOS, ÁUDIO, EXPORTAÇÕES e PROJETO</small></span>
+    </label>
 
-    <div class="proj-field">
-      <span class="proj-form-label">Capa</span>
-      <div class="proj-cover-row">
-        <div id="projFormCoverPreview" class="proj-cover-preview" aria-hidden="true"></div>
-        <button id="btnProjFormCover" class="proj-btn proj-btn-outline" type="button">Selecionar imagem</button>
-        <button id="btnProjFormCoverClear" class="proj-link hidden" type="button">Remover capa</button>
-      </div>
-    </div>
+    <details id="projFormMore" class="proj-form-more">
+      <summary>Mais detalhes</summary>
+      <div class="proj-form-more-body">
+        <div class="proj-form-row">
+          <div class="proj-field">
+            <label class="proj-form-label" for="projFormType">Tipo</label>
+            <input type="text" id="projFormType" placeholder="Casamento" class="proj-form-input" maxlength="60" />
+          </div>
+          <div class="proj-field">
+            <label class="proj-form-label" for="projFormStart">Data do projeto</label>
+            <input type="date" id="projFormStart" class="proj-form-input" />
+          </div>
+        </div>
 
-    <div class="proj-field">
-      <label class="proj-form-label" for="projFormNotes">Observações</label>
-      <textarea id="projFormNotes" class="proj-form-input proj-form-textarea" rows="3" maxlength="2000" placeholder="Ex.: Cerimônia + recepção. Entrega final em 4K."></textarea>
-    </div>
+        <div class="proj-form-row">
+          <div class="proj-field">
+            <label class="proj-form-label" for="projFormStatus">Status</label>
+            <select id="projFormStatus" class="proj-form-input">
+              <option value="Planejamento">Planejamento</option>
+              <option value="Em produção">Em produção</option>
+              <option value="Pós-produção">Pós-produção</option>
+              <option value="Aguardando cliente">Aguardando cliente</option>
+              <option value="Concluído">Concluído</option>
+              <option value="Problema">Problema</option>
+              <option value="Arquivado">Arquivado</option>
+            </select>
+          </div>
+          <div class="proj-field proj-field-color">
+            <label class="proj-form-label" for="projFormColor">Cor</label>
+            <input type="color" id="projFormColor" value="#3b82f6" class="proj-form-color-input" />
+          </div>
+        </div>
+
+        <div class="proj-field">
+          <span class="proj-form-label">Capa</span>
+          <div class="proj-cover-row">
+            <div id="projFormCoverPreview" class="proj-cover-preview" aria-hidden="true"></div>
+            <button id="btnProjFormCover" class="proj-btn proj-btn-outline" type="button">Selecionar imagem</button>
+            <button id="btnProjFormCoverClear" class="proj-link hidden" type="button">Remover capa</button>
+          </div>
+        </div>
+
+        <div class="proj-field">
+          <label class="proj-form-label" for="projFormNotes">Observações</label>
+          <textarea id="projFormNotes" class="proj-form-input proj-form-textarea" rows="3" maxlength="2000" placeholder="Cerimônia e recepção. Entrega final em 4K."></textarea>
+        </div>
+      </div>
+    </details>
 
     <div class="proj-form-actions">
       <button id="btnCancelProjForm" class="proj-btn proj-btn-outline" type="button">Cancelar</button>

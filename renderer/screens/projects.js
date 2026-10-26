@@ -1,8 +1,9 @@
 /**
- * Tela "Projetos" (.docs/BDS_TELA_PROJETOS.md): cartões de projeto com capa, nome, cliente, status, prazo e
- * última atividade; busca, filtro por situação e ordenação; formulário simples de novo projeto (com Observações e
- * capa); menu ⋮ por projeto (abrir, renomear, alterar capa/status, duplicar, exportar informações, arquivar,
- * excluir). Abrir um projeto leva à área interna (project_workspace). Textos entram por textContent.
+ * Tela "Projetos" (.docs/BDS_TELA_PROJETOS.md): abas de situação com contagem, aviso de prazo próximo,
+ * "Continuar de onde parou" (os 3 projetos com atividade mais recente, com o próximo passo de cada um) e a lista
+ * dos demais em grade ou tabela; um botão principal "Novo projeto" (Importar fica no menu ▾ dele); formulário curto
+ * (nome, cliente, prazo e pastas padrão; o resto em "Mais detalhes"); menu ⋮ por projeto. Abrir um projeto leva à
+ * área interna (project_workspace). Textos entram por textContent.
  */
 
 import { setAppStatus } from '../app.js';
@@ -62,7 +63,7 @@ export function initScreen() {
   setContextProvider('projectSelected', () => selectedProjectId);
   try { view = localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch (_) { /* sem armazenamento */ }
   bindOnce();
-  if ($('projFilter')) $('projFilter').value = filter;
+  applyTabs();
   if ($('projSort')) $('projSort').value = sort;
   applyView();
   loadProjects();
@@ -138,9 +139,8 @@ async function loadProjects() {
     }
     projectsList = (await window.bds.listProjects()) || [];
     renderGrid();
-    renderSummary();
-    renderRail();
-    loadRecentActivity();
+    renderTabs();
+    renderDueBanner();
   } catch (e) {
     console.error('Erro ao listar projetos', e);
     setAppStatus('Erro ao carregar projetos', 'error');
@@ -172,16 +172,35 @@ function visibleProjects() {
 
 // ------------------------------------------------------------------ cartões
 
+/** Os 3 projetos com atividade mais recente (só na aba "Em andamento", sem busca, e quando há mais de 3). */
+function recentProjects(list) {
+  if (filter !== 'active' || query.trim() || list.length <= 3) return [];
+  const when = (p) => { const v = p.last_activity_at || p.created_at; return v ? new Date(String(v).includes('T') ? v : `${v}Z`.replace(' ', 'T')).getTime() || 0 : 0; };
+  return list.slice().sort((a, b) => when(b) - when(a)).slice(0, 3);
+}
+
 function renderGrid() {
   const grid = $('projectsGrid');
   if (!grid) return;
   grid.removeAttribute('aria-busy');
   grid.textContent = '';
-  const list = visibleProjects();
+  const all = visibleProjects();
+  const recent = recentProjects(all);
+  const recentIds = new Set(recent.map((p) => p.id));
+  const list = all.filter((p) => !recentIds.has(p.id));
   const count = $('projCount');
+  const recentHost = $('projRecent');
+  if (recentHost) {
+    recentHost.textContent = '';
+    for (const p of recent) recentHost.append(renderCard(p, { recent: true }));
+  }
+  $('projRecentSection')?.classList.toggle('hidden', recent.length === 0);
+  const listLabel = $('projListLabel');
+  if (listLabel) { listLabel.textContent = recent.length ? 'Os demais em andamento' : ''; listLabel.classList.toggle('hidden', !recent.length); }
 
   if (projectsList.length === 0) {
     if (count) count.textContent = '';
+    renderTable([]);
     grid.append(h('div', { class: 'bds-empty proj-empty', role: 'status' }, [
       h('span', { class: 'material-symbols-rounded bds-empty-icon', 'aria-hidden': 'true', text: 'folder_special' }),
       h('strong', { class: 'bds-empty-title', text: 'Nenhum projeto ainda' }),
@@ -190,15 +209,14 @@ function renderGrid() {
     ]));
     return;
   }
-  const filterLabel = { active: 'em andamento', waiting: 'aguardando cliente', done: 'concluídos', archived: 'arquivados', all: '' }[filter] || '';
-  const hasArchived = projectsList.some((p) => normalizeStatus(p.status) === 'Arquivado');
-  if (count) count.textContent = `${list.length} ${list.length === 1 ? 'projeto' : 'projetos'}${filterLabel ? ` ${filterLabel}` : ''}${filter !== 'archived' && hasArchived ? ' · arquivados ficam no filtro' : ''}`;
+  // contagem só quando ajuda: busca ativa (as abas já mostram o total de cada situação)
+  if (count) count.textContent = query.trim() ? `${all.length} ${all.length === 1 ? 'projeto encontrado' : 'projetos encontrados'}` : '';
   renderTable(list);
-  if (list.length === 0) {
+  if (all.length === 0) {
     grid.append(h('div', { class: 'bds-empty proj-empty', role: 'status' }, [
       h('span', { class: 'material-symbols-rounded bds-empty-icon', 'aria-hidden': 'true', text: 'search_off' }),
-      h('strong', { class: 'bds-empty-title', text: 'Nenhum projeto encontrado' }),
-      h('span', { class: 'bds-empty-text', text: 'Tente outra busca ou outro filtro.' })
+      h('strong', { class: 'bds-empty-title', text: query.trim() ? 'Nenhum projeto encontrado' : 'Nenhum projeto nesta situação' }),
+      h('span', { class: 'bds-empty-text', text: query.trim() ? 'Tente outra busca ou outra aba.' : 'Os projetos aparecem aqui quando mudam para esta situação.' })
     ]));
     return;
   }
@@ -232,99 +250,106 @@ function renderTable(list) {
   }
 }
 
-/** Faixa de resumo: em andamento, aguardando cliente, entregas em 7 dias e material referenciado. */
-function renderSummary() {
+/** Abas de situação: contagem de cada uma e a ativa marcada. */
+function renderTabs() {
   const st = (p) => normalizeStatus(p.status);
-  const active = projectsList.filter((p) => ACTIVE_STATUSES.includes(st(p))).length;
-  const waiting = projectsList.filter((p) => st(p) === 'Aguardando cliente').length;
-  const due = projectsList.filter((p) => {
-    if (!p.deadline || st(p) === 'Concluído' || st(p) === 'Arquivado') return false;
-    const d = daysUntilLocal(p.deadline);
-    return d !== null && d <= 7;
-  }).length;
-  const size = projectsList.reduce((sum, p) => sum + (Number(p.total_size) || 0), 0);
-  const set = (id, v) => { const n = $(id); if (n) n.textContent = String(v); };
-  set('projStatActive', active); set('projStatWaiting', waiting); set('projStatDue', due); set('projStatSize', formatBytes(size));
-  $('projSummary')?.classList.toggle('hidden', projectsList.length === 0);
+  const counts = {
+    active: projectsList.filter((p) => ACTIVE_STATUSES.includes(st(p))).length,
+    waiting: projectsList.filter((p) => st(p) === 'Aguardando cliente').length,
+    done: projectsList.filter((p) => st(p) === 'Concluído').length,
+    archived: projectsList.filter((p) => st(p) === 'Arquivado').length
+  };
+  document.querySelectorAll('.proj-tab-count[data-count]').forEach((n) => { n.textContent = String(counts[n.dataset.count] || 0); });
+  $('projTabs')?.classList.toggle('hidden', projectsList.length === 0);
+  applyTabs();
 }
 
-/** Coluna lateral: próximas entregas (projetos em andamento com prazo, as 6 mais próximas). */
-function renderRail() {
-  const ul = $('projDueList');
-  if (!ul) return;
-  ul.textContent = '';
+function applyTabs() {
+  document.querySelectorAll('.proj-tab[data-filter]').forEach((b) => {
+    const on = b.dataset.filter === filter;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+}
+
+/** Projetos em andamento com entrega nos próximos 7 dias (ou atrasada), do mais urgente ao menos. */
+function dueSoon() {
   const st = (p) => normalizeStatus(p.status);
-  const due = projectsList.filter((p) => p.deadline && st(p) !== 'Concluído' && st(p) !== 'Arquivado')
-    .sort((a, b) => String(a.deadline).localeCompare(String(b.deadline))).slice(0, 6);
-  if (!due.length) { ul.append(h('li', { class: 'proj-rail-empty', text: 'Nenhuma entrega com prazo.' })); return; }
-  for (const p of due) {
-    const d = daysUntilLocal(p.deadline);
-    const when = d === null ? formatDate(p.deadline) : d < 0 ? `${Math.abs(d)} ${Math.abs(d) === 1 ? 'dia' : 'dias'} de atraso` : d === 0 ? 'Hoje' : d === 1 ? 'Amanhã' : `Em ${d} dias`;
-    const tone = d === null ? 'muted' : d <= 0 ? 'bad' : d <= 5 ? 'warn' : 'ok';
-    const stripe = h('span', { class: 'proj-rail-stripe', 'aria-hidden': 'true' });
-    stripe.style.background = safeHexColor(p.color);
-    const progress = p.delivery_total ? ` · ${p.delivery_done}/${p.delivery_total} itens` : '';
-    ul.append(h('li', { class: 'proj-rail-item', tabindex: '0', role: 'button', onclick: () => openProjectWorkspace(p.id), onkeydown: (e) => { if (e.key === 'Enter') openProjectWorkspace(p.id); } }, [
-      stripe,
-      h('div', { class: 'proj-rail-text' }, [h('b', { text: p.name }), h('span', { class: `tone-${tone}`, text: `${when}${progress}` })])
-    ]));
-  }
+  return projectsList
+    .filter((p) => p.deadline && st(p) !== 'Concluído' && st(p) !== 'Arquivado')
+    .map((p) => ({ p, d: daysUntilLocal(p.deadline) }))
+    .filter((x) => x.d !== null && x.d <= 7)
+    .sort((a, b) => a.d - b.d);
 }
 
-async function loadRecentActivity() {
-  const ul = $('projActivityList');
-  if (!ul || typeof window.bds.listProjectsRecentActivity !== 'function') return;
-  let rows = [];
-  try { rows = (await window.bds.listProjectsRecentActivity(8)) || []; } catch (_) { rows = []; }
-  ul.textContent = '';
-  if (!rows.length) { ul.append(h('li', { class: 'proj-rail-empty', text: 'Nada registrado ainda.' })); return; }
-  const icons = { criado: 'add_circle', editado: 'edit', status: 'flag', midia: 'perm_media', pasta: 'folder', dispositivo: 'devices', entrega: 'local_shipping', exportado: 'ios_share', importado: 'archive', sincronizado: 'graphic_eq', transcrito: 'subtitles', duplicado: 'content_copy' };
-  for (const a of rows) {
-    ul.append(h('li', { class: 'proj-rail-item proj-rail-act', tabindex: '0', role: 'button', onclick: () => openProjectWorkspace(a.project_id), onkeydown: (e) => { if (e.key === 'Enter') openProjectWorkspace(a.project_id); } }, [
-      icon(icons[a.kind] || 'history'),
-      h('div', { class: 'proj-rail-text' }, [h('span', { text: a.message }), h('span', { class: 'proj-rail-muted', text: `${a.project_name} · ${relativeActivity(a.created_at)}` })])
-    ]));
-  }
+/** Aviso de prazo: só aparece quando há entrega próxima; leva para a ordenação por prazo. */
+function renderDueBanner() {
+  const banner = $('projDueBanner');
+  if (!banner) return;
+  const due = dueSoon();
+  banner.classList.toggle('hidden', due.length === 0);
+  if (!due.length) return;
+  const first = due[0];
+  const when = first.d < 0 ? `${Math.abs(first.d)} ${Math.abs(first.d) === 1 ? 'dia' : 'dias'} de atraso` : first.d === 0 ? 'hoje' : first.d === 1 ? 'amanhã' : `em ${first.d} dias`;
+  banner.classList.toggle('is-late', first.d <= 0);
+  $('projDueText').textContent = `${due.length} ${due.length === 1 ? 'entrega' : 'entregas'} nos próximos 7 dias · ${first.p.name} ${when}`;
 }
 
-function renderCard(p) {
+/** O que falta fazer no projeto, em uma frase (null quando concluído/arquivado). */
+function nextStep(p) {
+  const st = normalizeStatus(p.status);
+  if (st === 'Concluído' || st === 'Arquivado') return null;
+  const total = Number(p.delivery_total) || 0;
+  const done = Number(p.delivery_done) || 0;
+  if (!p.media_count) return 'Adicionar o material';
+  if (!total) return 'Preparar a lista de entrega';
+  if (done < total) return `Entrega: ${done} de ${total} itens prontos`;
+  return 'Tudo pronto para entregar';
+}
+
+function renderCard(p, { recent = false } = {}) {
   const st = statusInfo(p.status);
   const pill = deadlinePill(p.deadline, st.id);
   const color = safeHexColor(p.color);
   const cover = h('div', { class: `proj-card-cover${p.cover_path ? '' : ' is-empty'}` });
   if (p.cover_path) cover.style.backgroundImage = `url("${toFileUrl(p.cover_path)}")`;
   else { cover.style.background = `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 35%, var(--card)))`; cover.append(icon('movie')); }
-  const stripe = h('span', { class: 'proj-card-color', 'aria-hidden': 'true' });
-  stripe.style.background = color;
 
-  // selo de prazo sobre a capa; faixa lateral com a cor do projeto; barra com o progresso da entrega
-  cover.append(h('span', { class: `proj-card-due tone-${pill.tone}` }, [icon(pill.icon), pill.text]));
   const total = Number(p.delivery_total) || 0;
   const done = Number(p.delivery_done) || 0;
-  const progress = h('div', { class: 'proj-card-progress', title: total ? `Entrega: ${done} de ${total} itens` : 'Entrega ainda não iniciada', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total || 1), 'aria-valuenow': String(done) });
-  const fill = h('span', { class: 'proj-card-progress-fill' });
-  fill.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
-  progress.append(fill);
+  let progress = null;
+  if (total) {
+    progress = h('div', { class: 'proj-card-progress', title: `Entrega: ${done} de ${total} itens`, role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-label': 'Progresso da entrega' });
+    const fill = h('span', { class: 'proj-card-progress-fill' });
+    fill.style.width = `${Math.round((done / total) * 100)}%`;
+    progress.append(fill);
+  }
+  const step = nextStep(p);
+  const activity = p.last_activity_at ? relativeActivity(p.last_activity_at) : '';
   const body = h('div', { class: 'proj-card-body' }, [
     h('h3', { class: 'proj-card-title', text: p.name, title: p.name }),
     h('p', { class: 'proj-card-client', text: [p.client, p.type].filter(Boolean).join(' · ') || 'Sem cliente' }),
+    h('p', { class: `proj-card-when tone-${pill.tone}` }, [icon(pill.icon), pill.text]),
     h('div', { class: 'proj-card-meta' }, [h('span', { class: `proj-pill tone-${st.tone}` }, [icon(st.icon), st.id])]),
     progress,
+    step ? h('button', {
+      type: 'button', class: 'proj-card-next', title: 'Abrir o projeto',
+      onclick: (e) => { e.stopPropagation(); openProjectWorkspace(p.id); }
+    }, [h('span', { text: `Próximo: ${step}` }), icon('arrow_forward')]) : null,
     h('div', { class: 'proj-card-foot' }, [
       h('span', { text: `${p.media_count || 0} ${p.media_count === 1 ? 'arquivo' : 'arquivos'}${p.total_size ? ` · ${formatBytes(p.total_size)}` : ''}` }),
-      h('span', { class: 'proj-card-activity', text: p.last_activity_at ? relativeActivity(p.last_activity_at) : '' })
+      h('span', { class: 'proj-card-activity', text: activity ? (recent ? `Mexido ${activity.toLowerCase()}` : activity) : '' })
     ])
   ]);
   body.style.borderLeftColor = color;
   const card = h('div', {
-    class: `proj-card${p.id === selectedProjectId ? ' selected' : ''}${st.id === 'Arquivado' ? ' is-archived' : ''}`,
+    class: `proj-card${recent ? ' is-recent' : ''}${p.id === selectedProjectId ? ' selected' : ''}${st.id === 'Arquivado' ? ' is-archived' : ''}`,
     role: 'listitem', tabindex: '0', 'data-id': p.id, 'aria-label': p.name
   }, [
     cover,
     h('button', { class: 'proj-card-menu', type: 'button', title: 'Mais ações', 'aria-label': `Ações de ${p.name}`, onclick: (e) => { e.stopPropagation(); showMenu(e.currentTarget, p); } }, [icon('more_vert')]),
     body
   ]);
-  void stripe;
   card.addEventListener('click', () => selectProject(p.id));
   card.addEventListener('dblclick', () => openProjectWorkspace(p.id));
   card.addEventListener('keydown', (e) => {
@@ -361,6 +386,13 @@ function showMenu(anchor, p) {
       : { icon: 'archive', label: 'Arquivar', run: () => archive(p) },
     { icon: 'delete', label: 'Excluir', danger: true, run: () => remove(p) }
   ];
+  openMenuAt(anchor, entries);
+}
+
+/** Abre o menu (#projMenu) junto do botão, sem sair da janela. */
+function openMenuAt(anchor, entries) {
+  const menu = $('projMenu');
+  if (!menu || !anchor) return;
   renderMenu(menu, entries);
   menu.classList.remove('hidden');
   const r = anchor.getBoundingClientRect();
@@ -475,6 +507,10 @@ function openForm(p = null) {
   $('projFormNotes').value = p ? p.description || '' : '';
   formCoverPath = p ? p.cover_path || '' : '';
   renderFormCover();
+  // Novo: só o essencial à vista (pastas padrão marcadas). Editar: abre os detalhes, que são o que se costuma mudar.
+  $('projFormDefaultBinsRow')?.classList.toggle('hidden', !!p);
+  if ($('projFormDefaultBins')) $('projFormDefaultBins').checked = true;
+  if ($('projFormMore')) $('projFormMore').open = !!p;
   $('modalProjectForm').classList.add('open');
   const nameInput = $('projFormName');
   setTimeout(() => { try { nameInput?.focus(); } catch (_) { /* tela já fechada */ } }, 50);
@@ -508,6 +544,9 @@ async function saveForm() {
     let newId = null;
     if (id) await window.bds.updateProject(Number(id), data);
     else newId = await window.bds.createProject(data);
+    if (newId && $('projFormDefaultBins')?.checked && typeof window.bds.createProjectDefaultBins === 'function') {
+      try { await window.bds.createProjectDefaultBins(newId); } catch (e) { console.error('Pastas padrão não criadas', e); }
+    }
     closeForm();
     await loadProjects();
     if (newId) selectProject(newId);
@@ -533,33 +572,46 @@ function bindOnce() {
   $('projFormName')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveForm(); });
 
   $('projSearch')?.addEventListener('input', (e) => { query = e.target.value; renderGrid(); });
-  $('projFilter')?.addEventListener('change', (e) => { filter = e.target.value; renderGrid(); });
   $('projSort')?.addEventListener('change', (e) => { sort = e.target.value; renderGrid(); });
   const setView = (v) => { view = v; try { localStorage.setItem(VIEW_KEY, view); } catch (_) { /* sem armazenamento */ } applyView(); };
   $('projViewGrid')?.addEventListener('click', () => setView('grid'));
   $('projViewList')?.addEventListener('click', () => setView('list'));
-  document.querySelectorAll('.proj-stat[data-filter]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.filter; $('projFilter').value = filter; renderGrid(); }));
-  document.querySelectorAll('.proj-stat[data-sort]').forEach((b) => b.addEventListener('click', () => { filter = 'active'; sort = b.dataset.sort; $('projFilter').value = filter; $('projSort').value = sort; renderGrid(); }));
+  document.querySelectorAll('.proj-tab[data-filter]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.filter; applyTabs(); renderGrid(); }));
+  // aviso de prazo: mostra os em andamento, do prazo mais próximo ao mais distante
+  $('projDueBanner')?.addEventListener('click', () => {
+    filter = 'active'; sort = 'deadline'; query = '';
+    if ($('projSearch')) $('projSearch').value = '';
+    if ($('projSort')) $('projSort').value = sort;
+    applyTabs(); renderGrid();
+  });
+  $('btnNewProjectMore')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openMenuAt(e.currentTarget, [
+      { icon: 'add', label: 'Novo projeto', run: () => openForm(null) },
+      { icon: 'archive', label: 'Importar pacote .bdspro…', run: importBdspro }
+    ]);
+  });
 
   document.addEventListener('pointerdown', (e) => {
     const menu = $('projMenu');
     if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) hideMenu();
   }, true);
 
-  // --- Importar .bdspro ---
-  $('btnImportBdspro')?.addEventListener('click', async () => {
-    try {
-      const bdsproPath = firstDialogPath(await window.bds.selectFile({ properties: ['openFile'], filters: [{ name: 'Pacote de projeto (*.bdspro)', extensions: ['bdspro'] }] }));
-      if (!bdsproPath) return;
-      setAppStatus('Inspecionando pacote .bdspro…', 'info');
-      const inspectData = await window.bds.inspectBdspro(bdsproPath);
-      openRelinkModal(bdsproPath, inspectData);
-    } catch (e) {
-      setAppStatus('Erro ao ler pacote .bdspro', 'error');
-      window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${friendlyError(e)}`);
-    }
-  });
   setupRelinkModalListeners();
+}
+
+// --- Importar .bdspro (menu ▾ do botão Novo projeto) ---
+async function importBdspro() {
+  try {
+    const bdsproPath = firstDialogPath(await window.bds.selectFile({ properties: ['openFile'], filters: [{ name: 'Pacote de projeto (*.bdspro)', extensions: ['bdspro'] }] }));
+    if (!bdsproPath) return;
+    setAppStatus('Inspecionando pacote .bdspro…', 'info');
+    const inspectData = await window.bds.inspectBdspro(bdsproPath);
+    openRelinkModal(bdsproPath, inspectData);
+  } catch (e) {
+    setAppStatus('Erro ao ler pacote .bdspro', 'error');
+    window.bdsModal.alert(`Erro ao inspecionar pacote .bdspro: ${friendlyError(e)}`);
+  }
 }
 
 // ------------------------------------------------------------------ importação / reconexão (.bdspro)
@@ -684,6 +736,6 @@ async function openProjectWorkspace(id) {
   if (typeof window.bdsLoadScreen === 'function') {
     await window.bdsLoadScreen('project_workspace');
     const title = document.getElementById('globalPageTitle');
-    if (title) title.textContent = 'Projeto';
+    if (title) title.textContent = 'Projetos';
   }
 }

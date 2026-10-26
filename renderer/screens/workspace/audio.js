@@ -1,7 +1,8 @@
 /**
- * Aba Áudio: sincronização multicâmera no estilo PluralEyes.
- *  1. Fontes = pastas de 1º nível do projeto (cada câmera/gravador numa pasta); o usuário marca a fonte MESTRE.
- *  2. "Sincronizar" procura cada clipe das outras fontes dentro da linha mestre inteira (correlação de áudio).
+ * Aba Sincronizar câmeras: sincronização multicâmera no estilo PluralEyes, como um assistente em 3 passos.
+ *  1. Quais câmeras entram: fontes = pastas de 1º nível do projeto (cada câmera/gravador numa pasta); todas marcadas.
+ *  2. Áudio de referência (a "mestre" do serviço): sugerimos a fonte com mais áudio contínuo.
+ *  3. "Sincronizar" procura cada clipe das outras fontes dentro da referência inteira (correlação de áudio).
  *  3. Linha do tempo: uma faixa por fonte, clipes na posição encontrada, cor pela confiança; clipes sem posição
  *     ficam listados com ajuste manual; qualquer clipe pode ser deslocado (digitando a posição) e a faixa inteira
  *     pode ser empurrada de uma vez.
@@ -11,6 +12,8 @@ import { ws, $, mk, icon, formatClock, formatDuration, relativeWhen, reloadSyncG
 
 let sources = [];
 let masterId = null;
+let included = new Set(); // fontes marcadas no passo 1 (todas, por padrão)
+let suggestedId = null;
 let model = null;        // MulticamSyncService.getModel
 let running = false;
 let unsubProgress = null;
@@ -21,8 +24,9 @@ let zoom = 1;
 export function bindAudio(navigate) {
   goTo = navigate;
   unbindAudio();
-  sources = []; masterId = null; model = null; running = false; zoom = 1;
+  sources = []; masterId = null; included = new Set(); suggestedId = null; model = null; running = false; zoom = 1;
   $('wsSyncRun')?.addEventListener('click', runSync);
+  $('wsSyncMasterSelect')?.addEventListener('change', (e) => { masterId = Number(e.target.value) || null; renderSources(); });
   $('wsSyncGroupSelect')?.addEventListener('change', async (e) => { const id = Number(e.target.value); if (id) await loadModel(id); });
   $('wsSyncDelete')?.addEventListener('click', deleteCurrent);
   $('wsSyncExport')?.addEventListener('click', exportMulticam);
@@ -34,7 +38,7 @@ export function bindAudio(navigate) {
       if (!running || !p || (p.projectId && p.projectId !== ws.projectId)) return;
       const line = $('wsSyncProgress');
       if (!line) return;
-      const stage = { master: 'Lendo o áudio da fonte mestre', extract: 'Lendo o áudio', correlate: 'Procurando na linha mestre', done: 'Posicionado' }[p.stage] || 'Processando';
+      const stage = { master: 'Lendo o áudio de referência', extract: 'Lendo o áudio', correlate: 'Encaixando na referência', done: 'Encaixado' }[p.stage] || 'Processando';
       line.textContent = `${stage}: ${p.name || ''}${p.source ? ` (${p.source})` : ''}${p.stage === 'done' && p.confidence != null ? ` · confiança ${Math.round(p.confidence * 100)}%` : ''}`;
     });
   }
@@ -44,11 +48,14 @@ export function unbindAudio() { if (unsubProgress) { try { unsubProgress(); } ca
 
 export async function renderAudio() {
   try { sources = (await window.bds.listProjectSyncSources(ws.projectId)) || []; } catch (e) { sources = []; console.error('[WORKSPACE] fontes:', e); }
-  if (!masterId || !sources.some((s) => s.id === masterId)) {
-    // sugestão: a fonte com áudio de maior duração total
-    const withAudio = sources.filter((s) => s.has_audio).sort((a, b) => b.total_duration - a.total_duration);
-    masterId = withAudio.length ? withAudio[0].id : null;
-  }
+  // fontes novas entram marcadas; as que sumiram saem
+  const ids = new Set(sources.map((s) => s.id));
+  if (!included.size) sources.forEach((s) => included.add(s.id));
+  for (const id of [...included]) if (!ids.has(id)) included.delete(id);
+  // sugestão de referência: a fonte com áudio de maior duração total
+  const withAudio = sources.filter((s) => s.has_audio).sort((a, b) => b.total_duration - a.total_duration);
+  suggestedId = withAudio.length ? withAudio[0].id : null;
+  if (!masterId || !sources.some((s) => s.id === masterId && s.has_audio)) masterId = suggestedId;
   renderSources();
   renderGroups();
   if (!model && ws.syncGroups.length) await loadModel(ws.syncGroups[ws.syncGroups.length - 1].id);
@@ -58,28 +65,51 @@ export async function renderAudio() {
 function renderSources() {
   const host = $('wsSyncSources'); if (!host) return;
   host.textContent = '';
+  const run = $('wsSyncRun');
+  const select = $('wsSyncMasterSelect');
+  const hint = $('wsSyncHint');
   if (!sources.length) {
-    host.append(mk('p', { class: 'ws-empty-line', text: 'Nenhum vídeo ou áudio no projeto. Adicione em Arquivos, uma pasta por câmera ou gravador (ex.: Câmera da TV, Câmera do Quadro, Gravação do PC).' }));
-    $('wsSyncRun').disabled = true;
+    host.append(mk('p', { class: 'ws-empty-line', text: 'Nenhum vídeo ou áudio no projeto ainda. Em Arquivos, coloque cada câmera ou gravador numa pasta (ex.: Câmera da TV, Câmera do Quadro, Gravação do PC).' }));
+    if (select) { select.textContent = ''; select.disabled = true; }
+    if (run) run.disabled = true;
+    if (hint) hint.textContent = '';
     return;
   }
-  const onlyOne = sources.length < 2;
+  // passo 1: câmeras (marcar/desmarcar)
   for (const s of sources) {
-    const radio = mk('input', { type: 'radio', name: 'wsSyncMaster', value: String(s.id), checked: s.id === masterId, disabled: !s.has_audio, 'aria-label': `Usar ${s.name} como mestre`, onchange: () => { masterId = s.id; renderSources(); } });
-    host.append(mk('label', { class: `ws-source${s.id === masterId ? ' is-master' : ''}${!s.has_audio ? ' no-audio' : ''}` }, [
-      radio,
+    const on = included.has(s.id);
+    const cb = mk('input', {
+      type: 'checkbox', checked: on, 'aria-label': `Incluir ${s.name}`,
+      onchange: (e) => { if (e.target.checked) included.add(s.id); else included.delete(s.id); renderSources(); }
+    });
+    host.append(mk('label', { class: `ws-source${s.id === masterId ? ' is-master' : ''}${!s.has_audio ? ' no-audio' : ''}${on ? '' : ' is-off'}` }, [
+      cb,
       icon(s.kind === 'audio' ? 'mic' : 'videocam'),
       mk('div', { class: 'ws-source-text' }, [
         mk('b', { text: s.name }),
-        mk('span', { text: `${s.items.length} ${s.items.length === 1 ? 'clipe' : 'clipes'} · ${formatDuration(s.total_duration)}${s.has_audio ? '' : ' · sem áudio (segue a cadeia ou ajuste manual)'}` })
+        mk('span', { text: `${s.items.length} ${s.items.length === 1 ? 'clipe' : 'clipes'} · ${formatDuration(s.total_duration)}${s.has_audio ? '' : ' · sem áudio (segue a ordem dos clipes)'}` })
       ]),
-      s.id === masterId ? mk('span', { class: 'ws-source-badge', text: 'mestre' }) : null
+      s.id === masterId ? mk('span', { class: 'ws-source-badge', text: 'referência' }) : null
     ]));
   }
-  const run = $('wsSyncRun');
-  run.disabled = onlyOne || !masterId || running;
-  const hint = $('wsSyncHint');
-  if (hint) hint.textContent = onlyOne ? 'Com uma única fonte não há o que sincronizar: coloque cada câmera ou gravador numa pasta própria em Arquivos.' : 'A mestre fixa a linha do tempo (escolha a que tem o melhor áudio contínuo). Os clipes das outras fontes são procurados dentro dela.';
+  // passo 2: referência (só entre as marcadas que têm áudio)
+  const candidates = sources.filter((s) => included.has(s.id) && s.has_audio);
+  if (masterId && !candidates.some((s) => s.id === masterId)) masterId = candidates.length ? (candidates.find((s) => s.id === suggestedId) || candidates[0]).id : null;
+  if (select) {
+    select.textContent = '';
+    for (const s of candidates) select.append(mk('option', { value: String(s.id), text: s.id === suggestedId ? `${s.name} (recomendado)` : s.name }));
+    if (!candidates.length) select.append(mk('option', { value: '', text: 'Nenhuma câmera marcada tem áudio' }));
+    select.value = masterId ? String(masterId) : '';
+    select.disabled = !candidates.length || running;
+  }
+  // passo 3: só com 2 ou mais câmeras e uma referência
+  const count = sources.filter((s) => included.has(s.id)).length;
+  if (run) run.disabled = count < 2 || !masterId || running;
+  if (hint) {
+    hint.textContent = sources.length < 2
+      ? 'Com uma única câmera não há o que sincronizar: coloque cada câmera ou gravador numa pasta própria em Arquivos.'
+      : count < 2 ? 'Marque pelo menos duas câmeras.' : `${count} câmeras serão encaixadas no áudio de referência.`;
+  }
 }
 
 function renderGroups() {
@@ -99,7 +129,11 @@ async function runSync() {
   $('wsSyncProgressBox')?.classList.remove('hidden');
   $('wsSyncProgress').textContent = 'Preparando…';
   try {
-    const r = await window.bds.runMulticamSync({ projectId: ws.projectId, masterSourceId: masterId });
+    // todas as fontes marcadas: o serviço usa todas (sem sourceIds); parte delas: manda só as escolhidas
+    const chosen = sources.filter((src) => included.has(src.id)).map((src) => src.id);
+    const payload = { projectId: ws.projectId, masterSourceId: masterId };
+    if (chosen.length < sources.length) payload.sourceIds = chosen;
+    const r = await window.bds.runMulticamSync(payload);
     await reloadSyncGroups();
     emitChange('sync');
     model = r;
@@ -107,7 +141,7 @@ async function runSync() {
     renderTimeline();
     const placed = r.lanes.reduce((n, l) => n + l.clips.filter((c) => c.placed).length, 0);
     const total = r.lanes.reduce((n, l) => n + l.clips.length, 0);
-    setAppStatus(`Sincronização concluída: ${placed} de ${total} clipes posicionados.`, placed === total ? 'success' : 'warning');
+    setAppStatus(`Sincronização concluída: ${placed} de ${total} clipes encaixados.`, placed === total ? 'success' : 'warning');
   } catch (e) {
     window.bdsModal.alert(`A sincronização falhou: ${friendlyError(e)}`);
   } finally {
@@ -158,11 +192,11 @@ function renderTimeline() {
   const meta = $('wsSyncMeta');
   if (!model) {
     if (meta) meta.textContent = '';
-    host.append(mk('p', { class: 'ws-empty-line', text: ws.syncGroups.length ? 'Escolha uma sincronização acima.' : 'Nenhuma sincronização ainda. Marque a fonte mestre e clique em Sincronizar.' }));
+    host.append(mk('p', { class: 'ws-empty-line', text: ws.syncGroups.length ? 'Escolha uma sincronização acima.' : 'Nenhuma sincronização ainda. Siga os 3 passos ao lado.' }));
     return;
   }
   const start = model.start || 0; const span = Math.max(1, model.duration || 1);
-  if (meta) meta.textContent = `${model.group.name} · ${formatDuration(span)} · ${model.lanes.length} fontes`;
+  if (meta) meta.textContent = `${model.group.name} · ${formatDuration(span)} · ${model.lanes.length} câmeras`;
 
   // régua
   const ruler = mk('div', { class: 'ws-tl-ruler' });
@@ -202,7 +236,7 @@ function renderTimeline() {
       pending.append(mk('li', { class: 'ws-pending-item' }, [
         icon(c.kind === 'audio' ? 'mic' : 'videocam'),
         mk('span', { class: 'ws-pending-name', text: `${c.name} (${lane.name})` }),
-        mk('span', { class: 'ws-pending-why', text: c.has_audio ? 'não encontrado na mestre' : 'sem áudio' }),
+        mk('span', { class: 'ws-pending-why', text: c.has_audio ? 'não encontrado na referência' : 'sem áudio' }),
         mk('button', { type: 'button', class: 'ws-btn-outline', onclick: () => placeManually(lane, c) }, 'Posicionar…')
       ]));
     }

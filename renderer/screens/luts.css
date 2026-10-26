@@ -124,7 +124,7 @@
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
 .lut-btn-primary:hover:not(:disabled) { background: var(--btn-bg-hover); }
@@ -150,7 +150,7 @@
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .lut-btn-outline:hover:not(:disabled) { background: var(--card-2); }
@@ -172,7 +172,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
 .lut-icon-btn:hover:not(:disabled),
@@ -186,8 +186,7 @@
   color: var(--accent-text);
 }
 
-.lut-icon-btn.loading .material-symbols-rounded { animation: spin 1s linear infinite; }
-@keyframes spin { 100% { transform: rotate(360deg); } }
+.lut-icon-btn.loading .material-symbols-rounded { animation: bds-spin 1s linear infinite; }
 
 /* --- FOCO VISÍVEL --- */
 .lut-card:focus-visible,
@@ -285,7 +284,7 @@
   border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 
 .lut-card:hover { border-color: var(--muted); }
@@ -297,7 +296,7 @@
   object-fit: cover;
   border-bottom: 1px solid var(--line);
   filter: brightness(0.9);
-  transition: filter 0.3s;
+  transition: filter var(--dur-slow);
 }
 
 .lut-card:hover .lut-card-img { filter: brightness(1.1); }
@@ -347,7 +346,7 @@
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--dur-fast) var(--ease);
 }
 
 .lut-card:hover .lut-checkbox,
@@ -612,7 +611,7 @@ details.inspector-section > summary::after {
   font-family: 'Material Symbols Rounded';
   font-size: 18px;
   letter-spacing: 0;
-  transition: transform 0.2s;
+  transition: transform var(--dur-base);
 }
 
 details.inspector-section[open] > summary::after { transform: rotate(180deg); }

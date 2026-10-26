@@ -1,11 +1,12 @@
 /**
- * Aba Arquivos: estrutura de pastas à esquerda, mídias ao centro (busca, filtros, grade/lista, seleção com barra de
- * ações), item selecionado à direita. Importação da Biblioteca (janela), do computador (diálogo) e por arrastar;
- * reconexão de arquivos ausentes; monitor de origem em sobreposição.
+ * Aba Arquivos: estrutura de pastas à esquerda, mídias ao centro (busca, filtros, grade/lista, "Selecionar todos" e
+ * Ctrl+A, seleção com barra de ações), detalhes do arquivo à direita (só quando há um clicado). Importação da Biblioteca
+ * (janela), do computador (diálogo) e por arrastar — sempre perguntando em qual pasta colocar; reconexão de arquivos
+ * ausentes; monitor de origem em sobreposição.
  */
 import {
   ws, $, mk, icon, formatBytes, formatDuration, secondsToTimecode, extLabel, isPhoto, kindOf, nameOf,
-  thumbCss, debounce, drawWaveform, synced, reloadMedia, reloadMissing, emitChange, setAppStatus, friendlyError
+  thumbCss, debounce, drawWaveform, synced, reloadMedia, reloadMissing, emitChange, setAppStatus, friendlyError, showMenu
 } from './state.js';
 import { openMonitor } from './monitor.js';
 
@@ -13,19 +14,27 @@ let dragged = null; // { type: 'media'|'bin'|'library', id }
 let goTo = () => {};
 let relinkResults = [];
 let importSelection = new Set();
+let pickResolve = null; // janela "Em qual pasta colocar?" aberta: quem espera a resposta
 
 /** Liga os eventos aos elementos desta abertura (a tela é recriada a cada projeto aberto). */
 export function bindFiles(navigate) {
   goTo = navigate;
-  dragged = null; relinkResults = []; importSelection = new Set();
+  dragged = null; relinkResults = []; importSelection = new Set(); pickResolve = null;
+  // selecionar todos (barra de filtros e cabeçalho da tabela) e, na Biblioteca, todas as mídias da lista
+  $('wsSelectAll')?.addEventListener('change', (e) => setAllVisible(e.target.checked));
+  $('wsSelectAllTable')?.addEventListener('change', (e) => setAllVisible(e.target.checked));
+  $('wsImportSelectAll')?.addEventListener('change', (e) => setAllImport(e.target.checked));
+  // janela "Em qual pasta colocar?"
+  $('wsPickBinOk')?.addEventListener('click', () => finishPick(true));
+  $('wsPickBinCancel')?.addEventListener('click', () => finishPick(false));
+  $('wsPickBinClose')?.addEventListener('click', () => finishPick(false));
+  $('wsPickBinSelect')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finishPick(true); } });
   $('wsFilesSearch')?.addEventListener('input', debounce((e) => { ws.query = e.target.value.trim().toLowerCase(); renderMedia(); }, 120));
   document.querySelectorAll('.ws-type-filter').forEach((b) => b.addEventListener('click', () => { ws.typeFilter = b.dataset.filter; renderMedia(); }));
   $('wsViewGrid')?.addEventListener('click', () => { ws.view = 'grid'; renderMedia(); });
   $('wsViewList')?.addEventListener('click', () => { ws.view = 'list'; renderMedia(); });
-  $('wsBtnNewBin')?.addEventListener('click', newBin);
+  $('wsBtnAddMenu')?.addEventListener('click', (e) => { e.stopPropagation(); openAddMenu(e.currentTarget); });
   $('wsBtnDefaultBins')?.addEventListener('click', createDefaultBins);
-  $('wsBtnImportLibrary')?.addEventListener('click', openImportModal);
-  $('wsBtnImportFiles')?.addEventListener('click', importFromComputer);
   $('wsMissingPill')?.addEventListener('click', openRelinkFlow);
   $('wsBtnCloseImportModal')?.addEventListener('click', closeImportModal);
   $('wsImportLibraryModal')?.addEventListener('click', (e) => { if (e.target.id === 'wsImportLibraryModal') closeImportModal(); });
@@ -42,6 +51,7 @@ export function bindFiles(navigate) {
   $('wsInspOpenMonitor')?.addEventListener('click', () => { const pm = inspected(); if (pm) openMonitor(pm); });
   $('wsInspReveal')?.addEventListener('click', () => { const pm = inspected(); if (pm && pm.filepath) window.bds.modulesReveal?.(pm.filepath) || window.bds.openLocalPath?.(pm.filepath); });
   $('wsInspSaveName')?.addEventListener('click', saveInspectedName);
+  $('wsInspClose')?.addEventListener('click', () => { ws.inspected = null; renderMedia(); });
   $('wsInspRemove')?.addEventListener('click', async () => { const pm = inspected(); if (!pm) return; ws.selected = new Set([pm.pm_id]); await removeSelection(); });
   $('wsBinRename')?.addEventListener('click', renameCurrentBin);
   $('wsBinDelete')?.addEventListener('click', deleteCurrentBin);
@@ -49,6 +59,17 @@ export function bindFiles(navigate) {
 }
 
 const inspected = () => ws.media.find((m) => m.pm_id === ws.inspected) || null;
+
+/** Menu "Adicionar": do computador, da Biblioteca ou uma pasta nova (também usado pelo botão do cabeçalho). */
+export function openAddMenu(anchor, { withFolder = true } = {}) {
+  const where = typeof ws.currentBin === 'number' ? (ws.bins.find((b) => b.id === ws.currentBin) || {}).name : '';
+  const entries = [
+    { icon: 'upload_file', label: 'Do computador…', sub: where ? `Vai para a pasta ${where}` : 'Escolha arquivos ou arraste para a lista', run: importFromComputer },
+    { icon: 'video_library', label: 'Da Biblioteca…', sub: 'O que você já importou no app', run: openImportModal }
+  ];
+  if (withFolder) entries.push({ separator: true }, { icon: 'create_new_folder', label: 'Nova pasta…', sub: 'Uma para cada câmera ou gravador', run: newBin });
+  showMenu(anchor, entries);
+}
 
 export function renderFiles() {
   renderStructure();
@@ -173,7 +194,7 @@ function renderMedia() {
     grid.append(mk('div', { class: 'bds-empty ws-files-empty' }, [
       mk('span', { class: 'material-symbols-rounded bds-empty-icon', 'aria-hidden': 'true', text: ws.media.length ? 'search_off' : 'upload_file' }),
       mk('strong', { class: 'bds-empty-title', text: ws.media.length ? 'Nenhum arquivo aqui' : 'Nenhum arquivo no projeto ainda' }),
-      mk('span', { class: 'bds-empty-text', text: ws.media.length ? 'Tente outra pasta, filtro ou busca.' : 'Adicione da Biblioteca, do computador, ou solte arquivos nesta área.' })
+      mk('span', { class: 'bds-empty-text', text: ws.media.length ? 'Tente outra pasta, filtro ou busca.' : 'Use "Adicionar" ou solte arquivos aqui. Dica: uma pasta para cada câmera facilita a sincronização.' })
     ]));
   }
   for (const pm of list) {
@@ -248,6 +269,30 @@ function loadWave(pm, canvas, pps) {
   });
 }
 
+const visibleMedia = () => ws.media.filter(matches);
+
+/** Marca (ou desmarca) todos os arquivos visíveis: pasta aberta + filtro de tipo + busca. */
+function setAllVisible(on) {
+  for (const m of visibleMedia()) { if (on) ws.selected.add(m.pm_id); else ws.selected.delete(m.pm_id); }
+  renderMedia();
+}
+
+/** Ctrl+A na aba Arquivos (fora de campos de texto). */
+export function selectAllVisible() { setAllVisible(true); }
+
+/** As caixas "Selecionar todos" acompanham a seleção: marcada (todos), traço (alguns) ou vazia. */
+function syncSelectAll() {
+  const list = visibleMedia();
+  const n = list.filter((m) => ws.selected.has(m.pm_id)).length;
+  for (const id of ['wsSelectAll', 'wsSelectAllTable']) {
+    const cb = $(id);
+    if (!cb) continue;
+    cb.checked = list.length > 0 && n === list.length;
+    cb.indeterminate = n > 0 && n < list.length;
+    cb.disabled = list.length === 0;
+  }
+}
+
 function toggleSelect(pmId, on) {
   if (on) ws.selected.add(pmId); else ws.selected.delete(pmId);
   renderMedia();
@@ -258,7 +303,10 @@ function renderSelectionBar() {
   if (!bar) return;
   const n = ws.selected.size;
   bar.classList.toggle('hidden', n === 0);
-  const t = $('wsSelCount'); if (t) t.textContent = `${n} ${n === 1 ? 'selecionado' : 'selecionados'}`;
+  const total = visibleMedia().length;
+  const t = $('wsSelCount');
+  if (t) t.textContent = n > 1 && n === total ? `Todos os ${n} selecionados` : `${n} ${n === 1 ? 'selecionado' : 'selecionados'}`;
+  syncSelectAll();
 }
 
 async function moveSelection() {
@@ -290,7 +338,9 @@ async function removeSelection() {
 
 function renderInspector() {
   const pm = inspected();
-  $('wsInspEmpty')?.classList.toggle('hidden', !!pm);
+  // o painel de detalhes só ocupa espaço quando há um arquivo clicado
+  $('wsFilesLayout')?.classList.toggle('has-inspector', !!pm);
+  $('wsInspEmpty')?.classList.add('hidden');
   $('wsInspBody')?.classList.toggle('hidden', !pm);
   if (!pm) return;
   const kind = kindOf(pm);
@@ -362,9 +412,10 @@ function setupDropzone() {
       const paths = [];
       for (const f of e.dataTransfer.files) { try { const p = window.bds.getPathForFile(f); if (p) paths.push(p); } catch (_) { /* ignora */ } }
       if (!paths.length) return;
-      const binId = typeof ws.currentBin === 'number' ? ws.currentBin : null;
+      const binId = await pickBin(`${paths.length} ${paths.length === 1 ? 'arquivo vai ser adicionado' : 'arquivos vão ser adicionados'} ao projeto.`);
+      if (binId === undefined) return;
       setAppStatus(`Importando ${paths.length} ${paths.length === 1 ? 'arquivo' : 'arquivos'}…`, 'info');
-      try { await handleImportResult(await window.bds.importDroppedFilesToProjectBin(ws.projectId, binId, paths)); }
+      try { showBin(binId); await handleImportResult(await window.bds.importDroppedFilesToProjectBin(ws.projectId, binId, paths)); }
       catch (err) { window.bdsModal.alert(`Erro ao importar: ${friendlyError(err)}`); }
     } else if (dragged && dragged.type === 'media') {
       e.preventDefault();
@@ -374,12 +425,70 @@ function setupDropzone() {
   });
 }
 
+// ------------------------------------------------------------------ pasta de destino
+
+const NEW_BIN = '__nova';
+
+/** Preenche um <select> com "Sem pasta", as pastas do projeto (caminho completo) e "Nova pasta…". */
+function fillBinSelect(select, selected) {
+  if (!select) return;
+  select.textContent = '';
+  select.append(mk('option', { value: '', text: 'Sem pasta' }));
+  const bins = ws.bins.slice().sort((a, b) => pathOf(a).localeCompare(pathOf(b), 'pt-BR'));
+  for (const b of bins) select.append(mk('option', { value: String(b.id), text: pathOf(b) }));
+  select.append(mk('option', { value: NEW_BIN, text: '+ Nova pasta…' }));
+  select.value = selected === null || selected === undefined ? '' : String(selected);
+}
+
+/** A pasta sugerida: a aberta na lista (ou nenhuma, em "Todos os arquivos" / "Sem pasta"). */
+const suggestedBin = () => (typeof ws.currentBin === 'number' ? ws.currentBin : null);
+
+/** Valor escolhido → id da pasta (null = sem pasta; undefined = desistiu ao criar uma nova). */
+async function resolveBin(value) {
+  if (value !== NEW_BIN) return value === '' ? null : Number(value);
+  const name = await window.bdsModal.prompt('Nome da nova pasta:');
+  if (!name || !String(name).trim()) return undefined;
+  try {
+    const id = await window.bds.createProjectBin(ws.projectId, null, String(name).trim());
+    await refresh();
+    return id;
+  } catch (e) { window.bdsModal.alert(`Não foi possível criar a pasta: ${friendlyError(e)}`); return undefined; }
+}
+
+/**
+ * Pergunta em qual pasta colocar o que vai ser importado. Resolve com o id da pasta, null (sem pasta) ou undefined
+ * (cancelou).
+ */
+function pickBin(text) {
+  if (pickResolve) finishPick(false);
+  fillBinSelect($('wsPickBinSelect'), suggestedBin());
+  const t = $('wsPickBinText'); if (t) t.textContent = text || '';
+  $('wsPickBinModal')?.classList.remove('hidden');
+  setTimeout(() => { try { $('wsPickBinSelect')?.focus(); } catch (_) { /* tela já fechada */ } }, 30);
+  return new Promise((resolve) => { pickResolve = resolve; });
+}
+
+async function finishPick(ok) {
+  const resolve = pickResolve;
+  pickResolve = null;
+  $('wsPickBinModal')?.classList.add('hidden');
+  if (!resolve) return;
+  if (!ok) { resolve(undefined); return; }
+  resolve(await resolveBin($('wsPickBinSelect')?.value ?? ''));
+}
+
+/** Depois de importar, abre a pasta de destino para o usuário ver o que entrou. */
+function showBin(binId) { ws.currentBin = binId === null || binId === undefined ? 'unfiled' : binId; ws.selected.clear(); }
+
 // ------------------------------------------------------------------ importação
 
 async function importFromComputer() {
   try {
-    const binId = typeof ws.currentBin === 'number' ? ws.currentBin : null;
-    await handleImportResult(await window.bds.importFilesToProjectBin(ws.projectId, binId));
+    const binId = await pickBin('Escolha a pasta e, em seguida, os arquivos no computador.');
+    if (binId === undefined) return;
+    const result = await window.bds.importFilesToProjectBin(ws.projectId, binId);
+    if (result && result.imported) showBin(binId);
+    await handleImportResult(result);
   } catch (e) { window.bdsModal.alert(`Erro ao importar: ${friendlyError(e)}`); }
 }
 
@@ -399,17 +508,29 @@ async function handleImportResult(result) {
 async function openImportModal() {
   importSelection = new Set();
   try { const res = await window.bds.searchLibrary({ limit: 1000 }); ws.library = Array.isArray(res) ? res : ((res && res.items) || []); } catch (_) { ws.library = []; }
+  fillBinSelect($('wsImportModalBin'), suggestedBin());
   renderImportList();
   $('wsImportLibraryModal')?.classList.remove('hidden');
   $('wsImportModalSearch')?.focus();
 }
 function closeImportModal() { $('wsImportLibraryModal')?.classList.add('hidden'); }
 
+/** Mídias da Biblioteca que ainda não estão no projeto e batem com a busca da janela. */
+function importAvailable() {
+  const q = ($('wsImportModalSearch')?.value || '').toLowerCase();
+  const inProject = new Set(ws.media.map((m) => m.id));
+  return ws.library.filter((m) => !inProject.has(m.id) && (m.filename || '').toLowerCase().includes(q));
+}
+
+function setAllImport(on) {
+  for (const m of importAvailable()) { if (on) importSelection.add(m.id); else importSelection.delete(m.id); }
+  renderImportList();
+}
+
 function renderImportList() {
   const list = $('wsImportModalList'); if (!list) return;
   const q = ($('wsImportModalSearch')?.value || '').toLowerCase();
-  const inProject = new Set(ws.media.map((m) => m.id));
-  const available = ws.library.filter((m) => !inProject.has(m.id) && (m.filename || '').toLowerCase().includes(q));
+  const available = importAvailable();
   list.textContent = '';
   if (!available.length) list.append(mk('div', { class: 'ws-empty-line', text: q ? 'Nenhuma mídia para essa busca.' : 'Todas as mídias da Biblioteca já estão no projeto.' }));
   for (const m of available) {
@@ -423,13 +544,25 @@ function renderImportList() {
   }
   updateImportCount();
 }
-function updateImportCount() { const c = $('wsImportModalCount'); if (c) c.textContent = `${importSelection.size} ${importSelection.size === 1 ? 'selecionada' : 'selecionadas'}`; }
+function updateImportCount() {
+  const c = $('wsImportModalCount'); if (c) c.textContent = `${importSelection.size} ${importSelection.size === 1 ? 'selecionada' : 'selecionadas'}`;
+  const all = $('wsImportSelectAll');
+  if (all) {
+    const available = importAvailable();
+    const n = available.filter((m) => importSelection.has(m.id)).length;
+    all.checked = available.length > 0 && n === available.length;
+    all.indeterminate = n > 0 && n < available.length;
+    all.disabled = available.length === 0;
+  }
+}
 
 async function confirmImportFromLibrary() {
-  if (!importSelection.size) return;
+  if (!importSelection.size) { setAppStatus('Marque as mídias que vão para o projeto.', 'info'); return; }
   try {
-    const binId = typeof ws.currentBin === 'number' ? ws.currentBin : null;
+    const binId = await resolveBin($('wsImportModalBin')?.value ?? '');
+    if (binId === undefined) return;
     await window.bds.addProjectMediaBulk(ws.projectId, binId, [...importSelection]);
+    showBin(binId);
     setAppStatus(`${importSelection.size} ${importSelection.size === 1 ? 'mídia adicionada' : 'mídias adicionadas'} ao projeto.`, 'success');
     closeImportModal();
     await refresh(); renderFiles();

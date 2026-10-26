@@ -36,7 +36,7 @@
   font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s var(--ease);
+  transition: background-color var(--dur-base) var(--ease);
 }
 .tr-engine:hover:not(:disabled) { background: var(--card-2); }
 .tr-engine:disabled { opacity: 0.6; cursor: default; }
@@ -77,7 +77,7 @@
   font-size: var(--fs-body);
   font-weight: 700;
   cursor: pointer;
-  transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease), opacity 0.2s var(--ease);
+  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
 }
 .tr-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .tr-btn-primary { background: var(--btn-bg); color: var(--btn-fg); }
@@ -98,7 +98,7 @@
   font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s var(--ease);
+  transition: background-color var(--dur-base) var(--ease);
 }
 .tr-link:hover { background: var(--card-2); }
 .tr-link .material-symbols-rounded { font-size: 20px; }
@@ -149,7 +149,7 @@
   border: 2px dashed color-mix(in srgb, var(--text) 22%, var(--line));
   border-radius: var(--radius-lg);
   text-align: center;
-  transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease);
+  transition: border-color var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease);
 }
 .tr-screen.dragging .tr-empty-box { border-color: var(--accent); background: var(--accent-light); }
 .tr-empty-icon { font-size: 48px; color: var(--accent-text); }
@@ -196,7 +196,7 @@
 .tr-row-x:disabled { display: none; }
 
 .tr-bar { height: 4px; border-radius: 3px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
-.tr-bar-fill { height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width 0.3s var(--ease); }
+.tr-bar-fill { height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width var(--dur-slow) var(--ease); }
 .tr-bar.done .tr-bar-fill { background: var(--status-ok); }
 .tr-bar.error .tr-bar-fill { background: var(--danger); }
 .tr-bar-lg { height: 8px; border-radius: 5px; }
@@ -231,7 +231,7 @@
   color: var(--muted);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease), color 0.2s var(--ease);
+  transition: border-color var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
 .tr-toggle:hover { border-color: var(--muted); }
 .tr-toggle-check { font-size: 16px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; color: transparent; flex-shrink: 0; }
@@ -263,14 +263,14 @@
 
 /* Alternância em pílula: o segmento ativo usa o botão primário */
 .tr-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 4px; gap: 4px; border-radius: var(--radius-pill); background: var(--card-2); }
-.tr-seg button { min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font-size: var(--fs-label); font-weight: 600; cursor: pointer; transition: background-color 0.2s var(--ease), color 0.2s var(--ease); }
+.tr-seg button { min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font-size: var(--fs-label); font-weight: 600; cursor: pointer; transition: background-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease); }
 .tr-seg button:hover { color: var(--text); }
 .tr-seg button.active { background: var(--btn-bg); color: var(--btn-fg); }
 
 .tr-select {
   display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 12px;
   border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);
-  font-size: var(--fs-body); text-align: left; cursor: pointer; transition: border-color 0.2s var(--ease);
+  font-size: var(--fs-body); text-align: left; cursor: pointer; transition: border-color var(--dur-base) var(--ease);
 }
 .tr-select:hover { border-color: var(--muted); }
 .tr-select .material-symbols-rounded { font-size: 20px; color: var(--muted); }
@@ -282,7 +282,7 @@
   font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
 }
 .tr-advanced > summary::-webkit-details-marker { display: none; }
-.tr-advanced > summary::after { content: 'expand_more'; font-family: 'Material Symbols Rounded'; font-size: 20px; letter-spacing: 0; text-transform: none; transition: transform 0.2s var(--ease); }
+.tr-advanced > summary::after { content: 'expand_more'; font-family: 'Material Symbols Rounded'; font-size: 20px; letter-spacing: 0; text-transform: none; transition: transform var(--dur-base) var(--ease); }
 .tr-advanced[open] > summary::after { transform: rotate(180deg); }
 .tr-advanced > summary:hover { color: var(--text); }
 .tr-advanced-body { display: flex; flex-direction: column; gap: 16px; padding: 0 24px 20px; }

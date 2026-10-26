@@ -40,11 +40,12 @@ let dragDepth = 0;
 const rowEls = new Map();  // id -> elementos da linha, para atualizar sem recriar a lista
 
 let aiConfig = null;       // resposta de aiGetConfig (sem a chave de API)
+let cloud = null;          // resposta de modulesCloudGet: serviços de nuvem e se têm chave (nunca a chave)
 let phase = 'transcribe';  // 'transcribe' | 'analyze' (dentro do modo running)
 let analysisCancelled = false;
 let analysis = null;       // { item, path, done, total } enquanto uma análise roda
 
-const opts = { srt: true, md: true, txt: false, analyze: false, skipSilence: true, maxWords: 0, lines: 2, forceCpu: false, outMode: 'side', outDir: '' };
+const opts = { srt: true, md: true, txt: false, analyze: false, skipSilence: true, maxWords: 0, lines: 2, forceCpu: false, outMode: 'side', outDir: '', engine: 'local' };
 // Limiares do filtro de silêncio (mesmos padrões e faixas do processo principal: silenceTrim.js).
 const SILENCE_DEFAULTS = { noiseDb: -35, minSilence: 1.5, pad: 0.3 };
 const SILENCE_LIMITS = { noiseDb: [-60, -15], minSilence: [0.5, 5], pad: [0, 1] };
@@ -107,6 +108,7 @@ function loadPrefs() {
     if (Number.isInteger(s.maxWords) && s.maxWords >= 0 && s.maxWords <= 40) opts.maxWords = s.maxWords;
     if (s.lines === 1 || s.lines === 2) opts.lines = s.lines;
     if (typeof s.forceCpu === 'boolean') opts.forceCpu = s.forceCpu;
+    if (typeof s.engine === 'string' && /^[a-z]{3,20}$/.test(s.engine)) opts.engine = s.engine;
     if (s.silence && typeof s.silence === 'object') {
       for (const k of Object.keys(SILENCE_DEFAULTS)) {
         const v = Number(s.silence[k]);
@@ -177,12 +179,27 @@ async function refreshStatus() {
     status = null;
     showNotice(`Não foi possível verificar o módulo de transcrição: ${friendlyError(err)}`, 'danger');
   }
+  await refreshCloud();
   await refreshAi();
   if (status && status.busy && status.busy.kind === 'transcribe') adoptExternal(status.busy.files);
   else if (external && running() && !(status && status.busy)) { external = false; setMode('ready'); } // terminou sem eu ver o fim
   renderEngine();
   renderDeviceControl();
   updatePanel();
+}
+
+/** Serviços de transcrição na nuvem (Configurações → Transcrição): quais têm chave. Um erro aqui nunca atrapalha o motor local. */
+async function refreshCloud() {
+  try { cloud = await call(window.bds?.modulesCloudGet); } catch (_) { cloud = null; }
+  // Serviço que perdeu a chave (ou sumiu): volta para o motor deste computador
+  if (opts.engine !== 'local' && !cloudProvider()) { opts.engine = 'local'; savePrefs(); }
+}
+
+/** O serviço de nuvem escolhido (com chave), ou null quando o motor é o local ou o serviço não está pronto. */
+function cloudProvider() {
+  if (opts.engine === 'local' || !cloud) return null;
+  const p = cloud.providers.find((x) => x.id === opts.engine);
+  return p && p.hasKey ? p : null;
 }
 
 /** Servidor de IA (usado só pela análise): um erro aqui nunca atrapalha a transcrição. */
@@ -220,9 +237,11 @@ function renderAiStatus() {
 /** Por que ainda não dá para iniciar (texto curto abaixo do botão), ou '' se está tudo certo. */
 function blockedReason() {
   if (!status) return 'Verificando o módulo…';
-  if (!status.platformSupported) return 'Disponível apenas no Windows.';
-  if (!status.whisper.engine.installed) return 'Instale o módulo em Configurações → Transcrição.';
-  if (!status.whisper.activeModelId) return 'Baixe um modelo em Configurações → Transcrição.';
+  if (opts.engine === 'local') {
+    if (!status.platformSupported) return 'Disponível apenas no Windows.';
+    if (!status.whisper.engine.installed) return 'Instale o módulo em Configurações → Transcrição.';
+    if (!status.whisper.activeModelId) return 'Baixe um modelo em Configurações → Transcrição.';
+  } else if (!cloudProvider()) return 'Informe a chave do serviço em Configurações → Transcrição.';
   if (!opts.srt && !opts.md && !opts.txt) return 'Marque ao menos um formato.';
   if (opts.analyze && !aiReady()) return 'Configure a IA em Configurações → Inteligência Artificial, ou desligue a análise.';
   if (opts.outMode === 'dir' && !opts.outDir) return 'Escolha a pasta de destino.';
@@ -234,6 +253,8 @@ const SLOW_ON_CPU = new Set(['medium', 'large-v3-turbo', 'large-v3']);
 
 /** Dica (não impede de iniciar) sob o botão: modelo pesado sem a aceleração NVIDIA. */
 function softHint() {
+  const cp = cloudProvider();
+  if (cp) return `O áudio será enviado ao ${cp.label}. A cobrança é do seu plano nele.`;
   const w = status && status.whisper;
   if (!w || !w.ready) return '';
   const onCpu = !w.cuda.installed || opts.forceCpu;
@@ -245,6 +266,19 @@ function softHint() {
 function renderEngine() {
   const dot = $('trEngineDot');
   const text = $('trEngineText');
+  const sub = $('trSub');
+  const cp = cloudProvider();
+  if (sub) {
+    sub.textContent = cp
+      ? `O áudio é enviado ao ${cp.label} para transcrever; as legendas são geradas aqui. Se ele falhar, o app tenta o próximo serviço marcado em Configurações.`
+      : 'Legendas e transcrições feitas no seu computador. O áudio não é enviado para a internet.';
+  }
+  if (cp) {
+    dot.className = 'tr-dot ok';
+    const model = cp.models.find((m) => m.id === cp.model);
+    text.textContent = `Nuvem · ${cp.label}${model ? ` · ${model.label}` : ''}`;
+    return;
+  }
   if (!status) { dot.className = 'tr-dot'; text.textContent = 'Módulo indisponível'; return; }
   const w = status.whisper;
   if (w.ready) {
@@ -260,25 +294,73 @@ function renderEngine() {
 
 function renderDeviceControl() {
   // Sem CUDA instalado só há CPU: o seletor de processamento some (o bloco "Avançado" fica, com as demais opções).
-  const gpu = Boolean(status && status.whisper.cuda.installed);
+  const gpu = Boolean(status && status.whisper.cuda.installed) && !cloudProvider();
   $('trDeviceField').classList.toggle('hidden', !gpu);
 }
 
-/** Abre a lista de modelos instalados no próprio botão de status (troca o modelo em uso). */
+/** Abre o menu do botão de status: escolhe o motor (este computador ou um serviço de nuvem) e, no local, o modelo. */
 function openModelMenu(anchor) {
-  if (!status || !status.whisper.engine.installed) { goToTranscriptionSettings(); return; }
-  const installed = status.whisper.models.filter((m) => m.installed);
-  const entries = installed.map((m) => ({
-    icon: m.active ? 'radio_button_checked' : 'radio_button_unchecked',
-    label: m.label,
-    sub: `Velocidade ${m.speed} · Qualidade ${m.quality}/5`,
-    selected: m.active,
-    run: () => selectModel(m.id)
-  }));
-  if (!entries.length) entries.push({ icon: 'info', label: 'Nenhum modelo instalado', disabled: true, run: () => {} });
+  const entries = [];
+  entries.push({
+    icon: opts.engine === 'local' ? 'radio_button_checked' : 'radio_button_unchecked',
+    label: 'Neste computador',
+    sub: 'O áudio não sai do computador',
+    selected: opts.engine === 'local',
+    run: () => selectEngine('local')
+  });
+  for (const p of (cloud ? cloud.providers : [])) {
+    entries.push({
+      icon: opts.engine === p.id ? 'radio_button_checked' : (p.hasKey ? 'radio_button_unchecked' : 'key'),
+      label: `Nuvem · ${p.label}`,
+      sub: p.hasKey ? 'O áudio é enviado ao serviço' : 'Falta a chave — configurar',
+      selected: opts.engine === p.id,
+      run: () => (p.hasKey ? selectEngine(p.id) : goToTranscriptionSettings())
+    });
+  }
   entries.push({ separator: true });
-  entries.push({ icon: 'tune', label: 'Gerenciar modelos…', sub: 'Baixar ou remover em Configurações', run: goToTranscriptionSettings });
+  if (opts.engine === 'local') {
+    if (!status || !status.whisper.engine.installed) {
+      entries.push({ icon: 'download', label: 'Instalar o motor deste computador…', run: () => goToTranscriptionSettings() });
+    } else {
+      const installed = status.whisper.models.filter((m) => m.installed);
+      for (const m of installed) {
+        entries.push({
+          icon: m.active ? 'radio_button_checked' : 'radio_button_unchecked',
+          label: m.label,
+          sub: `Velocidade ${m.speed} · Qualidade ${m.quality}/5`,
+          selected: m.active,
+          run: () => selectModel(m.id)
+        });
+      }
+      if (!installed.length) entries.push({ icon: 'info', label: 'Nenhum modelo instalado', disabled: true, run: () => {} });
+      entries.push({ separator: true });
+      entries.push({ icon: 'tune', label: 'Gerenciar modelos…', sub: 'Baixar ou remover em Configurações', run: goToTranscriptionSettings });
+    }
+  } else {
+    entries.push({ icon: 'tune', label: 'Chaves e fallback…', sub: 'Configurações → Transcrição', run: goToTranscriptionSettings });
+  }
   showMenu(anchor, entries);
+}
+
+/** Troca o motor. Na primeira vez em que um serviço de nuvem é escolhido, confirma que o áudio vai sair do computador. */
+async function selectEngine(id) {
+  if (running() || id === opts.engine) return;
+  if (id !== 'local') {
+    const label = (cloud && cloud.providers.find((p) => p.id === id) || {}).label || 'o serviço';
+    const key = `bds.transcription.cloudOk.${id}`;
+    let accepted = false;
+    try { accepted = localStorage.getItem(key) === '1'; } catch (_) { /* sem armazenamento */ }
+    if (!accepted) {
+      const ok = await window.bdsModal.confirm(`Neste modo, o áudio dos arquivos que você transcrever será enviado ao ${label} pela internet. A cobrança (se houver) é do seu plano nele. Usar o ${label}?`);
+      if (!ok) return;
+      try { localStorage.setItem(key, '1'); } catch (_) { /* sem armazenamento */ }
+    }
+  }
+  opts.engine = id;
+  savePrefs();
+  renderEngine();
+  renderDeviceControl();
+  updatePanel();
 }
 
 async function selectModel(id) {
@@ -314,7 +396,7 @@ function updatePanel() {
   start.disabled = Boolean(reason) || n === 0 || mode !== 'ready';
   $('trCtaHint').textContent = reason || softHint();
   $('trEngine').disabled = running();
-  $('trEngine').title = running() ? 'O modelo só pode ser trocado fora de uma transcrição' : 'Escolher o modelo de transcrição';
+  $('trEngine').title = running() ? 'O motor só pode ser trocado fora de uma transcrição' : 'Escolher o motor e o modelo de transcrição';
 }
 
 // ------------------------------------------------------------------ fila
@@ -628,6 +710,7 @@ async function startTranscription() {
       files: items.map((i) => i.path),
       srt: opts.srt, md: opts.md, txt: opts.txt, maxWords: opts.maxWords, lines: opts.lines,
       outDir: opts.outMode === 'dir' ? opts.outDir : null,
+      engine: opts.engine,
       forceCpu: opts.forceCpu,
       skipSilence: opts.skipSilence,
       silence: { ...opts.silence }

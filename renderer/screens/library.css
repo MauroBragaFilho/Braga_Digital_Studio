@@ -105,7 +105,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base), opacity var(--dur-base), transform var(--dur-base), box-shadow var(--dur-base);
 }
 
 .lib-view-btn .material-symbols-rounded {
@@ -150,7 +150,7 @@
 .sort-order-btn {
   font-size: 16px;
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .sort-order-btn:hover {
@@ -167,7 +167,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base), opacity var(--dur-base), transform var(--dur-base), box-shadow var(--dur-base);
 }
 
 .topbar-icon-btn .material-symbols-rounded {
@@ -271,7 +271,7 @@
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background var(--dur-base), border-color var(--dur-base);
   position: relative;
 }
 
@@ -304,7 +304,7 @@
   z-index: 2;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); /* exceção: legibilidade sobre foto/vídeo, independe de tema */
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity var(--dur-base);
   cursor: pointer;
 }
 
@@ -328,7 +328,7 @@
   cursor: pointer;
   accent-color: var(--accent);
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity var(--dur-base);
 }
 
 .media-clickable:hover .lib-card-checkbox,
@@ -430,7 +430,7 @@
   right: 0;
   color: var(--muted);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .lib-card-menu:hover {
@@ -458,7 +458,7 @@
   font-size: 16px;
   cursor: pointer;
   color: var(--muted);
-  transition: color 0.2s;
+  transition: color var(--dur-base);
   flex-shrink: 0;
 }
 
@@ -492,7 +492,7 @@
   color: var(--muted);
   margin-bottom: 12px;
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .lib-filter-row:hover {
@@ -512,7 +512,7 @@
 .lib-filter-custom-chk {
   font-size: 18px !important;
   color: var(--muted);
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .lib-filter-row input[type="checkbox"]:checked + .lib-filter-custom-chk {
@@ -567,7 +567,7 @@
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(4px);
-  transition: background 0.2s;
+  transition: background var(--dur-base);
 }
 
 .inspector-close-btn:hover {
@@ -593,7 +593,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.2s, background 0.2s;
+  transition: transform var(--dur-base), background var(--dur-base);
 }
 
 .inspector-play-btn:hover {
@@ -711,7 +711,7 @@
   font-size: 14px;
   color: var(--muted);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .inspector-copy-btn:hover {
@@ -722,7 +722,7 @@
   font-size: 20px;
   cursor: pointer;
   color: var(--muted);
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .inspector-fav-star.active {
@@ -768,7 +768,7 @@
 .inspector-tag-chip .remove-tag {
   font-size: 12px;
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .inspector-tag-chip .remove-tag:hover {
@@ -782,7 +782,7 @@
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base), opacity var(--dur-base), transform var(--dur-base), box-shadow var(--dur-base);
 }
 
 .inspector-add-tag:hover {
@@ -864,7 +864,7 @@
   border: none;
   color: var(--muted);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--dur-base);
 }
 
 .lib-modal-close-btn:hover {
@@ -915,7 +915,7 @@
   font-weight: 600;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-base);
 }
 .lib-form-input:focus {
   border-color: var(--accent);
@@ -942,7 +942,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-base);
 }
 
 .lib-form-icon-btn:hover {
@@ -969,7 +969,7 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base), opacity var(--dur-base), transform var(--dur-base), box-shadow var(--dur-base);
 }
 
 .lib-btn-cancel:hover {
@@ -988,7 +988,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: filter 0.2s;
+  transition: filter var(--dur-base);
 }
 
 .lib-btn-confirm:hover:not(:disabled) {
@@ -1038,7 +1038,7 @@
 .filters-clear-btn, .lib-view-btn, .sort-select, .sort-order-btn, .topbar-icon-btn, .btn-add-source, .bulk-btn,
 .lib-filter-row, .inspector-close-btn, .inspector-play-btn, .inspector-copy-btn, .inspector-add-tag,
 .lib-btn-cancel, .lib-btn-confirm, .lib-modal-close-btn, .lib-form-icon-btn {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .filters-clear-btn:focus-visible, .lib-view-btn:focus-visible, .sort-select:focus-visible, .sort-order-btn:focus-visible,
 .topbar-icon-btn:focus-visible, .btn-add-source:focus-visible, .bulk-btn:focus-visible, .inspector-close-btn:focus-visible,
@@ -1117,8 +1117,7 @@
   font-size: 13px;
 }
 .lib-load-more { min-height: 48px; }
-.lib-loading-spin { animation: lib-spin 1s linear infinite; }
-@keyframes lib-spin { to { transform: rotate(360deg); } }
+.lib-loading-spin { animation: bds-spin 1s linear infinite; }
 .lib-error-state p { margin: 0 0 8px; }
 .lib-error-detail { color: var(--danger-fg); font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .lib-loading-spin { animation: none; } }
