@@ -280,7 +280,11 @@ class ToolUpdater {
 
     return {
       tool: toolKey,
-      installed,
+      // `installed` é a versão (texto); `isInstalled` é a presença no disco. Um binário presente cuja sondagem de versão
+      // falhou ou demorou (ex.: Motor de Áudio frio, com antivírus) NÃO pode virar "não instalado": isso punha o
+      // componente na fila de "Atualizar tudo", que então o pulava por já estar na versão — aviso eterno.
+      isInstalled,
+      installed: installed || (isInstalled && localManifest?.version ? String(localManifest.version) : null),
       latest,
       needsUpdate,
       canUpdate: true,
@@ -873,7 +877,8 @@ class ToolUpdater {
   async _getVersion(exe, args) {
     if (!fs.existsSync(exe)) return null;
     try {
-      const r = await toolRunner.run(exe, args, { timeout: 10000 });
+      // 30 s: binários empacotados (ex.: Motor de Áudio) levam vários segundos para responder na primeira execução
+      const r = await toolRunner.run(exe, args, { timeout: 30000 });
       const output = `${r.stdout}${r.stderr}`;
       return output.split(/\r?\n/)[0]?.trim() || null;
     } catch (_) {

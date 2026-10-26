@@ -244,6 +244,35 @@ class AppUpdateChecker {
    * @param {object} [opts={}] { args?: string[], timeoutMs?: number }
    * @returns {Promise<{success: boolean, exitCode: number|null, timedOut: boolean}>}
    */
+  /**
+   * Abre o instalador em um processo independente e devolve na hora (não espera terminar).
+   *
+   * É o caminho certo para atualizar o PRÓPRIO app: o instalador NSIS, em modo silencioso, encerra o BDS que estiver
+   * aberto antes de copiar os arquivos, então o app não pode ficar esperando o instalador (ele seria morto no meio e
+   * nunca receberia o resultado). O lançamento passa pelo `start` do cmd (ShellExecute): se o app está instalado em
+   * uma pasta protegida (Program Files), o Windows pede a elevação (UAC) em vez de falhar em silêncio.
+   * `--force-run` faz o instalador abrir o BDS de novo ao terminar.
+   * @returns {{ launched: boolean, error?: string }}
+   */
+  launchInstallerDetached(installerPath, args = ['/S', '--force-run']) {
+    if (process.platform !== 'win32') return { launched: false, error: 'A instalação automática só existe no Windows.' };
+    if (!installerPath || !fs.existsSync(installerPath)) return { launched: false, error: 'Instalador não encontrado.' };
+    try {
+      const child = spawn('cmd.exe', ['/d', '/c', 'start', '""', `"${installerPath}"`, ...args], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        windowsVerbatimArguments: true
+      });
+      child.unref();
+      logger.info('AppUpdateChecker:launchInstallerDetached', { installer: path.basename(String(installerPath)), argCount: args.length });
+      return { launched: true };
+    } catch (err) {
+      logger.error('AppUpdateChecker:launchInstallerDetached:error', { error: err.message });
+      return { launched: false, error: err.message };
+    }
+  }
+
   installSilently(installerPath, opts = {}) {
     const args = opts.args || ['/S'];
     const timeoutMs = opts.timeoutMs || 180000;

@@ -18,6 +18,7 @@ class UpdateService extends EventEmitter {
     // Último instalador baixado (e verificado) por downloadAppUpdate(). installAppUpdate()
     // só executa ESTE arquivo — nunca um caminho enviado pelo renderer.
     this._downloadedInstallerPath = null;
+    this._downloadedVersion = null;
     if (paths && (paths.tools || paths.dataDir)) {
       const toolsDir = paths.tools || paths.dataDir;
       dependencyManager.init(toolsDir);
@@ -115,6 +116,11 @@ class UpdateService extends EventEmitter {
    * Verifica se há nova versão do próprio BDS (usando app.getVersion()).
    */
   async checkAppUpdate() {
+    // Rodando pelo código-fonte (npm start) a versão vem do package.json local, que costuma ficar atrás da release
+    // publicada: oferecer a instalação aqui atualizaria o BDS instalado e deixaria este aviso para sempre.
+    if (this._isDevBuild()) {
+      return { ...this._noAppUpdate(), devBuild: true };
+    }
     try {
       return await appUpdateChecker.checkForUpdate(this._currentAppVersion());
     } catch (err) {
@@ -125,6 +131,16 @@ class UpdateService extends EventEmitter {
 
   _currentAppVersion() {
     try { return app.getVersion(); } catch (_) { return '0.0.0'; }
+  }
+
+  /** true quando o BDS roda pelo código-fonte (npm start), e não pelo instalador. Injetável em teste. */
+  _isDevBuild() {
+    if (typeof this.isPackaged === 'boolean') return !this.isPackaged;
+    try { return !app.isPackaged; } catch (_) { return false; }
+  }
+
+  _noAppUpdate() {
+    return { hasUpdate: false, currentVersion: this._currentAppVersion(), latestVersion: null, releaseUrl: null, releaseNotes: null, installerUrl: null, installerDigest: null };
   }
 
   /**
@@ -177,7 +193,14 @@ class UpdateService extends EventEmitter {
         appUpdate.error = asset
           ? `A atualização automática do aplicativo está disponível só no Windows. Baixe o arquivo ${asset.name} pela página de releases e instale manualmente.`
           : 'A atualização automática do aplicativo está disponível só no Windows, e a release não traz pacote para este sistema. Veja a página de releases.';
+      } else if (appInfo.hasUpdate && appInfo.installerUrl && this._downloadedInstallerPath && this._downloadedVersion === appInfo.latestVersion && fs.existsSync(this._downloadedInstallerPath)) {
+        // Já baixado e verificado nesta sessão (o usuário adiou a instalação): não baixa de novo
+        appUpdate.downloaded = true;
+        appUpdate.readyToInstall = true;
+        appUpdate.latestVersion = appInfo.latestVersion;
+        emitProgress(100, 'Nova versão já baixada. Pronta para instalar.', 'app-ready');
       } else if (appInfo.hasUpdate && appInfo.installerUrl) {
+        this._downloadedVersion = appInfo.latestVersion;
         emitProgress(100, 'Baixando nova versão do BDS...', 'app-download');
         const dl = await appUpdateChecker.downloadLatestInstaller(
           installerPath,
@@ -201,24 +224,21 @@ class UpdateService extends EventEmitter {
           appUpdate.warning = 'O instalador parece muito pequeno; pode estar corrompido.';
         }
 
-        emitProgress(100, 'Instalando nova versão do BDS (silencioso)...', 'app-install');
-        const install = await appUpdateChecker.installSilently(dl.path);
-        appUpdate.install = install;
-        appUpdate.installed = install.success;
-        appUpdate.needsRestart = install.success;
-        if (!install.success) {
-          appUpdate.error = install.timedOut
-            ? 'A instalação da nova versão demorou demais e foi interrompida.'
-            : `A instalação da nova versão falhou (código ${install.exitCode ?? 'desconhecido'}).`;
-        }
-
-        logger.info('UpdateService:updateEverything:install_result', {
-          exitCode: install.exitCode,
-          timedOut: install.timedOut,
-          success: install.success,
+        // O instalador NÃO roda aqui: em modo silencioso ele encerra o BDS aberto antes de copiar os arquivos, então
+        // o app ficava esperando o próprio fim e nunca recebia o resultado (nem reiniciava). O instalador baixado e
+        // verificado fica guardado; a tela pergunta e chama installAppUpdate(), que fecha o BDS e abre o instalador.
+        this._downloadedInstallerPath = dl.path;
+        appUpdate.readyToInstall = true;
+        appUpdate.latestVersion = appInfo.latestVersion;
+        emitProgress(100, 'Nova versão baixada e verificada. Pronta para instalar.', 'app-ready');
+        logger.info('UpdateService:updateEverything:installer_ready', {
+          version: appInfo.latestVersion,
           digestVerified: appUpdate.digestVerified,
           installerSize: dl.size
         });
+      } else if (appInfo.devBuild) {
+        appUpdate.devBuild = true;
+        appUpdate.noUpdateNeeded = true;
       } else {
         appUpdate.noUpdateNeeded = true;
       }
@@ -227,8 +247,8 @@ class UpdateService extends EventEmitter {
       appUpdate.error = err.message;
       appUpdate.installed = false;
     } finally {
-      // Limpa o instalador baixado, a menos que ainda esteja em uso (instalação em curso).
-      if (appUpdate.installerPath && !appUpdate.installed) {
+      // Download que não chegou a ficar pronto para instalar é apagado
+      if (appUpdate.installerPath && !appUpdate.readyToInstall) {
         try { fs.rmSync(appUpdate.installerPath, { force: true }); } catch (_) { /* noop */ }
       }
     }
@@ -238,7 +258,8 @@ class UpdateService extends EventEmitter {
       dependencies: dependenciesResult,
       appUpdate,
       success: dependenciesResult?.success !== false && (appUpdate.error ? false : true),
-      needsRestart: Boolean(appUpdate.needsRestart)
+      needsRestart: false,
+      readyToInstall: Boolean(appUpdate.readyToInstall)
     };
   }
 
@@ -267,9 +288,16 @@ class UpdateService extends EventEmitter {
     if (!installerPath || !fs.existsSync(installerPath)) {
       return { success: false, exitCode: null, error: 'Nenhum instalador baixado e verificado. Baixe a atualização primeiro.' };
     }
-    const result = await appUpdateChecker.installSilently(installerPath);
+    // Abre o instalador em processo próprio (com pedido de elevação quando preciso) e FECHA o BDS: o instalador
+    // silencioso encerra o app aberto de qualquer jeito, e com --force-run abre a versão nova ao terminar.
+    const launch = appUpdateChecker.launchInstallerDetached(installerPath);
+    if (!launch.launched) {
+      return { success: false, exitCode: null, error: launch.error || 'Não foi possível abrir o instalador.' };
+    }
     this._downloadedInstallerPath = null;
-    return result;
+    logger.info('UpdateService:installAppUpdate:quitting_for_installer');
+    setTimeout(() => { try { app.quit(); } catch (_) { /* noop */ } }, 800);
+    return { success: true, launched: true, exitCode: null };
   }
 
   /**
