@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>BDS — Braga Digital Studio</title>
+  <desc>Logotipo BDS vetorizado a partir da imagem fornecida.</desc>
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8f8f8"/>
+      <stop offset="55%" stop-color="#dedede"/>
+      <stop offset="100%" stop-color="#a9a9a9"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ef262b"/>
+      <stop offset="100%" stop-color="#b30008"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" fill="#090a0b"/>
+
+  <!-- Moldura -->
+  <g fill="none" stroke="#ed1c24" stroke-width="2.2" stroke-linecap="round">
+    <path d="M18 73V61a10 10 0 0 1 10-10h24"/>
+    <path d="M202 51h24a10 10 0 0 1 10 10v12"/>
+    <path d="M18 187v9a14 14 0 0 0 14 14h21"/>
+    <path d="M202 210h21a14 14 0 0 0 14-14v-9"/>
+  </g>
+
+  <circle cx="127" cy="58" r="8.8" fill="url(#red)"/>
+
+  <!-- BDS principal -->
+  <g stroke="none" fill="url(#metal)">
+    <path d="M 37 89 L 24 144 L 82 144 L 88 141 L 92 137 L 95 131 L 95 127 L 96 126 L 93 117 L 98 112 L 101 105 L 101 97 L 98 92 L 91 89 Z"/><path d="M 110 89 L 109 90 L 109 94 L 106 103 L 106 107 L 103 116 L 103 120 L 102 121 L 97 144 L 147 144 L 155 140 L 159 136 L 163 129 L 163 126 L 168 109 L 168 101 L 166 96 L 161 91 L 155 89 Z"/>
+  </g>
+  <g stroke="none" fill="url(#red)">
+    <path d="M 237 89 L 191 89 L 183 92 L 177 98 L 175 102 L 174 111 L 176 116 L 180 120 L 184 122 L 214 122 L 217 124 L 218 128 L 213 134 L 167 134 L 164 144 L 215 144 L 220 142 L 224 139 L 229 131 L 229 127 L 230 126 L 229 119 L 224 113 L 221 112 L 191 112 L 186 108 L 186 105 L 187 103 L 191 100 L 234 100 L 236 96 Z"/>
+  </g>
+
+  <!-- Tipografia inferior -->
+  <g font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+    <text x="128" y="169" font-size="11.2" font-weight="600" letter-spacing="4.2" fill="#d8d8d8">BRAGA <tspan fill="#ed1c24">DIGITAL</tspan></text>
+    <text x="128" y="190" font-size="11.5" font-weight="600" letter-spacing="5.4" fill="#d8d8d8">STUDIO</text>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="22 86 217 61" width="217" height="61" role="img" aria-label="BDS">
+  <title>BDS</title>
+  <desc>Somente as letras do logotipo Braga Digital Studio (recorte de icon.svg, sem fundo, moldura e tipografia).</desc>
+  <defs>
+    <linearGradient id="bdsMetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8f8f8"/>
+      <stop offset="55%" stop-color="#dedede"/>
+      <stop offset="100%" stop-color="#a9a9a9"/>
+    </linearGradient>
+    <linearGradient id="bdsRed" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ef262b"/>
+      <stop offset="100%" stop-color="#b30008"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#bdsMetal)">
+    <path d="M 37 89 L 24 144 L 82 144 L 88 141 L 92 137 L 95 131 L 95 127 L 96 126 L 93 117 L 98 112 L 101 105 L 101 97 L 98 92 L 91 89 Z"/>
+    <path d="M 110 89 L 109 90 L 109 94 L 106 103 L 106 107 L 103 116 L 103 120 L 102 121 L 97 144 L 147 144 L 155 140 L 159 136 L 163 129 L 163 126 L 168 109 L 168 101 L 166 96 L 161 91 L 155 89 Z"/>
+  </g>
+  <path fill="url(#bdsRed)" d="M 237 89 L 191 89 L 183 92 L 177 98 L 175 102 L 174 111 L 176 116 L 180 120 L 184 122 L 214 122 L 217 124 L 218 128 L 213 134 L 167 134 L 164 144 L 215 144 L 220 142 L 224 139 L 229 131 L 229 127 L 230 126 L 229 119 L 224 113 L 221 112 L 191 112 L 186 108 L 186 105 L 187 103 L 191 100 L 234 100 L 236 96 Z"/>
+</svg>

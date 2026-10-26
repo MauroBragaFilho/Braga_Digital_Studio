@@ -145,7 +145,7 @@
   display: flex;
 }
 .init-spinner {
-  animation: spin 2s linear infinite;
+  animation: bds-spin 2s linear infinite;
   margin-bottom: 24px;
   color: var(--accent);
 }
@@ -156,9 +156,6 @@
 .init-subtitle {
   color: var(--muted);
   margin: 0;
-}
-@keyframes spin {
-  100% { transform: rotate(360deg); }
 }
 
 /* --- UTILS --- */
@@ -195,7 +192,7 @@
   height: 100%;
   width: 0%;
   background: var(--accent);
-  transition: width 0.3s linear;
+  transition: width var(--dur-slow) linear;
 }
 
 /* Linha de informações compacta */
@@ -225,13 +222,9 @@
   font-size: 15px;
   color: var(--accent);
   flex-shrink: 0;
-  animation: gdf-pulse 1.4s ease-in-out infinite;
+  animation: bds-pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes gdf-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
-}
 
 .gdf-title {
   font-size: 12px;
@@ -322,7 +315,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: none; padding: 2px; margin: 0;
   color: var(--muted); cursor: pointer; border-radius: 6px; flex-shrink: 0;
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--dur-fast), background var(--dur-fast);
 }
 .search-icon-btn { margin-right: 6px; }
 .search-icon-btn:hover, .search-clear-btn:hover { color: var(--text); background: var(--card-2); }
@@ -378,7 +371,7 @@ button.shortcut:hover { color: var(--text); background: var(--card-2); }
   font-weight: 600; font-variant-numeric: tabular-nums;
 }
 .search-wrapper {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 .search-wrapper:hover { border-color: color-mix(in srgb, var(--text) 22%, var(--line)); }
 .search-icon-btn:hover, .search-clear-btn:hover,
@@ -392,7 +385,7 @@ button.shortcut:hover { background: color-mix(in srgb, var(--text) 10%, transpar
 .win-btn {
   color: var(--muted);
   border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .win-btn:hover { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
 .win-btn:active { background: color-mix(in srgb, var(--text) 16%, transparent); }
@@ -449,7 +442,7 @@ button:disabled, button[disabled] { cursor: not-allowed; }
 
 /* --- Aviso rápido (toast) e ajuda de atalhos --- */
 .bds-toasts { position: fixed; right: 24px; bottom: 24px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 48px)); }
-.bds-toast { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 20px; border-radius: var(--radius-pill); background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); /* exceção: sombra suave exclusiva de aviso flutuante */ font-size: var(--fs-body); animation: bds-toast-in .18s ease-out; }
+.bds-toast { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 20px; border-radius: var(--radius-pill); background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); /* exceção: sombra suave exclusiva de aviso flutuante */ font-size: var(--fs-body); animation: bds-rise-in .18s ease-out; }
 .bds-toast::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .bds-toast-success::before { background: var(--status-ok); }
 .bds-toast-error::before { background: var(--status-bad); }
@@ -460,7 +453,6 @@ button:disabled, button[disabled] { cursor: not-allowed; }
 .bds-toast-close:hover { background: var(--card-2); color: var(--text); }
 .bds-toast-close .material-symbols-rounded { font-size: 18px; }
 .bds-toast-action:focus-visible, .bds-toast-close:focus-visible, .shortcuts-help-btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-@keyframes bds-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 .shortcuts-help-btn { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; margin: 0 auto; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
 .shortcuts-help-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
