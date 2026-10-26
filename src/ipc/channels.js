@@ -415,6 +415,18 @@ define('modules', 'wrap', {
     returns: 'Resultado da transcrição',
     api: ['modulesTranscribe']
   },
+  'modules:cloudGet': { returns: 'Serviços de transcrição na nuvem (sem as chaves)', api: ['modulesCloudGet'] },
+  'modules:cloudSet': {
+    args: [OBJ('patch', {
+      provider: t.string({ max: 40, min: 1, label: 'Serviço' }),
+      apiKey: t.string({ max: 300, optional: true, label: 'Chave de API' }),
+      clearApiKey: t.boolean({ optional: true, label: 'Remover a chave' }),
+      model: t.string({ max: 100, optional: true, label: 'Modelo' })
+    }, { label: 'Configuração do serviço', maxKeys: 8 })],
+    returns: 'Serviços de transcrição na nuvem (sem as chaves)',
+    api: ['modulesCloudSet']
+  },
+  'modules:cloudTest': { args: [STR('provider', 40, { min: 1, label: 'Serviço' })], returns: 'Resultado do teste da chave', api: ['modulesCloudTest'] },
   'modules:reveal': { args: [STR('p', 500, { min: 1, label: 'Caminho' })], returns: 'true', api: ['modulesReveal'] },
   'modules:list': { returns: 'Módulos (ligados/desligados, instalados)', api: ['modulesList'] },
   'modules:setEnabled': {
@@ -505,10 +517,40 @@ define('licenses', 'throw', {
   'licenses:getText': { args: [STR('id', 200, { pattern: /^[\w.-]{1,200}$/, label: 'Componente' })], returns: 'Texto da licença (somente leitura)', api: ['getLicenseText'] }
 });
 
+// Metadados de um vídeo da fila de envio automático (título, descrição, visibilidade)
+const UPLOAD_META_SHAPE = {
+  title: t.string({ max: 100, optional: true, allowEmpty: true, label: 'Título' }),
+  description: t.string({ max: 5000, optional: true, allowEmpty: true, label: 'Descrição' }),
+  visibility: t.string({ enum: ['private', 'unlisted', 'public'], optional: true, label: 'Visibilidade' }),
+  playlist: t.string({ max: 150, optional: true, allowEmpty: true, label: 'Playlist' }),
+  thumbnail: t.string({ max: 4096, optional: true, allowEmpty: true, label: 'Miniatura' })
+};
+const UPLOAD_META = (optional) => OBJ('meta', UPLOAD_META_SHAPE, { optional, label: 'Dados do vídeo', maxKeys: 10 });
+const UPLOAD_ITEM_ID = STR('id', 64, { label: 'ID do vídeo na fila' });
+// Padrões da fila (descrição e playlist para todos os vídeos); applyToQueued também muda os que já estão na fila
+const UPLOAD_DEFAULTS = OBJ('defaults', {
+  description: t.string({ max: 5000, optional: true, allowEmpty: true, label: 'Descrição' }),
+  playlist: t.string({ max: 150, optional: true, allowEmpty: true, label: 'Playlist' }),
+  applyToQueued: t.boolean({ optional: true, label: 'Aplicar aos vídeos na fila' })
+}, { label: 'Padrões da fila', maxKeys: 10 });
+
 define('upload', 'throw', {
   'upload:scanDirectory': { args: [STR('customDir', 4096, { optional: true, allowEmpty: true, label: 'Pasta de uploads' })], returns: 'Vídeos da pasta', api: ['uploadScanDirectory'] },
   'upload:selectFolder': { returns: 'Vídeos da pasta escolhida ou null', api: ['uploadSelectFolder'] },
-  'upload:selectFiles': { returns: 'Vídeos escolhidos', api: ['uploadSelectFiles'] }
+  'upload:selectFiles': { returns: 'Vídeos escolhidos', api: ['uploadSelectFiles'] },
+  // Fila de envio automático para o YouTube Studio (tela Envio)
+  'upload:queue:get': { returns: 'Estado da fila de envio', api: ['youtubeUpload.getState'] },
+  'upload:queue:pick': { args: [UPLOAD_META(true)], returns: 'Itens adicionados pelo diálogo de arquivos', api: ['youtubeUpload.pick'] },
+  'upload:queue:add': { args: [PATHS('paths', 500), UPLOAD_META(true)], returns: 'Itens adicionados', api: ['youtubeUpload.add'] },
+  'upload:queue:update': { args: [UPLOAD_ITEM_ID, UPLOAD_META(false)], returns: '{ ok, error? }', api: ['youtubeUpload.update'] },
+  'upload:queue:remove': { args: [UPLOAD_ITEM_ID], returns: '{ ok }', api: ['youtubeUpload.remove'] },
+  'upload:queue:retry': { args: [UPLOAD_ITEM_ID], returns: '{ ok }', api: ['youtubeUpload.retry'] },
+  'upload:queue:pickThumbnail': { args: [UPLOAD_ITEM_ID], returns: '{ ok, thumbnail? } (diálogo de imagem)', api: ['youtubeUpload.pickThumbnail'] },
+  'upload:queue:setDefaults': { args: [UPLOAD_DEFAULTS], returns: '{ ok, defaults }', api: ['youtubeUpload.setDefaults'] },
+  'upload:queue:start': { args: [t.int({ name: 'webContentsId', min: 1, label: 'Página do YouTube Studio' })], returns: '{ ok, error? }', api: ['youtubeUpload.start'] },
+  'upload:queue:pause': { returns: '{ ok }', api: ['youtubeUpload.pause'] },
+  'upload:queue:skipWait': { returns: '{ ok }', api: ['youtubeUpload.skipWait'] },
+  'upload:queue:clearCompleted': { returns: '{ ok }', api: ['youtubeUpload.clearCompleted'] }
 });
 
 // --- Prévia de fotos ---------------------------------------------------------------------------
@@ -772,7 +814,12 @@ const EVENTS = [
   ['onBdsmDeviceUpdated', 'bdsm:device_updated'],
   ['onBdsmProgress', 'bdsm:progress'],
   ['onBdsmLutSyncProgress', 'bdsm:lutSyncProgress'],
-  ['onBdsmPairing', 'bdsm:pairing']
+  ['onBdsmPairing', 'bdsm:pairing'],
+  ['youtubeUpload.onUpdated', 'upload:queue-updated'],
+  ['youtubeUpload.onWait', 'upload:wait'],
+  ['youtubeUpload.onAttention', 'upload:attention'],
+  ['youtubeUpload.onItemDone', 'upload:item-done'],
+  ['youtubeUpload.onItemFailed', 'upload:item-failed']
 ];
 
 module.exports = { CHANNELS, EVENTS };

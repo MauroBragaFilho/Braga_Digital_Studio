@@ -18,7 +18,7 @@ function registerIpcHandlers(ctx) {
     updateService, montageService, silenceService, metadataService,
     videoRecoveryService, rawRecoveryService, projectService, premiereExporter, bdsproPackageService,
     waveformService, audioSyncService, sequenceBuilder,
-    uploadScannerService, libManager, watcherService, lutSyncService, importQueue
+    uploadScannerService, youtubeUploadQueue, libManager, watcherService, lutSyncService, importQueue
   } = services;
 
   // Registra Handlers por Módulo
@@ -33,7 +33,8 @@ function registerIpcHandlers(ctx) {
           (liveService(services.downloadService)?.getQueue?.() || []).some((i) => i.status === 'downloading') ||
           liveService(services.converterService)?.running ||
           services.silenceService.running ||
-          services.metadataService.currentProcess
+          services.metadataService.currentProcess ||
+          liveService(services.youtubeUploadQueue)?.running
         );
       } catch (_) { return false; }
     }
@@ -83,6 +84,7 @@ function registerIpcHandlers(ctx) {
     }
   });
 
+
   // Handlers que antes eram inline no bootstrap
   require('./settingsHandlers')({ settingsManager, appPaths, libManager, watcherService, updateService, syncLibraries });
   require('./hardwareHandlers')({ settingsManager });
@@ -94,7 +96,7 @@ function registerIpcHandlers(ctx) {
   require('./updateHandlers')(updateService);
   require('./deviceListHandlers')();
   require('./sonyHandlers')({ importQueue });
-  require('./uploadHandlers')({ uploadScannerService, settingsManager, getMainWindow });
+  require('./uploadHandlers')({ uploadScannerService, youtubeUploadQueue, settingsManager, getMainWindow });
 
   return { moduleManager };
 }

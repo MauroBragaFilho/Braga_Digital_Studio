@@ -62,8 +62,18 @@ class SettingsManager {
       downloadPauseEnabled: true,
       downloadPauseMinSec: 10,
       downloadPauseMaxSec: 180,
+      // Envio automático para o YouTube (tela Envio): desligado por padrão; pausa aleatória entre envios (segundos),
+      // limite de envios por dia e visibilidade inicial dos vídeos
+      uploadAutoEnabled: false,
+      uploadPauseEnabled: true,
+      uploadPauseMinSec: 60,
+      uploadPauseMaxSec: 300,
+      uploadDailyLimit: 10,
+      uploadDefaultVisibility: 'private',
       // Codec do vídeo baixado: 'auto' (melhor MP4) | 'h264' | 'h265' | 'av1'
       downloadVideoCodec: 'auto',
+      // Transcrição na nuvem: se o serviço escolhido na tela falhar, tenta estes (nesta ordem). 'local' = o motor deste computador.
+      transcriptionFallback: ['local'],
       useYoutubeAccount: false,
       theme: 'dark',
       accentColor: DEFAULT_ACCENT,
@@ -368,7 +378,28 @@ class SettingsManager {
     if ('downloadPauseMinSec' in out && 'downloadPauseMaxSec' in out && out.downloadPauseMaxSec < out.downloadPauseMinSec) {
       out.downloadPauseMaxSec = out.downloadPauseMinSec;
     }
+    // Envio automático para o YouTube
+    bool('uploadAutoEnabled');
+    bool('uploadPauseEnabled');
+    for (const key of ['uploadPauseMinSec', 'uploadPauseMaxSec']) {
+      if (key in out) {
+        const n = Math.round(Number(out[key]));
+        if (Number.isFinite(n)) out[key] = Math.min(3600, Math.max(0, n)); else delete out[key];
+      }
+    }
+    if ('uploadPauseMinSec' in out && 'uploadPauseMaxSec' in out && out.uploadPauseMaxSec < out.uploadPauseMinSec) {
+      out.uploadPauseMaxSec = out.uploadPauseMinSec;
+    }
+    if ('uploadDailyLimit' in out) {
+      const n = Math.round(Number(out.uploadDailyLimit));
+      if (Number.isFinite(n)) out.uploadDailyLimit = Math.min(100, Math.max(0, n)); else delete out.uploadDailyLimit;
+    }
+    oneOf('uploadDefaultVisibility', ['private', 'unlisted', 'public']);
     bool('rememberWindowBounds');
+    if ('transcriptionFallback' in out) {
+      const list = Array.isArray(out.transcriptionFallback) ? out.transcriptionFallback : [];
+      out.transcriptionFallback = ['groq', 'elevenlabs', 'local'].filter((id) => list.includes(id));
+    }
 
     // Ordem do menu lateral: só ids de tela válidos (a Home é fixa e não entra), sem repetição.
     if ('sidebarOrder' in out) {

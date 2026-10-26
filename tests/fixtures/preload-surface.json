@@ -4996,6 +4996,86 @@
       "returns": "promise"
     }
   },
+  "modulesCloudGet": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cloudGet",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cloudGet",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesCloudSet": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cloudSet",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cloudSet",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "modulesCloudTest": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cloudTest",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "modules:cloudTest",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "modulesGetStatus": {
     "type": "function",
     "length": 0,
@@ -8065,6 +8145,26 @@
         },
         {
           "op": "off",
+          "ch": "upload:attention"
+        },
+        {
+          "op": "off",
+          "ch": "upload:item-done"
+        },
+        {
+          "op": "off",
+          "ch": "upload:item-failed"
+        },
+        {
+          "op": "off",
+          "ch": "upload:queue-updated"
+        },
+        {
+          "op": "off",
+          "ch": "upload:wait"
+        },
+        {
+          "op": "off",
           "ch": "youtube:auth-status"
         },
         {
@@ -9492,6 +9592,488 @@
           "op": "invoke",
           "ch": "youtube:login",
           "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload": {
+    "type": "object"
+  },
+  "youtubeUpload.add": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:add",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:add",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.clearCompleted": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:clearCompleted",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:clearCompleted",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.getState": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:get",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:get",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.onAttention": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "upload:attention"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "upload:attention"
+      },
+      {
+        "op": "off",
+        "ch": "upload:attention"
+      },
+      {
+        "op": "off",
+        "ch": "upload:attention"
+      }
+    ]
+  },
+  "youtubeUpload.onItemDone": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "upload:item-done"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "upload:item-done"
+      },
+      {
+        "op": "off",
+        "ch": "upload:item-done"
+      },
+      {
+        "op": "off",
+        "ch": "upload:item-done"
+      }
+    ]
+  },
+  "youtubeUpload.onItemFailed": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "upload:item-failed"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "upload:item-failed"
+      },
+      {
+        "op": "off",
+        "ch": "upload:item-failed"
+      },
+      {
+        "op": "off",
+        "ch": "upload:item-failed"
+      }
+    ]
+  },
+  "youtubeUpload.onUpdated": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "upload:queue-updated"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "upload:queue-updated"
+      },
+      {
+        "op": "off",
+        "ch": "upload:queue-updated"
+      },
+      {
+        "op": "off",
+        "ch": "upload:queue-updated"
+      }
+    ]
+  },
+  "youtubeUpload.onWait": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "upload:wait"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "upload:wait"
+      },
+      {
+        "op": "off",
+        "ch": "upload:wait"
+      },
+      {
+        "op": "off",
+        "ch": "upload:wait"
+      }
+    ]
+  },
+  "youtubeUpload.pause": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:pause",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:pause",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.pick": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:pick",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:pick",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.pickThumbnail": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:pickThumbnail",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:pickThumbnail",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.remove": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:remove",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:remove",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.retry": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:retry",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:retry",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.setDefaults": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:setDefaults",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:setDefaults",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.skipWait": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:skipWait",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:skipWait",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.start": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:start",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:start",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeUpload.update": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:update",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "upload:queue:update",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"

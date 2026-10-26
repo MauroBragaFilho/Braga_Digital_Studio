@@ -6,6 +6,7 @@ const bindDownloadEvents = require('./downloads');
 const bindConverterEvents = require('./converter');
 const bindSilenceEvents = require('./silence');
 const bindMediaEvents = require('./media');
+const bindUploadEvents = require('./uploads');
 
 /**
  * Liga os eventos dos serviços ao renderer (via `bridge`), à taskbar e às notificações.
@@ -18,6 +19,7 @@ function bindServiceEvents(ctx) {
   bindConverterEvents(ctx);
   bindSilenceEvents(ctx);
   bindMediaEvents(ctx);
+  bindUploadEvents(ctx);
 }
 
 module.exports = { bindServiceEvents };

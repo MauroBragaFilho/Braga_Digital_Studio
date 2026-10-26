@@ -326,6 +326,59 @@
           </div>
         </div>
 
+        <div class="st-card" data-module="upload" data-search-keywords="youtube envio upload fila automático publicar">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">cloud_upload</span> Envio automático para o YouTube</h4>
+          <label class="st-row st-row-toggle">
+            <div class="st-row-text">
+              <span class="st-row-label">Ligar a fila de envio na tela Envio</span>
+              <span class="st-row-hint">O BDS preenche o YouTube Studio por você, um vídeo de cada vez. Use com moderação: o YouTube pode pedir confirmações da conta e não gosta de envios em ritmo de robô.</span>
+            </div>
+            <input type="checkbox" id="uploadAutoEnabledInput" class="st-switch" />
+          </label>
+          <div id="uploadAutoOptions">
+            <label class="st-row st-row-toggle st-row-sub">
+              <div class="st-row-text">
+                <span class="st-row-label">Pausar entre os envios</span>
+                <span class="st-row-hint">Espera um tempo aleatório antes de cada vídeo da fila.</span>
+              </div>
+              <input type="checkbox" id="uploadPauseEnabledInput" class="st-switch" checked />
+            </label>
+            <div id="uploadPauseRange" class="st-row st-row-sub">
+              <div class="st-row-text">
+                <span class="st-row-label">Tempo da pausa (segundos)</span>
+                <span class="st-row-hint">Sorteado entre o mínimo e o máximo. Padrão: 60 a 300 (5 minutos).</span>
+              </div>
+              <div class="st-row-control">
+                <input type="number" id="uploadPauseMinInput" class="settings-input st-input-short" min="0" max="3600" step="1" value="60" aria-label="Pausa mínima em segundos" />
+                <span aria-hidden="true">a</span>
+                <input type="number" id="uploadPauseMaxInput" class="settings-input st-input-short" min="0" max="3600" step="1" value="300" aria-label="Pausa máxima em segundos" />
+              </div>
+            </div>
+            <div class="st-row st-row-sub">
+              <div class="st-row-text">
+                <label class="st-row-label" for="uploadDailyLimitInput">Envios por dia</label>
+                <span class="st-row-hint">A fila para ao chegar neste número e continua no dia seguinte. 0 = sem limite.</span>
+              </div>
+              <div class="st-row-control">
+                <input type="number" id="uploadDailyLimitInput" class="settings-input st-input-short" min="0" max="100" step="1" value="10" aria-label="Envios por dia" />
+              </div>
+            </div>
+            <div class="st-row st-row-sub">
+              <div class="st-row-text">
+                <label class="st-row-label" for="uploadDefaultVisibilitySelect">Visibilidade inicial</label>
+                <span class="st-row-hint">Como os vídeos entram na fila. Você pode mudar vídeo a vídeo antes de enviar.</span>
+              </div>
+              <div class="st-row-control">
+                <select id="uploadDefaultVisibilitySelect" class="settings-input" aria-label="Visibilidade inicial dos vídeos">
+                  <option value="private">Privado</option>
+                  <option value="unlisted">Não listado</option>
+                  <option value="public">Público</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="st-card" data-module="converter">
           <h4 class="st-card-title"><span class="material-symbols-rounded">sync</span> Padrões do Conversor</h4>
           <p class="st-card-desc">Valores iniciais ao abrir a tela de Conversão. Você ainda pode mudá-los a cada conversão.</p>
@@ -560,6 +613,31 @@
       <section id="settingsTranscriptionView" class="settings-view hidden" data-search-keywords="transcrição legenda áudio modelo qualidade aceleração placa de vídeo NVIDIA instalar recurso">
         <h3 class="settings-section-title">Transcrição</h3>
         <div id="settingsTranscriptionPanel"></div>
+
+        <div class="st-card" id="settingsCloudCard" data-search-keywords="nuvem groq elevenlabs chave api transcrição fallback serviço online">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">cloud</span> Transcrição na nuvem</h4>
+          <p class="st-card-desc">Opcional. Em vez de usar este computador, o áudio é enviado ao serviço escolhido na tela de transcrição, que devolve o texto com os tempos. Cada serviço tem a sua chave e cobra do seu próprio plano (veja limites e preços no site deles). As chaves ficam criptografadas neste computador e são independentes do assistente de IA.</p>
+          <div id="settingsCloudProviders"></div>
+
+          <div class="st-row">
+            <div class="st-row-text">
+              <span class="st-row-label">Se o serviço escolhido falhar</span>
+              <span class="st-row-hint">Sem internet, limite de uso, chave recusada ou créditos acabando: o app tenta os marcados abaixo, nesta ordem. Só vale quando você escolhe um serviço de nuvem; com o motor deste computador, nada é enviado para fora.</span>
+            </div>
+          </div>
+          <label class="st-row st-row-toggle st-row-sub">
+            <div class="st-row-text"><span class="st-row-label">Groq</span><span class="st-row-hint">O áudio seria enviado ao Groq (precisa da chave dele).</span></div>
+            <input type="checkbox" id="trFallbackGroq" class="st-switch" />
+          </label>
+          <label class="st-row st-row-toggle st-row-sub">
+            <div class="st-row-text"><span class="st-row-label">ElevenLabs</span><span class="st-row-hint">O áudio seria enviado à ElevenLabs (precisa da chave dela).</span></div>
+            <input type="checkbox" id="trFallbackElevenlabs" class="st-switch" />
+          </label>
+          <label class="st-row st-row-toggle st-row-sub">
+            <div class="st-row-text"><span class="st-row-label">Neste computador</span><span class="st-row-hint">Usa o modelo instalado em Transcrição. Nada sai do computador.</span></div>
+            <input type="checkbox" id="trFallbackLocal" class="st-switch" checked />
+          </label>
+        </div>
       </section>
 
       <!-- ================= ATUALIZAÇÕES ================= -->

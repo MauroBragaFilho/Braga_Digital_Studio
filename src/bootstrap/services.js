@@ -113,6 +113,13 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
     ffmpegPath: ffmpegTool.resolve({ mustExist: false })
   }));
 
+  // Fila de envio automático para o YouTube Studio (tela Envio); o histórico diário fica em dataDir
+  const youtubeUploadQueue = lazyService(() => new (require('../core/uploads/YoutubeUploadQueue'))({
+    getSettings,
+    storeFile: require('node:path').join(appPaths.dataDir, 'youtube-uploads.json'),
+    logger
+  }));
+
   // 3. Inicializar Media Library e Watcher
   const libManager = new LibraryManager();
   const importQueue = new ImportQueue({
@@ -145,6 +152,7 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
     audioSyncService,
     lutSyncService,
     uploadScannerService,
+    youtubeUploadQueue,
     libManager,
     importQueue,
     watcherService

@@ -243,6 +243,7 @@ async function mountTranscriptionPanel() {
   try {
     modulesPanel = modulesPanel || await import('../components/modules-panel.js');
     await modulesPanel.mountModulesPanel(host);
+    mountCloudCard();
   } catch (err) {
     console.error('[SETTINGS] Falha ao carregar o painel de transcrição:', err);
     host.textContent = 'Não foi possível carregar o painel de transcrição.';
@@ -259,6 +260,78 @@ async function mountAiPanel() {
   } catch (err) {
     console.error('[SETTINGS] Falha ao carregar o painel do servidor de IA:', err);
     aiHost.textContent = 'Não foi possível carregar a configuração da IA.';
+  }
+}
+
+/* Transcrição na nuvem: uma linha por serviço (chave, modelo, testar, remover). A chave só vai para o processo
+   principal e fica criptografada; aqui nunca volta. */
+async function mountCloudCard() {
+  const host = document.getElementById('settingsCloudProviders');
+  if (!host) return;
+  let data = null;
+  try { const r = await window.bds.modulesCloudGet(); data = r && r.ok ? r.data : null; } catch (_) { data = null; }
+  host.textContent = '';
+  if (!data) { host.textContent = 'Não foi possível carregar os serviços de nuvem.'; return; }
+  const el = (tag, props = {}, kids = []) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'text') n.textContent = v;
+      else if (k === 'class') n.className = v;
+      else n.setAttribute(k, v);
+    }
+    for (const c of [].concat(kids)) if (c) n.append(c);
+    return n;
+  };
+  const run = async (fn) => {
+    try {
+      const r = await fn();
+      if (r && r.ok === false) { window.bdsModal.alert(friendlyError(r)); return null; }
+      return r;
+    } catch (e) { window.bdsModal.alert(friendlyError(e)); return null; }
+  };
+  if (!data.encryptionAvailable) {
+    host.append(el('p', { class: 'st-card-desc', text: 'O armazenamento seguro do sistema não está disponível neste computador, então as chaves não podem ser guardadas.' }));
+  }
+  for (const p of data.providers) {
+    const input = el('input', {
+      type: 'password', class: 'settings-input', autocomplete: 'off', spellcheck: 'false',
+      'aria-label': `Chave do ${p.label}`, placeholder: p.hasKey ? 'Chave guardada (cole outra para trocar)' : 'Cole a chave de API'
+    });
+    const select = p.models.length > 1 ? el('select', { class: 'settings-input', 'aria-label': `Modelo do ${p.label}` }, p.models.map((m) => {
+      const o = el('option', { value: m.id, text: `${m.label} — ${m.hint}` });
+      if (m.id === p.model) o.selected = true;
+      return o;
+    })) : null;
+    const save = el('button', { type: 'button', class: 'settings-btn-primary', text: 'Salvar' });
+    const test = el('button', { type: 'button', class: 'settings-btn-outline', text: 'Testar' });
+    const clear = el('button', { type: 'button', class: 'settings-btn-outline', text: 'Remover chave' });
+    test.disabled = !p.hasKey;
+    clear.disabled = !p.hasKey;
+    save.addEventListener('click', async () => {
+      const patch = { provider: p.id };
+      if (input.value.trim()) patch.apiKey = input.value.trim();
+      if (select) patch.model = select.value;
+      const r = await run(() => window.bds.modulesCloudSet(patch));
+      if (r) { input.value = ''; mountCloudCard(); }
+    });
+    test.addEventListener('click', async () => {
+      test.disabled = true;
+      const r = await run(() => window.bds.modulesCloudTest(p.id));
+      test.disabled = false;
+      if (r) window.bdsModal.alert(r.data && r.data.limited ? `A chave do ${p.label} é válida (com permissões restritas).` : `A chave do ${p.label} está funcionando.`);
+    });
+    clear.addEventListener('click', async () => {
+      if (!(await window.bdsModal.confirm(`Remover a chave do ${p.label} deste computador?`))) return;
+      const r = await run(() => window.bds.modulesCloudSet({ provider: p.id, clearApiKey: true }));
+      if (r) mountCloudCard();
+    });
+    host.append(el('div', { class: 'st-row' }, [
+      el('div', { class: 'st-row-text' }, [
+        el('span', { class: 'st-row-label', text: p.label }),
+        el('span', { class: 'st-row-hint', text: p.hasKey ? 'Chave guardada neste computador.' : 'Sem chave: este serviço não aparece na tela de transcrição.' })
+      ]),
+      el('div', { class: 'st-row-control' }, [input, select, save, test, clear])
+    ]));
   }
 }
 
@@ -307,11 +380,24 @@ function renderSettings() {
   setChk('notifyDeadlinesInput', s.notifyDeadlines !== false);
 
   // Pausa entre downloads da lista
+  const fallbackList = Array.isArray(s.transcriptionFallback) ? s.transcriptionFallback : ['local'];
+  setChk('trFallbackGroq', fallbackList.includes('groq'));
+  setChk('trFallbackElevenlabs', fallbackList.includes('elevenlabs'));
+  setChk('trFallbackLocal', fallbackList.includes('local'));
   setVal('downloadVideoCodecSelect', ['h264', 'h265', 'av1'].includes(s.downloadVideoCodec) ? s.downloadVideoCodec : 'auto');
   setChk('downloadPauseEnabledInput', s.downloadPauseEnabled !== false);
   setVal('downloadPauseMinInput', s.downloadPauseMinSec ?? 10);
   setVal('downloadPauseMaxInput', s.downloadPauseMaxSec ?? 180);
   syncDownloadPauseRange();
+
+  // Envio automático para o YouTube
+  setChk('uploadAutoEnabledInput', s.uploadAutoEnabled === true);
+  setChk('uploadPauseEnabledInput', s.uploadPauseEnabled !== false);
+  setVal('uploadPauseMinInput', s.uploadPauseMinSec ?? 60);
+  setVal('uploadPauseMaxInput', s.uploadPauseMaxSec ?? 300);
+  setVal('uploadDailyLimitInput', s.uploadDailyLimit ?? 10);
+  setVal('uploadDefaultVisibilitySelect', ['private', 'unlisted', 'public'].includes(s.uploadDefaultVisibility) ? s.uploadDefaultVisibility : 'private');
+  syncUploadOptions();
 
   // Antecedência e horário do lembrete de prazo
   const leadSelect = document.getElementById('deadlineNotifyLeadDaysInput');
@@ -381,9 +467,29 @@ function syncDownloadPauseRange() {
   }
 }
 
+/** Esmaece as opções do envio automático quando ele (ou a pausa entre envios) está desligado. */
+function syncUploadOptions() {
+  const on = document.getElementById('uploadAutoEnabledInput')?.checked === true;
+  const pauseOn = document.getElementById('uploadPauseEnabledInput')?.checked !== false;
+  const box = document.getElementById('uploadAutoOptions');
+  if (box) box.style.opacity = on ? '' : '0.5';
+  const range = document.getElementById('uploadPauseRange');
+  if (range) range.style.opacity = on && pauseOn ? '' : '0.5';
+  for (const id of ['uploadPauseEnabledInput', 'uploadDailyLimitInput', 'uploadDefaultVisibilitySelect']) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  }
+  for (const id of ['uploadPauseMinInput', 'uploadPauseMaxInput']) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !(on && pauseOn);
+  }
+}
+
 function bindEvents() {
   document.getElementById('saveSettingsButton')?.addEventListener('click', saveSettings);
   document.getElementById('downloadPauseEnabledInput')?.addEventListener('change', syncDownloadPauseRange);
+  document.getElementById('uploadAutoEnabledInput')?.addEventListener('change', syncUploadOptions);
+  document.getElementById('uploadPauseEnabledInput')?.addEventListener('change', syncUploadOptions);
 
   // Exibe/oculta os ajustes de lembrete de prazo conforme o checkbox ativo
   const deadlineChk = document.getElementById('notifyDeadlinesInput');
@@ -642,9 +748,17 @@ async function saveSettings() {
       notifyCopy: document.getElementById('notifyCopyInput')?.checked,
       notifySilence: document.getElementById('notifySilenceInput')?.checked,
       downloadVideoCodec: document.getElementById('downloadVideoCodecSelect')?.value || 'auto',
+      transcriptionFallback: [['groq', 'trFallbackGroq'], ['elevenlabs', 'trFallbackElevenlabs'], ['local', 'trFallbackLocal']]
+        .filter(([, id]) => document.getElementById(id)?.checked).map(([engine]) => engine),
       downloadPauseEnabled: document.getElementById('downloadPauseEnabledInput')?.checked !== false,
       downloadPauseMinSec: Number(document.getElementById('downloadPauseMinInput')?.value),
       downloadPauseMaxSec: Number(document.getElementById('downloadPauseMaxInput')?.value),
+      uploadAutoEnabled: document.getElementById('uploadAutoEnabledInput')?.checked === true,
+      uploadPauseEnabled: document.getElementById('uploadPauseEnabledInput')?.checked !== false,
+      uploadPauseMinSec: Number(document.getElementById('uploadPauseMinInput')?.value),
+      uploadPauseMaxSec: Number(document.getElementById('uploadPauseMaxInput')?.value),
+      uploadDailyLimit: Number(document.getElementById('uploadDailyLimitInput')?.value),
+      uploadDefaultVisibility: document.getElementById('uploadDefaultVisibilitySelect')?.value || 'private',
       notifyDeadlines: document.getElementById('notifyDeadlinesInput')?.checked,
       deadlineNotifyLeadDays: Number(document.getElementById('deadlineNotifyLeadDaysInput')?.value) || 5,
       deadlineNotifyTime: document.getElementById('deadlineNotifyTimeInput')?.value || '09:00',
@@ -1034,6 +1148,9 @@ const FOLDER_INPUTS = ['mp3FolderInput', 'mp4FolderInput', 'converterFolderInput
 const NUMBER_RULES = {
   downloadPauseMinInput: { min: 0, max: 600, label: 'a pausa mínima' },
   downloadPauseMaxInput: { min: 0, max: 600, label: 'a pausa máxima' },
+  uploadPauseMinInput: { min: 0, max: 3600, label: 'a pausa mínima' },
+  uploadPauseMaxInput: { min: 0, max: 3600, label: 'a pausa máxima' },
+  uploadDailyLimitInput: { min: 0, max: 100, label: 'o número de envios por dia' },
   converterDefaultVideoBitrateInput: { min: 1, max: 100, label: 'o bitrate de vídeo' },
   cacheMaxSizeInput: { min: 50, max: 10000, label: 'o limite de armazenamento' }
 };
@@ -1048,8 +1165,8 @@ function validateField(el) {
     if (value === '' || !/^-?\d+$/.test(value)) return `Informe um número inteiro para ${r.label}.`;
     const n = Number(value);
     if (n < r.min || n > r.max) return `Use um valor entre ${r.min} e ${r.max}.`;
-    if (id === 'downloadPauseMaxInput') {
-      const min = Number(document.getElementById('downloadPauseMinInput')?.value);
+    if (id === 'downloadPauseMaxInput' || id === 'uploadPauseMaxInput') {
+      const min = Number(document.getElementById(id === 'downloadPauseMaxInput' ? 'downloadPauseMinInput' : 'uploadPauseMinInput')?.value);
       if (Number.isFinite(min) && n < min) return 'O máximo precisa ser igual ou maior que o mínimo.';
     }
     return '';
@@ -1124,11 +1241,12 @@ function setupValidation() {
     if (!validatedFields().includes(el)) return;
     showFieldError(el, validateField(el));
     // a pausa máxima depende da mínima
-    if (el.id === 'downloadPauseMinInput') {
-      const max = document.getElementById('downloadPauseMaxInput');
+    const pairs = { downloadPauseMinInput: 'downloadPauseMaxInput', uploadPauseMinInput: 'uploadPauseMaxInput' };
+    if (pairs[el.id]) {
+      const max = document.getElementById(pairs[el.id]);
       if (max && max.dataset.touched) showFieldError(max, validateField(max));
     }
-    if (el.id === 'downloadPauseMaxInput') el.dataset.touched = '1';
+    if (el.id === 'downloadPauseMaxInput' || el.id === 'uploadPauseMaxInput') el.dataset.touched = '1';
   });
 }
 
@@ -1155,6 +1273,7 @@ const FIELD_DEFAULTS = {
 };
 // A pausa entre downloads tem dois campos e um botão só.
 const PAUSE_DEFAULTS = { downloadPauseMinInput: '10', downloadPauseMaxInput: '180' };
+const UPLOAD_PAUSE_DEFAULTS = { uploadPauseMinInput: '60', uploadPauseMaxInput: '300' };
 
 function defaultLabel(el, value) {
   if (el.tagName === 'SELECT') return [...el.options].find((o) => o.value === value)?.textContent.trim() || value;
@@ -1198,6 +1317,8 @@ function setupFieldDefaults() {
   }
   const maxEl = document.getElementById('downloadPauseMaxInput');
   if (maxEl) attach(maxEl, makeResetButton('tempo da pausa', 'Voltar para o padrão: 10 a 180 segundos', Object.entries(PAUSE_DEFAULTS)));
+  const uplMaxEl = document.getElementById('uploadPauseMaxInput');
+  if (uplMaxEl) attach(uplMaxEl, makeResetButton('tempo da pausa entre envios', 'Voltar para o padrão: 60 a 300 segundos', Object.entries(UPLOAD_PAUSE_DEFAULTS)));
   refreshResetButtons();
 }
 
@@ -1705,17 +1826,12 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
     await confirmUnverifiedUpdates(result?.dependencies);
     const appUpdate = result?.appUpdate;
 
-    if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
+    if (appUpdate && appUpdate.readyToInstall) {
       if (fill) { fill.classList.remove('indeterminate'); fill.style.width = '100%'; }
       if (percentEl) percentEl.textContent = '100%';
-      if (stepEl) stepEl.textContent = 'Instalado! Reiniciando...';
-      if (statusText) statusText.textContent = 'Nova versão instalada com sucesso.';
-      const restart = await window.bdsModal.confirm(
-        'Nova versão do BDS instalada com sucesso.\n\nReiniciar agora para aplicar?'
-      );
-      if (restart && window.bds.relaunchApp) {
-        await window.bds.relaunchApp();
-      }
+      if (stepEl) stepEl.textContent = 'Nova versão baixada e verificada.';
+      if (statusText) statusText.textContent = 'Nova versão baixada. Instale para concluir.';
+      await offerInstallDownloadedUpdate(appUpdate, statusText);
       return;
     }
 
@@ -1904,10 +2020,41 @@ async function checkUpdates() {
 }
 
 // Mostra o estado do app no painel dedicado (dentro da aba Atualizações).
+/**
+ * Nova versão já baixada e verificada: pergunta e, se o usuário aceitar, fecha o BDS e abre o instalador
+ * (que reabre o app ao terminar). Devolve true se a instalação foi disparada.
+ */
+async function offerInstallDownloadedUpdate(appUpdate, statusText) {
+  const version = appUpdate?.latestVersion ? `v${appUpdate.latestVersion}` : 'nova versão';
+  const ok = await window.bdsModal.confirm(
+    `A ${version} do BDS foi baixada e verificada.\n\nPara instalar, o BDS vai fechar, o instalador roda sozinho e o BDS abre de novo atualizado. Instalar agora?`
+  );
+  if (!ok || !window.bds.installAppUpdate) {
+    if (statusText) statusText.textContent = 'Instalação adiada. Clique em Atualizar quando quiser instalar.';
+    return false;
+  }
+  if (statusText) statusText.textContent = 'Abrindo o instalador... o BDS vai fechar.';
+  try {
+    const r = await window.bds.installAppUpdate();
+    if (r && r.success === false) {
+      if (statusText) statusText.textContent = `Não foi possível abrir o instalador. ${friendlyError(r.error || '')}`.trim();
+      window.bdsModal?.alert?.(`Não foi possível abrir o instalador.\n${friendlyError(r.error || '')}`.trim());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    if (statusText) statusText.textContent = 'Não foi possível abrir o instalador.';
+    window.bdsModal?.alert?.('Não foi possível abrir o instalador. ' + friendlyError(err, ''));
+    return false;
+  }
+}
+
 function reflectAppUpdate(appInfo) {
   const statusText = document.getElementById('appUpdateStatusText');
   if (!statusText || !appInfo) return;
-  if (appInfo.hasUpdate) {
+  if (appInfo.devBuild) {
+    statusText.textContent = `Versão de desenvolvimento (v${appInfo.currentVersion}): a atualização automática do aplicativo só vale para a versão instalada.`;
+  } else if (appInfo.hasUpdate) {
     statusText.textContent = `Nova versão disponível: v${appInfo.latestVersion} (você está na v${appInfo.currentVersion}).`;
   } else if (appInfo.checkFailed || appInfo.error) {
     statusText.textContent = 'Não foi possível verificar a versão do aplicativo agora (sem conexão ou serviço indisponível).';
@@ -1976,20 +2123,14 @@ async function startUnifiedUpdate() {
     if (fill) fill.style.width = '100%';
     if (percentEl) percentEl.textContent = '100%';
 
-    // Atualização do app instalada?
-    if (appUpdate && appUpdate.installed && appUpdate.needsRestart) {
-      if (stepEl) stepEl.textContent = 'Nova versão do BDS instalada!';
-      setStatus('BDS atualizado para a versão mais recente.');
-      const restart = await window.bdsModal.confirm(
-        'Uma nova versão do Braga Digital Studio foi instalada com sucesso.\n\nReinicie o aplicativo agora para aplicar a atualização?'
-      );
-      if (restart && window.bds.relaunchApp) {
-        setUpdateStatusView('up_to_date');
-        setStatus('Reiniciando o BDS...');
-        await window.bds.relaunchApp();
-      } else {
-        setUpdateStatusView('up_to_date');
-        setStatus('Atualização instalada. O BDS será atualizado na próxima inicialização.');
+    // Nova versão do app baixada e verificada? A instalação fecha o BDS e abre o instalador.
+    if (appUpdate && appUpdate.readyToInstall) {
+      if (stepEl) stepEl.textContent = 'Nova versão do BDS baixada e verificada.';
+      setStatus('Nova versão do BDS pronta para instalar.');
+      const launched = await offerInstallDownloadedUpdate(appUpdate, null);
+      if (!launched) {
+        setUpdateStatusView('has_updates', 'A nova versão do BDS já foi baixada. Clique em Atualizar agora quando quiser instalar.');
+        setStatus('Instalação adiada.');
       }
       return;
     }

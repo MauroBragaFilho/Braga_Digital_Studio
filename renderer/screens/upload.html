@@ -5,17 +5,160 @@
     <span id="cookiesSyncStatusText"></span>
   </div>
 
-  <!-- Webview Workstation Frame -->
-  <div class="bds-upl-webview-container">
-    <webview id="youtubeStudioWebview" src="https://studio.youtube.com" partition="persist:youtube_studio"></webview>
-    <div id="uploadOverlay" class="bds-upl-overlay" role="status" aria-live="polite">
-      <span class="material-symbols-rounded bds-upl-overlay-icon" aria-hidden="true">cloud_sync</span>
-      <strong id="uploadOverlayTitle">Carregando o YouTube Studio…</strong>
-      <span id="uploadOverlayText">Se demorar, verifique sua conexão com a internet.</span>
-      <button type="button" id="btnUploadRetry" class="bds-upl-retry hidden" title="Carregar a página novamente">
-        <span class="material-symbols-rounded" aria-hidden="true">refresh</span> Tentar de novo
-      </button>
+  <div class="bds-upl-body">
+
+    <!-- Fila de envio automático: só aparece com o recurso ligado em Configurações → Mídia -->
+    <aside id="uploadQueuePanel" class="bds-upl-queue hidden" aria-label="Fila de envio automático">
+      <header class="bds-upl-queue-head">
+        <h2 class="bds-upl-queue-title">
+          <span class="material-symbols-rounded" aria-hidden="true">playlist_add_check</span>
+          Fila de envio
+        </h2>
+        <button type="button" id="btnUploadQueueCollapse" class="bds-upl-icon-btn" title="Recolher a fila" aria-label="Recolher a fila">
+          <span class="material-symbols-rounded" aria-hidden="true">left_panel_close</span>
+        </button>
+      </header>
+
+      <div class="bds-upl-queue-actions">
+        <button type="button" id="btnUploadAdd" class="bds-upl-btn bds-upl-btn-secondary" title="Escolher vídeos para enviar">
+          <span class="material-symbols-rounded" aria-hidden="true">add</span> Adicionar
+        </button>
+        <button type="button" id="btnUploadStart" class="bds-upl-btn" title="Começar a enviar os vídeos da fila">
+          <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span> Iniciar
+        </button>
+        <button type="button" id="btnUploadPause" class="bds-upl-btn hidden" title="Parar depois do envio atual">
+          <span class="material-symbols-rounded" aria-hidden="true">pause</span> Pausar
+        </button>
+      </div>
+
+      <!-- Padrões aplicados a todos os vídeos que entram na fila -->
+      <details id="uploadDefaults" class="bds-upl-defaults">
+        <summary class="bds-upl-defaults-summary">
+          <span class="material-symbols-rounded" aria-hidden="true">tune</span>
+          <span>Para todos os vídeos</span>
+          <span id="uploadDefaultsHint" class="bds-upl-defaults-hint"></span>
+        </summary>
+        <form id="uploadDefaultsForm" class="bds-upl-item-form bds-upl-defaults-form">
+          <label class="bds-upl-field">
+            <span>Descrição</span>
+            <textarea id="uploadDefaultsDescription" class="bds-upl-input" maxlength="5000" rows="3" placeholder="Usada em cada vídeo novo da fila"></textarea>
+          </label>
+          <label class="bds-upl-field">
+            <span>Playlist</span>
+            <input type="text" id="uploadDefaultsPlaylist" class="bds-upl-input" maxlength="150" placeholder="Nome exato de uma playlist do canal" spellcheck="false" />
+          </label>
+          <label class="bds-upl-check">
+            <input type="checkbox" id="uploadDefaultsApply" />
+            <span>Aplicar também aos vídeos que já estão na fila</span>
+          </label>
+          <div class="bds-upl-form-actions">
+            <button type="submit" class="bds-upl-btn">Salvar</button>
+          </div>
+        </form>
+      </details>
+
+      <p id="uploadQueueMeta" class="bds-upl-queue-meta" aria-live="polite"></p>
+
+      <p id="uploadWaitNote" class="bds-upl-note hidden" role="status" aria-live="polite">
+        <span class="material-symbols-rounded" aria-hidden="true">hourglass_top</span>
+        <span id="uploadWaitText"></span>
+        <button type="button" id="btnUploadSkipWait" class="bds-upl-link">Pular espera</button>
+      </p>
+
+      <p id="uploadAttentionNote" class="bds-upl-note is-attention hidden" role="alert">
+        <span class="material-symbols-rounded" aria-hidden="true">priority_high</span>
+        <span id="uploadAttentionText"></span>
+        <button type="button" id="btnUploadResume" class="bds-upl-link">Continuar</button>
+      </p>
+
+      <ul id="uploadQueueList" class="bds-upl-list" aria-label="Vídeos na fila"></ul>
+
+      <div id="uploadQueueEmpty" class="bds-upl-empty">
+        <span class="material-symbols-rounded" aria-hidden="true">upload_file</span>
+        <strong>Nenhum vídeo na fila</strong>
+        <span>Clique em Adicionar ou arraste os arquivos para aqui. Eles serão enviados um por vez, com uma pausa entre eles.</span>
+      </div>
+
+      <footer class="bds-upl-queue-foot">
+        <button type="button" id="btnUploadClearDone" class="bds-upl-link hidden">Limpar concluídos</button>
+      </footer>
+    </aside>
+
+    <button type="button" id="btnUploadQueueExpand" class="bds-upl-expand hidden" title="Mostrar a fila de envio" aria-label="Mostrar a fila de envio">
+      <span class="material-symbols-rounded" aria-hidden="true">playlist_add_check</span>
+      <span id="uploadQueueExpandCount" class="bds-upl-expand-count hidden"></span>
+    </button>
+
+    <!-- Webview Workstation Frame -->
+    <div class="bds-upl-webview-container">
+      <webview id="youtubeStudioWebview" src="https://studio.youtube.com" partition="persist:youtube_studio"></webview>
+      <div id="uploadOverlay" class="bds-upl-overlay" role="status" aria-live="polite">
+        <span class="material-symbols-rounded bds-upl-overlay-icon" aria-hidden="true">cloud_sync</span>
+        <strong id="uploadOverlayTitle">Carregando o YouTube Studio…</strong>
+        <span id="uploadOverlayText">Se demorar, verifique sua conexão com a internet.</span>
+        <button type="button" id="btnUploadRetry" class="bds-upl-retry hidden" title="Carregar a página novamente">
+          <span class="material-symbols-rounded" aria-hidden="true">refresh</span> Tentar de novo
+        </button>
+      </div>
     </div>
   </div>
+
+  <template id="uploadQueueItemTemplate">
+    <li class="bds-upl-item">
+      <div class="bds-upl-item-main">
+        <span class="material-symbols-rounded bds-upl-item-icon" aria-hidden="true">movie</span>
+        <div class="bds-upl-item-text">
+          <span class="bds-upl-item-title"></span>
+          <span class="bds-upl-item-sub"></span>
+        </div>
+        <button type="button" class="bds-upl-icon-btn bds-upl-item-retry hidden" title="Tentar de novo" aria-label="Tentar de novo">
+          <span class="material-symbols-rounded" aria-hidden="true">replay</span>
+        </button>
+        <button type="button" class="bds-upl-icon-btn bds-upl-item-edit" title="Editar título, descrição e visibilidade" aria-label="Editar">
+          <span class="material-symbols-rounded" aria-hidden="true">edit</span>
+        </button>
+        <button type="button" class="bds-upl-icon-btn bds-upl-item-remove" title="Remover da fila" aria-label="Remover da fila">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <div class="bds-upl-progress hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="bds-upl-progress-bar"></div>
+      </div>
+      <form class="bds-upl-item-form hidden">
+        <label class="bds-upl-field">
+          <span>Título</span>
+          <input type="text" class="bds-upl-input bds-upl-f-title" maxlength="100" spellcheck="true" />
+        </label>
+        <label class="bds-upl-field">
+          <span>Descrição</span>
+          <textarea class="bds-upl-input bds-upl-f-desc" maxlength="5000" rows="3" placeholder="Opcional"></textarea>
+        </label>
+        <label class="bds-upl-field">
+          <span>Visibilidade</span>
+          <select class="bds-upl-input bds-upl-f-vis">
+            <option value="private">Privado</option>
+            <option value="unlisted">Não listado</option>
+            <option value="public">Público</option>
+          </select>
+        </label>
+        <label class="bds-upl-field">
+          <span>Playlist</span>
+          <input type="text" class="bds-upl-input bds-upl-f-playlist" maxlength="150" placeholder="Nome exato de uma playlist do canal" spellcheck="false" />
+        </label>
+        <div class="bds-upl-field">
+          <span>Miniatura</span>
+          <div class="bds-upl-thumb-row">
+            <span class="bds-upl-f-thumb-name">Nenhuma (o YouTube escolhe)</span>
+            <button type="button" class="bds-upl-link bds-upl-f-thumb-pick">Escolher imagem</button>
+            <button type="button" class="bds-upl-link bds-upl-f-thumb-clear hidden">Remover</button>
+          </div>
+        </div>
+        <div class="bds-upl-form-actions">
+          <button type="submit" class="bds-upl-btn">Salvar</button>
+          <button type="button" class="bds-upl-link bds-upl-f-cancel">Cancelar</button>
+        </div>
+      </form>
+    </li>
+  </template>
 
 </div>
