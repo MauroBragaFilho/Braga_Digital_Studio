@@ -12,6 +12,7 @@ echo [1] Rodar o aplicativo sem instalar (Dev Mode)
 echo [2] Gerar Instalador (NSIS)
 echo [3] Gerar Versao Portable (Executavel direto)
 echo [4] Publicar Release (cria a tag e envia ao GitHub)
+echo [5] Limpar artefatos do GitHub Actions (libera a cota de 500 MB)
 echo [0] Sair
 echo.
 set /p opcao="Escolha uma opcao: "
@@ -20,6 +21,7 @@ if "%opcao%"=="1" goto run
 if "%opcao%"=="2" goto installer
 if "%opcao%"=="3" goto portable
 if "%opcao%"=="4" goto release
+if "%opcao%"=="5" goto artifacts
 if "%opcao%"=="0" goto end
 goto menu
 
@@ -63,6 +65,25 @@ echo.
 echo Exige: nada pendente de commit e tag ainda inexistente.
 echo.
 call node scripts\release-tag.js
+pause
+goto menu
+
+:artifacts
+color 0e
+cls
+echo ==================================================
+echo   LIMPAR ARTEFATOS DO GITHUB ACTIONS
+echo ==================================================
+echo.
+echo Apaga os artefatos de build de TODOS os seus repositorios
+echo (as Releases publicadas nao sao tocadas).
+echo.
+echo Voce vai precisar de um token do GitHub. O script explica
+echo passo a passo como criar e pede o token em seguida.
+echo Para colar: botao direito do mouse ou Ctrl+V, depois Enter.
+echo O token nao fica salvo. O GitHub recalcula a cota em 6 a 12 horas.
+echo.
+call node scripts\limpar-artefatos.js
 pause
 goto menu
 
