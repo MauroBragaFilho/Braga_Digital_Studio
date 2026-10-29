@@ -250,6 +250,7 @@ const api = {
   getLibraryFilterOptions: () => ipcRenderer.invoke('library:getFilterOptions'),
   addCustomSource: (config) => ipcRenderer.invoke('library:addCustomSource', config),
   getCustomSources: () => ipcRenderer.invoke('library:getCustomSources'),
+  detectRecordingFolders: () => ipcRenderer.invoke('library:detectRecordingFolders'),
   getMediaProjectLinks: (ids) => ipcRenderer.invoke('library:getMediaProjectLinks', ids),
   updateCustomSourcePath: (config) => ipcRenderer.invoke('library:updateCustomSourcePath', config),
   removeCustomSource: (config) => ipcRenderer.invoke('library:removeCustomSource', config),

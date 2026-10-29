@@ -68,6 +68,7 @@
     "library:addMediaTagBulk",
     "library:clearDatabase",
     "library:deleteMediaBulk",
+    "library:detectRecordingFolders",
     "library:getAll",
     "library:getCustomSources",
     "library:getFilterOptions",

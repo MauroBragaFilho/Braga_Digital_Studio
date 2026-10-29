@@ -46,7 +46,26 @@ function buildBackgroundSteps(ctx) {
       else HOOKS.projects.skipped();
     }],
 
-    // 5. Auto-limpeza de cache e temporários antigos — assíncrona e depois do primeiro paint,
+    // 5. Pastas de gravação do OBS Studio e do NVIDIA App (ShadowPlay): detectadas sozinhas quando o usuário não
+    // informou a pasta. Se a detecção mudar as bibliotecas, os watchers são reiniciados; a configuração do OBS fica
+    // observada para acompanhar troca de perfil ou de pasta sem reiniciar o BDS.
+    ['recording-folders', () => {
+      if (!on('library')) return;
+      const { recordingFolderDetector } = require('../core/library/RecordingFolderDetector');
+      const { syncLibraries } = require('./libraries');
+      const apply = async () => {
+        await recordingFolderDetector.refresh();
+        const changed = syncLibraries(ctx.services.libManager, ctx.settingsManager.load(), recordingFolderDetector.last);
+        if (changed && ctx.services.watcherService) {
+          ctx.services.watcherService.stopAll();
+          setTimeout(() => ctx.services.watcherService.startAll(), 1000);
+        }
+      };
+      apply().then(() => { ctx._stopObsWatch = recordingFolderDetector.watchObs(() => { apply().catch(() => {}); }); })
+        .catch((err) => logger.warn('startup:recording_folders_failed', { error: err.message }));
+    }],
+
+    // 6. Auto-limpeza de cache e temporários antigos — assíncrona e depois do primeiro paint,
     // com pequena folga para não competir com a reconciliação/IPC iniciais.
     ['cache-maintenance', () => {
       setTimeout(() => runCacheMaintenance(ctx), CACHE_MAINTENANCE_DELAY_MS);

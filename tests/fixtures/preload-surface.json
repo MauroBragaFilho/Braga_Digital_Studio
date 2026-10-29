@@ -1577,6 +1577,30 @@
       "returns": "promise"
     }
   },
+  "detectRecordingFolders": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:detectRecordingFolders",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:detectRecordingFolders",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "downloadAppUpdate": {
     "type": "function",
     "length": 0,

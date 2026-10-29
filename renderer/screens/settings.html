@@ -504,16 +504,29 @@
           <div class="settings-folder-list">
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="obsFolderInput">Gravações do OBS Studio</label>
+              <span class="st-row-hint">Em branco, o BDS lê a pasta de gravação dos perfis do OBS e cria uma biblioteca por perfil.</span>
               <div class="settings-folder-controls">
-                <input type="text" id="obsFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <input type="text" id="obsFolderInput" class="settings-input" placeholder="Automático: detectado do OBS" spellcheck="false" />
                 <button id="obsFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
               </div>
+              <span id="obsDetectedHint" class="st-row-hint" aria-live="polite"></span>
             </div>
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="shadowplayFolderInput">Gravações do NVIDIA ShadowPlay</label>
+              <span class="st-row-hint">Em branco, o BDS usa a pasta configurada no NVIDIA App.</span>
               <div class="settings-folder-controls">
-                <input type="text" id="shadowplayFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
+                <input type="text" id="shadowplayFolderInput" class="settings-input" placeholder="Automático: detectado do NVIDIA App" spellcheck="false" />
                 <button id="shadowplayFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+              </div>
+              <span id="shadowplayDetectedHint" class="st-row-hint" aria-live="polite"></span>
+            </div>
+            <div class="st-row">
+              <div class="st-row-text">
+                <span class="st-row-label">Detecção automática</span>
+                <span class="st-row-hint">Lê de novo a configuração do OBS e do NVIDIA App e atualiza as bibliotecas automáticas.</span>
+              </div>
+              <div class="st-row-control">
+                <button id="btnDetectRecordingFolders" class="settings-btn-outline" type="button">Detectar de novo</button>
               </div>
             </div>
             <div class="st-row st-row-stack">

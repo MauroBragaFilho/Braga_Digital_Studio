@@ -462,6 +462,8 @@ define('library', 'throw', {
     api: ['addCustomSource']
   },
   'library:getCustomSources': { returns: 'Fontes personalizadas', api: ['getCustomSources'] },
+  // Pastas de gravação detectadas sozinhas (OBS Studio por perfil e NVIDIA App); refaz a detecção e ressincroniza
+  'library:detectRecordingFolders': { returns: '{ obs: { configDir, activeProfile, profiles }, shadowplay: { path, source }|null }', api: ['detectRecordingFolders'] },
   'library:getMediaProjectLinks': { args: [IDS()], returns: '{ links, projects, text }', api: ['getMediaProjectLinks'] },
   'library:updateCustomSourcePath': {
     args: [OBJ('config', { id: SOURCE_ID, name: t.string({ max: 300, optional: true }), newFolderPath: t.dir({ label: 'Caminho da pasta' }) }, { label: 'Fonte' })],

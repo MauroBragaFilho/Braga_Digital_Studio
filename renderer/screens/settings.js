@@ -362,6 +362,8 @@ function renderSettings() {
   setVal('mp3FolderInput', s.mp3Folder);
   setVal('mp4FolderInput', s.mp4Folder);
   setVal('obsFolderInput', s.obsFolder);
+  renderDetectedRecordingFolders(null); // limpa; o resultado chega quando a detecção responder
+  refreshDetectedRecordingFolders();
   setVal('shadowplayFolderInput', s.shadowplayFolder);
   setVal('deviceFolderInput', s.deviceFolder);
   setChk('checkUpdatesOnStartInput', s.checkUpdatesOnStart);
@@ -485,6 +487,53 @@ function syncUploadOptions() {
   }
 }
 
+/* ==========================================================================
+   PASTAS DE GRAVAÇÃO DETECTADAS (OBS Studio por perfil e NVIDIA App)
+   ========================================================================== */
+let detectingRecordingFolders = false;
+
+/** Mostra o que a detecção encontrou embaixo dos campos (o campo em branco significa "automático"). */
+function renderDetectedRecordingFolders(detected) {
+  const obsHint = document.getElementById('obsDetectedHint');
+  const spHint = document.getElementById('shadowplayDetectedHint');
+  if (!obsHint || !spHint) return;
+  if (!detected) { obsHint.textContent = ''; spHint.textContent = ''; return; }
+
+  const manualObs = !!document.getElementById('obsFolderInput')?.value.trim();
+  const profiles = detected.obs?.profiles || [];
+  if (manualObs) obsHint.textContent = 'Pasta definida manualmente: a detecção automática fica desligada para o OBS.';
+  else if (!detected.obs?.configDir) obsHint.textContent = 'OBS Studio não encontrado neste computador.';
+  else if (!profiles.length) obsHint.textContent = 'Nenhuma pasta de gravação encontrada nos perfis do OBS.';
+  else obsHint.textContent = 'Detectado do OBS: ' + profiles.map((p) => `${p.profile}${p.active ? ' (ativo)' : ''} → ${p.path}`).join(' · ');
+
+  const manualSp = !!document.getElementById('shadowplayFolderInput')?.value.trim();
+  if (manualSp) spHint.textContent = 'Pasta definida manualmente: a detecção automática fica desligada para o ShadowPlay.';
+  else if (detected.shadowplay?.path) spHint.textContent = `Detectado do NVIDIA App: ${detected.shadowplay.path}`;
+  else spHint.textContent = 'NVIDIA App não encontrado neste computador.';
+}
+
+/** Pede ao processo principal para detectar de novo (e ressincronizar as bibliotecas automáticas). */
+async function refreshDetectedRecordingFolders({ announce = false } = {}) {
+  if (detectingRecordingFolders || typeof window.bds?.detectRecordingFolders !== 'function') return;
+  detectingRecordingFolders = true;
+  const btn = document.getElementById('btnDetectRecordingFolders');
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+  try {
+    const detected = await window.bds.detectRecordingFolders();
+    renderDetectedRecordingFolders(detected);
+    if (announce) {
+      const n = (detected?.obs?.profiles || []).length + (detected?.shadowplay?.path ? 1 : 0);
+      setStatus(n ? `Detecção concluída: ${n} pasta(s) de gravação.` : 'Nenhuma pasta de gravação detectada.');
+    }
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao detectar pastas de gravação:', err);
+    if (announce) setStatus('Não foi possível detectar as pastas de gravação agora.');
+  } finally {
+    detectingRecordingFolders = false;
+    if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+  }
+}
+
 function bindEvents() {
   document.getElementById('saveSettingsButton')?.addEventListener('click', saveSettings);
   document.getElementById('downloadPauseEnabledInput')?.addEventListener('change', syncDownloadPauseRange);
@@ -508,6 +557,7 @@ function bindEvents() {
   document.getElementById('mp3FolderButton')?.addEventListener('click', () => chooseFolder('mp3FolderInput'));
   document.getElementById('mp4FolderButton')?.addEventListener('click', () => chooseFolder('mp4FolderInput'));
   document.getElementById('obsFolderButton')?.addEventListener('click', () => chooseFolder('obsFolderInput'));
+  document.getElementById('btnDetectRecordingFolders')?.addEventListener('click', () => refreshDetectedRecordingFolders({ announce: true }));
   document.getElementById('shadowplayFolderButton')?.addEventListener('click', () => chooseFolder('shadowplayFolderInput'));
   document.getElementById('deviceFolderButton')?.addEventListener('click', () => chooseFolder('deviceFolderInput'));
   document.getElementById('converterFolderButton')?.addEventListener('click', () => chooseFolder('converterFolderInput'));

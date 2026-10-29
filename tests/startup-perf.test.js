@@ -19,7 +19,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 test('buildBackgroundSteps: todas as tarefas de segundo plano continuam existindo, na ordem esperada', () => {
   const { buildBackgroundSteps } = require('../src/bootstrap/startup');
   const steps = buildBackgroundSteps({ services: {}, paths: {}, appPaths: {}, settingsManager: {}, getMainWindow: () => null });
-  assert.deepEqual(steps.map(([name]) => name), ['watchers', 'bdsm-auth', 'discovery', 'deadlines', 'cache-maintenance']);
+  assert.deepEqual(steps.map(([name]) => name), ['watchers', 'bdsm-auth', 'discovery', 'deadlines', 'recording-folders', 'cache-maintenance']);
   for (const [, fn] of steps) assert.equal(typeof fn, 'function');
 });
 

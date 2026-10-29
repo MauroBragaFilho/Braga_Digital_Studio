@@ -50,7 +50,7 @@ async function moveFileNoOverwrite(src, dest) {
   await fs.promises.unlink(src);
 }
 
-module.exports = function registerLibraryHandlers(paths, watcherService) {
+module.exports = function registerLibraryHandlers(paths, watcherService, deps = {}) {
   const LibraryQueryService = require('../core/library/LibraryQueryService');
 
   handle('library:getStats', () => {
@@ -95,6 +95,19 @@ module.exports = function registerLibraryHandlers(paths, watcherService) {
 
     EventBus.emit('MEDIA_IMPORTED', { source: name });
     return { ok: true, sourceName: lib.name, origin: lib.type };
+  });
+
+  // Detecta de novo as pastas de gravação (OBS por perfil, NVIDIA App), ressincroniza as bibliotecas automáticas
+  // e reinicia os watchers se algo mudou. Devolve o resultado para a tela mostrar o que foi encontrado.
+  handle('library:detectRecordingFolders', async () => {
+    const { recordingFolderDetector } = require('../core/library/RecordingFolderDetector');
+    const { syncLibraries } = require('../bootstrap/libraries');
+    const detected = await recordingFolderDetector.refresh();
+    if (deps.libManager && deps.settingsManager) {
+      const changed = syncLibraries(deps.libManager, deps.settingsManager.load(), detected);
+      if (changed && watcherService) { watcherService.stopAll(); setTimeout(() => watcherService.startAll(), 1000); }
+    }
+    return detected;
   });
 
   handle('library:getCustomSources', () => {
