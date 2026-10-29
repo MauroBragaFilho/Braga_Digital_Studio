@@ -15,6 +15,9 @@ const {
 } = require('../src/core/library/RecordingFolderDetector');
 const { planLibrarySync } = require('../src/bootstrap/libraries');
 
+/** Último trecho de um caminho, com barra normal ou invertida (no Linux path.basename não separa '\'). */
+const leaf = (p) => String(p).split(/[\\/]/).pop();
+
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'bds-rec-')); }
 
 /** Monta uma pasta de configuração do OBS com perfis. */
@@ -41,18 +44,18 @@ test('parseIni: seções, chaves, comentários e valores com "="', () => {
 
 test('normalizeObsPath: desfaz "\\\\" do OBS, aceita barras normais e tira a barra final', () => {
   const p = normalizeObsPath('C:\\\\Users\\\\mauri\\\\Videos\\\\');
-  assert.equal(path.basename(p), 'Videos');
+  assert.equal(leaf(p), 'Videos');
   assert.ok(!/[\\/]$/.test(p));
   assert.equal(normalizeObsPath(''), '');
 });
 
 test('recordingPathFromProfile: Simples usa FilePath; Avançado usa RecFilePath ou FFFilePath (FFmpeg)', () => {
   const simple = parseIni('[Output]\nMode=Simple\n[SimpleOutput]\nFilePath=C:\\\\V\\\\S\n[AdvOut]\nRecFilePath=C:\\\\V\\\\A\n');
-  assert.equal(path.basename(recordingPathFromProfile(simple).path), 'S');
+  assert.equal(leaf(recordingPathFromProfile(simple).path), 'S');
   const adv = parseIni('[Output]\nMode=Advanced\n[SimpleOutput]\nFilePath=C:\\\\V\\\\S\n[AdvOut]\nRecType=Standard\nRecFilePath=C:\\\\V\\\\A\nFFFilePath=C:\\\\V\\\\F\n');
-  assert.equal(path.basename(recordingPathFromProfile(adv).path), 'A');
+  assert.equal(leaf(recordingPathFromProfile(adv).path), 'A');
   const ff = parseIni('[Output]\nMode=Advanced\n[AdvOut]\nRecType=FFmpeg\nRecFilePath=C:\\\\V\\\\A\nFFFilePath=C:\\\\V\\\\F\n');
-  assert.equal(path.basename(recordingPathFromProfile(ff).path), 'F');
+  assert.equal(leaf(recordingPathFromProfile(ff).path), 'F');
   assert.equal(recordingPathFromProfile(parseIni('')).mode, 'Simple');
 });
 
