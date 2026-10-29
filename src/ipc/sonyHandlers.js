@@ -4,6 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { handle } = require('./channelRegistry');
 const logger = require('../services/logService');
+const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
 const { assertAbsolutePath } = require('./validate');
 const sonyCameraService = require('../core/devices/SonyCameraService');
 const dbManager = require('../core/database/database');
@@ -46,6 +47,9 @@ module.exports = function registerSonyHandlers({ importQueue }) {
 
     const sendProgress = (data) => {
       try { if (!event.sender.isDestroyed()) event.sender.send('sony:import-progress', data); } catch (_) { /* janela fechada */ }
+      // Barra de tarefas: item atual dentro do lote (a porcentagem do arquivo, quando o provedor informa, refina o valor)
+      const inItem = typeof data?.percent === 'number' ? Math.max(0, Math.min(100, data.percent)) / 100 : 0;
+      taskProgressCenter.reportProgress('copy', ((data.itemIndex - 1) + inItem) / Math.max(1, data.totalItems));
     };
 
     for (const item of items) {
@@ -95,6 +99,8 @@ module.exports = function registerSonyHandlers({ importQueue }) {
     }
 
     // Informa ao chamador os importados e as falhas por item (resultado parcial).
+    if (importedPaths.length === 0 && failed.length) taskProgressCenter.reportError('copy');
+    else taskProgressCenter.reportIdle('copy');
     return { imported: importedPaths, failed };
   });
 };

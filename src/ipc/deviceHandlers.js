@@ -1,4 +1,5 @@
 const { handle } = require('./channelRegistry');
+const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('node:stream');
@@ -93,6 +94,7 @@ module.exports = function registerDeviceHandlers(logger, lutSyncService) {
               if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(String(item.id))) throw new Error('ID de mídia inválido.');
 
               event.sender.send('bdsm:progress', { completed, total: items.length, current: name });
+              taskProgressCenter.reportProgress('copy', completed / items.length);
 
               const response = await client.openMediaDownload(item.id, { timeout: DOWNLOAD_TIMEOUT_MS });
               if (!response.body) throw new Error('Resposta sem conteúdo.');
@@ -118,7 +120,8 @@ module.exports = function registerDeviceHandlers(logger, lutSyncService) {
           }
       }
       if (failures.length) logger.warn('[BDSM Import] Itens com falha', { count: failures.length, total: items.length });
-      if (completed === 0 && firstError) throw firstError;
+      if (completed === 0 && firstError) { taskProgressCenter.reportError('copy'); throw firstError; }
+      taskProgressCenter.reportIdle('copy');
       return completed;
   }));
 

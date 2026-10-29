@@ -25,7 +25,11 @@ function bindNow({ bridge }) {
 
   // Hardware Provider Events
   // UsbService e MtpService repassam o MESMO 'progress' do DeviceManager: um único listener (senão o evento chega em dobro)
-  UsbService.on('progress', (data) => bridge.send('mtp:import-progress', data));
+  UsbService.on('progress', (data) => {
+    bridge.send('mtp:import-progress', data);
+    // Barra de tarefas: porcentagem do arquivo em cópia (o fim da cópia é marcado pelo handler de importação)
+    if (typeof data?.percent === 'number') bridge.reportProgressThrottled('copy', data.percent / 100);
+  });
 
   // [FASE 2.2] Sony — eventos 'connected'/'photo-taken' já capturados acima via camera_connected
   // Não registrar listeners duplicados para o mesmo serviço

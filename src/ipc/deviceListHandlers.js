@@ -2,6 +2,7 @@
 
 const { handle } = require('./channelRegistry');
 const logger = require('../services/logService');
+const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
 const { deviceManager } = require('../infrastructure/hardware/DeviceManager');
 // Carregado só quando um handler é usado (módulo Dispositivos): o código da descoberta não entra na abertura do app
 const deviceDiscoveryService = require('../core/modules/lazyService').lazyService(() => require('../core/devices/DeviceDiscoveryService'));
@@ -50,7 +51,13 @@ module.exports = function registerDeviceListHandlers() {
     ];
   });
   handle('usb:list-folder', (_, basePath, pathArray) => UsbService.listFolder(basePath, pathArray));
-  handle('usb:import-items', (_, basePath, pathArray, itemNames, destFolder) => UsbService.importItems(basePath, pathArray, itemNames, destFolder));
+  // Barra de tarefas: o andamento por arquivo chega pelo evento 'progress' do DeviceManager (events/devices.js);
+  // aqui só se marca o fim (ou o erro) da cópia.
+  const withTaskbar = async (fn) => {
+    taskProgressCenter.reportIndeterminate('copy');
+    try { const r = await fn(); taskProgressCenter.reportIdle('copy'); return r; } catch (err) { taskProgressCenter.reportError('copy'); throw err; }
+  };
+  handle('usb:import-items', (_, basePath, pathArray, itemNames, destFolder) => withTaskbar(() => UsbService.importItems(basePath, pathArray, itemNames, destFolder)));
   handle('mtp:list-folder', (_, deviceName, pathArray) => MtpService.listMtpFolder(deviceName, pathArray));
-  handle('mtp:import-items', (_, deviceName, pathArray, itemNames, destFolder) => MtpService.importMtpItems(deviceName, pathArray, itemNames, destFolder));
+  handle('mtp:import-items', (_, deviceName, pathArray, itemNames, destFolder) => withTaskbar(() => MtpService.importMtpItems(deviceName, pathArray, itemNames, destFolder)));
 };

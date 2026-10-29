@@ -1,6 +1,7 @@
 'use strict';
 
 const { handle } = require('./channelRegistry');
+const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
 
 /**
  * Ferramentas de mídia em fila: Conversor, Montagem, Remoção de silêncio e Metadados.
@@ -34,6 +35,17 @@ module.exports = function registerMediaToolsHandlers({ converterService, montage
   // Metadata
   handle('metadata:probe', (_, filePath) => metadataService.probeFile(filePath));
   handle('metadata:extractThumb', (_, filePath) => metadataService.extractThumbnail(filePath));
-  handle('metadata:save', (_, config) => metadataService.saveMetadata(config));
+  // Barra de tarefas: a gravação de metadados não tem porcentagem, então a barra pulsa enquanto roda
+  handle('metadata:save', async (_, config) => {
+    taskProgressCenter.reportIndeterminate('metadata');
+    try {
+      const r = await metadataService.saveMetadata(config);
+      taskProgressCenter.reportIdle('metadata');
+      return r;
+    } catch (err) {
+      taskProgressCenter.reportError('metadata');
+      throw err;
+    }
+  });
   handle('metadata:cancel', () => metadataService.cancel());
 };

@@ -24,15 +24,42 @@ class TaskProgressCenter {
   constructor() {
     this.mainWindow = null;
 
-    /** @type {Record<string, {active: boolean, percent: number}>} */
+    /** @type {Record<string, {active: boolean, percent: number|null}>} percent null = em andamento sem porcentagem */
     this.tasks = {
       downloads: { active: false, percent: 0 },
       converter: { active: false, percent: 0 },
       copy: { active: false, percent: 0 },
-      silence: { active: false, percent: 0 }
+      silence: { active: false, percent: 0 },
+      // Transcrição/instalação de recursos, metadados, montagem, recuperação, atualizações e envio para o YouTube.
+      // Chaves desconhecidas também são aceitas (criadas no primeiro report).
+      modules: { active: false, percent: 0 },
+      metadata: { active: false, percent: 0 },
+      montage: { active: false, percent: 0 },
+      recovery: { active: false, percent: 0 },
+      updates: { active: false, percent: 0 },
+      upload: { active: false, percent: 0 }
     };
 
     this._errorTimeout = null;
+  }
+
+  _task(taskKey) {
+    if (typeof taskKey !== 'string' || !taskKey) return null;
+    if (!this.tasks[taskKey]) this.tasks[taskKey] = { active: false, percent: 0 };
+    return this.tasks[taskKey];
+  }
+
+  /**
+   * Tarefa em andamento sem porcentagem conhecida (ex.: gravação de metadados). A barra fica no modo
+   * "indeterminado" enquanto nenhuma outra tarefa ativa tiver porcentagem.
+   * @param {string} taskKey
+   */
+  reportIndeterminate(taskKey) {
+    const t = this._task(taskKey);
+    if (!t) return;
+    t.active = true;
+    t.percent = null;
+    this._render();
   }
 
   /**
@@ -48,7 +75,7 @@ class TaskProgressCenter {
    * @param {number} percent 0..1
    */
   reportProgress(taskKey, percent) {
-    if (!this.tasks[taskKey]) return;
+    if (!this._task(taskKey)) return;
 
     const clamped = Math.max(0, Math.min(1, Number(percent) || 0));
     this.tasks[taskKey].active = true;
@@ -62,7 +89,7 @@ class TaskProgressCenter {
    * @param {'downloads'|'converter'|'copy'|'silence'} taskKey
    */
   reportIdle(taskKey) {
-    if (!this.tasks[taskKey]) return;
+    if (!this._task(taskKey)) return;
 
     this.tasks[taskKey].active = false;
     this.tasks[taskKey].percent = 0;
@@ -77,7 +104,7 @@ class TaskProgressCenter {
    * @param {'downloads'|'converter'|'copy'|'silence'} taskKey
    */
   reportError(taskKey) {
-    if (!this.tasks[taskKey]) return;
+    if (!this._task(taskKey)) return;
 
     this.tasks[taskKey].active = false;
     this.tasks[taskKey].percent = 0;
@@ -109,14 +136,21 @@ class TaskProgressCenter {
         return;
       }
 
+      // Tarefas sem porcentagem (indeterminadas) não entram na média; se só houver delas, a barra pulsa.
+      const measured = activeTasks.filter((t) => typeof t.percent === 'number');
+      if (measured.length === 0) {
+        this.mainWindow.setProgressBar(1, { mode: 'indeterminate' });
+        return;
+      }
+
       const avg =
-        activeTasks.reduce((sum, t) => sum + t.percent, 0) / activeTasks.length;
+        measured.reduce((sum, t) => sum + t.percent, 0) / measured.length;
 
       // Electron não aceita exatamente 0 como "em progresso" em alguns
       // builds do Windows (barra pode piscar); usamos um mínimo visível.
       const value = Math.max(avg, 0.01);
 
-      this.mainWindow.setProgressBar(value);
+      this.mainWindow.setProgressBar(value, { mode: 'normal' });
     } catch (err) {
       logger.warn('[TaskProgressCenter] Falha ao atualizar barra de progresso', err);
     }

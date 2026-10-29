@@ -44,6 +44,15 @@ module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, 
     }
   };
   manager.on('progress', (p) => broadcast('modules:progress', p));
+  // Barra de tarefas: transcrição e instalação de recursos (motor, modelo, aceleração) mostram o andamento no ícone
+  manager.on('progress', (p) => {
+    const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
+    const phase = p && p.phase;
+    if (phase === 'done' || phase === 'cancelled') return taskProgressCenter.reportIdle('modules');
+    if (phase === 'error') return taskProgressCenter.reportError('modules');
+    if (typeof p?.percent === 'number') taskProgressCenter.reportProgress('modules', p.percent / 100);
+    else taskProgressCenter.reportIndeterminate('modules');
+  });
   manager.on('status', () => broadcast('modules:status', null));
 
   handle('modules:getStatus', () => manager.getStatus());
