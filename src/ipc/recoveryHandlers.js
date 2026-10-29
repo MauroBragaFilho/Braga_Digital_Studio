@@ -23,7 +23,7 @@ function validateRecoveryInput(input = {}) {
   return out;
 }
 
-module.exports = function registerRecoveryHandlers(videoRecoveryService, paths, rawRecoveryService) {
+module.exports = function registerRecoveryHandlers(videoRecoveryService, paths, rawRecoveryService, jpgRecoveryService) {
   handle('recovery:diagnose', async (_, payload) => {
     const { corruptPath, referencePath } = validateRecoveryInput(payload);
     return await videoRecoveryService.diagnose(corruptPath, referencePath);
@@ -50,6 +50,21 @@ module.exports = function registerRecoveryHandlers(videoRecoveryService, paths, 
 
   handle('recovery:raw:cancel', async () => {
     rawRecoveryService.cancel();
+    return { success: true };
+  });
+
+  // --- Recuperação de JPG ---
+  handle('recovery:jpg:diagnose', async (_, payload) => {
+    const { corruptPath } = validateRecoveryInput(payload);
+    return await jpgRecoveryService.diagnose(corruptPath);
+  });
+
+  handle('recovery:jpg:start', async (_, options) => {
+    return await jpgRecoveryService.recoverJpg(validateRecoveryInput(options));
+  });
+
+  handle('recovery:jpg:cancel', async () => {
+    await jpgRecoveryService.cancel();
     return { success: true };
   });
 

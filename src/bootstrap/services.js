@@ -18,6 +18,7 @@ const SilenceService = require('../services/silenceService');
 const MetadataService = require('../services/metadataService');
 const VideoRecoveryService = require('../services/videoRecoveryService');
 const RawRecoveryService = require('../services/rawRecoveryService');
+const JpgRecoveryService = require('../services/jpgRecoveryService');
 const PhotoPreviewService = require('../services/photoPreviewService');
 
 
@@ -93,6 +94,7 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
   const metadataServiceInstance = new MetadataService({ paths });
   const videoRecoveryService = new VideoRecoveryService({ paths });
   const rawRecoveryService = new RawRecoveryService({ paths });
+  const jpgRecoveryService = new JpgRecoveryService({ paths });
 
   const sequenceBuilder = lazyService(() => new (require('../core/projects/SequenceBuilder'))(projectService));
   const premiereExporter = lazyService(() => new (require('../core/projects/PremiereExporter'))(projectService, sequenceBuilder));
@@ -143,6 +145,7 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
     metadataService: metadataServiceInstance,
     videoRecoveryService,
     rawRecoveryService,
+    jpgRecoveryService,
     photoPreviewService: new PhotoPreviewService({ paths }),
     projectService,
     sequenceBuilder,

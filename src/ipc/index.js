@@ -16,7 +16,7 @@ function registerIpcHandlers(ctx) {
   const {
     downloadService, converterService, historyService, thumbnailService,
     updateService, montageService, silenceService, metadataService,
-    videoRecoveryService, rawRecoveryService, projectService, premiereExporter, bdsproPackageService,
+    videoRecoveryService, rawRecoveryService, jpgRecoveryService, projectService, premiereExporter, bdsproPackageService,
     waveformService, audioSyncService, sequenceBuilder,
     uploadScannerService, youtubeUploadQueue, libManager, watcherService, lutSyncService, importQueue
   } = services;
@@ -39,7 +39,7 @@ function registerIpcHandlers(ctx) {
       } catch (_) { return false; }
     }
   });
-  require('./recoveryHandlers')(videoRecoveryService, paths, rawRecoveryService);
+  require('./recoveryHandlers')(videoRecoveryService, paths, rawRecoveryService, jpgRecoveryService);
   require('./photoPreviewHandlers')(services.photoPreviewService);
   require('./youtubeHandlers')();
   require('./projectHandlers')(projectService, premiereExporter, bdsproPackageService, paths, waveformService, audioSyncService, sequenceBuilder);

@@ -24,12 +24,15 @@ import { RecoveryDetailsPanel } from '../components/recovery/RecoveryDetailsPane
 import { RecoveryConfirmationDialog } from '../components/recovery/RecoveryConfirmationDialog.js';
 import { RecoveryLoadingState, RecoveryEmptyState, RecoveryErrorState } from '../components/recovery/RecoveryStates.js';
 import { h, icon, clear } from '../components/recovery/recoveryUtils.js';
+import { mountMediaRecovery } from '../components/recovery/MediaRecovery.js';
 
 let controller = null;
 let unsubscribe = null;
 let onKeyDown = null;
 let lastDialogKey = 'none';
 let returnFocusTo = null;
+let media = null;
+let mode = 'media'; // 'media' = fotos e vídeos (real) | 'project' = estados do projeto
 
 const $ = (id) => document.getElementById(id);
 
@@ -138,6 +141,24 @@ function handleKeys(e) {
   }
 }
 
+function renderSwitch() {
+  const bar = $('rcSwitch');
+  if (!bar) return;
+  clear(bar);
+  [['media', 'photo_library', 'Fotos e vídeos'], ['project', 'history', 'Projetos']].forEach(([id, ic, text]) => {
+    bar.append(h('button', {
+      class: `rm-switch-btn${mode === id ? ' active' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(mode === id),
+      onclick: () => { mode = id; applyMode(); }
+    }, [icon(ic), text]));
+  });
+}
+
+function applyMode() {
+  $('rcMedia')?.classList.toggle('hidden', mode !== 'media');
+  $('rcProject')?.classList.toggle('hidden', mode !== 'project');
+  renderSwitch();
+}
+
 export function initScreen() {
   lastDialogKey = 'none';
   returnFocusTo = null;
@@ -145,6 +166,8 @@ export function initScreen() {
   unsubscribe = controller.subscribe(render);
   onKeyDown = handleKeys;
   document.addEventListener('keydown', onKeyDown);
+  media = mountMediaRecovery($('rcMedia'));
+  applyMode();
   render(controller.getState());
   controller.actions.load();
 }
@@ -158,6 +181,8 @@ export function onLeave() {
   if (unsubscribe) unsubscribe();
   if (controller) controller.destroy();
   if (onKeyDown) document.removeEventListener('keydown', onKeyDown);
+  if (media) media.destroy();
+  media = null;
   controller = null; unsubscribe = null; onKeyDown = null;
 }
 

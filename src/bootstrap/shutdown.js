@@ -33,6 +33,7 @@ async function runShutdown(ctx, { timeoutMs = 5000 } = {}) {
     step('metadata', () => s.metadataService?.cancel?.()),
     step('videoRecovery', () => s.videoRecoveryService?.cancel?.()),
     step('rawRecovery', () => s.rawRecoveryService?.cancel?.()),
+    step('jpgRecovery', () => s.jpgRecoveryService?.cancel?.()),
     // AudioSyncService/WaveformService não expõem cancelamento: seus ffmpeg têm timeout próprio.
     step('audioSync', () => s.audioSyncService?.cancel?.()),
     step('waveform', () => s.waveformService?.cancel?.()),

@@ -7413,6 +7413,217 @@
       "returns": "promise"
     }
   },
+  "recovery.jpg": {
+    "type": "object"
+  },
+  "recovery.jpg.cancel": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:jpg:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:jpg:cancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.jpg.diagnose": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:jpg:diagnose",
+          "args": [
+            {
+              "corruptPath": "@1"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:jpg:diagnose",
+          "args": [
+            {
+              "corruptPath": "__undefined__"
+            }
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "recovery.jpg.onError": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:jpg:error"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:jpg:error"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:error"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:error"
+      }
+    ]
+  },
+  "recovery.jpg.onFinished": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:jpg:finished"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:jpg:finished"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:finished"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:finished"
+      }
+    ]
+  },
+  "recovery.jpg.onProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:jpg:progress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:jpg:progress"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:progress"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:progress"
+      }
+    ]
+  },
+  "recovery.jpg.onStage": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "recovery:jpg:stage"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "recovery:jpg:stage"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:stage"
+      },
+      {
+        "op": "off",
+        "ch": "recovery:jpg:stage"
+      }
+    ]
+  },
+  "recovery.jpg.start": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:jpg:start",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "recovery:jpg:start",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "recovery.onError": {
     "type": "function",
     "length": 1,
@@ -8078,6 +8289,22 @@
         {
           "op": "off",
           "ch": "recovery:finished"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:jpg:error"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:jpg:finished"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:jpg:progress"
+        },
+        {
+          "op": "off",
+          "ch": "recovery:jpg:stage"
         },
         {
           "op": "off",

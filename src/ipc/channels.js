@@ -334,6 +334,13 @@ define('recovery', 'throw', {
   },
   'recovery:raw:start': { args: [RECOVERY_INPUT('Opções de recuperação')], returns: 'Resultado da recuperação', api: [{ name: 'recovery.raw.start', params: 'options' }] },
   'recovery:raw:cancel': { returns: '{ success }', api: ['recovery.raw.cancel'] },
+  'recovery:jpg:diagnose': {
+    args: [RECOVERY_INPUT('Parâmetros do diagnóstico')],
+    returns: 'Diagnóstico do JPG',
+    api: [{ name: 'recovery.jpg.diagnose', params: 'corruptPath', call: '{ corruptPath }' }]
+  },
+  'recovery:jpg:start': { args: [RECOVERY_INPUT('Opções de recuperação')], returns: 'Resultado da recuperação', api: [{ name: 'recovery.jpg.start', params: 'options' }] },
+  'recovery:jpg:cancel': { returns: '{ success }', api: ['recovery.jpg.cancel'] },
   'logs:export': { error: 'success', returns: '{ success, exportPath?, copied?, failed?, cancelled?, error? }', api: ['exportDiagnosticLogs'] }
 });
 
@@ -778,6 +785,10 @@ const EVENTS = [
   ['recovery.raw.onStage', 'recovery:raw:stage'],
   ['recovery.raw.onFinished', 'recovery:raw:finished'],
   ['recovery.raw.onError', 'recovery:raw:error'],
+  ['recovery.jpg.onProgress', 'recovery:jpg:progress'],
+  ['recovery.jpg.onStage', 'recovery:jpg:stage'],
+  ['recovery.jpg.onFinished', 'recovery:jpg:finished'],
+  ['recovery.jpg.onError', 'recovery:jpg:error'],
   ['onDownloadQueue', 'download:queue'],
   ['onProgress', 'download:progress'],
   ['onFinished', 'download:finished'],
