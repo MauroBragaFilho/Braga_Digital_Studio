@@ -2,6 +2,11 @@ name: Release BDS (Windows + Linux)
 
 # Builda o BDS para Windows E Linux em paralelo e publica os dois numa ÚNICA Release do GitHub.
 #
+# Como publica (sem artefatos do Actions, cuja cota de 500 MB bloqueava a segunda release do mês):
+#   1. create-release cria a Release em RASCUNHO no repositório de releases (RELEASES_REPO);
+#   2. cada build envia seus arquivos direto para ela com `gh release upload` (mais um SHA256SUMS-<sistema>.txt);
+#   3. release junta as listas no SHA256SUMS.txt e tira a Release do rascunho — só se os dois builds deram certo.
+#
 # Quando roda:
 #   - Ao enviar uma TAG de versão (vX.Y.Z), por exemplo:
 #        git tag v1.0.5
@@ -103,10 +108,33 @@ jobs:
           echo "Commit avaliado: $(git rev-parse --short HEAD) | package.json: $BASE | Release: v$VERSION (bump automático: $BUMPED)"
 
   # ------------------------------------------------------------------------------------
+  # Cria a Release como RASCUNHO no repositório de releases antes dos builds. Cada build envia seus arquivos
+  # direto para ela (gh release upload), sem passar por artefatos do Actions: a cota de armazenamento de
+  # artefatos (500 MB no plano gratuito, medida como média do mês) bloqueava a segunda release do mês.
+  # Um rascunho não aparece em releases/latest, então o atualizador do app nunca vê uma release pela metade.
+  # Reenviar a mesma tag apaga a release anterior dessa tag e começa de novo.
+  # ------------------------------------------------------------------------------------
+  create-release:
+    needs: determine-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Criar a Release em rascunho
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ needs.determine-version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            echo "Release $TAG já existe: apagando para refazer."
+            gh release delete "$TAG" --repo "$RELEASES_REPO" --yes --cleanup-tag || gh release delete "$TAG" --repo "$RELEASES_REPO" --yes
+          fi
+          gh release create "$TAG" --repo "$RELEASES_REPO" --draft --title "BDS $TAG" --generate-notes
+          echo "Rascunho criado: $TAG"
+
+  # ------------------------------------------------------------------------------------
   # Build Windows (mesmos passos validados em build-bds-release.yml)
   # ------------------------------------------------------------------------------------
   build-windows:
-    needs: determine-version
+    needs: [determine-version, create-release]
     runs-on: windows-latest
     steps:
       - name: Checkout do repositório
@@ -225,22 +253,28 @@ jobs:
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
           Write-Host "Zip portátil: $zip ($([math]::Round((Get-Item $zip).Length / 1MB)) MB)"
 
-      - name: Publicar artefato do build Windows
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: BDS-windows-installer
-          path: |
-            dist/*.exe
-            dist/*.exe.sha256
-            dist/*-portable.zip
-          if-no-files-found: error
-          retention-days: 1   # só serve para passar ao job de release, que apaga os artefatos ao terminar (cota de 500 MB)
+      # Direto para a Release em rascunho (sem artefatos do Actions). SHA256SUMS-windows.txt no formato do sha256sum
+      # ("<hash minúsculo>  <nome>"): o job de publicação junta os de cada sistema no SHA256SUMS.txt final.
+      - name: Enviar os arquivos Windows para a Release (rascunho)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ needs.determine-version.outputs.tag }}
+        run: |
+          $files = @(Get-ChildItem -Path dist -File | Where-Object { $_.Name -like '*.exe' -or $_.Name -like '*-portable.zip' })
+          if ($files.Count -eq 0) { Write-Error "Nenhum instalador ou zip portátil em dist/."; exit 1 }
+          $lines = foreach ($f in $files) { "{0}  {1}" -f (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower(), $f.Name }
+          [IO.File]::WriteAllText((Join-Path $PWD 'dist\SHA256SUMS-windows.txt'), (($lines | Sort-Object) -join "`n") + "`n")
+          Get-Content dist\SHA256SUMS-windows.txt
+          $upload = @(Get-ChildItem -Path dist -File | Where-Object { $_.Name -like '*.exe' -or $_.Name -like '*.exe.sha256' -or $_.Name -like '*-portable.zip' -or $_.Name -eq 'SHA256SUMS-windows.txt' }) | ForEach-Object { $_.FullName }
+          gh release upload $env:TAG @upload --repo $env:RELEASES_REPO --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # ------------------------------------------------------------------------------------
   # Build Linux (mesmos passos validados em build-bds-linux.yml, incluindo smoke-test)
   # ------------------------------------------------------------------------------------
   build-linux:
-    needs: determine-version
+    needs: [determine-version, create-release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do repositório
@@ -366,78 +400,51 @@ jobs:
       - name: Nomear o AppImage no padrão do launcher
         run: cp "${{ steps.find_packages.outputs.appimage_path }}" "dist/${LAUNCHER_STEM}-${{ needs.determine-version.outputs.version }}-linux-x86_64.AppImage"
 
-      - name: Publicar artefatos do build Linux
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: BDS-linux-packages
-          path: |
-            dist/*.AppImage
-            dist/*.AppImage.sha256
-            dist/*.deb
-            dist/*.deb.sha256
-          if-no-files-found: error
-          retention-days: 1   # só serve para passar ao job de release, que apaga os artefatos ao terminar (cota de 500 MB)
+      # Direto para a Release em rascunho (sem artefatos do Actions); SHA256SUMS-linux.txt cobre os pacotes, sem os .sha256.
+      - name: Enviar os pacotes Linux para a Release (rascunho)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ needs.determine-version.outputs.tag }}
+        run: |
+          cd dist
+          ls -1 *.AppImage *.deb >/dev/null
+          sha256sum *.AppImage *.deb | sort -k2 > SHA256SUMS-linux.txt
+          cat SHA256SUMS-linux.txt
+          gh release upload "$TAG" *.AppImage *.AppImage.sha256 *.deb *.deb.sha256 SHA256SUMS-linux.txt --repo "$RELEASES_REPO" --clobber
 
   # ------------------------------------------------------------------------------------
-  # Só publica a Release depois que os DOIS builds tiverem terminado com sucesso — se
-  # qualquer um dos dois falhar, nenhuma Release é criada (evita publicar uma release
-  # incompleta, faltando uma das plataformas).
+  # Publica a Release (tira do rascunho) só depois que os DOIS builds enviaram seus arquivos com sucesso.
+  # Se qualquer build falhar, a Release fica em rascunho, invisível para o atualizador do app e para
+  # releases/latest: nunca sai uma release incompleta, faltando uma das plataformas.
   # ------------------------------------------------------------------------------------
   release:
     needs: [determine-version, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # push do package.json neste repositório (a Release usa o RELEASES_TOKEN, no repositório de releases)
-      actions: write    # apagar os artefatos deste run depois de publicar (a cota de armazenamento é de 500 MB)
+    env:
+      GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      TAG: ${{ needs.determine-version.outputs.tag }}
     steps:
-      - name: Baixar artefato Windows
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: BDS-windows-installer
-          path: release-files
-
-      - name: Baixar artefatos Linux
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: BDS-linux-packages
-          path: release-files
-
       # SHA256SUMS.txt (formato do sha256sum): é o que o ArtCraft Launcher usa para conferir os downloads quando o GitHub
-      # não informa o digest do arquivo. Cobre todos os arquivos da release, menos os .sha256 individuais.
-      - name: Gerar SHA256SUMS.txt
+      # não informa o digest do arquivo. Junta as listas parciais que cada build enviou (uma por sistema), que então
+      # saem da release. Cobre todos os arquivos, menos os .sha256 individuais.
+      - name: Montar o SHA256SUMS.txt a partir das listas de cada build
         run: |
-          cd release-files
-          find . -maxdepth 1 -type f ! -name '*.sha256' ! -name 'SHA256SUMS.txt' -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Listar arquivos que serão publicados
-        run: ls -la release-files/
-
-      - name: Publicar Release unificada (Windows + Linux)
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          repository: ${{ env.RELEASES_REPO }}   # Release no repositório de releases, não neste
-          token: ${{ secrets.RELEASES_TOKEN }}
-          tag_name: ${{ needs.determine-version.outputs.tag }}
-          name: BDS ${{ needs.determine-version.outputs.tag }}
-          files: release-files/*
-          generate_release_notes: true
-
-      # Cada release pesa ~500 MB em artefatos (instaladores + pacotes Linux), e a cota de armazenamento do plano
-      # gratuito é de 500 MB: com a retenção antiga (90 dias) a segunda release já falhava com "Artifact storage
-      # quota has been hit". Os artefatos só existem para chegar até aqui; publicada (ou não) a Release, são apagados.
-      - name: Apagar os artefatos deste run (liberar a cota de armazenamento)
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts"
-          IDS=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API" | jq -r '.artifacts[].id')
-          for ID in $IDS; do
-            echo "Apagando artefato $ID"
-            curl -sS -X DELETE -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ID}" || echo "::warning::Não foi possível apagar o artefato $ID"
+          gh release download "$TAG" --repo "$RELEASES_REPO" --pattern 'SHA256SUMS-*.txt' --dir sums
+          ls -la sums/
+          cat sums/SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
+          echo "---- SHA256SUMS.txt"; cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$RELEASES_REPO" --clobber
+          for f in sums/SHA256SUMS-*.txt; do
+            gh release delete-asset "$TAG" "$(basename "$f")" --repo "$RELEASES_REPO" --yes
           done
+
+      - name: Conferir os arquivos da Release
+        run: gh release view "$TAG" --repo "$RELEASES_REPO" --json assets --jq '.assets[] | "\(.size)\t\(.name)"'
+
+      - name: Publicar a Release (sair do rascunho)
+        run: gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false
 
       # Registra no package.json a versão que acabou de ser publicada, para o repositório não
       # ficar para trás. Se falhar (ex.: main protegida), a Release continua válida: o próximo
