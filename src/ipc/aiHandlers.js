@@ -6,15 +6,12 @@ let electron = {};
 try { electron = require('electron') || {}; } catch (_) { electron = {}; }
 const { handle: defaultHandle } = require('./channelRegistry');
 const AIService = require('../services/ai/AIService');
-const ChatHistory = require('../services/ai/ChatHistory');
-const AssistantChat = require('../services/ai/AssistantChat');
-const { analyzeTranscriptFile } = require('../services/ai/analyzeFile');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const registry = require('../core/modules/ModuleRegistry');
-const { ToolBox } = require('../services/ai/tools');
-const { createNativeConfirm } = require('../services/ai/tools/confirmDialog');
-const { createAppConfirm } = require('../infrastructure/desktop/AppConfirm');
 const { isAssistantBuildAllowed } = require('../services/ai/releaseGate');
+const { lazyService, isCreated } = require('../core/modules/lazyService');
+// [PERF] ChatHistory, AssistantChat, ToolBox (as ~25 ferramentas), os diálogos de confirmação e a análise de
+// transcrição só são carregados no primeiro uso do assistente (ver `toolbox` e `chat` abaixo): fora da abertura.
 
 /**
  * TRAVA DO ASSISTENTE (fase 0 do plano), imposta aqui no PROCESSO PRINCIPAL e não só escondida na interface:
@@ -73,7 +70,10 @@ function registerAiHandlers(paths, deps = {}) {
 
   // Ferramentas do assistente: dependências preguiçosas (o banco e o log só são carregados quando usados)
   let toolbox = null;
-  if (deps.projectService) {
+  if (deps.projectService) toolbox = lazyService(() => {
+    const { ToolBox } = require('../services/ai/tools');
+    const { createNativeConfirm } = require('../services/ai/tools/confirmDialog');
+    const { createAppConfirm } = require('../infrastructure/desktop/AppConfirm');
     const getMainWindow = deps.getMainWindow || (() => null);
     // A confirmação aparece no modal do app (mesmo visual das demais); sem janela ou sem resposta do modal, cai no diálogo nativo.
     const nativeConfirm = createNativeConfirm({ dialog: deps.dialog || electron.dialog, getMainWindow });
@@ -83,7 +83,7 @@ function registerAiHandlers(paths, deps = {}) {
       return modalConfirm({ ...req, webContents: win && !(typeof win.isDestroyed === 'function' && win.isDestroyed()) ? win.webContents : null });
     };
     const lazyLog = { info: (m) => require('../services/logService').info(m), warn: (m) => require('../services/logService').warn(m) };
-    toolbox = new ToolBox({
+    return new ToolBox({
       getDb: deps.getDb || (() => require('../core/database/database').get()),
       library: deps.library || {
         searchMedia: (o) => require('../core/library/LibraryQueryService').searchMedia(o),
@@ -113,14 +113,19 @@ function registerAiHandlers(paths, deps = {}) {
       // Etiquetas e favoritos mudaram: a Biblioteca aberta recarrega (evento que o app já tem)
       notifyMediaChanged: (ids) => broadcast('bds:media-updated', { ids })
     });
-  }
+  });
 
-  const chat = new AssistantChat({
-    ai,
-    history: new ChatHistory({ dir: configDir }),
-    emit: broadcast,
-    timeouts: deps.chatTimeouts || {},
-    toolbox
+  // O chat também só nasce no primeiro uso (primeira pergunta, abrir o histórico ou limpar): fora do caminho da abertura
+  const chat = lazyService(() => {
+    const ChatHistory = require('../services/ai/ChatHistory');
+    const AssistantChat = require('../services/ai/AssistantChat');
+    return new AssistantChat({
+      ai,
+      history: new ChatHistory({ dir: configDir }),
+      emit: broadcast,
+      timeouts: deps.chatTimeouts || {},
+      toolbox
+    });
   });
 
   const block = () => assistantBlock({ isDev, settings: settingsManager && settingsManager.load ? settingsManager.load() : {}, ai });
@@ -134,9 +139,9 @@ function registerAiHandlers(paths, deps = {}) {
   handle('ai:getConfig', () => ai.getPublicConfig());
   handle('ai:saveConfig', (_, patch) => {
     const result = ai.saveConfig(patch || {});
-    if (patch && patch.assistantEnabled === false) chat.cancel(); // desligou: para a resposta em andamento
+    if (patch && patch.assistantEnabled === false && isCreated(chat)) chat.cancel(); // desligou: para a resposta em andamento
     // servidor/modelo/provedor novo: tenta ferramentas de novo
-    if (patch && ['baseUrl', 'model', 'provider', 'addProvider', 'removeProvider', 'order'].some((k) => patch[k] !== undefined)) chat.forgetToolSupport();
+    if (patch && ['baseUrl', 'model', 'provider', 'addProvider', 'removeProvider', 'order'].some((k) => patch[k] !== undefined) && isCreated(chat)) chat.forgetToolSupport();
     return result;
   });
   handle('ai:testConnection', (_, providerId) => ai.testConnection(providerId));
@@ -158,7 +163,16 @@ function registerAiHandlers(paths, deps = {}) {
     return { id: chat.start(payload.text, payload.context) };
   });
   handle('ai:chatCancel', (_, id) => { guard(); return chat.cancel(id); });
-  handle('ai:historyGet', () => { guard(); return { messages: chat.getHistory(), busy: chat.isBusy() }; });
+  handle('ai:historyGet', () => {
+    guard();
+    // O renderer pede o histórico ao abrir o app. Sem chat criado não há nada em andamento: lê o arquivo direto, sem montar
+    // o assistente (ToolBox e ferramentas só entram no primeiro uso de verdade).
+    if (!isCreated(chat)) {
+      const ChatHistory = require('../services/ai/ChatHistory');
+      return { messages: new ChatHistory({ dir: configDir }).get(), busy: false };
+    }
+    return { messages: chat.getHistory(), busy: chat.isBusy() };
+  });
   handle('ai:historyClear', () => { guard(); return chat.clear(); });
 
   // --- Análise de transcrição: uma por vez (o modelo local é um só); cancelável ---
@@ -173,7 +187,7 @@ function registerAiHandlers(paths, deps = {}) {
     const controller = new AbortController();
     analysis = { controller };
     try {
-      return await analyzeTranscriptFile(ai, {
+      return await require('../services/ai/analyzeFile').analyzeTranscriptFile(ai, {
         filePath,
         signal: controller.signal,
         onProgress: (p) => broadcast('ai:analysisProgress', { path: filePath, ...p })

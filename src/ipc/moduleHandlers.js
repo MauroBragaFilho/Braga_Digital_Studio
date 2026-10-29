@@ -4,7 +4,10 @@ const { BrowserWindow, shell, safeStorage } = require('electron');
 const { handle } = require('./channelRegistry');
 const { appConfirm } = require('../infrastructure/desktop/AppConfirm');
 const path = require('node:path');
-const { ModuleManager } = require('../core/modules/ModuleManager');
+const fs = require('node:fs');
+const { lazyService, onceCreated } = require('../core/modules/lazyService');
+const { engineFiles } = require('../core/modules/sources');
+// [PERF] ModuleManager (e o que ele carrega: motor, fontes, transcrição) só entra no primeiro uso dos módulos.
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const moduleConfig = require('../config/modules.config.json');
 const { sanitizeSilenceOptions } = require('../core/transcription/silenceTrim');
@@ -31,11 +34,14 @@ module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, 
   // Transcrição na nuvem (Groq/ElevenLabs): chaves próprias, separadas do assistente de IA, criptografadas no disco
   const cloudConfig = new CloudConfig({ configDir: (paths && paths.configDir) || appPaths.configDir, safeStorage });
 
-  const manager = new ModuleManager({
-    rootDir: dataDir,
-    tempDir,
-    config: { ...moduleConfig, ffmpegPath: getFfmpegPath || (() => process.env.WL_FFMPEG || null) },
-    cloudConfig
+  const manager = lazyService(() => {
+    const { ModuleManager } = require('../core/modules/ModuleManager');
+    return new ModuleManager({
+      rootDir: dataDir,
+      tempDir,
+      config: { ...moduleConfig, ffmpegPath: getFfmpegPath || (() => process.env.WL_FFMPEG || null) },
+      cloudConfig
+    });
   });
 
   const broadcast = (channel, payload) => {
@@ -43,17 +49,19 @@ module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, 
       if (!win.isDestroyed()) win.webContents.send(channel, payload);
     }
   };
-  manager.on('progress', (p) => broadcast('modules:progress', p));
-  // Barra de tarefas: transcrição e instalação de recursos (motor, modelo, aceleração) mostram o andamento no ícone
-  manager.on('progress', (p) => {
-    const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
-    const phase = p && p.phase;
-    if (phase === 'done' || phase === 'cancelled') return taskProgressCenter.reportIdle('modules');
-    if (phase === 'error') return taskProgressCenter.reportError('modules');
-    if (typeof p?.percent === 'number') taskProgressCenter.reportProgress('modules', p.percent / 100);
-    else taskProgressCenter.reportIndeterminate('modules');
+  onceCreated(manager, (m) => {
+    m.on('progress', (p) => broadcast('modules:progress', p));
+    // Barra de tarefas: transcrição e instalação de recursos (motor, modelo, aceleração) mostram o andamento no ícone
+    m.on('progress', (p) => {
+      const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter');
+      const phase = p && p.phase;
+      if (phase === 'done' || phase === 'cancelled') return taskProgressCenter.reportIdle('modules');
+      if (phase === 'error') return taskProgressCenter.reportError('modules');
+      if (typeof p?.percent === 'number') taskProgressCenter.reportProgress('modules', p.percent / 100);
+      else taskProgressCenter.reportIndeterminate('modules');
+    });
+    m.on('status', () => broadcast('modules:status', null));
   });
-  manager.on('status', () => broadcast('modules:status', null));
 
   handle('modules:getStatus', () => manager.getStatus());
   // .zip local fora do SHA-256 oficial só instala com confirmação NATIVA (o renderer não consegue
@@ -132,10 +140,16 @@ Arquivo: ${zipPath}`,
     return whisperInstalled;
   };
 
+  // Motor da transcrição instalado? Confere o MESMO arquivo que o ModuleManager (whisper-cli) direto no disco, sem criar
+  // o gerenciador na abertura. (A versão anterior lia getStatus().engine, que não existe — o campo é whisper.engine —,
+  // e por isso a lista sempre dizia 'não instalado' e Configurações pedia 'instalar um componente' mesmo com o motor.)
+  const whisperEngineInstalled = () => {
+    try { return fs.existsSync(path.join(dataDir, 'modules', 'whisper', 'engine', engineFiles(process.platform).cli)); } catch (_) { return false; }
+  };
+
   handle('modules:list', async () => {
     const enabled = registry.resolveEnabled(loadSettings(), { isDev });
-    let engineInstalled = false;
-    try { engineInstalled = !!(await manager.getStatus()).engine?.installed; } catch (_) { /* sem status: não instalado */ }
+    const engineInstalled = whisperEngineInstalled();
     return registry.MODULES
       .filter((m) => !m.devOnly || isDev)
       .map((m) => ({

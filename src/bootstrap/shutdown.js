@@ -18,7 +18,7 @@ async function runShutdown(ctx, { timeoutMs = 5000 } = {}) {
   const raw = ctx.services || {};
   // Serviços de módulos são criados sob demanda: no desligamento só se mexe nos que já existem (não cria para parar)
   const s = { ...raw };
-  for (const k of ['downloadService', 'converterService', 'thumbnailService', 'audioSyncService', 'waveformService']) s[k] = liveService(raw[k]);
+  for (const k of ['downloadService', 'converterService', 'thumbnailService', 'audioSyncService', 'waveformService', 'montageService', 'videoRecoveryService', 'rawRecoveryService', 'jpgRecoveryService']) s[k] = liveService(raw[k]);
   const step = async (name, fn) => {
     try { await fn(); }
     catch (err) { logger.warn('Bootstrap:shutdown:step_error', { step: name, error: err && err.message }); }

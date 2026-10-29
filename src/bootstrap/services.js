@@ -13,12 +13,8 @@ const { ffprobeTool } = require('../infrastructure/external-tools/adapters/Ffpro
 
 const HistoryService = require('../services/historyService');
 const UpdateService = require('../services/updateService');
-const MontageService = require('../services/montageService');
 const SilenceService = require('../services/silenceService');
 const MetadataService = require('../services/metadataService');
-const VideoRecoveryService = require('../services/videoRecoveryService');
-const RawRecoveryService = require('../services/rawRecoveryService');
-const JpgRecoveryService = require('../services/jpgRecoveryService');
 const PhotoPreviewService = require('../services/photoPreviewService');
 
 
@@ -89,12 +85,13 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
   const converterService = lazyService(() => new (require('../services/converterService'))({ paths, getSettings, historyService }));
   const thumbnailService = lazyService(() => new (require('../services/thumbnailService'))({ paths, getSettings }));
   const updateService = new UpdateService({ paths, getSettings });
-  const montageService = new MontageService({ paths, getSettings });
+  // Montagem e Recuperação são módulos só de desenvolvimento (nunca ligados no app final): criados no primeiro uso
+  const montageService = lazyService(() => new (require('../services/montageService'))({ paths, getSettings }));
   const silenceService = new SilenceService({ paths, getSettings });
   const metadataServiceInstance = new MetadataService({ paths });
-  const videoRecoveryService = new VideoRecoveryService({ paths });
-  const rawRecoveryService = new RawRecoveryService({ paths });
-  const jpgRecoveryService = new JpgRecoveryService({ paths });
+  const videoRecoveryService = lazyService(() => new (require('../services/videoRecoveryService'))({ paths }));
+  const rawRecoveryService = lazyService(() => new (require('../services/rawRecoveryService'))({ paths }));
+  const jpgRecoveryService = lazyService(() => new (require('../services/jpgRecoveryService'))({ paths }));
 
   const sequenceBuilder = lazyService(() => new (require('../core/projects/SequenceBuilder'))(projectService));
   const premiereExporter = lazyService(() => new (require('../core/projects/PremiereExporter'))(projectService, sequenceBuilder));

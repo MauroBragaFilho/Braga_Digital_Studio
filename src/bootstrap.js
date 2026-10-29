@@ -21,6 +21,7 @@ const { syncLibraries } = require('./bootstrap/libraries');
 const { bindServiceEvents } = require('./bootstrap/events');
 const { startBackgroundServices, checkInitialDependencies } = require('./bootstrap/startup');
 const { runShutdown } = require('./bootstrap/shutdown');
+const { liveService } = require('./core/modules/lazyService');
 const { registerIpcHandlers } = require('./ipc');
 
 class Bootstrap {
@@ -135,7 +136,8 @@ class Bootstrap {
 
     this._shutdownPromise = runShutdown({
       services: this.services,
-      getModuleManager: () => this.moduleManager,
+      // O ModuleManager nasce no primeiro uso: no encerramento só se cancela o que já existe
+      getModuleManager: () => liveService(this.moduleManager),
       settingsManager: this.settingsManager
     }, { timeoutMs });
 
