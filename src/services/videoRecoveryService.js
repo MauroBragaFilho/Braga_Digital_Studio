@@ -55,9 +55,10 @@ class VideoRecoveryService extends EventEmitter {
     const durationSec = corruptProbe?.format?.duration ? parseFloat(corruptProbe.format.duration) : null;
     const hasVideo = Boolean(corruptProbe?.videoStream);
 
-    // Arquivo menor do que a taxa de bits e a duração declaradas indicam: foi cortado (cópia interrompida, cartão removido)
-    const bitRate = parseFloat(corruptProbe?.format?.bit_rate);
-    const truncated = Boolean(durationSec > 0 && bitRate > 0 && (durationSec * bitRate) / 8 > corruptStats.size * 1.15);
+    // Arquivo menor do que as taxas de bits e a duração declaradas pelos fluxos: foi cortado (cópia interrompida, cartão removido).
+    // A taxa do formato não serve: o FFprobe a calcula a partir do próprio tamanho do arquivo.
+    const streamBitRate = (parseFloat(corruptProbe?.videoStream?.bit_rate) || 0) + (parseFloat(corruptProbe?.audioStream?.bit_rate) || 0);
+    const truncated = Boolean(durationSec > 0 && streamBitRate > 0 && (durationSec * streamBitRate) / 8 > corruptStats.size * 1.15);
 
     let severity;
     if (!corruptProbe) severity = 'CRÍTICA (Headers ou Moov Ausente)';
@@ -379,7 +380,8 @@ class VideoRecoveryService extends EventEmitter {
     }
 
     const srcDir = path.dirname(source);
-    const prefix = `${path.parse(source).name}_fixed`;
+    // O Untrunc nomeia a saída "<nome completo>_fixed.<ext>" (ex.: clip.mp4_fixed.mp4); versões antigas usavam "<nome>_fixed.<ext>"
+    const prefix = [`${path.basename(source)}_fixed`, `${path.parse(source).name}_fixed`];
     const before = this._listFixed(srcDir, prefix);
     const args = [referencePath, source];
 
@@ -407,12 +409,13 @@ class VideoRecoveryService extends EventEmitter {
     }
   }
 
-  /** Arquivos "<prefix>*" da pasta, com data de modificação. */
+  /** Arquivos que começam com algum dos prefixos (texto ou lista) na pasta, com data de modificação. */
   _listFixed(dir, prefix) {
     const map = new Map();
+    const prefixes = [].concat(prefix).map((p) => p.toLowerCase());
     try {
       for (const name of fs.readdirSync(dir)) {
-        if (!name.toLowerCase().startsWith(prefix.toLowerCase())) continue;
+        if (!prefixes.some((p) => name.toLowerCase().startsWith(p))) continue;
         const st = fs.statSync(path.join(dir, name));
         if (st.isFile()) map.set(name, st.mtimeMs);
       }

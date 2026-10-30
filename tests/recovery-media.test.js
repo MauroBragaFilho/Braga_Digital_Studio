@@ -298,5 +298,12 @@ test('vídeo: só aceita como saída do Untrunc o arquivo novo, nunca um _fixed 
   const novos = svc._newFixed(d, 'clip_fixed', before);
   assert.equal(novos.length, 1);
   assert.equal(path.basename(novos[0].file), 'clip_fixed.mov');
+
+  // nome real do Untrunc: "<nome completo>_fixed.<ext>"
+  const prefixos = ['clip.mp4_fixed', 'clip_fixed'];
+  const antes = svc._listFixed(d, prefixos);
+  fs.writeFileSync(path.join(d, 'clip.mp4_fixed.mp4'), 'gerado');
+  const achados = svc._newFixed(d, prefixos, antes);
+  assert.deepEqual(achados.map((a) => path.basename(a.file)), ['clip.mp4_fixed.mp4']);
   fs.rmSync(d, { recursive: true, force: true });
 });

@@ -337,7 +337,7 @@ class RawRecoveryService extends EventEmitter {
       sizeBytes: stats.size,
       methodUsed: method,
       outputType,
-      camera: finalIdentify?.camera || diag.corrupted.camera,
+      camera: (finalIdentify?.camera && finalIdentify.camera !== 'Desconhecido' ? finalIdentify.camera : null) || diag.corrupted.camera,
       resolution: resolution || finalIdentify?.resolution || diag.corrupted.resolution || diag.corrupted.previewResolution,
       resultQuality: partial ? 'RECUPERAÇÃO PARCIAL' : 'RECUPERAÇÃO COMPLETA',
       warnings,
