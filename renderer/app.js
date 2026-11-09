@@ -16,7 +16,12 @@ performance.mark('bds:gate-opened');
 
 // Expõe openPreview e mediaPreviewSystem globalmente
 window.mediaPreviewSystem = mediaPreviewSystem;
-window.openPreview = (media, collection = []) => mediaPreviewSystem.open(media, collection);
+window.openPreview = (media, collection = []) => {
+  // Mídia do Google Drive indexada sem baixar: abrir já baixa o arquivo, então aproveita para ler
+  // duração, dados técnicos e miniatura (em segundo plano; a Biblioteca atualiza pelo evento de mídia)
+  if (media && media.cloud === 1 && media.id != null) window.bds?.loadCloudMedia?.([media.id]).catch(() => {});
+  return mediaPreviewSystem.open(media, collection);
+};
 
 // Estado global que as telas podem ler/gravar se necessário
 export const state = {

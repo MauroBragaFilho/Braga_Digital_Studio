@@ -9,6 +9,7 @@ const logger = require('../../services/logService');
 const EventBus = require('../EventBus');
 const HashGenerator = require('./HashGenerator');
 const { isSupported, isRaw, isAudio, findSiblingJpg } = require('./MediaTypes');
+const { isCloudPath, cloudHash } = require('./CloudStorage');
 
 /**
  * Pipeline único de ingestão de mídia, compartilhado por ImportWorker (watcher)
@@ -61,17 +62,20 @@ function inTransaction(db, fn) {
  * @param {string} [p.event]            'CHANGE' => reprocessa se o tamanho mudou
  * @param {boolean} [p.emit=false]      emite MEDIA_IMPORTED ao concluir
  * @param {boolean} [p.batch=false]     importação em lote: logs por arquivo em debug (não info)
+ * @param {boolean} [p.loadCloud=false] mídia sendo usada: lê o conteúdo mesmo em pasta da nuvem e completa a que
+ *                                      foi indexada sem baixar (cloud = 1)
  * @returns {Promise<{id:number, created:boolean, status:string}|null>}
  */
-async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, event = null, emit = false, batch = false }) {
+async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, event = null, emit = false, batch = false, loadCloud = false }) {
     const logFile = batch ? (m) => logger.debug(m) : (m) => logger.info(m);
     const filename = path.basename(filePath);
     if (!isSupported(filename)) return null;
 
-    const existsByPath = db.prepare('SELECT id, status, filesize, uuid, missing, hash FROM media WHERE filepath = ?').get(filePath);
+    const existsByPath = db.prepare('SELECT id, status, filesize, uuid, missing, hash, cloud FROM media WHERE filepath = ?').get(filePath);
     const stats = await fsp.stat(filePath);
 
-    if (existsByPath && existsByPath.status === 'READY') {
+    const pendingCloud = loadCloud && !!existsByPath && existsByPath.cloud === 1;
+    if (existsByPath && existsByPath.status === 'READY' && !pendingCloud) {
         const changed = event === 'CHANGE' && existsByPath.filesize != null && existsByPath.filesize !== stats.size;
         if (!changed) {
             // O arquivo voltou a existir: zera o flag `missing` na mesma sessão (RK-085) e avisa a interface
@@ -84,7 +88,10 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
         logFile(`[MediaIngest] Arquivo alterado (tamanho ${existsByPath.filesize} -> ${stats.size}), reprocessando: ${filename}`);
     }
 
-    let hash = await HashGenerator.generate(filePath);
+    // Pasta da nuvem (Google Drive): qualquer leitura do conteúdo faz o Drive baixar o arquivo inteiro.
+    // Indexa só com nome, tamanho e data; duração, dados técnicos e miniatura ficam para quando for usada.
+    const cloud = !loadCloud && isCloudPath(filePath);
+    let hash = cloud ? cloudHash(filePath, stats) : await HashGenerator.generate(filePath);
     let mediaId = existsByPath ? existsByPath.id : null;
     // Identidade já desambiguada numa ingestão anterior ("<hash>:<impressão estendida>"): mantém
     if (existsByPath && typeof existsByPath.hash === 'string' && existsByPath.hash.startsWith(`${hash}:`)) hash = existsByPath.hash;
@@ -93,7 +100,7 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
     // O hash de arquivos grandes é amostrado e o hash é UNIQUE: arquivos distintos (mesmo tamanho, mesmas
     // amostras) virariam "duplicata" e o segundo nunca seria indexado (RK-083). Quando os dois existem no
     // disco, compara uma impressão digital bem mais densa e, se diferirem, indexa com hash desambiguado.
-    if (existingHash && existingHash.id !== mediaId && existingHash.filepath && existingHash.filepath !== filePath
+    if (!cloud && existingHash && existingHash.id !== mediaId && existingHash.filepath && existingHash.filepath !== filePath
         && stats.size > HashGenerator.FULL_HASH_LIMIT
         && (existingHash.filesize == null || existingHash.filesize === stats.size)
         && fs.existsSync(existingHash.filepath)) {
@@ -165,6 +172,17 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
                 : db.prepare('SELECT uuid FROM media WHERE id = ?').get(mediaId).uuid;
         }
 
+        if (cloud) {
+            db.prepare(`
+                UPDATE media SET filesize = ?, cloud = 1, status = 'READY',
+                    imported_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, recorded_at = ?
+                WHERE id = ?
+            `).run(stats.size, stats.mtime.toISOString(), mediaId);
+            logFile(`[MediaIngest] Arquivo da nuvem indexado sem baixar: ${filename}`);
+            if (emit) EventBus.emit('MEDIA_IMPORTED', db.prepare('SELECT * FROM media WHERE id = ?').get(mediaId));
+            return { id: mediaId, created, status: 'READY', cloud: true };
+        }
+
         let probeTarget = filePath;
         if (isRaw(filePath)) {
             const sibling = findSiblingJpg(filePath);
@@ -183,13 +201,13 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
             UPDATE media SET
                 filesize = ?, duration = ?, width = ?, height = ?, fps = ?,
                 video_codec = ?, audio_codec = ?, audio_track_count = ?, bitrate = ?, thumbnail = ?,
-                status = 'READY', imported_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP,
-                recorded_at = ?
+                status = 'READY', cloud = 0, updated_at = CURRENT_TIMESTAMP, recorded_at = ?,
+                imported_at = CASE WHEN ? = 1 AND imported_at IS NOT NULL THEN imported_at ELSE CURRENT_TIMESTAMP END
             WHERE id = ?
         `).run(
             info.filesize || stats.size, info.duration, info.width, info.height, info.fps,
             info.video_codec, info.audio_codec, audioTrackCount, info.bitrate, thumbnailName,
-            recordedAt, mediaId
+            recordedAt, pendingCloud ? 1 : 0, mediaId
         );
 
         logFile(`[MediaIngest] Arquivo indexado com sucesso: ${filename}`);
@@ -197,7 +215,14 @@ async function ingestFile({ db, ffprobe, generateThumbnail, library, filePath, e
         return { id: mediaId, created, status: 'READY' };
     } catch (err) {
         if (mediaId != null) {
-            try { db.prepare('UPDATE media SET status = ? WHERE id = ?').run('ERROR', mediaId); } catch (_) {}
+            try {
+                if (pendingCloud && existsByPath.id === mediaId && existsByPath.status === 'READY') {
+                    // Carregar da nuvem falhou (ex.: sem internet): a mídia continua na biblioteca como estava
+                    db.prepare('UPDATE media SET status = ?, hash = ? WHERE id = ?').run('READY', existsByPath.hash, mediaId);
+                } else {
+                    db.prepare('UPDATE media SET status = ? WHERE id = ?').run('ERROR', mediaId);
+                }
+            } catch (_) {}
         }
         throw err;
     }

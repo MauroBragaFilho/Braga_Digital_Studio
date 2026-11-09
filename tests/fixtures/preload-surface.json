@@ -4918,6 +4918,34 @@
       "returns": "promise"
     }
   },
+  "loadCloudMedia": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:loadCloudMedia",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "library:loadCloudMedia",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "matchMissingMedia": {
     "type": "function",
     "length": 2,

@@ -82,8 +82,9 @@ class MediaImporter {
      * @param {string} filePath 
      * @param {Object} [opts]
      * @param {boolean} [opts.batch=false] - chamada vinda de importLibrary (logs por arquivo em debug)
+     * @param {boolean} [opts.loadCloud=false] - mídia sendo usada: lê o conteúdo mesmo em pasta da nuvem (Google Drive)
      */
-    async importFile(library, filePath, { batch = false } = {}) {
+    async importFile(library, filePath, { batch = false, loadCloud = false } = {}) {
         const filename = path.basename(filePath);
 
         // Validação de extensão para ignorar exes, dlls e arquivos não suportados
@@ -98,6 +99,7 @@ class MediaImporter {
                 filePath,
                 emit: false, // os handlers IPC já notificam a UI ao final
                 batch,
+                loadCloud,
                 generateThumbnail: (fp, uuid, duration) => this._generateThumbnail(fp, filename, uuid, duration),
             });
             if (!result) return;

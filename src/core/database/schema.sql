@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS media (
     thumbnail TEXT,
     status TEXT DEFAULT 'READY', /* READY, IMPORTING, MISSING, PROCESSING, ERROR */
     missing INTEGER DEFAULT 0,
+    cloud INTEGER DEFAULT 0, /* 1 = na nuvem, dados e miniatura ainda não lidos */
     favorite INTEGER DEFAULT 0,
     rating INTEGER DEFAULT 0,
     notes TEXT,

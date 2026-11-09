@@ -958,7 +958,7 @@ function fillRow(rowEl, row) {
 
 /** Dados que mudam o desenho do card (a seleção é aplicada à parte, sem recriar). */
 function cardSig(m) {
-  return [m.filename, m.thumbnail, m.favorite ? 1 : 0, m.origin, m.height, m.fps, m.filesize, m.duration, m.video_codec, m.recorded_at, m.imported_at, m.uuid, m.filepath, viewMode].join('|');
+  return [m.filename, m.thumbnail, m.cloud ? 1 : 0, m.favorite ? 1 : 0, m.origin, m.height, m.fps, m.filesize, m.duration, m.video_codec, m.recorded_at, m.imported_at, m.uuid, m.filepath, viewMode].join('|');
 }
 
 function getCardEl(index) {
@@ -1274,19 +1274,24 @@ function renderGridCard(media) {
   const favClass = media.favorite ? 'active' : '';
   const favIcon = media.favorite ? 'star' : 'star_border';
 
-  const thumbClass = isAudio && !thumbUrl ? 'lib-card-thumb audio-placeholder' : 'lib-card-thumb';
+  // Na nuvem (Google Drive) e ainda não lida: sem miniatura nem duração até a mídia ser aberta
+  const inCloud = media.cloud === 1 && !thumbUrl;
+  const thumbClass = inCloud ? 'lib-card-thumb cloud-placeholder'
+    : (isAudio && !thumbUrl ? 'lib-card-thumb audio-placeholder' : 'lib-card-thumb');
+  const cloudIcon = inCloud ? `<span class="material-symbols-rounded lib-card-cloud" title="${escapeAttr(t('library.cloudPending'))}">cloud</span>` : '';
   // data-src: o src só é atribuído quando a rolagem assenta (flushThumbs), para não baixar o que passa voando
   const thumbImg = thumbUrl ? `<img class="lib-card-img" data-src="${escapeAttr(thumbUrl)}" alt="" loading="lazy" decoding="async" draggable="false">` : '';
-  const audioWaveform = isAudio && !thumbUrl
+  const audioWaveform = isAudio && !thumbUrl && !inCloud
     ? `<canvas class="lib-card-waveform" data-uuid="${escapeAttr(media.uuid || '')}" data-path="${escapeAttr(media.filepath || '')}" width="200" height="60"></canvas>`
     : '';
-  const durationBadge = (!isPhoto && !isAudio) ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
-  const audioDurationBadge = isAudio ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
+  const durationBadge = (!isPhoto && !isAudio && !inCloud) ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
+  const audioDurationBadge = (isAudio && !inCloud) ? `<div class="lib-card-duration">${formatDuration(media.duration)}</div>` : '';
 
   return `
     <div class="lib-card media-clickable ${isSelected ? 'selected' : ''}" data-id="${escapeAttr(media.id)}" tabindex="0" role="button" aria-pressed="${isSelected}" aria-label="${escapeAttr(media.filename)}">
       <div class="${thumbClass}">
         ${thumbImg}
+        ${cloudIcon}
         <input type="checkbox" class="lib-card-checkbox" aria-label="Selecionar" ${isSelected ? 'checked' : ''}>
         <span class="material-symbols-rounded lib-card-badge-fav ${favClass}" role="button" aria-label="${media.favorite ? 'Remover dos favoritos' : 'Favoritar'}">${favIcon}</span>
         ${audioWaveform}
@@ -1320,7 +1325,7 @@ function renderListRow(media) {
       <div class="lib-list-cell" role="gridcell">
         <div class="lib-list-cell-content">
           <input type="checkbox" class="lib-card-checkbox" aria-label="Selecionar" ${isSelected ? 'checked' : ''}>
-          <div class="lib-list-thumb"${thumbAttr}></div>
+          <div class="lib-list-thumb${media.cloud === 1 && !thumbUrl ? ' cloud-placeholder' : ''}"${thumbAttr}>${media.cloud === 1 && !thumbUrl ? '<span class="material-symbols-rounded">cloud</span>' : ''}</div>
           <span class="material-symbols-rounded lib-list-fav-btn ${favClass}" role="button" aria-label="${media.favorite ? 'Remover dos favoritos' : 'Favoritar'}">${favIcon}</span>
           <span class="lib-list-filename" title="${escapeAttr(media.filename)}">${escapeHtml(media.filename)}</span>
         </div>
@@ -1346,6 +1351,11 @@ function openInspector(media) {
   const thumbUrl = media.thumbnail ? joinFileUrl(thumbsDir, media.thumbnail) : '';
   const thumbEl = document.getElementById('inspectorThumbnail');
   if (thumbEl) thumbEl.style.backgroundImage = `url('${thumbUrl}')`;
+
+  const cloudRow = document.getElementById('inspectorCloud');
+  if (cloudRow) cloudRow.classList.toggle('hidden', media.cloud !== 1);
+  const btnLoadCloud = document.getElementById('btnLoadCloud');
+  if (btnLoadCloud) { btnLoadCloud.disabled = false; btnLoadCloud.textContent = t('library.cloudLoad'); }
   
   const titleEl = document.getElementById('inspectorTitle');
   const titleEdit = document.getElementById('inspectorTitleEdit');
@@ -1504,6 +1514,23 @@ async function loadMediaTags(mediaId) {
 }
 
 function bindInspectorEvents() {
+  // Mídia do Google Drive indexada sem baixar: lê duração, dados técnicos e miniatura agora
+  document.getElementById('btnLoadCloud')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const media = currentInspectorMedia;
+    if (!media || !window.bds?.loadCloudMedia) return;
+    btn.disabled = true;
+    btn.textContent = t('library.cloudLoading');
+    let res = null;
+    try { res = await window.bds.loadCloudMedia([media.id]); } catch (err) { console.warn('[LIBRARY] Falha ao ler da nuvem:', err); }
+    await loadMedia(false, { keepLoaded: true });
+    if (currentInspectorMedia?.id !== media.id) return;
+    const fresh = mediaItems.find((m) => m.id === media.id);
+    if (fresh && fresh.cloud !== 1) { openInspector(fresh); return; }
+    btn.disabled = false;
+    btn.textContent = res && res.failed ? t('library.cloudLoadFailed') : t('library.cloudLoad');
+  });
+
   const titleText = document.getElementById('inspectorTitle');
   const titleEdit = document.getElementById('inspectorTitleEdit');
 

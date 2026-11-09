@@ -493,6 +493,44 @@ module.exports = function registerLibraryHandlers(paths, watcherService, deps = 
     }
   });
 
+  // Mídias de pasta da nuvem (Google Drive) indexadas sem baixar: lê duração, dados técnicos e miniatura agora
+  // (o Drive baixa cada arquivo). Chamado quando a mídia é aberta ou pelo botão do inspetor.
+  const cloudLoading = new Set(); // ids em andamento (abrir o preview duas vezes não baixa duas vezes)
+  handle('library:loadCloudMedia', async (event, ids) => {
+    const dbManager = require('../core/database/database');
+    const MediaImporter = require('../core/media/MediaImporter');
+    const EventBus = require('../core/EventBus');
+    const db = dbManager.get();
+    const list = assertIdArray(ids, { max: 500 }).filter((id) => !cloudLoading.has(id));
+    if (list.length === 0) return { ok: true, loaded: 0, failed: 0 };
+    const rows = db.prepare(`SELECT m.id, m.filepath, m.library_id, l.type AS lib_type, l.path AS lib_path
+      FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+      WHERE m.cloud = 1 AND m.id IN (${sqlPlaceholders(list.length)})`).all(...list);
+    rows.forEach((r) => cloudLoading.add(r.id));
+
+    const importer = new MediaImporter({ ffprobePath: ffprobeTool.resolve() });
+    let loaded = 0;
+    let failed = 0;
+    try {
+      // Dois por vez: cada um baixa o arquivo inteiro do Drive
+      let next = 0;
+      const worker = async () => {
+        while (next < rows.length) {
+          const r = rows[next++];
+          const lib = r.library_id != null ? { id: r.library_id, type: r.lib_type, path: r.lib_path } : null;
+          const res = await importer.importFile(lib, r.filepath, { loadCloud: true });
+          const after = db.prepare('SELECT cloud FROM media WHERE id = ?').get(r.id);
+          if (res && after && after.cloud === 0) loaded++; else failed++;
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(2, rows.length) }, worker));
+    } finally {
+      rows.forEach((r) => cloudLoading.delete(r.id));
+    }
+    if (rows.length > 0) EventBus.emit('MEDIA_UPDATED', { ids: rows.map((r) => r.id) });
+    return { ok: failed === 0, loaded, failed };
+  });
+
   // [FIX] Regenera thumbnails ausentes — usado no startup quando thumbnails foram deletadas indevidamente.
   // Lógica compartilhada com o bootstrap e com o clearCache (systemHandlers).
   handle('library:regenerateMissingThumbnails', async (event, { batchSize = 8 } = {}) => {

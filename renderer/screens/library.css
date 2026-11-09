@@ -365,6 +365,52 @@
   background: var(--card-2);
 }
 
+.lib-card-thumb.cloud-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-2);
+}
+
+.lib-card-cloud {
+  font-size: 40px;
+  color: var(--muted);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.lib-list-thumb.cloud-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lib-list-thumb.cloud-placeholder span {
+  font-size: 16px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.inspector-cloud {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  background: var(--card-2);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.inspector-cloud.hidden { display: none; }
+
+.inspector-cloud > .material-symbols-rounded { font-size: 20px; flex-shrink: 0; }
+
+.inspector-cloud-text { flex: 1; line-height: 1.35; }
+
+.inspector-cloud .bds-btn-secondary { flex-shrink: 0; }
+
 .lib-card-thumb.audio-placeholder span {
   font-size: 18px;
   font-weight: 800;

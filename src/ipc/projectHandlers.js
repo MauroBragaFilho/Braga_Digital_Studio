@@ -204,7 +204,8 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
           event.sender.send('projects:importProgress', { fileName: path.basename(filePath), status: 'processing' });
         }
 
-        const result = await importer.importFile(library, filePath);
+        // Levar ao projeto é usar a mídia: lê o conteúdo mesmo se estiver numa pasta do Google Drive
+        const result = await importer.importFile(library, filePath, { loadCloud: true });
         if (!result || result.id == null) { skipped++; continue; }
 
         projectService.addMediaToBin(projectId, binId || null, result.id, null);

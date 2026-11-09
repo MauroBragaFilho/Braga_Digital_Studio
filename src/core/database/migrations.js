@@ -5,7 +5,7 @@ const dbManager = require('./database');
 const { mediaTypeCaseSql } = require('../media/MediaTypes');
 
 // [FASE 3.2] Controle de versao do schema com tabela de metadados.
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 17;
 
 function getAppliedMigrations(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -239,6 +239,14 @@ const MIGRATIONS = [
         version: 15,
         up: (db) => {
             addColumn(db, 'download_queue', 'video_codec', 'TEXT');
+        }
+    },
+    {
+        // Biblioteca: mídia em pasta da nuvem (Google Drive) indexada sem ler o conteúdo; duração, dados
+        // técnicos e miniatura ficam pendentes (cloud = 1) até a mídia ser usada
+        version: 17,
+        up: (db) => {
+            addColumn(db, 'media', 'cloud', 'INTEGER DEFAULT 0');
         }
     }
 ];

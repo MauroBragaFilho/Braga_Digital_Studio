@@ -78,6 +78,7 @@
     "library:getRecent",
     "library:getStats",
     "library:getThumbDir",
+    "library:loadCloudMedia",
     "library:moveMediaBulk",
     "library:regenerateMissingThumbnails",
     "library:removeCustomSource",

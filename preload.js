@@ -267,6 +267,7 @@ const api = {
   toggleFavoriteBulk: (ids, isFav) => ipcRenderer.invoke('library:toggleFavoriteBulk', ids, isFav),
   clearLibraryDatabase: () => ipcRenderer.invoke('library:clearDatabase'),
   rescanAllLibrary: () => ipcRenderer.invoke('library:rescanAll'),
+  loadCloudMedia: (ids) => ipcRenderer.invoke('library:loadCloudMedia', ids),
   regenerateMissingThumbnails: (opts) => ipcRenderer.invoke('library:regenerateMissingThumbnails', opts || {}),
   getAllLibraries: () => ipcRenderer.invoke('library:getAll'),
   getLibraryFolderFiles: (folderPath) => ipcRenderer.invoke('library:getFolderFiles', folderPath),

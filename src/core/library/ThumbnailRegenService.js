@@ -92,7 +92,8 @@ async function regenerateMissingThumbnailsImpl({
   // (Arquivos órfãos na pasta podem mascarar poucas ausências; a regeneração manual/limpeza de cache
   // normalmente esvazia a pasta, caindo no caminho completo.)
   try {
-    const readyCond = "(status = 'READY' OR status IS NULL) AND (missing = 0 OR missing IS NULL)";
+    // cloud = 1: mídia na nuvem (Google Drive) ainda não lida; gerar a miniatura baixaria o arquivo inteiro
+    const readyCond = "(status = 'READY' OR status IS NULL) AND (missing = 0 OR missing IS NULL) AND (cloud = 0 OR cloud IS NULL)";
     const registered = db.prepare(`SELECT COUNT(*) AS c FROM media WHERE ${readyCond} AND thumbnail IS NOT NULL`).get();
     // Sem miniatura registrada e que não é áudio (media_type NULL = extensão desconhecida: também vai ao caminho completo)
     const unregistered = db.prepare(
@@ -115,6 +116,7 @@ async function regenerateMissingThumbnailsImpl({
     FROM media
     WHERE (status = 'READY' OR status IS NULL)
       AND (missing = 0 OR missing IS NULL)
+      AND (cloud = 0 OR cloud IS NULL)
   `).all();
 
   const failuresFile = path.join(paths.dataDir, FAILURES_FILE);

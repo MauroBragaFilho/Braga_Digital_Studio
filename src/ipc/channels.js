@@ -492,6 +492,7 @@ define('library', 'throw', {
   'library:toggleFavoriteBulk': { args: [IDS(), t.boolean({ name: 'isFav', label: 'Favorito' })], returns: 'true', api: ['toggleFavoriteBulk'] },
   'library:clearDatabase': { returns: '{ ok, details } (confirmação nativa + backup)', api: ['clearLibraryDatabase'] },
   'library:rescanAll': { returns: 'true', api: ['rescanAllLibrary'] },
+  'library:loadCloudMedia': { args: [IDS('ids', 500)], returns: '{ ok, loaded, failed }', api: ['loadCloudMedia'] },
   'library:regenerateMissingThumbnails': {
     args: [OBJ('opts', { batchSize: t.int({ min: 1, max: 64, optional: true, label: 'Tamanho do lote' }) }, { label: 'Opções' })],
     returns: 'Resultado da regeneração',
