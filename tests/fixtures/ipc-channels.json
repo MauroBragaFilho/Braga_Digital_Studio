@@ -241,6 +241,7 @@
     "system:getVideosPath",
     "system:isPackaged",
     "system:openPath",
+    "system:revealPath",
     "telemetry:clearCrashReports",
     "telemetry:generateManualMailto",
     "telemetry:getCrashReports",

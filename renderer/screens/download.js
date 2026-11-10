@@ -320,6 +320,9 @@ function buildRowHtml(item, dyn) {
         : `<span class="status-badge status-badge-completed">✓ Concluído</span>`;
       actionsHtml = `
         ${item.outputPath ? `<button type="button" class="card-action-btn card-action-btn-info" data-action="open-path" data-path="${escapeAttr(item.outputPath)}" title="Abrir arquivo">
+          <span class="material-symbols-rounded">play_arrow</span>
+        </button>
+        <button type="button" class="card-action-btn card-action-btn-info" data-action="reveal-path" data-path="${escapeAttr(item.outputPath)}" title="Mostrar na pasta">
           <span class="material-symbols-rounded">folder_open</span>
         </button>` : ''}
         <button type="button" class="card-action-btn card-action-btn-default" data-action="remove" data-id="${item.id}" title="Remover">
@@ -550,6 +553,9 @@ async function handleQueueAction(action, id, path) {
     case 'open-path':
       openPath(path);
       break;
+    case 'reveal-path':
+      revealPath(path);
+      break;
   }
 }
 
@@ -776,7 +782,9 @@ async function enqueueManyLinks(urls, { format = null, items = null } = {}) {
         title: it.title || '',
         thumbnail: it.thumbnail || '',
         channel: it.channel || '',
-        duration: it.duration || null
+        duration: it.duration || null,
+        playlistTitle: it.playlistTitle || '',
+        playlistThumbnail: it.playlistThumbnail || ''
       });
       if (r.duplicate) skipped++; else added++;
     } catch (err) {
@@ -988,6 +996,12 @@ async function clearAllQueue() {
 function openPath(filePath) {
   if (window.bds && window.bds.openLocalPath) {
     window.bds.openLocalPath(filePath);
+  }
+}
+
+function revealPath(filePath) {
+  if (window.bds && window.bds.revealLocalPath) {
+    window.bds.revealLocalPath(filePath);
   }
 }
 

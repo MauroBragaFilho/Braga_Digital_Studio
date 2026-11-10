@@ -201,10 +201,15 @@ class ThumbnailService {
         const meta = await this.runSpotifyMetadata(url);
         // Se for uma lista de tracks do Spotify
         if (Array.isArray(meta)) {
+          // Nome da lista (list_name) e capa (a do primeiro item) para a pasta da playlist
+          const listName = (meta.find(t => t && t.list_name) || {}).list_name || '';
+          const listCover = (meta.find(t => t && t.cover_url) || {}).cover_url || '';
           return meta.map(track => ({
             url: track.url || url,
             title: track.name ? `${track.name} - ${track.artist}` : 'Música',
-            thumbnail: track.cover_url || ''
+            thumbnail: track.cover_url || '',
+            playlistTitle: listName,
+            playlistThumbnail: listCover
           }));
         }
         // Faixa única: reaproveita o metadata em vez de descartar
@@ -227,6 +232,9 @@ class ThumbnailService {
     );
 
     if (Array.isArray(json.entries) && json.entries.length > 0) {
+      const playlistTitle = json.title || json.playlist_title || '';
+      const firstThumb = json.entries.map(e => this.pickThumbnail(e && e.thumbnails)).find(Boolean) || '';
+      const playlistThumbnail = this.pickThumbnail(json.thumbnails) || json.thumbnail || firstThumb;
       return json.entries.map(entry => {
         let entryUrl = entry.url || entry.webpage_url;
         if (entryUrl && !entryUrl.startsWith('http')) {
@@ -235,7 +243,9 @@ class ThumbnailService {
         return {
           url: entryUrl || url,
           title: entry.title || 'Vídeo de Playlist',
-          thumbnail: this.pickThumbnail(entry.thumbnails)
+          thumbnail: this.pickThumbnail(entry.thumbnails),
+          playlistTitle,
+          playlistThumbnail
         };
       });
     }

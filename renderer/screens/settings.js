@@ -388,6 +388,7 @@ function renderSettings() {
   setChk('trFallbackLocal', fallbackList.includes('local'));
   setVal('downloadVideoCodecSelect', ['h264', 'h265', 'av1'].includes(s.downloadVideoCodec) ? s.downloadVideoCodec : 'auto');
   setChk('downloadPauseEnabledInput', s.downloadPauseEnabled !== false);
+  setChk('playlistFoldersInput', s.playlistFolders !== false);
   setVal('downloadPauseMinInput', s.downloadPauseMinSec ?? 10);
   setVal('downloadPauseMaxInput', s.downloadPauseMaxSec ?? 180);
   syncDownloadPauseRange();
@@ -801,6 +802,7 @@ async function saveSettings() {
       transcriptionFallback: [['groq', 'trFallbackGroq'], ['elevenlabs', 'trFallbackElevenlabs'], ['local', 'trFallbackLocal']]
         .filter(([, id]) => document.getElementById(id)?.checked).map(([engine]) => engine),
       downloadPauseEnabled: document.getElementById('downloadPauseEnabledInput')?.checked !== false,
+      playlistFolders: document.getElementById('playlistFoldersInput')?.checked !== false,
       downloadPauseMinSec: Number(document.getElementById('downloadPauseMinInput')?.value),
       downloadPauseMaxSec: Number(document.getElementById('downloadPauseMaxInput')?.value),
       uploadAutoEnabled: document.getElementById('uploadAutoEnabledInput')?.checked === true,

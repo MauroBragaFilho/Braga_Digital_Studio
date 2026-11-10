@@ -13,7 +13,8 @@ const { isHttpUrl, assertHttpUrl } = require('./urlValidator');
 const { friendlyYtDlpError, sanitizeUserMessage } = require('./ytdlpErrors');
 const { inspectCookiesFile, cookiesFileFor } = require('./youtubeCookies');
 const { uniqueSuffixPath } = require('./uniquePath');
-const { ffprobeTool } = require('../infrastructure/external-tools/adapters/FfprobeTool');
+const { folderNameFor, applyCoverIcon } = require('./playlistFolder');
+const { ffprobeTool } =require('../infrastructure/external-tools/adapters/FfprobeTool');
 
 // Subpasta temporária de cada item, dentro da pasta de destino: o ponto inicial a deixa fora do escaneamento e
 // do observador da Biblioteca. Tudo é baixado ali e só o arquivo FINAL é movido para o destino, com nome único.
@@ -222,7 +223,10 @@ class DownloadManager extends EventEmitter {
           duration: r.duration ? Number(r.duration) : null,
           format,
           quality: r.quality || 'best',
-          folder: format === 'MP3' ? settings.mp3Folder : settings.mp4Folder,
+          playlistFolder: format === 'MP3' ? folderNameFor(r.playlist_folder) : '',
+          folder: format === 'MP3'
+            ? (folderNameFor(r.playlist_folder) ? path.join(settings.mp3Folder, folderNameFor(r.playlist_folder)) : settings.mp3Folder)
+            : settings.mp4Folder,
           status,
           progress: wasActive ? 0 : Number(r.progress || 0),
           downloadedBytes: wasActive ? 0 : Number(r.downloaded_bytes || 0),
@@ -255,8 +259,8 @@ class DownloadManager extends EventEmitter {
       INSERT INTO download_queue (
         id, url, title, thumbnail, channel, platform, duration, format, quality, status, progress,
         downloaded_bytes, total_bytes, speed, eta, output_path, error,
-        position, created_at, started_at, completed_at, video_codec
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        position, created_at, started_at, completed_at, video_codec, playlist_folder
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         url = excluded.url, title = excluded.title, thumbnail = excluded.thumbnail,
         channel = excluded.channel, platform = excluded.platform, duration = excluded.duration,
@@ -265,7 +269,7 @@ class DownloadManager extends EventEmitter {
         total_bytes = excluded.total_bytes, speed = excluded.speed, eta = excluded.eta,
         output_path = excluded.output_path, error = excluded.error, position = excluded.position,
         started_at = excluded.started_at, completed_at = excluded.completed_at,
-        video_codec = excluded.video_codec
+        video_codec = excluded.video_codec, playlist_folder = excluded.playlist_folder
     `;
   }
 
@@ -278,7 +282,7 @@ class DownloadManager extends EventEmitter {
         item.format, item.quality, item.status, item.progress, item.downloadedBytes, item.totalBytes,
         item.speed, item.eta, item.outputPath, item.error, item.position,
         item.createdAt || new Date().toISOString(),
-        item.startedAt || null, item.completedAt || null, item.videoCodec || ''
+        item.startedAt || null, item.completedAt || null, item.videoCodec || '', item.playlistFolder || ''
       );
     } catch (err) {
       logger.error('[DownloadManager] Erro ao salvar item no banco:', err);
@@ -342,8 +346,14 @@ class DownloadManager extends EventEmitter {
     if (dup && dup.kind === 'queued') throw duplicateError('DUPLICATE_QUEUED', dup.item);
     if (dup && dup.kind === 'downloaded') throw duplicateError('DUPLICATE_DOWNLOADED', dup.item, path.basename(dup.file));
 
-    const folder = format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
+    let folder = format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
+    // Playlist em MP3: as músicas vão para uma subpasta com o nome da playlist, com a capa como ícone da pasta
+    const playlistName = format === 'MP3' && settings.playlistFolders !== false ? folderNameFor(request.playlistTitle) : '';
+    if (playlistName) folder = path.join(folder, playlistName);
     fs.mkdirSync(folder, { recursive: true });
+    if (playlistName && request.playlistThumbnail) {
+      applyCoverIcon(folder, String(request.playlistThumbnail), path.join(this.paths.dataDir, 'ffmpeg.exe')).catch(() => {});
+    }
 
     // Cartões antigos do mesmo link que não valem mais (arquivo sumiu, falhou, cancelado) saem da fila
     if (dup && dup.kind === 'stale') {
@@ -365,6 +375,7 @@ class DownloadManager extends EventEmitter {
       format,
       quality,
       folder,
+      playlistFolder: playlistName,
       isSpotify,
       status: 'queued',
       infoLoading: loadInfo, // transitório (não vai para o banco): o cartão mostra "Carregando informações..."
@@ -638,6 +649,7 @@ class DownloadManager extends EventEmitter {
     }
     
     const oldItem = { id: item.id, folder: item.folder, format: item.format };
+    item.playlistFolder = '';
     item.folder = item.format === 'MP3' ? settings.mp3Folder : settings.mp4Folder;
     if (this._workDir(oldItem) !== this._workDir(item)) this._cleanWorkDir(oldItem).catch(() => {});
     this.saveItemToDb(item);

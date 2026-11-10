@@ -242,6 +242,13 @@ const MIGRATIONS = [
         }
     },
     {
+        // Downloads: nome da subpasta da playlist (MP3), para a fila retomada depois de reiniciar continuar na mesma pasta
+        version: 16,
+        up: (db) => {
+            addColumn(db, 'download_queue', 'playlist_folder', 'TEXT');
+        }
+    },
+    {
         // Biblioteca: mídia em pasta da nuvem (Google Drive) indexada sem ler o conteúdo; duração, dados
         // técnicos e miniatura ficam pendentes (cloud = 1) até a mídia ser usada
         version: 17,

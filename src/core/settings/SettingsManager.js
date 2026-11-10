@@ -59,6 +59,8 @@ class SettingsManager {
       autoUpdateDeps: false,
       cookiesFile: path.join(dataDir, 'cookies.txt'),
       // Pausa aleatória entre os downloads de uma lista (evita bloqueio do YouTube), em segundos
+      // Playlist em MP3: subpasta com o nome da playlist e a capa como ícone
+      playlistFolders: true,
       downloadPauseEnabled: true,
       downloadPauseMinSec: 10,
       downloadPauseMaxSec: 180,
@@ -369,6 +371,7 @@ class SettingsManager {
     if ('accentColor' in out) out.accentColor = normalizeAccentColor(out.accentColor);
     bool('reduceMotion');
     bool('downloadPauseEnabled');
+    bool('playlistFolders');
     for (const key of ['downloadPauseMinSec', 'downloadPauseMaxSec']) {
       if (key in out) {
         const n = Math.round(Number(out[key]));

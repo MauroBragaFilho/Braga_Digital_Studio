@@ -130,6 +130,30 @@ module.exports = function registerSystemHandlers(paths, settingsManager, { isBus
     }
   });
 
+  // Mostra o arquivo (ou abre a pasta) no Explorer, com o arquivo selecionado; não abre nem executa nada.
+  handle('system:revealPath', async (_, itemPath) => {
+    try {
+      const resolved = assertAbsolutePath(itemPath, 'Caminho');
+      const st = fs.statSync(resolved, { throwIfNoEntry: false });
+      if (st) {
+        if (st.isDirectory()) {
+          const errorMessage = await shell.openPath(resolved);
+          if (errorMessage) return { success: false, error: errorMessage };
+        } else {
+          shell.showItemInFolder(resolved);
+        }
+        return { success: true };
+      }
+      // Arquivo sumiu: abre a pasta onde ele estava, se ainda existir
+      const dir = path.dirname(resolved);
+      if (!fs.existsSync(dir)) return { success: false, error: 'Caminho não encontrado.' };
+      const errorMessage = await shell.openPath(dir);
+      return errorMessage ? { success: false, error: errorMessage } : { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // Abre links externos no navegador padrão (preload não pode usar `shell` com sandbox).
   handle('shell:openExternal', async (_, url) => {
     const safeUrl = assertExternalUrl(url);

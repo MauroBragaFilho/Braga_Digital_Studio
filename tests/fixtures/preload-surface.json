@@ -8772,6 +8772,34 @@
       "returns": "promise"
     }
   },
+  "revealLocalPath": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:revealPath",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "system:revealPath",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "revealLut": {
     "type": "function",
     "length": 1,

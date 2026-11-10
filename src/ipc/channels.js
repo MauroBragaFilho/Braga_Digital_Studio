@@ -514,6 +514,7 @@ define('system', 'throw', {
   'system:getCacheInfo': { returns: 'Uso do cache por categoria', api: ['getCacheInfo'] },
   'system:clearCache': { args: [STR('categoryKey', 100, { optional: true, label: 'Categoria de cache' })], returns: 'Resultado da limpeza', api: ['clearCache'] },
   'system:openPath': { error: 'success', args: [STR('itemPath', 4096, { label: 'Caminho' })], returns: '{ success, error? }', api: ['openLocalPath'] },
+  'system:revealPath': { error: 'success', args: [STR('itemPath', 4096, { label: 'Caminho' })], returns: '{ success, error? }', api: ['revealLocalPath'] },
   'system:exportCookies': {
     args: [STR('domain', 253, { pattern: /^\.?[a-z0-9.-]{1,253}$/i, label: 'Domínio' }), STR('outputPath', 4096, { label: 'Arquivo de saída' })],
     returns: 'true se gravou',
