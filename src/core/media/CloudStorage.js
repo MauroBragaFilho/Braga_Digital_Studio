@@ -14,7 +14,6 @@
  */
 
 const crypto = require('node:crypto');
-const path = require('node:path');
 
 const GOOGLE_DRIVE_ROOTS = new Set([
     'my drive', 'meu drive',
@@ -55,7 +54,9 @@ function isCloudPath(filePath, platform = process.platform) {
  */
 function cloudHash(filePath, stats) {
     const h = crypto.createHash('sha256');
-    h.update(`${path.basename(String(filePath)).toLowerCase()}|${stats.size}|${Math.round(stats.mtimeMs || 0)}`);
+    // Nome pelo último segmento (\ ou /): path.basename do Linux não separa "G:\pasta\a.mp4"
+    const name = segmentsOf(filePath).pop() || '';
+    h.update(`${name.toLowerCase()}|${stats.size}|${Math.round(stats.mtimeMs || 0)}`);
     return `cloud:${h.digest('hex')}`;
 }
 
