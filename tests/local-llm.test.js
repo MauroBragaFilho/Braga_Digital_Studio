@@ -170,3 +170,15 @@ test('AIService: o provedor "embedded" liga o modelo antes do uso; sem instalar 
   const notInstalled = new AIService({ configDir: dir, embedded: { ensureRunning: async () => { throw Object.assign(new Error('não instalado'), { code: 'NOT_INSTALLED' }); } } });
   await assert.rejects(notInstalled._prepare({ preset: 'embedded' }), (e) => e.code === 'AI_UNREACHABLE' && /não instalado/.test(e.message));
 });
+
+test('avisa "iniciando" só quando o modelo precisa ligar (instalado e parado)', async () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'ai2-'));
+  const seen = [];
+  const mk = (running, installed) => new AIService({ configDir: dir, embedded: { isRunning: () => running, isInstalled: () => installed, ensureRunning: async () => {} } });
+  await mk(false, true)._prepare({ preset: 'embedded', id: 'e', label: 'Modelo local do app' }, null, (ev) => seen.push(ev.type));
+  assert.deepEqual(seen, ['starting', 'ready']);
+  seen.length = 0;
+  await mk(true, true)._prepare({ preset: 'embedded' }, null, (ev) => seen.push(ev.type));
+  await mk(false, false)._prepare({ preset: 'embedded' }, null, (ev) => seen.push(ev.type));
+  assert.deepEqual(seen, [], 'já ligado ou não instalado: sem aviso');
+});

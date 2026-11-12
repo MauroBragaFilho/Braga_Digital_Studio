@@ -156,6 +156,10 @@ class AssistantChat {
           const mark = `${ev.id}|${ev.before.map((b) => `${b.id}:${b.reason}`).join(',')}`;
           if (!announced.has(mark)) { announced.add(mark); status(switchLine(ev.label, ev.before), 'fallback'); }
         }
+      } else if (ev.type === 'starting') {
+        status('Iniciando o modelo local… (só na primeira pergunta, leva alguns segundos)', 'tool');
+      } else if (ev.type === 'ready') {
+        status('', 'clear');
       } else if (ev.type === 'noTools' && ev.key && !this._noTools.has(ev.key)) {
         this._noTools.add(ev.key);
         status(NO_TOOLS_NOTICE, 'notice');

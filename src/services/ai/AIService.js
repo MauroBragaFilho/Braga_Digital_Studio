@@ -513,13 +513,18 @@ class AIService {
    * Provedor "embedded" (modelo local do app): garante o servidor ligado antes de usá-lo. Sem o modelo instalado ou se
    * ele não subir, vira falha de "indisponível" e o fallback segue para o próximo provedor.
    */
-  async _prepare(p, signal = null) {
+  async _prepare(p, signal = null, onProvider = () => {}) {
     if (!p || p.preset !== 'embedded') return;
     if (!this.embedded || typeof this.embedded.ensureRunning !== 'function') {
       throw Object.assign(new Error('O modelo local do app não está disponível.'), { code: 'AI_UNREACHABLE' });
     }
+    // Ligar o modelo leva alguns segundos na primeira pergunta: avisa para a conversa não parecer travada
+    let starting = false;
+    try { starting = typeof this.embedded.isRunning === 'function' && this.embedded.isRunning() === false && this.embedded.isInstalled() === true; } catch (_) { starting = false; }
+    if (starting) { try { onProvider({ type: 'starting', id: p.id, label: p.label }); } catch (_) { /* aviso opcional */ } }
     try {
       await this.embedded.ensureRunning({ signal });
+      if (starting) { try { onProvider({ type: 'ready', id: p.id, label: p.label }); } catch (_) { /* aviso opcional */ } }
     } catch (err) {
       if (err && err.code === 'CANCELLED') throw err;
       throw Object.assign(new Error((err && err.message) || 'O modelo local do app não está disponível.'), { code: 'AI_UNREACHABLE' });
@@ -735,7 +740,7 @@ class AIService {
   async chat({ messages, system, signal = null, onProvider = () => {} } = {}) {
     const clean = this._sanitizeMessages(messages);
     const { result, provider } = await this._runChain(async (p) => {
-      await this._prepare(p, signal);
+      await this._prepare(p, signal, onProvider);
       return this._providerFor(p).chat({
         model: p.model,
         system: system || this._systemPrompt(),
@@ -766,7 +771,7 @@ class AIService {
     const maxTokens = this._load().maxTokens;
 
     const run = async (p) => {
-      await this._prepare(p, signal);
+      await this._prepare(p, signal, onProvider);
       const provider = this._providerFor(p);
       const toolKey = `${p.id}|${p.model}|${p.baseUrl.toLowerCase()}`;
       let useTools = wantTools && !this._noTools.has(toolKey);
