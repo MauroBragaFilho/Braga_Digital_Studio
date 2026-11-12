@@ -1162,3 +1162,7 @@
 
 /* Cartão MCP: itens recolhidos até o servidor ligar (o atributo hidden perde para display:flex) */
 #settingsMcpCard [hidden] { display: none !important; }
+
+/* Cartão do modelo local: barra de progresso e itens recolhidos (o atributo hidden perde para display:flex) */
+#settingsLocalLlmCard [hidden] { display: none !important; }
+.st-progress { width: 100%; height: 8px; accent-color: var(--accent-text); }

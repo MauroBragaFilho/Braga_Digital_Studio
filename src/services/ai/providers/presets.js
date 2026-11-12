@@ -11,12 +11,16 @@
  * `unverified`/`warning` continuam existindo para um preset futuro de origem não confirmada.
  */
 
+/** Porta fixa do modelo local do app (llama-server em 127.0.0.1): faz parte do endereço do provedor "embedded". */
+const EMBEDDED_PORT = 18741;
+
 const PRESETS = Object.freeze([
   { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyRequired: true, unverified: false, hosts: ['api.groq.com'] },
   { id: 'qwencloud', label: 'Qwen', baseUrl: 'https://maas.qwencloudapi.com/compatible-mode/v1', model: 'qwen-plus', keyRequired: true, unverified: false, hosts: ['maas.qwencloudapi.com'] },
   { id: 'lmstudio', label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', model: '', keyRequired: false, unverified: false, hosts: [] },
   { id: 'ollama', label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1', model: '', keyRequired: false, unverified: false, hosts: [] },
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', keyRequired: true, unverified: false, hosts: ['api.openai.com'] },
+  { id: 'embedded', label: 'Modelo local do app', baseUrl: `http://127.0.0.1:${EMBEDDED_PORT}/v1`, model: 'qwen2.5-0.5b-instruct', keyRequired: false, unverified: false, hosts: [], internal: true },
   { id: 'custom', label: 'Personalizado', baseUrl: '', model: '', keyRequired: false, unverified: false, hosts: [] }
 ]);
 
@@ -30,6 +34,7 @@ function detectPreset(baseUrl) {
   const known = PRESETS.find((p) => p.hosts.includes(host));
   if (known) return known.id;
   if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1') {
+    if (url.port === String(EMBEDDED_PORT)) return 'embedded';
     if (url.port === '1234') return 'lmstudio';
     if (url.port === '11434') return 'ollama';
   }
@@ -38,10 +43,10 @@ function detectPreset(baseUrl) {
 
 /** Versão para a interface (sem campos internos). */
 function publicList() {
-  return PRESETS.map((p) => ({
+  return PRESETS.filter((p) => !p.internal).map((p) => ({
     id: p.id, label: p.label, baseUrl: p.baseUrl, model: p.model,
     keyRequired: p.keyRequired, unverified: p.unverified, warning: p.warning || ''
   }));
 }
 
-module.exports = { PRESETS, byId, detectPreset, publicList };
+module.exports = { PRESETS, EMBEDDED_PORT, byId, detectPreset, publicList };

@@ -602,6 +602,32 @@
           <span id="aiAssistantStatus" class="st-row-hint" role="status" aria-live="polite"></span>
         </div>
 
+        <div class="st-card" id="settingsLocalLlmCard">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">memory</span> Modelo local (sem internet)</h4>
+          <p class="st-card-desc">Um modelo de IA pequeno que roda neste computador, sem chave nem internet. É básico: serve de reserva quando os outros servidores caem e para pedidos simples (os comandos mais comuns, como baixar um link, o assistente já entende sozinho). O servidor e o modelo vêm das fontes oficiais, com conferência de integridade, e ocupam cerca de <span id="aiLocalLlmSize">0,5 GB</span>.</p>
+
+          <div class="st-row st-row-stack">
+            <span id="aiLocalLlmHint" class="st-row-hint">Não instalado.</span>
+            <progress id="aiLocalLlmProgress" class="st-progress" max="100" value="0" hidden></progress>
+            <div class="st-row-control">
+              <button id="aiLocalLlmInstallBtn" class="settings-btn-accent" type="button">Instalar modelo local</button>
+              <button id="aiLocalLlmCancelBtn" class="settings-btn-outline" type="button" hidden>Cancelar</button>
+            </div>
+          </div>
+
+          <details class="st-advanced" id="aiLocalLlmAdvanced" hidden>
+            <summary>Ajustes avançados</summary>
+            <div class="st-row st-row-stack">
+              <span class="st-row-label">Remover o modelo local</span>
+              <span class="st-row-hint">Apaga os arquivos e tira o modelo da lista de servidores de IA.</span>
+              <div class="st-row-control">
+                <button id="aiLocalLlmRemoveBtn" class="settings-btn-outline" type="button">Remover</button>
+              </div>
+            </div>
+          </details>
+          <span id="aiLocalLlmStatus" class="st-row-hint" role="status" aria-live="polite"></span>
+        </div>
+
         <div class="st-card" id="settingsMcpCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">hub</span> Conectar agentes (MCP)</h4>
           <p class="st-card-desc">Deixa agentes de IA, como o Antigravity, a Alice e a Liz, usarem as mesmas ferramentas do assistente: consultar a biblioteca e os projetos e, só com a sua confirmação aqui no app, baixar, converter, transcrever e montar projetos. Funciona só neste computador e exige um token.</p>

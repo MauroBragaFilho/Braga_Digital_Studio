@@ -1444,6 +1444,7 @@ function setupSettingsExtras() {
 
   setupAssistantCard();
   setupMcpCard();
+  setupLocalLlmCard();
 }
 
 /**
@@ -1571,6 +1572,81 @@ async function setupMcpCard() {
       say('Novo token gerado. Copie a configuração de novo no agente.');
     } catch (err) {
       say(`Não foi possível gerar. ${friendlyError(err, 'Tente novamente.')}`);
+    }
+  });
+}
+
+/**
+ * Cartão "Modelo local": instala/remove o modelo de IA que roda neste computador (llama.cpp + Qwen pequeno, fontes
+ * oficiais com SHA-256). A instalação é longa: o progresso chega pelo evento ai:localLlmProgress.
+ */
+async function setupLocalLlmCard() {
+  const installBtn = document.getElementById('aiLocalLlmInstallBtn');
+  if (!installBtn || typeof window.bds?.aiLocalLlmStatus !== 'function') return;
+  const cancelBtn = document.getElementById('aiLocalLlmCancelBtn');
+  const removeBtn = document.getElementById('aiLocalLlmRemoveBtn');
+  const hint = document.getElementById('aiLocalLlmHint');
+  const bar = document.getElementById('aiLocalLlmProgress');
+  const advanced = document.getElementById('aiLocalLlmAdvanced');
+  const sizeEl = document.getElementById('aiLocalLlmSize');
+  const status = document.getElementById('aiLocalLlmStatus');
+  const say = (msg) => { if (status) status.textContent = msg || ''; };
+  const call = async (fn, ...args) => {
+    const r = await fn(...args);
+    if (!r || !r.ok) throw new Error(r?.error || 'O aplicativo não respondeu.');
+    return r.data;
+  };
+  const render = (s, installing = false) => {
+    if (sizeEl && s.sizeBytes) sizeEl.textContent = `${(s.sizeBytes / 1024 ** 3).toFixed(1).replace('.', ',')} GB`;
+    installBtn.hidden = installing || s.installed || !s.supported;
+    installBtn.disabled = !s.supported;
+    if (cancelBtn) cancelBtn.hidden = !installing;
+    if (advanced) advanced.hidden = !s.installed || installing;
+    if (bar) bar.hidden = !installing;
+    if (hint && !installing) {
+      if (!s.supported) hint.textContent = s.reason || 'Indisponível neste sistema.';
+      else if (s.installed) hint.textContent = `Instalado (${s.modelLabel}). Liga sozinho quando o assistente precisa e desliga depois de alguns minutos sem uso.`;
+      else hint.textContent = 'Não instalado.';
+    }
+  };
+  let installing = false;
+  try { render(await call(window.bds.aiLocalLlmStatus)); } catch (_) { /* mantém o padrão */ }
+
+  const off = window.bds.onAiLocalLlmProgress?.((p) => {
+    if (!p || p.kind !== 'llm') return;
+    if (bar && typeof p.percent === 'number') bar.value = Math.max(0, Math.min(100, p.percent));
+    if (hint && installing && p.message) hint.textContent = `${p.message}${typeof p.percent === 'number' ? ` ${Math.round(p.percent)}%` : ''}`;
+  });
+  window.addEventListener('pagehide', () => { try { if (typeof off === 'function') off(); } catch (_) { /* noop */ } }, { once: true });
+
+  installBtn.addEventListener('click', async () => {
+    installing = true;
+    say('');
+    if (bar) bar.value = 0;
+    render({ installed: false, supported: true, sizeBytes: 0 }, true);
+    if (hint) hint.textContent = 'Preparando…';
+    try {
+      const s = await call(window.bds.aiLocalLlmInstall);
+      installing = false;
+      render(s);
+      say('Pronto. O modelo local entrou na lista de servidores, como reserva.');
+      window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
+      try { analysisPanel?.reloadAnalysisPanel?.(); } catch (_) { /* a lista se atualiza ao reabrir */ }
+    } catch (err) {
+      installing = false;
+      try { render(await call(window.bds.aiLocalLlmStatus)); } catch (_) { /* noop */ }
+      say(/cancel/i.test(String(err && err.message)) ? 'Instalação cancelada.' : `Não foi possível instalar. ${friendlyError(err, 'Tente novamente.')}`);
+    }
+  });
+  cancelBtn?.addEventListener('click', () => { window.bds.aiLocalLlmCancel(); });
+  removeBtn?.addEventListener('click', async () => {
+    try {
+      render(await call(window.bds.aiLocalLlmRemove));
+      say('Modelo local removido.');
+      window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
+      try { analysisPanel?.reloadAnalysisPanel?.(); } catch (_) { /* a lista se atualiza ao reabrir */ }
+    } catch (err) {
+      say(`Não foi possível remover. ${friendlyError(err, 'Tente novamente.')}`);
     }
   });
 }

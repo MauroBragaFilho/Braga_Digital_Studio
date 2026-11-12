@@ -109,7 +109,7 @@ function setup(servers, { clock = null, fallback = true, tools = false, timeouts
   const events = [];
   const toolbox = tools ? fakeTools() : null;
   const history = new ChatHistory({ dir });
-  const chat = new AssistantChat({ ai, history, emit: (channel, payload) => events.push({ channel, ...payload }), timeouts, toolbox });
+  const chat = new AssistantChat({ ai, history, emit: (channel, payload) => events.push({ channel, ...payload }), timeouts, toolbox, localCommands: false });
   const of = (channel) => events.filter((e) => e.channel === channel);
   const status = (kind) => of('ai:chatStatus').filter((e) => e.kind === kind).map((e) => e.text);
   const ask = async (text) => {

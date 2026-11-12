@@ -459,6 +459,102 @@
       "returns": "promise"
     }
   },
+  "aiLocalLlmCancel": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmCancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmCancel",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiLocalLlmInstall": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmInstall",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmInstall",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiLocalLlmRemove": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmRemove",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmRemove",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiLocalLlmStatus": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "aiMcpCopyConfig": {
     "type": "function",
     "length": 1,
@@ -5797,6 +5893,37 @@
       }
     ]
   },
+  "onAiLocalLlmProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "ai:localLlmProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "ai:localLlmProgress"
+      },
+      {
+        "op": "off",
+        "ch": "ai:localLlmProgress"
+      },
+      {
+        "op": "off",
+        "ch": "ai:localLlmProgress"
+      }
+    ]
+  },
   "onAiNavigate": {
     "type": "function",
     "length": 1,
@@ -8293,6 +8420,10 @@
         {
           "op": "off",
           "ch": "ai:chatStatus"
+        },
+        {
+          "op": "off",
+          "ch": "ai:localLlmProgress"
         },
         {
           "op": "off",

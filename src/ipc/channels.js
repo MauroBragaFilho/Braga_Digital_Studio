@@ -395,6 +395,11 @@ define('ai', 'wrap', {
   },
   'ai:cancelAnalysis': { returns: 'true', api: ['aiCancelAnalysis'] },
   // Agentes de IA externos (servidor MCP local, desligado por padrão). O token nunca volta ao renderer: ai:mcpCopyConfig copia a configuração pronta (antigravity | http | stdio) direto para a área de transferência.
+  // Modelo local do app (llama.cpp + Qwen pequeno, fontes oficiais com SHA-256): estado, instalar (progresso em ai:localLlmProgress), cancelar e remover.
+  'ai:localLlmStatus': { returns: 'Estado do modelo local { supported, installed, running, sizeBytes, modelLabel, providerAdded, busy }', api: ['aiLocalLlmStatus'] },
+  'ai:localLlmInstall': { returns: 'Estado do modelo local (depois de instalar e acrescentar o provedor)', api: ['aiLocalLlmInstall'] },
+  'ai:localLlmCancel': { returns: 'true se havia instalação para cancelar', api: ['aiLocalLlmCancel'] },
+  'ai:localLlmRemove': { returns: 'Estado do modelo local (arquivos e provedor removidos)', api: ['aiLocalLlmRemove'] },
   'ai:mcpStatus': { returns: 'Estado do servidor MCP { enabled, running, port, url, calls, client, error }', api: ['aiMcpStatus'] },
   'ai:mcpSetEnabled': { args: [t.boolean({ name: 'on', label: 'Ligado' })], returns: 'Estado do servidor MCP', api: ['aiMcpSetEnabled'] },
   'ai:mcpSetOptions': { args: [OBJ('opts', { requireToken: t.boolean({ optional: true }), autoConfirm: t.boolean({ optional: true }) }, { strict: true, label: 'Opções' })], returns: 'Estado do servidor MCP (requireToken=false: sem token; autoConfirm=true: ações sem confirmação)', api: ['aiMcpSetOptions'] },
@@ -814,6 +819,7 @@ const EVENTS = [
   ['onYoutubeCode', 'youtube:code'],
   ['onYoutubeAuthStatus', 'youtube:auth-status'],
   ['onAiAnalysisProgress', 'ai:analysisProgress'],
+  ['onAiLocalLlmProgress', 'ai:localLlmProgress'],
   ['onAiChatDelta', 'ai:chatDelta'],
   ['onAiChatDone', 'ai:chatDone'],
   ['onAiChatError', 'ai:chatError'],

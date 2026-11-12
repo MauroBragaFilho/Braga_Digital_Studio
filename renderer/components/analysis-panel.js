@@ -358,6 +358,12 @@ export async function mountAnalysisPanel(container) {
   }
 }
 
+/** Recarrega a lista de provedores (ex.: o modelo local foi instalado ou removido em outro cartão). */
+export async function reloadAnalysisPanel() {
+  if (!root) return;
+  try { config = await call(window.bds?.aiGetConfig); render(); } catch (_) { /* mantém o que já está na tela */ }
+}
+
 /** Solta o conteúdo ao sair das Configurações. */
 export function unmountAnalysisPanel() {
   if (root) clear(root);

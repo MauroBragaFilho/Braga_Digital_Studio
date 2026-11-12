@@ -35,6 +35,7 @@
 
 const { MAX_MESSAGES, MAX_MESSAGE_CHARS, switchLine } = require('./AIService');
 const { validateContext, buildContextBlock } = require('./context');
+const { matchCommand, runCommand } = require('./commands');
 
 let seq = 0;
 
@@ -49,8 +50,9 @@ class AssistantChat {
    * @param {{ ai: import('./AIService'), history: import('./ChatHistory'), emit: (channel:string, payload:object)=>void,
    *           timeouts?: object, toolbox?: import('./tools').ToolBox }} deps  `timeouts` (teste): { firstChunkTimeoutMs, idleTimeoutMs }
    */
-  constructor({ ai, history, emit, timeouts = {}, toolbox = null }) {
+  constructor({ ai, history, emit, timeouts = {}, toolbox = null, localCommands = true }) {
     this.toolbox = toolbox;
+    this.localCommands = localCommands !== false; // comandos simples por regras (commands.js); testes do laço do modelo desligam
     this._noTools = new Set();   // servidor+modelo que recusaram ferramentas (avisado uma vez)
     this.ai = ai;
     this.history = history;
@@ -60,6 +62,14 @@ class AssistantChat {
   }
 
   isBusy() { return this._active !== null; }
+
+  /**
+   * O pedido é um comando simples que as regras (commands.js) resolvem sem modelo de IA? Então funciona mesmo sem
+   * servidor configurado e nada sai do computador (o aviso de privacidade não se aplica).
+   */
+  canHandleLocally(text) {
+    return this.localCommands && Boolean(this.toolbox) && matchCommand(text) !== null;
+  }
 
   /** Esquece que o servidor/modelo recusou ferramentas (a configuração mudou: vale tentar de novo). */
   forgetToolSupport() {
@@ -156,6 +166,17 @@ class AssistantChat {
       const convo = [...messages];
       const key = typeof this.ai.serverKey === 'function' ? this.ai.serverKey() : 'padrao';
       const hasTools = Boolean(this.toolbox);
+      // Comandos simples ("baixa este link", "transcreve o selecionado"): por regras, sem consultar a IA
+      if (hasTools && this.localCommands) {
+        const local = await runCommand({ text: userText, context, toolbox: this.toolbox, signal, onStatus: status });
+        status('', 'clear');
+        if (local !== null) {
+          this.emit('ai:chatDelta', { id, text: local });
+          save(local);
+          this.emit('ai:chatDone', { id, text: local, finishReason: 'command', cancelled: false });
+          return;
+        }
+      }
       let useTools = hasTools && !this._noTools.has(key);
       const contextBlock = buildContextBlock(context, this.toolbox ? this.toolbox.deps : {});
       const usedTools = [];

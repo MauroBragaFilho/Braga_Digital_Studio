@@ -9,7 +9,7 @@ const AIService = require('../services/ai/AIService');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const registry = require('../core/modules/ModuleRegistry');
 const { isAssistantBuildAllowed } = require('../services/ai/releaseGate');
-const { lazyService, isCreated } = require('../core/modules/lazyService');
+const { lazyService, isCreated, onceCreated } = require('../core/modules/lazyService');
 // [PERF] ChatHistory, AssistantChat, ToolBox (as ~25 ferramentas), os diálogos de confirmação e a análise de
 // transcrição só são carregados no primeiro uso do assistente (ver `toolbox` e `chat` abaixo): fora da abertura.
 
@@ -60,7 +60,16 @@ function registerAiHandlers(paths, deps = {}) {
   const handle = deps.handle || defaultHandle;
   const isDev = deps.isDev !== undefined ? deps.isDev === true : !(electron.app && electron.app.isPackaged);
   const settingsManager = deps.settingsManager || null;
-  const ai = new AIService({ configDir, safeStorage: deps.safeStorage || electron.safeStorage });
+  // Modelo local do app (llama.cpp + Qwen pequeno): só é criado no primeiro uso; o servidor só liga quando o assistente o pede
+  const localLlm = lazyService(() => {
+    const { LocalLlm } = require('../core/modules/LocalLlm');
+    return new LocalLlm({
+      rootDir: (paths && paths.dataDir) || appPaths.dataDir,
+      tempDir: (paths && paths.tempDir) || appPaths.tempDir,
+      config: deps.localLlmConfig || {}
+    });
+  });
+  const ai = new AIService({ configDir, safeStorage: deps.safeStorage || electron.safeStorage, embedded: localLlm });
 
   const broadcast = deps.broadcast || ((channel, payload) => {
     for (const win of (electron.BrowserWindow ? electron.BrowserWindow.getAllWindows() : [])) {
@@ -173,6 +182,8 @@ function registerAiHandlers(paths, deps = {}) {
   // --- Assistente (travado) ---
   handle('ai:chatStart', (_, payload) => {
     guard();
+    // Comando simples resolvido por regras (commands.js): não usa o servidor de IA, então não exige configuração nem aviso de privacidade
+    if (toolbox && payload && chat.canHandleLocally(payload.text)) return { id: chat.start(payload.text, payload.context) };
     // PRIMEIRO USO: sem servidor configurado, o chat explica e oferece "Abrir configurações da IA" (código estável)
     const problem = ai.configProblem();
     if (problem) throw Object.assign(new Error(problem.message), { code: problem.code });
@@ -203,6 +214,26 @@ function registerAiHandlers(paths, deps = {}) {
   handle('ai:mcpRegenerateToken', () => mcpGuard().regenerateToken());
   handle('ai:mcpCopyConfig', (_, kind) => mcpGuard().copyConfig(kind));
 
+  // --- Modelo local do app: instalar/remover (o progresso chega por ai:localLlmProgress). Ao instalar, entra na lista de
+  // provedores (no fim: os da nuvem têm prioridade e ele é o reserva sem internet); ao remover, sai dela. ---
+  onceCreated(localLlm, (svc) => svc.on('progress', (p) => broadcast('ai:localLlmProgress', p)));
+  const embeddedProviders = () => ai.getPublicConfig().providers.filter((p) => p.preset === 'embedded');
+  const llmState = () => ({ ...localLlm.getStatus(), providerAdded: embeddedProviders().length > 0 });
+  handle('ai:localLlmStatus', () => llmState());
+  handle('ai:localLlmInstall', async () => {
+    await localLlm.install();
+    if (!embeddedProviders().length) ai.saveConfig({ addProvider: { preset: 'embedded' } });
+    if (isCreated(chat)) chat.forgetToolSupport();
+    return llmState();
+  });
+  handle('ai:localLlmCancel', () => localLlm.cancel());
+  handle('ai:localLlmRemove', async () => {
+    await localLlm.uninstall();
+    for (const p of embeddedProviders()) ai.saveConfig({ removeProvider: p.id });
+    return llmState();
+  });
+  if (electron.app && typeof electron.app.once === 'function') electron.app.once('before-quit', () => { if (isCreated(localLlm)) localLlm.stop(); });
+
   // --- Análise de transcrição: uma por vez (o modelo local é um só); cancelável ---
   // Decisão: não dá para restringir a "pastas conhecidas" sem quebrar o uso (a transcrição vai para a pasta que o
   // usuário escolhe). Por isso o caminho é validado em readTranscriptFile: absoluto, extensão .md/.srt/.vtt/.txt,
@@ -228,6 +259,7 @@ function registerAiHandlers(paths, deps = {}) {
 
   ai.assistantChat = chat; // usado em testes
   ai.mcp = mcp;            // usado em testes e no encerramento
+  ai.localLlm = localLlm;  // usado em testes
   return ai;
 }
 

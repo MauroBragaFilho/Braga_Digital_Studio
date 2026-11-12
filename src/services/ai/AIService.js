@@ -144,7 +144,8 @@ class AIService {
    * @param {{configDir:string, safeStorage?:object, fetchImpl?:Function, now?:()=>number}} opts
    *   `now` (teste): relógio em milissegundos, usado só no tempo de espera dos provedores que falharam.
    */
-  constructor({ configDir, safeStorage = null, fetchImpl = undefined, now = Date.now }) {
+  constructor({ configDir, safeStorage = null, fetchImpl = undefined, now = Date.now, embedded = null }) {
+    this.embedded = embedded; // modelo local do app (LocalLlm): ligado sob demanda antes de cada uso do provedor "embedded"
     if (!configDir) throw new Error('AIService: configDir é obrigatório.');
     this.filePath = path.join(configDir, 'ai.json');
     this.safeStorage = safeStorage;
@@ -508,6 +509,23 @@ class AIService {
     });
   }
 
+  /**
+   * Provedor "embedded" (modelo local do app): garante o servidor ligado antes de usá-lo. Sem o modelo instalado ou se
+   * ele não subir, vira falha de "indisponível" e o fallback segue para o próximo provedor.
+   */
+  async _prepare(p, signal = null) {
+    if (!p || p.preset !== 'embedded') return;
+    if (!this.embedded || typeof this.embedded.ensureRunning !== 'function') {
+      throw Object.assign(new Error('O modelo local do app não está disponível.'), { code: 'AI_UNREACHABLE' });
+    }
+    try {
+      await this.embedded.ensureRunning({ signal });
+    } catch (err) {
+      if (err && err.code === 'CANCELLED') throw err;
+      throw Object.assign(new Error((err && err.message) || 'O modelo local do app não está disponível.'), { code: 'AI_UNREACHABLE' });
+    }
+  }
+
   _targetFor(providerId) {
     if (providerId !== undefined && providerId !== null && providerId !== '') {
       const p = this._find(String(providerId));
@@ -521,6 +539,7 @@ class AIService {
 
   async testConnection(providerId) {
     const p = this._targetFor(providerId);
+    await this._prepare(p);
     const result = await this._providerFor(p).testConnection();
     this._standby.delete(p.id);
     return { ...result, providerId: p.id, label: p.label };
@@ -528,6 +547,7 @@ class AIService {
 
   async listModels(providerId) {
     const p = this._targetFor(providerId);
+    await this._prepare(p);
     return this._providerFor(p).listModels();
   }
 
@@ -714,13 +734,16 @@ class AIService {
   /** Envia a conversa ao provedor ativo (com fallback). `signal` (opcional) cancela a requisição. */
   async chat({ messages, system, signal = null, onProvider = () => {} } = {}) {
     const clean = this._sanitizeMessages(messages);
-    const { result, provider } = await this._runChain((p) => this._providerFor(p).chat({
-      model: p.model,
-      system: system || this._systemPrompt(),
-      messages: clean,
-      maxTokens: this._load().maxTokens,
-      signal
-    }), { signal, onProvider, exemptHead: true });
+    const { result, provider } = await this._runChain(async (p) => {
+      await this._prepare(p, signal);
+      return this._providerFor(p).chat({
+        model: p.model,
+        system: system || this._systemPrompt(),
+        messages: clean,
+        maxTokens: this._load().maxTokens,
+        signal
+      });
+    }, { signal, onProvider, exemptHead: true });
     return { ...result, model: provider.model, provider: { id: provider.id, label: provider.label } };
   }
 
@@ -743,6 +766,7 @@ class AIService {
     const maxTokens = this._load().maxTokens;
 
     const run = async (p) => {
+      await this._prepare(p, signal);
       const provider = this._providerFor(p);
       const toolKey = `${p.id}|${p.model}|${p.baseUrl.toLowerCase()}`;
       let useTools = wantTools && !this._noTools.has(toolKey);
