@@ -90,6 +90,8 @@ body:has(dialog[open]) .aia-root {
 .aia-title { flex: 1; margin: 0; font-family: var(--font-title); font-size: var(--fs-body); font-weight: 700; }
 .aia-provider { max-width: 40%; margin-right: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aia-provider[hidden] { display: none; }
+/* O nome do modelo/provedor fica fora do cabeçalho (o app segue controlando o elemento: acessibilidade e testes). */
+.aia-head .aia-provider { display: none; }
 .aia-icon-btn {
   width: 32px;
   height: 32px;
@@ -112,7 +114,10 @@ body:has(dialog[open]) .aia-root {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 
 .aia-empty {
@@ -126,7 +131,17 @@ body:has(dialog[open]) .aia-root {
   color: var(--muted);
   font-size: var(--fs-label);
 }
-.aia-empty .material-symbols-rounded { font-size: 32px; color: var(--accent-text); }
+.aia-empty .material-symbols-rounded {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-text) 12%, transparent);
+  font-size: 30px;
+  color: var(--accent-text);
+}
 .aia-empty strong { color: var(--text); font-size: var(--fs-body); }
 .aia-examples {
   margin: 4px 0 0;
@@ -140,32 +155,42 @@ body:has(dialog[open]) .aia-root {
 .aia-examples li {
   padding: 8px 12px;
   border-radius: var(--radius-sm);
-  border: 1px dashed var(--line);
+  background: var(--card-2);
+  border: 1px solid var(--line);
   color: var(--text);
   font-size: var(--fs-label);
+  font-style: italic;
   text-align: left;
 }
 
-.aia-msg { display: flex; }
+.aia-msg { display: flex; animation: aia-in var(--dur-base) var(--ease) both; }
+@keyframes aia-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
 .aia-msg-user { justify-content: flex-end; }
 .aia-bubble {
   max-width: 88%;
   padding: 10px 14px;
   border-radius: var(--radius-md);
   font-size: var(--fs-body);
-  line-height: 1.45;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   background: var(--card-2);
   color: var(--text);
   border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;   /* "bico" do balão: a resposta sai do assistente, à esquerda */
 }
 .aia-msg-user .aia-bubble {
   background: var(--btn-bg);
   color: var(--btn-fg);
   border-color: transparent;
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: 4px;  /* e a do usuário, à direita */
   white-space: pre-wrap;
 }
-.aia-msg-pending .aia-bubble { color: var(--muted); font-style: italic; }
+.aia-msg-pending .aia-bubble { color: var(--muted); font-style: italic; animation: aia-pulse 1.4s ease-in-out infinite; }
+@keyframes aia-pulse { 50% { opacity: 0.55; } }
 .aia-msg[hidden] { display: none; }
 .aia-msg-status { padding: 0 4px; }
 .aia-status { font-size: var(--fs-label); color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
@@ -201,8 +226,12 @@ body:has(dialog[open]) .aia-root {
 
 .aia-bubble .aia-p { margin: 0; }
 .aia-bubble .aia-p + .aia-p, .aia-bubble .aia-p + .aia-list, .aia-bubble .aia-list + .aia-p,
-.aia-bubble .aia-code + .aia-p, .aia-bubble .aia-p + .aia-code { margin-top: 6px; }
+.aia-bubble .aia-code + .aia-p, .aia-bubble .aia-p + .aia-code { margin-top: 8px; }
 .aia-bubble .aia-list { margin: 0; padding-left: 20px; }
+.aia-bubble .aia-list li + li { margin-top: 3px; }
+.aia-bubble .aia-list li::marker { color: var(--accent-text); }
+.aia-bubble strong { font-weight: 700; }
+.aia-bubble em { font-style: italic; }
 .aia-bubble code {
   font-family: Consolas, 'Courier New', monospace;
   font-size: var(--fs-label);
@@ -233,8 +262,8 @@ body:has(dialog[open]) .aia-root {
   min-width: 0;
   resize: none;
   max-height: 120px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--input-bg);
   color: var(--text);
@@ -279,5 +308,7 @@ body:has(dialog[open]) .aia-root {
   .aia-fab, .aia-root.aia-dragging .aia-fab, .aia-send, .aia-action-btn {
     transition: none;
   }
+  .aia-msg, .aia-msg-pending .aia-bubble { animation: none; }
+  .aia-messages { scroll-behavior: auto; }
   .aia-fab:hover { transform: none; }
 }
