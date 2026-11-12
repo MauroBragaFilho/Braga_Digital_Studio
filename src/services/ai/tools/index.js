@@ -138,12 +138,13 @@ class ToolBox {
    * @param {{signal?:AbortSignal, onStatus?:(text:string, kind?:string)=>void}} [run]
    * @returns {Promise<string>}
    */
-  async execute(name, rawArgs, { signal = null, onStatus = () => {} } = {}) {
+  async execute(name, rawArgs, { signal = null, onStatus = () => {}, source = 'Assistente', autoConfirm = false } = {}) {
+    const external = source === 'MCP'; // agente de IA externo (servidor MCP): o diálogo avisa de quem veio o pedido
     const cancelled = () => Object.assign(new Error('Cancelado.'), { code: 'CANCELLED' });
     if (signal && signal.aborted) throw cancelled();
     const tool = typeof name === 'string' ? BY_NAME.get(name) : undefined;
     if (!tool) {
-      this.log.warn(`[Assistente] ferramenta desconhecida recusada: ${safeText(name, 40)}`);
+      this.log.warn(`[${source}] ferramenta desconhecida recusada: ${safeText(name, 40)}`);
       return serializeError(`A ferramenta "${safeText(name, 40)}" não existe. Ferramentas disponíveis: ${TOOLS.map((t) => t.name).join(', ')}.`);
     }
     const ctx = { ...this.deps, signal, onStatus: (text, kind) => onStatus(text, kind) };
@@ -159,28 +160,33 @@ class ToolBox {
       const prep = await tool.prepare(args, ctx);
       if (signal && signal.aborted) throw cancelled();
       let confirmed = false;
-      try {
+      if (autoConfirm === true && external) { // opção explícita do usuário para agentes MCP: a validação (prepare) já rodou
+        this.log.info(`[${source}] ação SEM confirmação (opção do usuário): ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
+        confirmed = true;
+      } else try {
         // Corrida com o cancelamento: parar o chat encerra o fluxo na hora (o modal ou o diálogo nativo fecha pelo mesmo sinal)
-        confirmed = (await abortable(this.confirm({ title: 'Confirmar ação do assistente', message: prep.message, detail: prep.detail, signal }), signal)) === true;
+        confirmed = (await abortable(this.confirm({ title: external ? 'Confirmar ação pedida por um agente de IA' : 'Confirmar ação do assistente', message: external ? `Um agente de IA externo (MCP) quer fazer isto:
+
+${prep.message}` : prep.message, detail: prep.detail, signal }), signal)) === true;
       } catch (err) {
         if (err && err.code === 'CANCELLED') throw err;
         confirmed = false;
       }
       if (signal && signal.aborted) throw cancelled(); // cancelou durante a confirmação: não executa
       if (!confirmed) {
-        this.log.info(`[Assistente] ação RECUSADA pelo usuário: ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
+        this.log.info(`[${source}] ação RECUSADA pelo usuário: ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
         return serializeResult({ resultado: 'O usuário recusou. Nada foi feito.' });
       }
-      this.log.info(`[Assistente] ação CONFIRMADA pelo usuário: ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
+      this.log.info(`[${source}] ação CONFIRMADA pelo usuário: ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
       onStatus('Executando…', 'tool');
       const out = await tool.run(prep.plan, ctx);
-      this.log.info(`[Assistente] ação concluída: ${tool.name}`);
+      this.log.info(`[${source}] ação concluída: ${tool.name}`);
       if (signal && signal.aborted) throw cancelled(); // parou no meio: o laço do chat encerra
       return serializeResult(out, tool.resultOptions);
     } catch (err) {
       if (err && err.code === 'CANCELLED') throw Object.assign(new Error('Cancelado.'), { code: 'CANCELLED' });
       if (err instanceof ArgError || err instanceof ToolError) return serializeError(err.message);
-      this.log.warn(`[Assistente] falha na ferramenta ${tool.name}: ${safeText(err && err.message, 120)}`);
+      this.log.warn(`[${source}] falha na ferramenta ${tool.name}: ${safeText(err && err.message, 120)}`);
       return serializeError('Não foi possível concluir esta consulta ou ação agora.');
     }
   }

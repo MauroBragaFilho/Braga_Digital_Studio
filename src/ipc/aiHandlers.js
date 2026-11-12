@@ -115,6 +115,27 @@ function registerAiHandlers(paths, deps = {}) {
     });
   });
 
+  // Servidor MCP (agentes de IA externos): só existe junto das ferramentas. Desligado por padrão; se o usuário o deixou
+  // ligado, sobe logo depois da abertura (só o servidor HTTP local: o ToolBox continua preguiçoso até a 1ª chamada).
+  let mcp = null;
+  if (toolbox) {
+    const McpService = require('../services/ai/mcp/McpService');
+    mcp = new McpService({
+      configDir,
+      getToolbox: () => toolbox,
+      version: electron.app && typeof electron.app.getVersion === 'function' ? electron.app.getVersion() : '0.0.0',
+      clipboard: deps.clipboard || electron.clipboard,
+      log: deps.log || { info: (m) => require('../services/logService').info(m), warn: (m) => require('../services/logService').warn(m) }
+    });
+    if (deps.mcpAutoStart !== false) setImmediate(() => { mcp.init(); });
+  }
+  /** O MCP usa o mesmo ToolBox; só a trava de build vale (o interruptor do chat flutuante é outro assunto). */
+  const mcpGuard = () => {
+    if (!mcp) throw Object.assign(new Error('Os agentes de IA não estão disponíveis agora.'), { code: 'MCP_UNAVAILABLE' });
+    if (!isAssistantBuildAllowed(isDev)) throw Object.assign(new Error('Não disponível nesta versão do aplicativo.'), { code: 'AI_DISABLED' });
+    return mcp;
+  };
+
   // O chat também só nasce no primeiro uso (primeira pergunta, abrir o histórico ou limpar): fora do caminho da abertura
   const chat = lazyService(() => {
     const ChatHistory = require('../services/ai/ChatHistory');
@@ -175,6 +196,13 @@ function registerAiHandlers(paths, deps = {}) {
   });
   handle('ai:historyClear', () => { guard(); return chat.clear(); });
 
+  // --- Agentes de IA externos (MCP): configuração e estado; o token nunca volta ao renderer ---
+  handle('ai:mcpStatus', () => mcpGuard().status());
+  handle('ai:mcpSetEnabled', (_, on) => mcpGuard().setEnabled(on === true));
+  handle('ai:mcpSetOptions', (_, opts) => mcpGuard().setOptions(opts));
+  handle('ai:mcpRegenerateToken', () => mcpGuard().regenerateToken());
+  handle('ai:mcpCopyConfig', (_, kind) => mcpGuard().copyConfig(kind));
+
   // --- Análise de transcrição: uma por vez (o modelo local é um só); cancelável ---
   // Decisão: não dá para restringir a "pastas conhecidas" sem quebrar o uso (a transcrição vai para a pasta que o
   // usuário escolhe). Por isso o caminho é validado em readTranscriptFile: absoluto, extensão .md/.srt/.vtt/.txt,
@@ -199,6 +227,7 @@ function registerAiHandlers(paths, deps = {}) {
   handle('ai:cancelAnalysis', () => { if (analysis) analysis.controller.abort(); return true; });
 
   ai.assistantChat = chat; // usado em testes
+  ai.mcp = mcp;            // usado em testes e no encerramento
   return ai;
 }
 

@@ -219,6 +219,11 @@ const api = {
   aiHistoryClear: () => ipcRenderer.invoke('ai:historyClear'),
   aiAnalyzeTranscript: (path) => ipcRenderer.invoke('ai:analyzeTranscript', { path }),
   aiCancelAnalysis: () => ipcRenderer.invoke('ai:cancelAnalysis'),
+  aiMcpStatus: () => ipcRenderer.invoke('ai:mcpStatus'),
+  aiMcpSetEnabled: (on) => ipcRenderer.invoke('ai:mcpSetEnabled', on),
+  aiMcpSetOptions: (opts) => ipcRenderer.invoke('ai:mcpSetOptions', opts),
+  aiMcpRegenerateToken: () => ipcRenderer.invoke('ai:mcpRegenerateToken'),
+  aiMcpCopyConfig: (kind) => ipcRenderer.invoke('ai:mcpCopyConfig', kind),
 
   // --- ui ---
   uiConfirmAck: (id) => ipcRenderer.invoke('ui:confirmAck', id),

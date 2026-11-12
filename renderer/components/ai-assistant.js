@@ -137,14 +137,15 @@ function announce(text) {
 
 function inlineNodes(text) {
   const frag = document.createDocumentFragment();
-  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*)/g;
+  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\w*])\*[^*\s](?:[^*\n]*[^*\s])?\*(?![\w*]))/g;
   let last = 0;
   let m;
   while ((m = re.exec(text))) {
     if (m.index > last) frag.append(text.slice(last, m.index));
     const tok = m[0];
     if (tok[0] === '`') frag.append(el('code', '', tok.slice(1, -1)));
-    else frag.append(el('strong', '', tok.slice(2, -2)));
+    else if (tok.startsWith('**')) frag.append(el('strong', '', tok.slice(2, -2)));
+    else frag.append(el('em', '', tok.slice(1, -1)));
     last = m.index + tok.length;
   }
   if (last < text.length) frag.append(text.slice(last));

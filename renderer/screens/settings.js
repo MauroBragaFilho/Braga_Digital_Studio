@@ -1443,6 +1443,7 @@ function setupSettingsExtras() {
   document.getElementById('notificationsEnabledInput')?.addEventListener('change', syncNotifyModules);
 
   setupAssistantCard();
+  setupMcpCard();
 }
 
 /**
@@ -1490,6 +1491,86 @@ async function setupAssistantCard() {
       say('Instruções salvas.');
     } catch (err) {
       say(`Não foi possível salvar. ${friendlyError(err, 'Tente novamente.')}`);
+    }
+  });
+}
+
+/**
+ * Cartão "Conectar agentes (MCP)": liga/desliga o servidor local, copia a configuração pronta para o agente (o token
+ * nunca chega aqui: o app copia direto para a área de transferência) e gera um token novo. Vale na hora.
+ */
+async function setupMcpCard() {
+  const sw = document.getElementById('aiMcpEnabledInput');
+  if (!sw || typeof window.bds?.aiMcpStatus !== 'function') return;
+  const hint = document.getElementById('aiMcpHint');
+  const status = document.getElementById('aiMcpStatus');
+  const copyRow = document.getElementById('aiMcpCopyRow');
+  const advanced = document.getElementById('aiMcpAdvanced');
+  const kind = document.getElementById('aiMcpKindSelect');
+  const tokenSw = document.getElementById('aiMcpTokenInput');
+  const confirmSw = document.getElementById('aiMcpConfirmInput');
+  const say = (msg) => { if (status) status.textContent = msg || ''; };
+  const call = async (fn, ...args) => {
+    const r = await fn(...args);
+    if (!r || !r.ok) throw new Error(r?.error || 'O aplicativo não respondeu.');
+    return r.data;
+  };
+  const render = (s) => {
+    sw.checked = s.enabled === true;
+    if (tokenSw) tokenSw.checked = s.requireToken !== false;
+    if (confirmSw) confirmSw.checked = s.autoConfirm !== true;
+    const regen = document.getElementById('aiMcpRegenBtn');
+    if (regen) regen.disabled = s.requireToken === false;
+    const on = s.enabled && s.running;
+    if (copyRow) copyRow.hidden = !on;
+    if (advanced) advanced.hidden = !on;
+    if (hint) {
+      if (!s.enabled) hint.textContent = 'Desligado. Nenhuma porta é aberta.';
+      else if (!s.running) hint.textContent = s.error || 'Ligando…';
+      else hint.textContent = `Ligado neste computador (porta ${s.port})${s.client ? `. Último agente: ${s.client}` : ''}.`;
+    }
+  };
+  try { render(await call(window.bds.aiMcpStatus)); } catch (_) { /* mantém desligado */ }
+
+  sw.addEventListener('change', async () => {
+    const want = sw.checked;
+    sw.disabled = true;
+    try {
+      render(await call(window.bds.aiMcpSetEnabled, want));
+      say(want ? 'Pronto. Copie a configuração e cole no agente.' : 'Agentes desconectados.');
+    } catch (err) {
+      sw.checked = !want;
+      say(`Não foi possível alterar. ${friendlyError(err, 'Tente novamente.')}`);
+    } finally {
+      sw.disabled = false;
+    }
+  });
+  const option = (input, patch) => input?.addEventListener('change', async () => {
+    const want = input.checked;
+    try {
+      render(await call(window.bds.aiMcpSetOptions, patch(want)));
+      say('Opção salva. Copie a configuração de novo se o agente já estava conectado.');
+    } catch (err) {
+      input.checked = !want;
+      say(`Não foi possível alterar. ${friendlyError(err, 'Tente novamente.')}`);
+    }
+  });
+  option(tokenSw, (v) => ({ requireToken: v }));
+  option(confirmSw, (v) => ({ autoConfirm: !v }));
+  document.getElementById('aiMcpCopyBtn')?.addEventListener('click', async () => {
+    try {
+      await call(window.bds.aiMcpCopyConfig, kind ? kind.value : 'antigravity');
+      say('Configuração copiada. Cole no arquivo de servidores MCP do agente.');
+    } catch (err) {
+      say(`Não foi possível copiar. ${friendlyError(err, 'Tente novamente.')}`);
+    }
+  });
+  document.getElementById('aiMcpRegenBtn')?.addEventListener('click', async () => {
+    try {
+      render(await call(window.bds.aiMcpRegenerateToken));
+      say('Novo token gerado. Copie a configuração de novo no agente.');
+    } catch (err) {
+      say(`Não foi possível gerar. ${friendlyError(err, 'Tente novamente.')}`);
     }
   });
 }

@@ -601,6 +601,58 @@
           </details>
           <span id="aiAssistantStatus" class="st-row-hint" role="status" aria-live="polite"></span>
         </div>
+
+        <div class="st-card" id="settingsMcpCard">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">hub</span> Conectar agentes (MCP)</h4>
+          <p class="st-card-desc">Deixa agentes de IA, como o Antigravity, a Alice e a Liz, usarem as mesmas ferramentas do assistente: consultar a biblioteca e os projetos e, só com a sua confirmação aqui no app, baixar, converter, transcrever e montar projetos. Funciona só neste computador e exige um token.</p>
+
+          <label class="st-row st-row-toggle">
+            <div class="st-row-text">
+              <span class="st-row-label">Permitir agentes de IA</span>
+              <span id="aiMcpHint" class="st-row-hint">Desligado. Nenhuma porta é aberta.</span>
+            </div>
+            <input type="checkbox" id="aiMcpEnabledInput" class="st-switch" />
+          </label>
+
+          <div class="st-row st-row-stack" id="aiMcpCopyRow" hidden>
+            <label class="st-row-label" for="aiMcpKindSelect">Copiar configuração para</label>
+            <div class="settings-folder-controls">
+              <select id="aiMcpKindSelect" class="settings-select">
+                <option value="antigravity">Antigravity</option>
+                <option value="http">Alice, Liz e outros (HTTP)</option>
+                <option value="stdio">Agentes só por comando (precisa do Node)</option>
+              </select>
+              <button id="aiMcpCopyBtn" class="settings-btn-accent" type="button">Copiar</button>
+            </div>
+            <span class="st-row-hint">Cole no arquivo de servidores MCP do agente. A configuração contém o token: não compartilhe.</span>
+          </div>
+
+          <details class="st-advanced" id="aiMcpAdvanced" hidden>
+            <summary>Ajustes avançados</summary>
+            <label class="st-row st-row-toggle">
+              <div class="st-row-text">
+                <span class="st-row-label">Exigir token</span>
+                <span class="st-row-hint">Desligado, qualquer programa deste computador pode conectar sem senha. Páginas da internet continuam bloqueadas.</span>
+              </div>
+              <input type="checkbox" id="aiMcpTokenInput" class="st-switch" />
+            </label>
+            <label class="st-row st-row-toggle">
+              <div class="st-row-text">
+                <span class="st-row-label">Pedir confirmação nas ações</span>
+                <span class="st-row-hint">Desligado, os agentes baixam, convertem, transcrevem e criam projetos sem perguntar. Nada é apagado.</span>
+              </div>
+              <input type="checkbox" id="aiMcpConfirmInput" class="st-switch" />
+            </label>
+            <div class="st-row st-row-stack">
+              <span class="st-row-label">Novo token</span>
+              <span class="st-row-hint">Quem usa o token atual perde o acesso até você copiar a configuração de novo.</span>
+              <div class="st-row-control">
+                <button id="aiMcpRegenBtn" class="settings-btn-outline" type="button">Gerar novo token</button>
+              </div>
+            </div>
+          </details>
+          <span id="aiMcpStatus" class="st-row-hint" role="status" aria-live="polite"></span>
+        </div>
       </section>
 
       <!-- ================= LUTS ================= -->

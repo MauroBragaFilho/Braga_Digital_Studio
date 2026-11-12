@@ -1206,7 +1206,7 @@ test('canais: continua sem canal para executar ferramenta ou confirmar; a lista 
   const reg = createRegistry({ ipcMain: { handle: (ch, fn) => handlers.set(ch, fn) }, logger: { warn() {} } });
   registerAiHandlers({ configDir: fs.mkdtempSync(path.join(tmpRoot, 'c-')) }, { handle: reg.handle, isDev: false, safeStorage, settingsManager: { load: () => ({}) }, projectService: projects, broadcast() {} });
   const aiChannels = [...handlers.keys()].filter((k) => k.startsWith('ai:')).sort();
-  assert.deepEqual(aiChannels, ['ai:analyzeTranscript', 'ai:cancelAnalysis', 'ai:chatCancel', 'ai:chatStart', 'ai:getConfig', 'ai:historyClear', 'ai:historyGet', 'ai:listModels', 'ai:saveConfig', 'ai:testConnection']);
+  assert.deepEqual(aiChannels, ['ai:analyzeTranscript', 'ai:cancelAnalysis', 'ai:chatCancel', 'ai:chatStart', 'ai:getConfig', 'ai:historyClear', 'ai:historyGet', 'ai:listModels', 'ai:mcpCopyConfig', 'ai:mcpRegenerateToken', 'ai:mcpSetEnabled', 'ai:mcpSetOptions', 'ai:mcpStatus', 'ai:saveConfig', 'ai:testConnection']);
   assert.ok(![...handlers.keys()].some((k) => /tool|confirm|execute|exec/i.test(k)));
 });
 

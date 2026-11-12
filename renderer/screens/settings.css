@@ -1159,3 +1159,6 @@
 .st-restore-row { display: flex; justify-content: flex-end; margin-top: 12px; }
 .st-restore-row .settings-btn-outline { display: inline-flex; align-items: center; gap: 6px; }
 .st-restore-row .material-symbols-rounded { font-size: 18px; }
+
+/* Cartão MCP: itens recolhidos até o servidor ligar (o atributo hidden perde para display:flex) */
+#settingsMcpCard [hidden] { display: none !important; }

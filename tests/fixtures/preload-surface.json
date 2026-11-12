@@ -459,6 +459,138 @@
       "returns": "promise"
     }
   },
+  "aiMcpCopyConfig": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpCopyConfig",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpCopyConfig",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiMcpRegenerateToken": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpRegenerateToken",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpRegenerateToken",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiMcpSetEnabled": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpSetEnabled",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpSetEnabled",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiMcpSetOptions": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpSetOptions",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpSetOptions",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiMcpStatus": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:mcpStatus",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "aiSaveConfig": {
     "type": "function",
     "length": 1,

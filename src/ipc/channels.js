@@ -393,7 +393,13 @@ define('ai', 'wrap', {
     returns: 'Resultado da análise',
     api: [{ name: 'aiAnalyzeTranscript', params: 'path', call: '{ path }' }]
   },
-  'ai:cancelAnalysis': { returns: 'true', api: ['aiCancelAnalysis'] }
+  'ai:cancelAnalysis': { returns: 'true', api: ['aiCancelAnalysis'] },
+  // Agentes de IA externos (servidor MCP local, desligado por padrão). O token nunca volta ao renderer: ai:mcpCopyConfig copia a configuração pronta (antigravity | http | stdio) direto para a área de transferência.
+  'ai:mcpStatus': { returns: 'Estado do servidor MCP { enabled, running, port, url, calls, client, error }', api: ['aiMcpStatus'] },
+  'ai:mcpSetEnabled': { args: [t.boolean({ name: 'on', label: 'Ligado' })], returns: 'Estado do servidor MCP', api: ['aiMcpSetEnabled'] },
+  'ai:mcpSetOptions': { args: [OBJ('opts', { requireToken: t.boolean({ optional: true }), autoConfirm: t.boolean({ optional: true }) }, { strict: true, label: 'Opções' })], returns: 'Estado do servidor MCP (requireToken=false: sem token; autoConfirm=true: ações sem confirmação)', api: ['aiMcpSetOptions'] },
+  'ai:mcpRegenerateToken': { returns: 'Estado do servidor MCP (o token antigo deixa de valer)', api: ['aiMcpRegenerateToken'] },
+  'ai:mcpCopyConfig': { args: [STR('kind', 20, { nonBlank: true, label: 'Formato' })], returns: '{ kind } (configuração copiada)', api: ['aiMcpCopyConfig'] }
 });
 
 // --- Confirmações no modal do app (padrão { ok, data }) ---------------------------------------------
