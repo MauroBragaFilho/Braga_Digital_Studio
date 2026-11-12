@@ -179,9 +179,11 @@ ${prep.message}` : prep.message, detail: prep.detail, signal }), signal)) === tr
       }
       this.log.info(`[${source}] ação CONFIRMADA pelo usuário: ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
       onStatus('Executando…', 'tool');
-      const out = await tool.run(prep.plan, ctx);
+      // Agente externo (MCP): depois de confirmada, a ação segue mesmo se o agente desconectar (timeout do cliente em
+      // trabalho longo, como transcrever): cancelar no meio descartaria o trabalho. No chat, parar continua cancelando.
+      const out = await tool.run(prep.plan, external ? { ...ctx, signal: null } : ctx);
       this.log.info(`[${source}] ação concluída: ${tool.name}`);
-      if (signal && signal.aborted) throw cancelled(); // parou no meio: o laço do chat encerra
+      if (!external && signal && signal.aborted) throw cancelled(); // parou no meio: o laço do chat encerra
       return serializeResult(out, tool.resultOptions);
     } catch (err) {
       if (err && err.code === 'CANCELLED') throw Object.assign(new Error('Cancelado.'), { code: 'CANCELLED' });
