@@ -1214,6 +1214,10 @@ test('add_download: parcial ainda travado logo depois do cancelamento (Windows) 
   const { removeNewPartials } = require('../src/services/ai/tools/mediaActionTools');
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'parcial-'));
   fs.writeFileSync(path.join(dir, 'ja-existia.mp4.part'), 'p');
+  // "Já existia e ninguém mexeu": data de modificação claramente no passado. Sem isso, em sistemas de arquivos de relógio
+  // grosso (Linux do CI) o arquivo recém-criado empata com o "agora" da limpeza e seria apagado por engano.
+  const velho = new Date(Date.now() - 3600 * 1000);
+  fs.utimesSync(path.join(dir, 'ja-existia.mp4.part'), velho, velho);
   const before = new Set(fs.readdirSync(dir));
   fs.writeFileSync(path.join(dir, 'novo.mp4.part'), 'p');
   fs.writeFileSync(path.join(dir, 'novo.mp4.ytdl'), 'p');
