@@ -1600,13 +1600,16 @@ async function setupLocalLlmCard() {
   const modelSel = document.getElementById('aiLocalLlmModel');
   const gb = (n) => `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} GB`;
   let last = null; // último estado recebido (a troca de modelo olha a lista)
+  let pick = null; // modelo escolhido no seletor ainda não instalado (fica marcado até instalar ou desistir)
   const render = (s, installing = false) => {
     if (s.models) last = s;
     // Seletor: só aparece havendo mais de um modelo; o escolhido é o selecionado, os demais mostram o tamanho
     if (modelRow && modelSel && last && Array.isArray(last.models) && last.models.length > 1) {
-      const keep = modelSel.value;
+      const current = (last.models.find((m) => m.selected) || last.models[0]).id;
+      if (pick && (!last.models.some((m) => m.id === pick) || pick === current)) pick = null;
+      const keep = pick || modelSel.value;
       modelSel.innerHTML = last.models.map((m) => `<option value="${m.id}">${m.label} (${m.installed ? 'instalado' : gb(m.sizeBytes)})${m.vision ? ' — entende imagens' : ''}</option>`).join('');
-      modelSel.value = installing && keep ? keep : (last.models.find((m) => m.selected) || last.models[0]).id;
+      modelSel.value = (installing || pick) && keep ? keep : current;
       modelSel.disabled = installing;
       modelRow.hidden = !s.supported;
     }
@@ -1642,11 +1645,16 @@ async function setupLocalLlmCard() {
     const chosen = last && last.models ? last.models.find((m) => m.id === modelSel.value) : null;
     say('');
     try {
-      if (chosen && chosen.installed && !chosen.selected) {
+      if (chosen && !chosen.installed) {
+        pick = chosen.id;
+        render(last);
+      } else if (chosen && chosen.installed && !chosen.selected) {
+        pick = null;
         render(await call(window.bds.aiLocalLlmSetModel, chosen.id));
         say('Modelo trocado. Vale já na próxima pergunta.');
         window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
       } else if (last) {
+        pick = null;
         render(last);
       }
     } catch (err) {
@@ -1665,6 +1673,7 @@ async function setupLocalLlmCard() {
     try {
       const s = await call(window.bds.aiLocalLlmInstall, wanted);
       installing = false;
+      pick = null;
       render(s);
       say('Pronto. O modelo local entrou na lista de servidores, como reserva.');
       window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
