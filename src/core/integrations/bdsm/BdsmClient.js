@@ -5,6 +5,7 @@ const path = require('node:path');
 const logger = require('../../../services/logService');
 const BdsmProtocol = require('./BdsmProtocol');
 const bdsmAuth = require('./BdsmAuth');
+const { isPrivateIp } = require('../../../ipc/validate');
 
 /** Teto de upload de LUT aceito pelo celular (LUT_MAX_UPLOAD_BYTES = 32 MB; acima disso ele responde 413). */
 const LUT_MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
@@ -70,6 +71,9 @@ class BdsmClient {
    */
   async _request(endpoint, o = {}) {
     const { method = 'GET', headers, body, timeout = 10000, auth = true, parse = 'json', silent = false } = o;
+    // O celular só existe na rede local (ou no cabo, via 127.0.0.1). Nenhum pedido sai para outro endereço: nem o token de
+    // pareamento nem o nome deste computador podem ir parar num host da internet.
+    if (!isPrivateIp(this.ip)) throw new BdsmError('DEVICE_UNREACHABLE', 'O endereço do celular não é da sua rede local.');
     const usedToken = auth && this.hasToken;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);

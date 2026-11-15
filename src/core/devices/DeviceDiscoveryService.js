@@ -3,6 +3,7 @@ const logger = require('../../services/logService');
 const { execFile } = require('child_process');
 const { lanAddresses, isLanAddress } = require('../../infrastructure/network/lanAddresses');
 const { probeInfo } = require('../integrations/bdsm/BdsmPairing');
+const { isPrivateIp } = require('../../ipc/validate');
 const { backoffDelay, deviceChanged } = require('./backoff');
 
 /**
@@ -111,7 +112,7 @@ class DeviceDiscoveryService extends EventEmitter {
         if (ip) {
             this.probeDevice(ip, service.port || 8080, 'wifi');
         } else {
-            logger.warn(`[Discovery] Serviço BDSM encontrado sem endereço IPv4 válido: ${service.name}`);
+            logger.warn(`[Discovery] Serviço BDSM ignorado: sem endereço da rede local (${service && service.name})`);
         }
     }
 
@@ -123,23 +124,23 @@ class DeviceDiscoveryService extends EventEmitter {
         this._mdns = [];
     }
 
+    /**
+     * Endereço do celular anunciado por mDNS. Só serve IP da rede local (privado ou link-local): um anúncio pode trazer qualquer
+     * endereço, e o app manda o token de pareamento e o nome deste computador ao endereço que sondar. IP público e nome de host
+     * (a resolução poderia sair da rede local) são descartados; o cabo (127.0.0.1) não passa por aqui.
+     */
     _extractBestIp(service) {
         if (!service) return null;
-        if (Array.isArray(service.addresses) && service.addresses.length > 0) {
-            // Prioriza IPv4
-            const ipv4 = service.addresses.find(a => typeof a === 'string' && a.includes('.') && !a.startsWith('127.'));
-            if (ipv4) return ipv4;
-
-            // Se apenas IPv6, formata adequadamente
-            const ipv6 = service.addresses.find(a => typeof a === 'string' && a.includes(':'));
-            if (ipv6) return ipv6.startsWith('[') ? ipv6 : `[${ipv6}]`;
-        }
-        if (service.referer && service.referer.address) {
-            return service.referer.address;
-        }
-        if (service.host) {
-            return service.host;
-        }
+        const usable = (a) => typeof a === 'string' && isPrivateIp(a) && !/^\[?(127\.|::1\]?$)/.test(a.trim());
+        const bracket = (a) => (a.includes(':') && !a.startsWith('[') ? `[${a}]` : a);
+        const list = Array.isArray(service.addresses) ? service.addresses.filter(usable) : [];
+        // Prioriza IPv4; só com IPv6, formata para compor a URL
+        const ipv4 = list.find((a) => a.includes('.'));
+        if (ipv4) return ipv4;
+        const ipv6 = list.find((a) => a.includes(':'));
+        if (ipv6) return bracket(ipv6);
+        if (service.referer && usable(service.referer.address)) return bracket(service.referer.address);
+        if (usable(service.host)) return bracket(service.host);
         return null;
     }
 
