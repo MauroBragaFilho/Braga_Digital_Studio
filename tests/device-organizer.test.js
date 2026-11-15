@@ -156,3 +156,87 @@ test('applyRenames: só dentro da pasta, sem trocar extensão e sem sobrescrever
   assert.deepEqual(out, { renamed: 1, failed: 5 });
   assert.deepEqual(fs.readdirSync(dir).sort(), ['b.jpg', 'c.mp4', 'd.jpg', 'novo.jpg']);
 });
+
+// ------------------------------------------------------------------------- depois da cópia: mover, miniaturas e projeto
+
+const { applyMoves, relSegments } = require('../src/services/organizer/DeviceOrganizer');
+const { createOrganizerApi } = require('../src/ipc/organizerHandlers');
+
+test('applyMoves: move dentro da pasta, cria subpastas, recusa caminho fora, extensão trocada e sobrescrita', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'm-'));
+  fs.mkdirSync(path.join(dir, 'Fotos'));
+  for (const n of ['Fotos/a.jpg', 'Fotos/b.jpg', 'Fotos/c.mp4']) fs.writeFileSync(path.join(dir, n), n);
+  const out = applyMoves(dir, [
+    { from: 'Fotos/a.jpg', to: 'Fotos/Aniversario/Maria faz 30 anos.jpg' },
+    { from: 'Fotos/b.jpg', to: 'Fotos/Aniversario/Maria faz 30 anos.jpg' },   // já existe (acabou de ser criado)
+    { from: 'Fotos/c.mp4', to: 'Fotos/c.jpg' },                                // extensão trocada
+    { from: '../fora.jpg', to: 'x.jpg' },                                       // origem fora da pasta
+    { from: 'Fotos/b.jpg', to: '../../escapou.jpg' },                           // destino fora da pasta
+    { from: 'Fotos/b.jpg', to: 'C:/Windows/x.jpg' },                            // unidade/caminho absoluto vira segmentos inválidos
+    { from: 'Fotos/nao-existe.jpg', to: 'Fotos/y.jpg' }
+  ]);
+  assert.deepEqual(out, { moved: 1, failed: 6 });
+  assert.ok(fs.existsSync(path.join(dir, 'Fotos', 'Aniversario', 'Maria faz 30 anos.jpg')));
+  assert.ok(fs.existsSync(path.join(dir, 'Fotos', 'b.jpg')) && fs.existsSync(path.join(dir, 'Fotos', 'c.mp4')));
+  assert.equal(relSegments('a/../b'), null);
+  assert.equal(relSegments('a/b/c.jpg').length, 3);
+  assert.equal(relSegments('1/2/3/4/5/6/7/8/9'), null, 'profundidade limitada');
+});
+
+test('organizer:thumbnails: só imagens existentes, pequenas, em JPEG; o resto é ignorado', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 't-'));
+  fs.writeFileSync(path.join(dir, 'a.jpg'), 'x');
+  fs.writeFileSync(path.join(dir, 'doc.pdf'), 'x');
+  const fakeImage = (empty) => ({ isEmpty: () => empty, getSize: () => ({ width: 4000, height: 3000 }), resize: (o) => ({ toJPEG: () => Buffer.from(`jpg${o.width}`) }) });
+  const api = createOrganizerApi({ getLlm: () => null, nativeImage: { createFromPath: (f) => fakeImage(f.endsWith('vazia.jpg')) } });
+  const out = api.thumbnails([
+    { key: '1', path: path.join(dir, 'a.jpg') },
+    { key: '2', path: path.join(dir, 'doc.pdf') },       // não é imagem
+    { key: '3', path: path.join(dir, 'nao-existe.jpg') }, // não existe
+    { key: '4', path: 'relativo.jpg' },                    // caminho relativo
+    { key: '', path: path.join(dir, 'a.jpg') }             // sem chave
+  ]);
+  assert.deepEqual(Object.keys(out), ['1']);
+  assert.equal(out['1'], `data:image/jpeg;base64,${Buffer.from('jpg384').toString('base64')}`, 'redimensiona para 384 de largura');
+});
+
+test('organizer:linkProject: enfileira na Biblioteca, espera as mídias nascerem e vincula só as que entraram', async () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'l-'));
+  for (const n of ['a.jpg', 'b.jpg', 'c.jpg']) fs.writeFileSync(path.join(dir, n), n);
+  const queued = [];
+  const linked = [];
+  let polls = 0;
+  const media = [];
+  const db = {
+    prepare: (sql) => ({
+      get: () => (/FROM libraries/.test(sql) ? { id: 5 } : null),
+      all: (name) => media.filter((m) => m.filename === name)
+    })
+  };
+  const projectService = {
+    getProjectById: (id) => (id === 3 ? { id } : null),
+    addMediaBulkToProject: (pid, bin, ids) => { linked.push({ pid, bin, ids }); return ids.length; }
+  };
+  const wait = async () => {
+    polls++;
+    if (polls === 1) media.push({ id: 11, filename: 'a.jpg', filepath: path.join(dir, 'a.jpg') }, { id: 12, filename: 'b.jpg', filepath: path.join(dir, 'b.jpg') });
+    // c.jpg nunca entra
+  };
+  const api = createOrganizerApi({ getLlm: () => null, projectService, importQueue: { add: (i) => queued.push(i) }, getDb: () => db, wait, linkWaitMs: 20 });
+  const wrongProject = await api.linkProject(99, dir, ['a.jpg']);
+  assert.deepEqual(wrongProject, { linked: 0, total: 1 }, 'projeto inexistente: nada é ligado');
+  const r = await api.linkProject(3, dir, ['a.jpg', 'b.jpg', 'c.jpg', '../fora.jpg', 'nao-existe.jpg']);
+  assert.deepEqual(queued.map((q) => path.basename(q.path)).sort(), ['a.jpg', 'b.jpg', 'c.jpg']);
+  assert.ok(queued.every((q) => q.libraryId === 5 && q.event === 'CREATE'));
+  assert.deepEqual(r, { linked: 2, total: 3 }, 'nome com caminho e arquivo ausente ficam de fora; c.jpg não entrou a tempo');
+  assert.deepEqual(linked[0], { pid: 3, bin: null, ids: [11, 12] });
+});
+
+test('organizer:status e plan: sem sistema local ou projetos, seguem pelas regras', async () => {
+  const api = createOrganizerApi({ getLlm: () => null });
+  assert.deepEqual(api.status(), { aiAvailable: false, vision: false });
+  const plan = await api.plan({ items: [{ key: '1', name: 'IMG_20261114_010203.jpg' }] });
+  assert.equal(plan.groups[0].folder, '2026-11-14/Fotos');
+  const withLlm = createOrganizerApi({ getLlm: () => ({ isInstalled: () => true, supportsVision: () => true }) });
+  assert.deepEqual(withLlm.status(), { aiAvailable: true, vision: true });
+});

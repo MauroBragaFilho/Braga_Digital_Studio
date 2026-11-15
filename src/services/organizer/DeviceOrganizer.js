@@ -291,4 +291,39 @@ function applyRenames(destDir, pairs) {
   return { renamed, failed };
 }
 
-module.exports = { DeviceOrganizer, applyRenames, safeSegment, typeOf, dateOf, parseJsonLoose, STRUCTURES, RENAME_MODES };
+/** Caminho relativo seguro: até 8 segmentos, cada um limpo (sem "..", sem caracteres proibidos); null se qualquer um não for. */
+function relSegments(rel) {
+  const parts = String(rel == null ? '' : rel).split(/[\\/]+/).filter(Boolean);
+  if (!parts.length || parts.length > 8) return null;
+  return parts.every((s) => s !== '.' && safeSegment(s, '', 200) === s) ? parts : null;
+}
+
+const isInside = (base, p) => { const r = path.relative(base, p); return Boolean(r) && !r.startsWith('..') && !path.isAbsolute(r); };
+
+/**
+ * Move, DENTRO de `root`, arquivos já copiados: [{ from, to }] com caminhos RELATIVOS à pasta. Recusa o que sair da pasta,
+ * o que trocar a extensão e o que sobrescreveria outro arquivo. Cria as subpastas que faltarem. Devolve { moved, failed }.
+ */
+function applyMoves(root, moves) {
+  const base = path.resolve(String(root || ''));
+  let moved = 0;
+  let failed = 0;
+  for (const m of Array.isArray(moves) ? moves.slice(0, 5000) : []) {
+    try {
+      const from = relSegments(m && m.from);
+      const to = relSegments(m && m.to);
+      if (!from || !to) throw new Error('caminho inválido');
+      if (extOf(from[from.length - 1]) !== extOf(to[to.length - 1])) throw new Error('extensão diferente');
+      const src = path.join(base, ...from);
+      const dst = path.join(base, ...to);
+      if (!isInside(base, src) || !isInside(base, dst)) throw new Error('fora da pasta');
+      if (!fs.existsSync(src) || fs.existsSync(dst)) throw new Error('origem ausente ou destino já existe');
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.renameSync(src, dst);
+      moved++;
+    } catch (_) { failed++; }
+  }
+  return { moved, failed };
+}
+
+module.exports = { DeviceOrganizer, applyRenames, applyMoves, relSegments, safeSegment, typeOf, dateOf, parseJsonLoose, STRUCTURES, RENAME_MODES };

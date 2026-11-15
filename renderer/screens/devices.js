@@ -50,6 +50,80 @@ let bdsmItems = [];
 /* ---------- utilidades ---------- */
 
 const $ = (id) => document.getElementById(id);
+
+/* ---------- depois da cópia: projeto e fotos ---------- */
+
+const IMAGE_FILE_RE = /\.(jpe?g|png|webp|bmp|gif)$/i;
+
+/** Projetos para o seletor do diálogo "Como organizar?" (vazio se a lista não puder ser lida). */
+async function projectOptions() {
+  try {
+    const rows = await window.bds.listProjects();
+    return (Array.isArray(rows) ? rows : []).filter((p) => p && Number.isInteger(p.id)).map((p) => ({ id: p.id, name: String(p.name || `Projeto ${p.id}`) }));
+  } catch (_) { return []; }
+}
+
+/**
+ * Liga ao projeto os arquivos copiados. Roda em segundo plano: as mídias primeiro entram na Biblioteca (pode levar alguns
+ * segundos) e só então são vinculadas; o resultado aparece num aviso. groups: [{ dest, files: [{ name }] }]
+ */
+function linkInBackground(projectId, groups) {
+  (async () => {
+    let linked = 0;
+    let total = 0;
+    for (const g of groups) {
+      if (!g.files.length) continue;
+      try {
+        const r = await window.bds.organizerLinkProject(projectId, g.dest, g.files.map((f) => f.name));
+        linked += Number(r && r.linked) || 0;
+        total += Number(r && r.total) || 0;
+      } catch (e) { console.error('[DEVICES] Ligar ao projeto:', e); }
+    }
+    if (total) window.bdsToast?.(linked === total ? `${linked} arquivo(s) ligado(s) ao projeto.` : `${linked} de ${total} arquivo(s) ligado(s) ao projeto (os demais ainda não entraram na Biblioteca).`, { type: linked ? 'success' : 'warning' });
+  })();
+}
+
+/**
+ * Fotos já copiadas: se o sistema local enxerga imagens e as sugestões da importação ainda não olharam as imagens
+ * (USB, MTP e câmera só entregam o arquivo depois da cópia), oferece olhar agora. O usuário confere antes de aplicar;
+ * aplicar só move/renomeia dentro da pasta de destino. groups: [{ folder, dest, files: [{ name }] }]; root: pasta de destino.
+ */
+async function offerVision(root, groups, org) {
+  if (org && org.vision) return;
+  let st = null;
+  try { st = await window.bds.organizerStatus(); } catch (_) { return; }
+  if (!st || !st.aiAvailable || !st.vision) return;
+  const entries = [];
+  for (const g of groups) for (const f of g.files) if (IMAGE_FILE_RE.test(f.name)) entries.push({ folder: g.folder || '', dest: g.dest, name: f.name });
+  if (!entries.length) return;
+  const yes = await window.bdsModal.confirm(`Quer que o sistema local olhe ${entries.length === 1 ? 'a foto copiada' : `as ${entries.length} fotos copiadas`} e sugira assuntos e nomes?\n\nVocê confere antes de aplicar.`);
+  if (!yes) return;
+  const items = entries.map((e, i) => ({ key: String(i), name: e.name }));
+  const plan = await askOrganize(items, {
+    startAi: true, fixedStructure: 'plana', title: 'Sugestões para as fotos copiadas', confirmLabel: 'Aplicar',
+    thumbsFor: (list) => window.bds.organizerThumbnails(list.slice(0, 24).map((i) => ({ key: i.key, path: `${entries[Number(i.key)].dest}/${entries[Number(i.key)].name}` })))
+  });
+  if (!plan || plan.skip) return;
+  const moves = [];
+  for (const g of plan.groups) {
+    for (const k of g.keys) {
+      const e = entries[Number(k)];
+      if (!e) continue;
+      const newName = (plan.renames && plan.renames[k]) || e.name;
+      const from = [e.folder, e.name].filter(Boolean).join('/');
+      const to = [e.folder, g.folder, newName].filter(Boolean).join('/');
+      if (from !== to) moves.push({ from, to });
+    }
+  }
+  if (!moves.length) return;
+  try {
+    const r = await window.bds.organizerApplyMoves(root, moves);
+    window.bdsToast?.(`${r.moved} foto(s) organizada(s)${r.failed ? `; ${r.failed} não puderam ser movidas` : ''}.`, { type: r.moved ? 'success' : 'warning' });
+  } catch (e) {
+    console.error('[DEVICES] Organizar fotos:', e);
+    window.bdsModal.alert('Não foi possível organizar as fotos agora. Os arquivos continuam onde estavam.');
+  }
+}
 const num = (v) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
 
 function formatBytes(n) {
@@ -941,7 +1015,7 @@ async function onExplorerImport() {
 
   // Como organizar: o plano de pastas e nomes aparece antes de copiar (regras de data e tipo; sugestões do sistema local, opcionais)
   const picked = new Map(keys.map((k) => [k, ex.items.find((i) => i.key === k)]).filter(([, i]) => i));
-  const org = await askOrganize([...picked.values()].map((i) => ({ key: i.key, name: i.name, size: i.size })));
+  const org = await askOrganize([...picked.values()].map((i) => ({ key: i.key, name: i.name, size: i.size })), { allowProject: true, projects: await projectOptions() });
   if (org === null) return;
   const groups = org.skip ? [{ folder: '', keys }] : org.groups;
   const destOf = (g) => (g.folder ? `${finalDest}/${g.folder}` : finalDest);
@@ -1035,6 +1109,9 @@ async function onExplorerImport() {
     if (ok) {
       ex.selected.clear();
       renderExplorerList();
+      const infos = groups.map((g) => ({ folder: g.folder, dest: destOf(g), files: g.keys.filter((k) => picked.get(k)).map((k) => ({ name: (org.renames && org.renames[k]) || picked.get(k).name })) }));
+      if (org.projectId) linkInBackground(org.projectId, infos);
+      if (!org.skip) await offerVision(finalDest, infos, org);
       const open = await window.bdsModal.confirm(`Importação concluída.\n\nDestino: ${finalDest}\n\nAbrir a pasta agora?`);
       if (open && window.bds.openLocalPath) window.bds.openLocalPath(finalDest.replace(/\//g, '\\'));
     } else {
@@ -1313,7 +1390,8 @@ async function onBdsmImportClick() {
   // Como organizar: plano de pastas e nomes antes de copiar. As miniaturas vêm do próprio celular (até 8), só para as sugestões.
   const org = await askOrganize(items.map((m) => ({ key: String(m.id), name: String(m.name) })), {
     allowProject: true,
-    projectName: (id) => { const o = [...($('bdsmProjectSelect')?.options || [])].find((x) => x.value === String(id)); return o ? o.textContent.trim() : ''; },
+    projects: await projectOptions(),
+    initialProjectId: projectId,
     thumbsFor: async (list) => {
       const out = {};
       await Promise.allSettled(list.slice(0, 8).map(async (it) => {
@@ -1325,7 +1403,7 @@ async function onBdsmImportClick() {
   });
   if (org === null) return;
   const groups = org.skip ? [{ folder: '', keys: items.map((m) => String(m.id)) }] : org.groups;
-  const importProject = org.skip ? projectId : (org.projectId || projectId);
+  const importProject = org.skip ? projectId : org.projectId;
   let offset = 0;
 
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-rounded dev-spin" aria-hidden="true">sync</span> Importando...'; }
@@ -1347,6 +1425,12 @@ async function onBdsmImportClick() {
       if (pairs.length) { try { await window.bds.organizerApplyRenames(dest, pairs); } catch (e) { console.error('[DEVICES] Renomear:', e); } }
       offset += sub.length;
     }
+    const infos = groups.map((g) => {
+      const sub = items.filter((m) => g.keys.includes(String(m.id)));
+      return { folder: g.folder, dest: g.folder ? `${importRoot()}/${g.folder}` : importRoot(), files: sub.map((m) => ({ name: (org.renames && org.renames[String(m.id)]) || String(m.name) })) };
+    });
+    if (importProject) linkInBackground(importProject, infos);
+    if (!org.skip) await offerVision(importRoot(), infos, org);
     closeBdsmImport();
     const n = Number(imported);
     window.bdsModal.alert(Number.isFinite(n) && n < items.length

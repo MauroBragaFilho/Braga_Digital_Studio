@@ -367,7 +367,7 @@ test('tabela: nomes expostos no preload são únicos e eventos não colidem com 
 
 test('listChannels devolve a tabela documentável (canal, domínio, args, retorno, erro)', () => {
   const rows = listChannels();
-  assert.equal(rows.length, 299);
+  assert.equal(rows.length, 302);
   const row = rows.find((r) => r.channel === 'library:moveMediaBulk');
   assert.equal(row.domain, 'library');
   assert.equal(row.error, 'throw');

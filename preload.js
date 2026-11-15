@@ -406,6 +406,9 @@ const api = {
   // --- organizer ---
   organizerStatus: () => ipcRenderer.invoke('organizer:status'),
   organizerPlan: (data) => ipcRenderer.invoke('organizer:plan', data),
+  organizerApplyMoves: (root, moves) => ipcRenderer.invoke('organizer:applyMoves', root, moves),
+  organizerThumbnails: (files) => ipcRenderer.invoke('organizer:thumbnails', files),
+  organizerLinkProject: (projectId, destFolder, names) => ipcRenderer.invoke('organizer:linkProject', projectId, destFolder, names),
   organizerApplyRenames: (destFolder, pairs) => ipcRenderer.invoke('organizer:applyRenames', destFolder, pairs),
 
   // --- Eventos (main → renderer) ---

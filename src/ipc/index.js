@@ -86,7 +86,7 @@ function registerIpcHandlers(ctx) {
     thumbnailsDir: appPaths.thumbnailsDir
   });
   // Organização dos arquivos ao copiar de um dispositivo (o sistema local é o mesmo do assistente, ligado só sob demanda)
-  require('./organizerHandlers')({ getLlm: () => aiApi.localLlm, projectService });
+  require('./organizerHandlers')({ getLlm: () => aiApi.localLlm, projectService, importQueue: services.importQueue, getDb: () => require('../core/database/database').get() });
   // O ModuleManager é devolvido para ser cancelado no encerramento do app.
   moduleManager = require('./moduleHandlers')(paths, {
     getFfmpegPath: () => ffmpegTool.resolve({ mustExist: false }),

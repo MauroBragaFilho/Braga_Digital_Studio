@@ -7469,6 +7469,36 @@
       "returns": "promise"
     }
   },
+  "organizerApplyMoves": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:applyMoves",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:applyMoves",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "organizerApplyRenames": {
     "type": "function",
     "length": 2,
@@ -7491,6 +7521,38 @@
           "op": "invoke",
           "ch": "organizer:applyRenames",
           "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "organizerLinkProject": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:linkProject",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:linkProject",
+          "args": [
+            "__undefined__",
             "__undefined__",
             "__undefined__"
           ]
@@ -7546,6 +7608,34 @@
           "op": "invoke",
           "ch": "organizer:status",
           "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "organizerThumbnails": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:thumbnails",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:thumbnails",
+          "args": [
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"

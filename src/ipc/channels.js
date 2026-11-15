@@ -770,6 +770,21 @@ define('organizer', 'throw', {
     returns: 'Plano { groups:[{folder,keys}], renames, projectId, usedAi, aiNote, vision, total }',
     api: ['organizerPlan']
   },
+  'organizer:applyMoves': {
+    args: [ABS('root', 'Pasta de destino'), t.array(t.any('movimentos { from, to } com caminhos relativos; o serviço valida cada um'), { name: 'moves', max: 5000 })],
+    returns: 'Resultado { moved, failed }',
+    api: ['organizerApplyMoves']
+  },
+  'organizer:thumbnails': {
+    args: [t.array(t.any('arquivos { key, path } de imagens já copiadas; o handler valida cada um'), { name: 'files', max: 24 })],
+    returns: 'Miniaturas { chave: data URL JPEG }',
+    api: ['organizerThumbnails']
+  },
+  'organizer:linkProject': {
+    args: [ID('projectId'), ABS('destFolder', 'Pasta de destino'), t.array(t.string({ max: 512 }), { name: 'names', max: 5000 })],
+    returns: 'Resultado { linked, total }: arquivos ligados ao projeto depois de entrarem na Biblioteca',
+    api: ['organizerLinkProject']
+  },
   'organizer:applyRenames': {
     args: [ABS('destFolder', 'Pasta de destino'), t.array(t.any('pares { from, to } só com nomes; o serviço valida cada um'), { name: 'pairs', max: 5000 })],
     returns: 'Resultado { renamed, failed }',
