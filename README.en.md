@@ -17,7 +17,7 @@ During setup you choose between:
 - **Complete install (recommended):** installs the program, downloads the tools and the transcription feature, and leaves everything ready to use.
 - **Short install:** installs the program and the basic tools; transcription can be added later in *Settings → Modules*.
 
-The installer is not code-signed yet, so Windows (SmartScreen) may show a warning on first run: use "More info → Run anyway". Every release lists the installer's SHA-256. The app tells you when a new version is out and updates itself.
+The installer is not code-signed yet, so Windows (SmartScreen) may show a warning on first run: use "More info → Run anyway". Every release lists the installer's SHA-256. The app shows a notice in *Settings* when a new version is out (checking at startup is optional) and only installs after you confirm. Only the latest version gets fixes, on a best-effort basis.
 
 ## 🚀 Key Features
 
@@ -37,7 +37,7 @@ The installer is not code-signed yet, so Windows (SmartScreen) may show a warnin
   - When you paste a link to an item inside a playlist, the app asks whether you want only that item or the whole playlist.
 
 - **Transcription & subtitles (optional module):** 
-  - Local transcription on your own computer, with SRT, Markdown and TXT output, automatic skipping of non-speech parts, and optional NVIDIA GPU acceleration.
+  - Local transcription on your own computer (cloud is optional and only used if you choose it), with SRT, Markdown and TXT output, automatic skipping of non-speech parts, and optional NVIDIA GPU acceleration.
 
 - **Converter, Silence Remover & Metadata:** tools to convert media, cut silences, and edit tags and covers.
 
@@ -61,7 +61,7 @@ The installer is not code-signed yet, so Windows (SmartScreen) may show a warnin
 - **[Electron](https://www.electronjs.org/) / Node.js**: The core engine empowering the application with native system capabilities, file system access, child processes, and sandboxed secure sessions.
 - **[PowerShell](https://learn.microsoft.com/en-us/powershell/) (CIM/WMI)**: Invisible backend layer managing silent media copying routines and hardware scanning.
 - **Vanilla JavaScript, HTML5 & CSS3**: The entire frontend was built from scratch utilizing bare-bone web standards, without bloating the app with heavy frontend frameworks. This ensures UI views load in milliseconds while consuming minimal RAM.
-- **Third-party components downloaded on demand** (FFmpeg, yt-dlp, whisper.cpp and others), always from each project's official source and SHA-256 verified. The full list, with versions and licenses, is in *Settings → About and licenses*.
+- **Third-party components downloaded on demand** (FFmpeg, yt-dlp, whisper.cpp and others), from each project's public releases (FFmpeg comes from the BtbN project's builds, because FFmpeg does not publish binaries) and checked by SHA-256 when the source publishes the hash. The full list, with versions and licenses, is in *Settings → About and licenses*.
 
 ## 📦 Installation & Setup (Development)
 
@@ -150,7 +150,7 @@ scripts/, tests/         Maintenance scripts and automated tests
 
 All the data the program generates (library, settings, history, thumbnails) stays on your computer, in a local folder (`AppData`). The program has **no telemetry**, requires no account, and does not send your library or files to the author. AI server keys are stored encrypted and are never shown back.
 
-What reaches the internet: update checks and downloads (GitHub), tools and models (each project's official source, Hugging Face), the sites you ask it to download from and, **only if you set one up**, the AI server you choose. With an AI server on the internet, the text you send to the assistant (and what it reads from your library at your request) leaves your computer, so the app warns you before the first time. Error reports are only sent if you choose to send them.
+What reaches the internet: update checks and downloads (GitHub), tools and models (each project's public releases and Hugging Face), the sites you ask it to download from and, **only if you choose**, the cloud: the configured AI server, cloud transcription (the audio goes to the provider you pick, Groq or ElevenLabs) and AI transcript analysis (the transcript text goes to the AI server). With any of them, what you send leaves your computer, so the app warns you before the first time. The MCP server, which is off by default, only accepts connections from your own computer. Error reports are only sent if you choose to send them.
 
 No sensitive information is stored in this repository: databases, caches, logs, `data` folders and authentication sessions are blocked by the `.gitignore` rules.
 

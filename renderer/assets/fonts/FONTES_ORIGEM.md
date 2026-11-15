@@ -2,7 +2,8 @@
 
 Fontes de interface do app (offline, carregadas por `@font-face` em `renderer/style.css`, com `font-display: swap`).
 Só arquivos dos repositórios OFICIAIS de cada projeto; nada de pacotes de terceiros, CDN ou conversão local.
-Licença: SIL Open Font License 1.1 (textos em `renderer/assets/fonts/OFL-*.txt` e na página "Sobre e licenças").
+Licença: SIL Open Font License 1.1 para Inter e Montserrat (textos em `renderer/assets/fonts/OFL-*.txt` e na página "Sobre e licenças") e
+Apache-2.0 para os ícones Material Symbols (texto em `renderer/assets/fonts/LICENSE.txt`).
 Baixado em 2026-10-04. Os arquivos são o conjunto de glifos COMPLETO que o projeto publica (inclui latino e latino
 estendido para o português), sem subconjunto nem conversão.
 
@@ -31,6 +32,19 @@ URL: https://raw.githubusercontent.com/JulietaUla/Montserrat/v7.222/fonts/webfon
 | `Montserrat-Bold.woff2` | 86.804 | `294653dc1466dcda027c8ff4d80f7bc8fb074fc0daacab9afde68c1f7646bb1d` |
 
 Licença: https://raw.githubusercontent.com/JulietaUla/Montserrat/v7.222/OFL.txt (4.392 bytes), copiada para `OFL-Montserrat.txt`.
+
+## Material Symbols Rounded (ícones; Apache-2.0)
+
+Fonte de ícones do Google (família Material Symbols, estilo Rounded), carregada pelo `@font-face` de `renderer/material-symbols.css`.
+Projeto: https://github.com/google/material-design-icons (catálogo em https://fonts.google.com/icons).
+
+| Arquivo em `renderer/assets/fonts/` | Bytes | SHA-256 |
+|---|---|---|
+| `material-symbols-rounded.woff2` | 459.816 | `381818aa7bd782cf923c85e90931a3aeb9e1e0bc2ecf72ed09252fd9f1675cf3` |
+
+Lacuna conhecida: o arquivo entrou em 2026-10-02 e a versão e a URL exata de onde veio não foram anotadas na época. Ao trocar o
+arquivo, registrar aqui a versão, a URL e o SHA-256 (e conferir contra o arquivo publicado pelo projeto).
+Licença: Apache License 2.0, com o texto completo e o aviso de copyright do Google em `LICENSE.txt` (mesma pasta).
 
 ## Tamanho
 

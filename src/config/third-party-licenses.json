@@ -169,6 +169,13 @@
       "url": "https://github.com/winstonjs/logform#readme"
     },
     {
+      "id": "font-material-symbols",
+      "name": "Material Symbols Rounded (ícones)",
+      "version": "não registrada (arquivo de 02/10/2026)",
+      "license": "Apache-2.0",
+      "url": "https://github.com/google/material-design-icons"
+    },
+    {
       "id": "font-montserrat",
       "name": "Montserrat (fonte)",
       "version": "7.222",
@@ -353,6 +360,24 @@
       "url": "https://github.com/ggml-org/whisper.cpp",
       "source": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
       "note": "Usado para transcrever áudio."
+    },
+    {
+      "id": "rt-llamacpp",
+      "name": "llama.cpp (servidor do assistente local)",
+      "version": "versão fixada pelo aplicativo",
+      "license": "MIT",
+      "url": "https://github.com/ggml-org/llama.cpp",
+      "source": "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/LICENSE",
+      "note": "Roda o modelo do assistente local neste computador. Baixado só quando você instala o modelo local, da release oficial do projeto, com SHA-256 conferido."
+    },
+    {
+      "id": "rt-qwen",
+      "name": "Modelos do assistente local (Qwen2.5 0.5B e Qwen3-VL 2B)",
+      "version": "conforme o modelo escolhido",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/Qwen",
+      "source": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF e https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF (cartões dos modelos: licença apache-2.0)",
+      "note": "Modelos da Alibaba (Qwen) em formato GGUF, baixados do Hugging Face só quando você instala o modelo local, com SHA-256 conferido. O aplicativo não redistribui os arquivos."
     },
     {
       "id": "rt-whispermodels",

@@ -3,7 +3,7 @@
 /**
  * Componentes baixados em tempo de execução (não empacotados), com licença e texto conferidos nos repositórios
  * oficiais (campo "source" = URLs consultadas). Para as licenças GPL/NVIDIA (muito longas) o texto integral está
- * no arquivo oficial indicado.
+ * no arquivo oficial indicado. Também entram aqui o servidor e os modelos do assistente local (llama.cpp, Qwen).
  */
 
 const MIT = (holder) => `MIT License
@@ -75,6 +75,19 @@ const RUNTIME = [
     text: 'Conforme o README do projeto: "This is free software; you can redistribute it and/or modify it under the same terms as Perl itself (either the Perl Artistic License or GPL)."\nTextos das licenças: https://dev.perl.org/licenses/\nCódigo-fonte: https://github.com/exiftool/exiftool'
   },
   { id: 'rt-whispercpp', name: 'whisper.cpp', version: 'versão fixada pelo aplicativo', license: 'MIT', url: 'https://github.com/ggml-org/whisper.cpp', source: 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE', note: 'Usado para transcrever áudio.', text: MIT('(c) 2023-2026 The ggml authors') },
+  {
+    id: 'rt-llamacpp', name: 'llama.cpp (servidor do assistente local)', version: 'versão fixada pelo aplicativo', license: 'MIT',
+    url: 'https://github.com/ggml-org/llama.cpp', source: 'https://raw.githubusercontent.com/ggml-org/llama.cpp/master/LICENSE',
+    note: 'Roda o modelo do assistente local neste computador. Baixado só quando você instala o modelo local, da release oficial do projeto, com SHA-256 conferido.',
+    text: MIT('(c) 2023-2026 The ggml authors')
+  },
+  {
+    id: 'rt-qwen', name: 'Modelos do assistente local (Qwen2.5 0.5B e Qwen3-VL 2B)', version: 'conforme o modelo escolhido', license: 'Apache-2.0',
+    url: 'https://huggingface.co/Qwen',
+    source: 'https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF e https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF (cartões dos modelos: licença apache-2.0)',
+    note: 'Modelos da Alibaba (Qwen) em formato GGUF, baixados do Hugging Face só quando você instala o modelo local, com SHA-256 conferido. O aplicativo não redistribui os arquivos.',
+    text: 'Apache License, Version 2.0 (licença declarada nos cartões dos dois modelos no Hugging Face).\nTexto completo: https://www.apache.org/licenses/LICENSE-2.0.txt (o mesmo texto acompanha a fonte de ícones Material Symbols, nesta lista).'
+  },
   { id: 'rt-whispermodels', name: 'Modelos de transcrição (OpenAI Whisper, formato ggml)', version: 'conforme o modelo escolhido', license: 'MIT', url: 'https://github.com/openai/whisper', source: 'https://raw.githubusercontent.com/openai/whisper/main/LICENSE; https://huggingface.co/ggerganov/whisper.cpp (License: mit)', note: 'Modelos de reconhecimento de fala baixados quando você escolhe um modelo de transcrição (hospedados em huggingface.co/ggerganov/whisper.cpp).', text: MIT('(c) 2022 OpenAI') },
   {
     id: 'rt-nvidia', name: 'Bibliotecas de aceleração NVIDIA (CUDA e cuBLAS)', version: 'CUDA 12.4', license: 'NVIDIA CUDA Toolkit EULA', url: 'https://docs.nvidia.com/cuda/eula/index.html',
@@ -89,7 +102,9 @@ const RUNTIME = [
  */
 const BUNDLED_FONTS = [
   { id: 'font-inter', name: 'Inter (fonte)', version: '4.1', license: 'OFL-1.1', url: 'https://github.com/rsms/inter', licenseFile: 'renderer/assets/fonts/OFL-Inter.txt' },
-  { id: 'font-montserrat', name: 'Montserrat (fonte)', version: '7.222', license: 'OFL-1.1', url: 'https://github.com/JulietaUla/Montserrat', licenseFile: 'renderer/assets/fonts/OFL-Montserrat.txt' }
+  { id: 'font-montserrat', name: 'Montserrat (fonte)', version: '7.222', license: 'OFL-1.1', url: 'https://github.com/JulietaUla/Montserrat', licenseFile: 'renderer/assets/fonts/OFL-Montserrat.txt' },
+  // Ícones do Google (Apache-2.0). A versão exata não foi registrada no download (ver FONTES_ORIGEM.md)
+  { id: 'font-material-symbols', name: 'Material Symbols Rounded (ícones)', version: 'não registrada (arquivo de 02/10/2026)', license: 'Apache-2.0', url: 'https://github.com/google/material-design-icons', licenseFile: 'renderer/assets/fonts/LICENSE.txt' }
 ];
 
 module.exports = { RUNTIME, BUNDLED_FONTS };

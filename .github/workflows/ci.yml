@@ -97,6 +97,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # A lista e os textos de licença de terceiros são gerados no Windows (npm run generate:licenses): só lá a conferência é exata.
+      - name: Licenças de terceiros em dia
+        if: runner.os == 'Windows'
+        run: node scripts/generate-licenses.js --check
+
       - name: Testes
         run: npm test
 

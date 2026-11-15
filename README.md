@@ -17,7 +17,7 @@ Na instalação você escolhe entre:
 - **Instalação completa (recomendada):** instala o programa, baixa as ferramentas e o recurso de transcrição e deixa tudo pronto para usar.
 - **Instalação curta:** instala o programa e as ferramentas básicas; a transcrição pode ser instalada depois em *Configurações → Módulos*.
 
-Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pode mostrar um aviso no primeiro uso: use "Mais informações → Executar assim mesmo". Cada release traz o SHA-256 do instalador. O programa avisa quando há versão nova e atualiza sozinho.
+Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pode mostrar um aviso no primeiro uso: use "Mais informações → Executar assim mesmo". Cada release traz o SHA-256 do instalador. O programa avisa em *Configurações* quando há versão nova (a verificação ao abrir o app é opcional) e só instala depois da sua confirmação. Só a versão mais recente recebe correções, em regime de melhor esforço.
 
 ## 🚀 Principais Funcionalidades
 
@@ -37,7 +37,7 @@ Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pod
   - Ao colar um link de um item dentro de uma playlist, o app pergunta se você quer só aquele item ou a playlist inteira.
 
 - **Transcrição e legendas (módulo opcional):** 
-  - Transcrição local, no seu computador, com saída em SRT, Markdown e TXT; filtro automático de trechos sem fala; aceleração por placa NVIDIA opcional.
+  - Transcrição local, no seu computador (a nuvem é opcional e só é usada se você escolher), com saída em SRT, Markdown e TXT; filtro automático de trechos sem fala; aceleração por placa NVIDIA opcional.
 
 - **Conversor, Remover Silêncio e Metadados:** ferramentas para converter mídia, cortar silêncios e editar tags e capas.
 
@@ -61,7 +61,7 @@ Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pod
 - **[Electron](https://www.electronjs.org/) / Node.js**: Motor responsável por fornecer os super-poderes nativos da aplicação para acesso a sistema de arquivos, child-processes e gerenciamento de sessões com segurança em sandbox.
 - **[PowerShell](https://learn.microsoft.com/en-us/powershell/) (CIM/WMI)**: Motor utilizado invisivelmente no backend para gerenciar a cópia de mídia silenciosa e varredura de hardware.
 - **JavaScript (Vanilla), HTML5 e CSS3**: Todo o *Frontend* do programa foi escrito do absoluto zero usando as tecnologias web essenciais, sem engordar o código com frameworks gigantes. Isso garante que as páginas carreguem em questão de milissegundos e utilizem pouquíssima RAM.
-- **Componentes de terceiros baixados sob demanda** (FFmpeg, yt-dlp, whisper.cpp e outros), sempre das fontes oficiais de cada projeto e com verificação SHA-256. A lista completa, com versões e licenças, está em *Configurações → Sobre e licenças*.
+- **Componentes de terceiros baixados sob demanda** (FFmpeg, yt-dlp, whisper.cpp e outros), das releases públicas de cada projeto (o FFmpeg vem dos builds do projeto BtbN, porque o FFmpeg não publica binários) e conferidos por SHA-256 quando a fonte publica o hash. A lista completa, com versões e licenças, está em *Configurações → Sobre e licenças*.
 
 ## 📦 Instalação e Uso (Desenvolvimento)
 
@@ -150,7 +150,7 @@ scripts/, tests/         Scripts de manutenção e testes automatizados
 
 Todos os dados que o programa gera (biblioteca, configurações, históricos, miniaturas) ficam no seu computador, em uma pasta local (`AppData`). O programa **não tem telemetria**, não exige conta e não envia a sua biblioteca nem os seus arquivos ao autor. Chaves de servidores de IA são guardadas criptografadas e nunca são exibidas de volta.
 
-O que acessa a internet: verificação e download de atualizações (GitHub), das ferramentas e modelos (fontes oficiais de cada projeto, Hugging Face), os sites de onde você pedir para baixar e, **se você configurar**, o servidor de IA que escolher. Com um servidor de IA na internet, o texto que você enviar ao assistente (e o que ele consultar na sua biblioteca a seu pedido) sai do seu computador; por isso o app avisa antes da primeira vez. Os relatórios de erro só são enviados se você escolher enviar.
+O que acessa a internet: verificação e download de atualizações (GitHub), das ferramentas e modelos (releases públicas de cada projeto e Hugging Face), os sites de onde você pedir para baixar e, **se você escolher**, a nuvem: o servidor de IA configurado, a transcrição em nuvem (o áudio vai ao provedor escolhido, Groq ou ElevenLabs) e a análise de transcrição por IA (o texto da transcrição vai ao servidor de IA). Com qualquer um deles, o conteúdo enviado sai do seu computador; por isso o app avisa antes da primeira vez. O servidor MCP, que vem desligado, só aceita conexões do próprio computador. Os relatórios de erro só são enviados se você escolher enviar.
 
 Nenhuma informação sensível é salva neste repositório: banco de dados, caches, logs, pastas `data` e sessões de autenticação estão bloqueados pelas regras do `.gitignore`.
 

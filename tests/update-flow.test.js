@@ -145,6 +145,57 @@ test('app instalado: baixa e verifica, NÃO instala sozinho; instalar abre o ins
   fs.rmSync(s.paths.tempDir, { recursive: true, force: true });
 });
 
+test('release SEM SHA-256: instalável, mas nunca anunciada como "verificada" (F-83), nem depois de adiar', async () => {
+  if (process.platform !== 'win32') return;
+  const s = service({ packaged: true });
+  const messages = [];
+  s.on('progress', (p) => messages.push(p.message));
+  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/BragaDigitalStudioSetup.exe', installerDigest: null };
+  const patches = {
+    checkForUpdate: async () => appInfo,
+    // sem digest: o download é aceito, mas o conferidor devolve verified:false
+    downloadLatestInstaller: async (dest) => { fs.writeFileSync(dest, Buffer.alloc(600000)); return { path: dest, size: 600000, verified: false }; },
+    launchInstallerDetached: () => ({ launched: true })
+  };
+  await withPatched(appUpdateChecker, patches, async () => {
+    const r1 = await s.updateEverything();
+    assert.equal(r1.appUpdate.readyToInstall, true);
+    assert.equal(r1.appUpdate.digestVerified, false, 'o renderer precisa saber que não houve verificação');
+    const ready = messages.filter((m) => /Pronta para instalar/.test(m)).pop();
+    assert.match(ready, /sem verificação de integridade/);
+    assert.doesNotMatch(ready, /baixada e verificada/);
+
+    // O usuário adiou e voltou: o aviso continua valendo (não vira "verificada" por ter sido guardada)
+    const r2 = await s.updateEverything();
+    assert.equal(r2.appUpdate.readyToInstall, true);
+    assert.equal(r2.appUpdate.digestVerified, false);
+  });
+  fs.rmSync(s.paths.tempDir, { recursive: true, force: true });
+});
+
+test('release COM SHA-256 conferido: aparece como "baixada e verificada" e o flag sobrevive ao adiamento', async () => {
+  if (process.platform !== 'win32') return;
+  const s = service({ packaged: true });
+  const messages = [];
+  s.on('progress', (p) => messages.push(p.message));
+  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/BragaDigitalStudioSetup.exe', installerDigest: 'sha256:abc' };
+  const patches = {
+    checkForUpdate: async () => appInfo,
+    downloadLatestInstaller: async (dest) => { fs.writeFileSync(dest, Buffer.alloc(600000)); return { path: dest, size: 600000, verified: true }; },
+    launchInstallerDetached: () => ({ launched: true })
+  };
+  await withPatched(appUpdateChecker, patches, async () => {
+    const r1 = await s.updateEverything();
+    assert.equal(r1.appUpdate.digestVerified, true);
+    assert.match(messages.filter((m) => /Pronta para instalar/.test(m)).pop(), /baixada e verificada/);
+    const r2 = await s.updateEverything();
+    assert.equal(r2.appUpdate.digestVerified, true);
+    await s.installAppUpdate();
+    assert.equal(s._downloadedDigestVerified, false, 'instalar zera o estado guardado');
+  });
+  fs.rmSync(s.paths.tempDir, { recursive: true, force: true });
+});
+
 test('launchInstallerDetached: recusa fora do Windows ou sem arquivo', () => {
   const r = appUpdateChecker.launchInstallerDetached(path.join(os.tmpdir(), 'nao-existe-bds.exe'));
   assert.equal(r.launched, false);

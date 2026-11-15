@@ -2084,7 +2084,7 @@ async function runAppAutoInstall({ statusText, button, progressContainer, releas
     if (appUpdate && appUpdate.readyToInstall) {
       if (fill) { fill.classList.remove('indeterminate'); fill.style.width = '100%'; }
       if (percentEl) percentEl.textContent = '100%';
-      if (stepEl) stepEl.textContent = 'Nova versão baixada e verificada.';
+      if (stepEl) stepEl.textContent = appUpdate.digestVerified ? 'Nova versão baixada e verificada.' : 'Nova versão baixada, sem verificação de integridade.';
       if (statusText) statusText.textContent = 'Nova versão baixada. Instale para concluir.';
       await offerInstallDownloadedUpdate(appUpdate, statusText);
       return;
@@ -2276,13 +2276,16 @@ async function checkUpdates() {
 
 // Mostra o estado do app no painel dedicado (dentro da aba Atualizações).
 /**
- * Nova versão já baixada e verificada: pergunta e, se o usuário aceitar, fecha o BDS e abre o instalador
+ * Nova versão já baixada: pergunta e, se o usuário aceitar, fecha o BDS e abre o instalador
  * (que reabre o app ao terminar). Devolve true se a instalação foi disparada.
  */
 async function offerInstallDownloadedUpdate(appUpdate, statusText) {
   const version = appUpdate?.latestVersion ? `v${appUpdate.latestVersion}` : 'nova versão';
-  const ok = await window.bdsModal.confirm(
-    `A ${version} do BDS foi baixada e verificada.\n\nPara instalar, o BDS vai fechar, o instalador roda sozinho e o BDS abre de novo atualizado. Instalar agora?`
+  // "Verificada" só quando o SHA-256 publicado na release foi conferido; sem ele, dizer a verdade e deixar a decisão com o usuário
+  const verified = appUpdate?.digestVerified === true;
+  const ok = await window.bdsModal.confirm(verified
+    ? `A ${version} do BDS foi baixada e verificada.\n\nPara instalar, o BDS vai fechar, o instalador roda sozinho e o BDS abre de novo atualizado. Instalar agora?`
+    : `A ${version} do BDS foi baixada, mas a release não publicou o código de verificação: não foi possível conferir se o instalador está íntegro.\n\nPara instalar, o BDS vai fechar, o instalador roda sozinho e o BDS abre de novo atualizado. Instalar mesmo assim?`
   );
   if (!ok || !window.bds.installAppUpdate) {
     if (statusText) statusText.textContent = 'Instalação adiada. Clique em Atualizar quando quiser instalar.';
@@ -2378,9 +2381,9 @@ async function startUnifiedUpdate() {
     if (fill) fill.style.width = '100%';
     if (percentEl) percentEl.textContent = '100%';
 
-    // Nova versão do app baixada e verificada? A instalação fecha o BDS e abre o instalador.
+    // Nova versão do app baixada? A instalação fecha o BDS e abre o instalador.
     if (appUpdate && appUpdate.readyToInstall) {
-      if (stepEl) stepEl.textContent = 'Nova versão do BDS baixada e verificada.';
+      if (stepEl) stepEl.textContent = appUpdate.digestVerified ? 'Nova versão do BDS baixada e verificada.' : 'Nova versão do BDS baixada, sem verificação de integridade.';
       setStatus('Nova versão do BDS pronta para instalar.');
       const launched = await offerInstallDownloadedUpdate(appUpdate, null);
       if (!launched) {

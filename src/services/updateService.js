@@ -19,6 +19,7 @@ class UpdateService extends EventEmitter {
     // só executa ESTE arquivo — nunca um caminho enviado pelo renderer.
     this._downloadedInstallerPath = null;
     this._downloadedVersion = null;
+    this._downloadedDigestVerified = false; // o SHA-256 do instalador guardado foi conferido? (a release pode não publicá-lo)
     if (paths && (paths.tools || paths.dataDir)) {
       const toolsDir = paths.tools || paths.dataDir;
       dependencyManager.init(toolsDir);
@@ -194,8 +195,9 @@ class UpdateService extends EventEmitter {
           ? `A atualização automática do aplicativo está disponível só no Windows. Baixe o arquivo ${asset.name} pela página de releases e instale manualmente.`
           : 'A atualização automática do aplicativo está disponível só no Windows, e a release não traz pacote para este sistema. Veja a página de releases.';
       } else if (appInfo.hasUpdate && appInfo.installerUrl && this._downloadedInstallerPath && this._downloadedVersion === appInfo.latestVersion && fs.existsSync(this._downloadedInstallerPath)) {
-        // Já baixado e verificado nesta sessão (o usuário adiou a instalação): não baixa de novo
+        // Já baixado nesta sessão (o usuário adiou a instalação): não baixa de novo
         appUpdate.downloaded = true;
+        appUpdate.digestVerified = this._downloadedDigestVerified === true;
         appUpdate.readyToInstall = true;
         appUpdate.latestVersion = appInfo.latestVersion;
         emitProgress(100, 'Nova versão já baixada. Pronta para instalar.', 'app-ready');
@@ -215,7 +217,9 @@ class UpdateService extends EventEmitter {
         );
         appUpdate.downloaded = true;
         appUpdate.installerPath = dl.path;
-        appUpdate.digestVerified = Boolean(appInfo.installerDigest);
+        // Verificado só se o SHA-256 foi publicado E conferido (sem digest o download é aceito, mas sem essa garantia)
+        appUpdate.digestVerified = typeof dl.verified === 'boolean' ? dl.verified : Boolean(appInfo.installerDigest);
+        this._downloadedDigestVerified = appUpdate.digestVerified;
 
         // Verificação defensiva: tamanho mínimo do instalador (~500 KB) para
         // garantir que o download não foi truncado mesmo sem digest disponível.
@@ -230,7 +234,9 @@ class UpdateService extends EventEmitter {
         this._downloadedInstallerPath = dl.path;
         appUpdate.readyToInstall = true;
         appUpdate.latestVersion = appInfo.latestVersion;
-        emitProgress(100, 'Nova versão baixada e verificada. Pronta para instalar.', 'app-ready');
+        emitProgress(100, appUpdate.digestVerified
+          ? 'Nova versão baixada e verificada. Pronta para instalar.'
+          : 'Nova versão baixada, sem verificação de integridade (a release não publicou o código de verificação). Pronta para instalar.', 'app-ready');
         logger.info('UpdateService:updateEverything:installer_ready', {
           version: appInfo.latestVersion,
           digestVerified: appUpdate.digestVerified,
@@ -275,6 +281,7 @@ class UpdateService extends EventEmitter {
     // downloadLatestInstaller confere o SHA-256 publicado na release (e apaga o arquivo se divergir).
     const dl = await appUpdateChecker.downloadLatestInstaller(installerPath, onProgress);
     this._downloadedInstallerPath = (dl && dl.path) || installerPath;
+    this._downloadedDigestVerified = Boolean(dl && dl.verified);
     return { installerPath: this._downloadedInstallerPath };
   }
 
@@ -295,6 +302,7 @@ class UpdateService extends EventEmitter {
       return { success: false, exitCode: null, error: launch.error || 'Não foi possível abrir o instalador.' };
     }
     this._downloadedInstallerPath = null;
+    this._downloadedDigestVerified = false;
     logger.info('UpdateService:installAppUpdate:quitting_for_installer');
     setTimeout(() => { try { app.quit(); } catch (_) { /* noop */ } }, 800);
     return { success: true, launched: true, exitCode: null };
