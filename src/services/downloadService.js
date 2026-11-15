@@ -4,14 +4,13 @@ const fs = require('node:fs');
 const logger = require('./logService');
 const { detectarSpotify, validarSpotifyDownload } = require('./spotifyValidator');
 const browserService = require('./browserService');
-const CookiesService = require('../core/CookiesService');
 const dbManager = require('../core/database/database');
 const { ytDlpTool } = require('../infrastructure/external-tools/adapters/YtDlpTool');
 const { spotDlTool } = require('../infrastructure/external-tools/adapters/SpotDlTool');
 const { processRunner } = require('../infrastructure/external-tools/ProcessRunner');
 const { isHttpUrl, assertHttpUrl } = require('./urlValidator');
 const { friendlyYtDlpError, sanitizeUserMessage } = require('./ytdlpErrors');
-const { inspectCookiesFile, cookiesFileFor } = require('./youtubeCookies');
+const { inspectCookiesFile, cookiesFileFor, isYouTubeUrl } = require('./youtubeCookies');
 const { uniqueSuffixPath } = require('./uniquePath');
 const { folderNameFor, applyCoverIcon } = require('./playlistFolder');
 const { ffprobeTool } =require('../infrastructure/external-tools/adapters/FfprobeTool');
@@ -173,11 +172,10 @@ class DownloadManager extends EventEmitter {
     this._waitUntil = null;
     this._wakeWait = null;
 
-    // Cookies do YouTube: função opcional (injetada pelo bootstrap) que renova o arquivo a partir da sessão
-    // da aba Envio; _cookiesFile é o arquivo validado para esta rodada da fila
-    this.cookiesProvider = null;
-    this._cookiesFile = undefined;
-    this._cookiesCheckedAt = 0;
+    // Conta do YouTube (uso opcional, desligado por padrão): `cookieSession` é injetado pelo bootstrap e cria o arquivo da
+    // sessão só enquanto um download do YouTube o usa; `_cookiesFile` é esse arquivo (null fora do download).
+    this.cookieSession = null;
+    this._cookiesFile = null;
 
     // Título/miniatura/canal/duração dos links novos: provedor injetado pelo bootstrap (async url => meta) e fila
     // sequencial de UM link por vez (nunca em massa). Sem provedor, os cartões ficam só com o nome do site.
@@ -723,7 +721,6 @@ class DownloadManager extends EventEmitter {
         continue;
       }
 
-      await this._prepareCookies();
       if (nextItem.infoLoading) this._cancelMetadata(nextItem); // quem vai baixar agora não precisa de busca de informações
       this.currentItem = nextItem;
       nextItem.status = 'downloading';
@@ -734,7 +731,9 @@ class DownloadManager extends EventEmitter {
 
       logger.info('[DownloadManager] Iniciando download do item:', { id: nextItem.id, title: nextItem.title });
 
+      let cookieLease = null;
       try {
+        cookieLease = await this._leaseCookies(nextItem);
         await this.runProcess(nextItem);
       } catch (err) {
         logger.error('[DownloadManager] Erro na execução do item:', err);
@@ -742,6 +741,10 @@ class DownloadManager extends EventEmitter {
           this._failItem(nextItem, sanitizeUserMessage(err.message));
           this.emit('downloads:updated', this.queue);
         }
+      } finally {
+        // O arquivo da sessão da conta só existe durante o download: o processo já terminou aqui (o yt-dlp grava o arquivo de volta ao sair)
+        this._cookiesFile = null;
+        if (cookieLease) { try { await cookieLease.release(); } catch (_) { /* o app apaga o que sobrar ao abrir e ao fechar */ } }
       }
 
       this.currentItem = null;
@@ -798,27 +801,25 @@ class DownloadManager extends EventEmitter {
   }
 
   /**
-   * Confere (no máximo a cada 2 min) se há sessão do YouTube válida: renova o arquivo de cookies a partir da aba
-   * Envio, quando possível, e guarda o arquivo a usar nesta rodada.
+   * Sessão da conta do YouTube para UM download: só com o uso da conta ligado (Configurações) e só para links do YouTube.
+   * O arquivo é criado agora e quem chama devolve o `lease` (release) quando o processo termina. Devolve null nos outros casos.
    */
-  async _prepareCookies(force = false) {
-    const now = Date.now();
-    if (!force && this._cookiesFile !== undefined && now - this._cookiesCheckedAt < 120000) return;
-    this._cookiesCheckedAt = now;
-    let file = null;
-    try { if (typeof this.cookiesProvider === 'function') file = await this.cookiesProvider(); } catch (err) {
-      logger.warn('[DownloadManager] Falha ao renovar os cookies do YouTube', { error: err.message });
+  async _leaseCookies(item) {
+    this._cookiesFile = null;
+    if (!this.cookieSession || !isYouTubeUrl(item && item.url)) return null;
+    let lease = null;
+    try { lease = await this.cookieSession.acquire(); } catch (err) {
+      logger.warn('[DownloadManager] Não foi possível preparar a conta do YouTube', { error: err.message });
     }
-    if (!file) file = this.getSettings().cookiesFile || null;
-    const info = inspectCookiesFile(file);
-    this._cookiesFile = info.valid ? file : null;
+    if (!lease) return null;
+    this._cookiesFile = inspectCookiesFile(lease.file).valid ? lease.file : null;
+    return lease;
   }
 
-  /** Estado da sessão do YouTube para a tela: { valid, expiresAt }. */
+  /** Estado da conta do YouTube para a tela: { enabled, valid, expiresAt }. Não cria arquivo. */
   async getCookiesStatus() {
-    await this._prepareCookies(true);
-    const info = inspectCookiesFile(this._cookiesFile || this.getSettings().cookiesFile);
-    return { valid: info.valid, expiresAt: info.expiresAt, reason: info.reason };
+    if (!this.cookieSession) return { enabled: false, valid: false, expiresAt: null, reason: 'desligado' };
+    return this.cookieSession.status();
   }
 
   /** Marca o item como falho (nunca sobrescreve cancelled/paused), persiste e emite o evento. */
@@ -1256,8 +1257,8 @@ class DownloadManager extends EventEmitter {
       '--ffmpeg-location', this.paths.dataDir
     ];
 
-    // Sessão do YouTube válida (aba Envio): baixa já autenticado; o arquivo nunca vai para outros sites
-    const cookies = cookiesFileFor(item.url, this._cookiesFile !== undefined ? this._cookiesFile : settings.cookiesFile);
+    // Conta do YouTube (só se o usuário ligou o uso da conta): baixa já autenticado; o arquivo nunca vai para outros sites
+    const cookies = cookiesFileFor(item.url, this._cookiesFile);
     if (cookies) {
       args.push('--cookies', cookies);
     }

@@ -2748,36 +2748,6 @@
       "returns": "promise"
     }
   },
-  "exportCookies": {
-    "type": "function",
-    "length": 2,
-    "withSentinels": {
-      "made": [
-        {
-          "op": "invoke",
-          "ch": "system:exportCookies",
-          "args": [
-            "@1",
-            "@2"
-          ]
-        }
-      ],
-      "returns": "promise"
-    },
-    "noArgs": {
-      "made": [
-        {
-          "op": "invoke",
-          "ch": "system:exportCookies",
-          "args": [
-            "__undefined__",
-            "__undefined__"
-          ]
-        }
-      ],
-      "returns": "promise"
-    }
-  },
   "exportDiagnosticLogs": {
     "type": "function",
     "length": 0,
@@ -2915,30 +2885,6 @@
             "__undefined__",
             "__undefined__"
           ]
-        }
-      ],
-      "returns": "promise"
-    }
-  },
-  "exportYoutubeCookies": {
-    "type": "function",
-    "length": 0,
-    "withSentinels": {
-      "made": [
-        {
-          "op": "invoke",
-          "ch": "youtube:exportCookies",
-          "args": []
-        }
-      ],
-      "returns": "promise"
-    },
-    "noArgs": {
-      "made": [
-        {
-          "op": "invoke",
-          "ch": "youtube:exportCookies",
-          "args": []
         }
       ],
       "returns": "promise"
@@ -10365,6 +10311,30 @@
         {
           "op": "invoke",
           "ch": "youtube:login",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "youtubeSignOut": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:signOut",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "youtube:signOut",
           "args": []
         }
       ],

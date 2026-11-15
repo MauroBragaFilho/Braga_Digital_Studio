@@ -367,7 +367,7 @@ test('tabela: nomes expostos no preload são únicos e eventos não colidem com 
 
 test('listChannels devolve a tabela documentável (canal, domínio, args, retorno, erro)', () => {
   const rows = listChannels();
-  assert.equal(rows.length, 302);
+  assert.equal(rows.length, 301);
   const row = rows.find((r) => r.channel === 'library:moveMediaBulk');
   assert.equal(row.domain, 'library');
   assert.equal(row.error, 'throw');
@@ -395,7 +395,6 @@ test('esquemas reais: caminho relativo, id inválido e tipo errado são recusado
   rejects(() => run('library:toggleFavorite', 1, 'sim'), /verdadeiro ou falso/);
   rejects(() => run('modules:setEnabled', 'whisper', 'sim'), /verdadeiro ou falso/);
   rejects(() => run('downloads:reorder', 5, 'sideways'), /opção válida/);
-  rejects(() => run('system:exportCookies', 'dominio com espaço', 'C:\\x.txt'), /Domínio/);
   rejects(() => run('window:fullscreen', 'enter'), /opção válida/);
   // extras e canais sem argumentos
   rejects(() => run('settings:get', 'extra'), /demais/);

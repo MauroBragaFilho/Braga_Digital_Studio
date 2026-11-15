@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const logger = require('./logService');
 const { assertHttpUrl, redactUrl } = require('./urlValidator');
-const { cookiesFileFor } = require('./youtubeCookies');
+const { cookiesFileFor, isYouTubeUrl } = require('./youtubeCookies');
 const { toolRunner } = require('../infrastructure/external-tools/ToolRunner');
 const { ffmpegTool } = require('../infrastructure/external-tools/adapters/FfmpegTool');
 const { ytDlpTool } = require('../infrastructure/external-tools/adapters/YtDlpTool');
@@ -13,6 +13,8 @@ class ThumbnailService {
   constructor({ paths, getSettings }) {
     this.paths = paths;
     this.getSettings = getSettings;
+    // Conta do YouTube (uso opcional, desligado por padrão): injetado pelo bootstrap (youtubeCookieSession)
+    this.cookieSession = null;
   }
 
   async getMetadata(url) {
@@ -369,8 +371,13 @@ class ThumbnailService {
     const exe = ytDlpTool.resolve();
 
     const finalArgs = [...args];
-    // Só links do YouTube recebem a sessão da conta, e só se ela ainda estiver válida
-    const cookiesFile = cookiesFileFor(url, this.getSettings().cookiesFile);
+    // Só links do YouTube recebem a sessão da conta, só com o uso da conta ligado e só se ela ainda estiver válida.
+    // O arquivo da sessão existe apenas durante esta consulta.
+    let lease = null;
+    if (this.cookieSession && isYouTubeUrl(url)) {
+      try { lease = await this.cookieSession.acquire(); } catch (_) { lease = null; }
+    }
+    const cookiesFile = lease ? cookiesFileFor(url, lease.file) : null;
     if (cookiesFile) {
       finalArgs.push('--cookies', cookiesFile);
     }
@@ -388,6 +395,8 @@ class ThumbnailService {
     } catch (err) {
       if (/^Timeout/.test(err.message)) throw new Error('Tempo limite excedido ao analisar metadados.');
       throw err;
+    } finally {
+      if (lease) { try { await lease.release(); } catch (_) { /* o app apaga o que sobrar ao abrir e ao fechar */ } }
     }
 
     if (result.code !== 0) {

@@ -50,7 +50,7 @@ Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pod
   - Funciona com servidores que você escolhe: locais (LM Studio, Ollama) ou na internet (Groq, Qwen, OpenAI ou outro compatível), cada um com a sua chave, com troca automática para o próximo se um falhar. É opcional e pode ser desligado em *Configurações*.
 
 - **Isolamento de Sessão Segura e Login Local:** 
-  - Login isolado em janelas particionadas (`persist:youtube`). Suas contas e dados do YouTube ou outras plataformas ficam isolados e gerenciados nativamente de forma criptografada pelo motor do Electron. Não há senhas salvas em nuvem, garantindo segurança total.
+  - Login isolado em janelas particionadas (`persist:youtube`): a sessão das plataformas fica numa partição própria do navegador embutido, separada do restante do app. O BDS não guarda a sua senha nem envia a sessão a nenhuma nuvem do autor. Usar a sua conta nos downloads do YouTube é opcional e vem desligado (*Configurações → Mídia*). Ligado, o app cria um arquivo de texto temporário com a sessão do YouTube só enquanto baixa e o apaga ao terminar; enquanto ele existe, quem usa o seu usuário do Windows consegue lê-lo, então use um computador de confiança. O botão *Sair e apagar a sessão* encerra o login e remove a sessão guardada.
 
 - **Design de Interface:** 
   - Visual limpo, em tema escuro ou claro, com botões em pílula, acento vermelho e outras 4 cores à escolha, fontes Montserrat e Inter e contraste de acessibilidade (WCAG AA).

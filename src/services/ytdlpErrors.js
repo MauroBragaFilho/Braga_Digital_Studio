@@ -36,9 +36,9 @@ function extractErrorLines(stderr) {
  */
 const PATTERNS = [
   [/confirm you.{0,3}re not a bot|sign in to confirm you/i,
-    'O YouTube pediu confirmação de que você não é um robô. Exporte os cookies do YouTube nas configurações (ou faça login) e tente novamente.'],
+    'O YouTube pediu confirmação de que você não é um robô. Tente de novo mais tarde. Se o vídeo exigir login, entre na conta pela aba Envio e ligue "Usar minha conta nos downloads do YouTube" em Configurações.'],
   [/sign in to confirm your age|age[- ]restricted|inappropriate for some users/i,
-    'Este vídeo tem restrição de idade. Exporte os cookies do YouTube (conta logada) nas configurações e tente novamente.'],
+    'Este vídeo tem restrição de idade. Entre na sua conta pela aba Envio e ligue "Usar minha conta nos downloads do YouTube" em Configurações; só funciona com a sua própria conta.'],
   [/private video|video is private|this video is private/i,
     'Este vídeo é privado. Só o dono (ou quem recebeu acesso) consegue baixá-lo.'],
   [/http error 403|403: forbidden|error 403/i,

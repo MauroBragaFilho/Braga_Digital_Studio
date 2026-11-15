@@ -1,7 +1,6 @@
 // Tela Envio: YouTube Studio embutido + fila de envio automático (opcional, Configurações → Mídia).
 // A fila vive no processo principal (window.bds.youtubeUpload); aqui só se desenha o estado e se repassam cliques.
 
-let statusTimer = null;
 let waitTimer = null;
 let unsubscribers = [];
 let queueState = null;
@@ -17,8 +16,6 @@ const VISIBILITY_LABEL = { private: 'Privado', unlisted: 'Não listado', public:
 const AUDIENCE_LABEL = { not_kids: 'Não é para crianças', kids: 'É para crianças' };
 
 export function onLeave() {
-    clearTimeout(statusTimer);
-    statusTimer = null;
     clearInterval(waitTimer);
     waitTimer = null;
     for (const off of unsubscribers) { try { off(); } catch (_) { /* já removido */ } }
@@ -52,46 +49,9 @@ export async function initScreen() {
             if (e && (e.errorCode === -3 || e.isMainFrame === false)) return;
             setOverlay('error', 'Não foi possível abrir o YouTube Studio', 'Verifique sua conexão com a internet e tente novamente.');
         });
-        // Auto-sincronizar cookies ao terminar de carregar uma página no studio.youtube.com
-        webview.addEventListener('did-finish-load', () => {
-            syncYoutubeSession();
-        });
-
-        // Backup: garante a tentativa de sincronização ao abrir a tela, mesmo se o webview já estiver em cache
-        webview.addEventListener('dom-ready', () => {
-            syncYoutubeSession();
-        });
     }
 
     await initQueuePanel(webview);
-}
-
-async function syncYoutubeSession() {
-    const statusBar = document.getElementById('cookiesSyncStatusBar');
-    const statusText = document.getElementById('cookiesSyncStatusText');
-
-    try {
-        if (window.bds && window.bds.exportYoutubeCookies) {
-            const result = await window.bds.exportYoutubeCookies();
-
-            if (result && result.success) {
-                if (statusBar && statusText) {
-                    statusText.textContent = '✓ Sessão do YouTube conectada. Seus downloads agora podem usar a sua conta.';
-                    statusBar.classList.add('active');
-                    // Auto-hide após 5 segundos
-                    clearTimeout(statusTimer);
-                    statusTimer = setTimeout(() => statusBar.classList.remove('active'), 5000);
-                }
-                console.log('[UPLOAD] Cookies sincronizados com sucesso.');
-            } else {
-                // Silencioso: usuário sem conta conectada não vê nenhuma mensagem de erro
-                console.log('[UPLOAD] Auto-sync: nenhum cookie ativo encontrado (usuário não logado).');
-            }
-        }
-    } catch (err) {
-        // Silencioso: erros ficam apenas no console, sem poluir a tela
-        console.error('[UPLOAD] Erro ao sincronizar cookies:', err);
-    }
 }
 
 /* ==========================================================================

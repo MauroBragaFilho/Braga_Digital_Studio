@@ -232,7 +232,7 @@ define('downloads', 'throw', {
 
 define('youtube', 'throw', {
   'youtube:get-accounts': { returns: '[] (contas YouTube)', api: ['getYoutubeAccounts'] },
-  'youtube:exportCookies': { error: 'success', returns: '{ success, path? , error? }', api: ['exportYoutubeCookies'] },
+  'youtube:signOut': { error: 'success', returns: '{ success, error? } (apaga o login do YouTube e a sessão guardada)', api: ['youtubeSignOut'] },
   'youtube:login': { returns: 'true ao fechar a janela de login', api: ['youtubeLogin'] }
 });
 
@@ -527,11 +527,6 @@ define('system', 'throw', {
   'system:clearCache': { args: [STR('categoryKey', 100, { optional: true, label: 'Categoria de cache' })], returns: 'Resultado da limpeza', api: ['clearCache'] },
   'system:openPath': { error: 'success', args: [STR('itemPath', 4096, { label: 'Caminho' })], returns: '{ success, error? }', api: ['openLocalPath'] },
   'system:revealPath': { error: 'success', args: [STR('itemPath', 4096, { label: 'Caminho' })], returns: '{ success, error? }', api: ['revealLocalPath'] },
-  'system:exportCookies': {
-    args: [STR('domain', 253, { pattern: /^\.?[a-z0-9.-]{1,253}$/i, label: 'Domínio' }), STR('outputPath', 4096, { label: 'Arquivo de saída' })],
-    returns: 'true se gravou',
-    api: ['exportCookies']
-  },
   'shell:openExternal': { args: [STR('url', 4096, { label: 'URL' })], returns: 'true', api: ['openExternal'] }
 });
 

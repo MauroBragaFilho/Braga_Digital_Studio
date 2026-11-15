@@ -388,6 +388,7 @@ function renderSettings() {
   setChk('trFallbackLocal', fallbackList.includes('local'));
   setVal('downloadVideoCodecSelect', ['h264', 'h265', 'av1'].includes(s.downloadVideoCodec) ? s.downloadVideoCodec : 'auto');
   setChk('downloadPauseEnabledInput', s.downloadPauseEnabled !== false);
+  setChk('useYoutubeAccountInput', s.useYoutubeAccount === true);
   setChk('playlistFoldersInput', s.playlistFolders !== false);
   setVal('downloadPauseMinInput', s.downloadPauseMinSec ?? 10);
   setVal('downloadPauseMaxInput', s.downloadPauseMaxSec ?? 180);
@@ -540,6 +541,7 @@ function bindEvents() {
   document.getElementById('downloadPauseEnabledInput')?.addEventListener('change', syncDownloadPauseRange);
   document.getElementById('uploadAutoEnabledInput')?.addEventListener('change', syncUploadOptions);
   document.getElementById('uploadPauseEnabledInput')?.addEventListener('change', syncUploadOptions);
+  document.getElementById('btnYoutubeSignOut')?.addEventListener('click', signOutYoutube);
 
   // Exibe/oculta os ajustes de lembrete de prazo conforme o checkbox ativo
   const deadlineChk = document.getElementById('notifyDeadlinesInput');
@@ -747,6 +749,23 @@ function notify(message, type) {
   else setStatus(message);
 }
 
+/** Sair da conta do YouTube: apaga o login do navegador embutido e a sessão guardada (pede confirmação). */
+async function signOutYoutube() {
+  const btn = document.getElementById('btnYoutubeSignOut');
+  const ok = await window.bdsModal.confirm('Sair da conta do YouTube neste computador?\n\nO login é encerrado e a sessão guardada é apagada. Para usar a conta de novo, será preciso entrar outra vez pela aba Envio.');
+  if (!ok) return;
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+  try {
+    const r = await window.bds.youtubeSignOut();
+    if (r && r.success) notify('Você saiu da conta do YouTube.', 'success');
+    else notify((r && r.error) || 'Não foi possível sair da conta.', 'error');
+  } catch (err) {
+    notify((err && err.message) || 'Não foi possível sair da conta.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+  }
+}
+
 /** "Restaurar padrão": põe nos campos as pastas padrão do app. Só vale depois de Salvar (como ao escolher uma pasta). */
 async function restoreDefaultFolders(pairs) {
   try {
@@ -802,6 +821,7 @@ async function saveSettings() {
       transcriptionFallback: [['groq', 'trFallbackGroq'], ['elevenlabs', 'trFallbackElevenlabs'], ['local', 'trFallbackLocal']]
         .filter(([, id]) => document.getElementById(id)?.checked).map(([engine]) => engine),
       downloadPauseEnabled: document.getElementById('downloadPauseEnabledInput')?.checked !== false,
+      useYoutubeAccount: document.getElementById('useYoutubeAccountInput')?.checked === true,
       playlistFolders: document.getElementById('playlistFoldersInput')?.checked !== false,
       downloadPauseMinSec: Number(document.getElementById('downloadPauseMinInput')?.value),
       downloadPauseMaxSec: Number(document.getElementById('downloadPauseMaxInput')?.value),

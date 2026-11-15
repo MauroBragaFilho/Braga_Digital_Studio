@@ -3,7 +3,7 @@ const { handle } = require('./channelRegistry');
 const fs = require('node:fs');
 const path = require('node:path');
 const { appPaths } = require('../infrastructure/filesystem/AppPaths');
-const { assertAbsolutePath, assertSafePath, assertExternalUrl } = require('./validate');
+const { assertAbsolutePath, assertExternalUrl } = require('./validate');
 const { cachedAsync } = require('../infrastructure/hardware/cachedAsync');
 
 // Extensões que podem ser abertas com o aplicativo padrão do sistema (mídia, legendas e documentos simples).
@@ -108,15 +108,6 @@ module.exports = function registerSystemHandlers(paths, settingsManager, { isBus
     const SettingsClass = require('../core/settings/SettingsManager');
     return new SettingsClass(appPaths.configDir, appPaths.dataDir).load();
   };
-
-  handle('system:exportCookies', async (event, domain, outputPath) => {
-    const CookiesService = require('../core/CookiesService');
-    // (domínio já validado pelo esquema do canal)
-    // Cookies são sensíveis: só podem ser gravados dentro da pasta de dados do app.
-    const baseDir = (paths && paths.dataDir) || appPaths.dataDir;
-    const safeOut = assertSafePath(baseDir, outputPath);
-    return await CookiesService.exportNetscapeCookies(domain, safeOut);
-  });
 
   handle('system:openPath', async (_, itemPath) => {
     // Falhas viram { success:false, error } (o renderer legado não espera rejeição neste canal).

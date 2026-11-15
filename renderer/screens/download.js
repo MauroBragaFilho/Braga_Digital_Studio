@@ -217,18 +217,24 @@ async function refreshWaitState() {
   } catch (_) { /* sem pausa em andamento */ }
 }
 
-/** Linha discreta: há sessão do YouTube válida (downloads autenticados) ou não. */
+/**
+ * Linha discreta sobre a conta do YouTube nos downloads. O uso da conta é opcional (Configurações → Mídia): desligado, a linha
+ * não aparece; ligado, diz se há login e até quando vale.
+ */
 async function refreshSessionNote() {
   const el = document.getElementById('downloadSessionNote');
   if (!el) return;
   try {
     const st = await window.bds.downloads.cookiesStatus?.();
-    if (st && st.valid) {
+    if (st && st.enabled && st.valid) {
       const until = st.expiresAt ? ` (válida até ${new Date(st.expiresAt).toLocaleDateString('pt-BR')})` : '';
-      el.textContent = `Sessão do YouTube ativa${until}: os downloads usam a sua conta.`;
+      el.textContent = `Conta do YouTube ligada${until}: os downloads do YouTube usam a sua conta.`;
       el.classList.add('active');
+    } else if (st && st.enabled) {
+      el.textContent = 'Conta do YouTube ligada, mas sem login. Entre na conta pela aba Envio.';
+      el.classList.remove('active');
     } else {
-      el.textContent = 'Sem sessão do YouTube. Entre na conta pela aba Envio para baixar vídeos que exigem login.';
+      el.textContent = '';
       el.classList.remove('active');
     }
   } catch (_) { el.textContent = ''; }

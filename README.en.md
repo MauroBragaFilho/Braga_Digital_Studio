@@ -50,7 +50,7 @@ The installer is not code-signed yet, so Windows (SmartScreen) may show a warnin
   - Works with servers you choose: local (LM Studio, Ollama) or on the internet (Groq, Qwen, OpenAI or any compatible one), each with its own key, with automatic fallback to the next one if a server fails. It is optional and can be turned off in *Settings*.
 
 - **Secure Session Isolation & Local Login:** 
-  - Isolated login using partitioned windows (`persist:youtube`). Your YouTube accounts and session data are sandboxed and natively encrypted by the Chromium/Electron engine. No passwords are ever saved in the cloud, guaranteeing absolute security.
+  - Isolated login using partitioned windows (`persist:youtube`): the platform session lives in its own partition of the embedded browser, separate from the rest of the app. BDS does not store your password or send the session to any cloud of the author. Using your account for YouTube downloads is optional and off by default (*Settings → Media*). When on, the app creates a temporary plain-text file with the YouTube session only while it downloads and deletes it when done; while it exists, anyone using your Windows user can read it, so use a trusted computer. The *Sign out and delete the session* button ends the login and removes the stored session.
 
 - **Interface Design:** 
   - Clean look in dark or light theme, with pill-shaped buttons, a red accent plus 4 other accent colors to choose from, Montserrat and Inter fonts, and accessibility-grade contrast (WCAG AA).

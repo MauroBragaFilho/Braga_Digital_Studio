@@ -132,7 +132,7 @@ const api = {
 
   // --- YouTube ---
   getYoutubeAccounts: () => ipcRenderer.invoke('youtube:get-accounts'),
-  exportYoutubeCookies: () => ipcRenderer.invoke('youtube:exportCookies'),
+  youtubeSignOut: () => ipcRenderer.invoke('youtube:signOut'),
   youtubeLogin: () => ipcRenderer.invoke('youtube:login'),
 
   // --- Histórico ---
@@ -294,7 +294,6 @@ const api = {
   clearCache: (categoryKey) => ipcRenderer.invoke('system:clearCache', categoryKey),
   openLocalPath: (itemPath) => ipcRenderer.invoke('system:openPath', itemPath),
   revealLocalPath: (itemPath) => ipcRenderer.invoke('system:revealPath', itemPath),
-  exportCookies: (domain, outputPath) => ipcRenderer.invoke('system:exportCookies', domain, outputPath),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
   // --- Licenças de terceiros ---

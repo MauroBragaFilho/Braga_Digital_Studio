@@ -247,7 +247,6 @@
     "sony:list",
     "system:checkEncoders",
     "system:clearCache",
-    "system:exportCookies",
     "system:getCacheInfo",
     "system:getConverterOutputDir",
     "system:getDownloadsPath",
@@ -299,9 +298,9 @@
     "window:fullscreen",
     "window:maximize",
     "window:minimize",
-    "youtube:exportCookies",
     "youtube:get-accounts",
-    "youtube:login"
+    "youtube:login",
+    "youtube:signOut"
   ],
   "events": [
     "DOM.getDocument",

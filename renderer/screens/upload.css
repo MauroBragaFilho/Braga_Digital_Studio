@@ -16,21 +16,6 @@
 }
 
 /* Aviso de sessão ativa: começa escondido; a classe .active é injetada pelo JS */
-.bds-upl-status-bar {
-  display: none;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 24px;
-  color: var(--status-ok);
-  background: color-mix(in srgb, var(--status-ok) 12%, var(--bg));
-  border-bottom: 1px solid color-mix(in srgb, var(--status-ok) 35%, transparent);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-.bds-upl-status-bar.active { display: flex; }
-
 .bds-upl-status-close {
   padding: 2px;
   border-radius: var(--radius-sm);
