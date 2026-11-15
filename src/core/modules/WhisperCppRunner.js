@@ -288,7 +288,7 @@ class WhisperCppRunner {
         }
         // Um motor por vez; se o escolhido falhar por causa do serviço, tenta o próximo da lista (fallback).
         const runLocal = async () => {
-          onEvent({ type: 'status', text: `Carregando o modelo (${name})` }); // pode levar de poucos segundos a mais de 1 minuto
+          onEvent({ type: 'status', text: 'Carregando sistema local…' }); // pode levar de poucos segundos a mais de 1 minuto
           const onLoaded = () => onEvent({ type: 'status', text: `Transcrevendo ${name}` });
 
           let useGpu = wantGpu && !gpuBroken;
@@ -304,7 +304,7 @@ class WhisperCppRunner {
               useGpu = false;
               onEvent({ type: 'line', text: `A GPU não respondeu (${err.detail || err.message}); usando a CPU.` });
               fileProgress(0);
-              onEvent({ type: 'status', text: `Carregando o modelo na CPU (${name})` });
+              onEvent({ type: 'status', text: 'Carregando sistema local…' });
             }
           }
           if (run.device !== device) { device = run.device; onEvent({ type: 'device', text: device }); }

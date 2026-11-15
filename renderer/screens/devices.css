@@ -564,6 +564,24 @@
 }
 .devices-modal-large { width: 800px; height: 600px; }
 .devices-modal-medium { width: 600px; height: 500px; }
+
+/* Diálogo "Como organizar?" (importação de dispositivos) */
+.org-modal { width: 560px; max-width: 94vw; max-height: 88vh; display: flex; flex-direction: column; }
+.org-body { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.org-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-label); color: var(--muted); }
+.org-field select { padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--input-bg); color: var(--text); font: inherit; }
+.org-check { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-body); }
+.org-check[hidden], .org-ai[hidden] { display: none; }
+.org-ai { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.org-note { font-size: var(--fs-label); color: var(--muted); }
+.org-preview { min-height: 60px; font-size: var(--fs-label); color: var(--muted); }
+.org-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.org-list li { padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card-2); color: var(--text); }
+.org-folder { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; overflow-wrap: anywhere; }
+.org-folder .material-symbols-rounded { font-size: 18px; color: var(--accent-text); }
+.org-count { float: right; color: var(--muted); }
+.org-sample { margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
+.org-footer { display: flex; justify-content: flex-end; gap: 8px; }
 .devices-modal-small { width: 440px; height: auto; }
 
 .devices-modal-header {

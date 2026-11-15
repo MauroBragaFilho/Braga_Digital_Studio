@@ -157,7 +157,7 @@ class AssistantChat {
           if (!announced.has(mark)) { announced.add(mark); status(switchLine(ev.label, ev.before), 'fallback'); }
         }
       } else if (ev.type === 'starting') {
-        status('Iniciando o modelo local… (só na primeira pergunta, leva alguns segundos)', 'tool');
+        status('Carregando sistema local…', 'tool');
       } else if (ev.type === 'ready') {
         status('', 'clear');
       } else if (ev.type === 'noTools' && ev.key && !this._noTools.has(ev.key)) {

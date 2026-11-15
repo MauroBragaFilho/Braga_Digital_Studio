@@ -163,6 +163,7 @@ class HardwareDetectionService {
   invalidateCache() {
     this.cachedBestEncoder = { h264: null, hevc: null, av1: null };
     this._gpuCache = null;
+    this._encodersCache = null; // o binário do FFmpeg pode ter sido trocado
   }
 
   // ------------------------------------------------------------------
@@ -225,19 +226,36 @@ class HardwareDetectionService {
     // [PERF] O mini-encode só é refeito se a versão do ffmpeg mudou ou o resultado expirou.
     const cacheKey = `${this._ffmpegKey(ffmpegPath)}|${encoder}`;
     const cached = this._getCachedTest(cacheKey);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      if (!cached) this._notifyFailure(encoder, (this._testResults.get(cacheKey) || {}).error);
+      return cached;
+    }
 
-    const ok = await this._runEncoderTest(ffmpegPath, encoder);
-    this._testResults.set(cacheKey, { ok, at: Date.now() });
+    const res = await this._runEncoderTest(ffmpegPath, encoder);
+    const ok = typeof res === 'boolean' ? res : Boolean(res && res.ok); // (testes antigos trocam o teste por um booleano)
+    const error = res && typeof res === 'object' ? res.error : '';
+    this._testResults.set(cacheKey, { ok, at: Date.now(), ...(error ? { error } : {}) });
     this._saveTestStore();
+    if (!ok) this._notifyFailure(encoder, error);
     return ok;
   }
 
-  /** Executa o mini-encode de teste (sem cache). @private */
+  /**
+   * Teste de encoder reprovado: avisa quem se registrou em `onEncoderFailure(encoder, mensagem)` (o conserto automático do
+   * FFmpeg para driver NVIDIA antigo). Erros de callback nunca atrapalham a detecção.
+   * @private
+   */
+  _notifyFailure(encoder, error) {
+    if (typeof this.onEncoderFailure !== 'function' || !error) return;
+    try { Promise.resolve(this.onEncoderFailure(encoder, error)).catch(() => {}); } catch (_) { /* só aviso */ }
+  }
+
+  /** Executa o mini-encode de teste (sem cache). Resolve { ok, error } (error: fim da saída de erro do FFmpeg). @private */
   _runEncoderTest(ffmpegPath, encoder) {
     return new Promise((resolve) => {
       let settled = false;
-      const finish = (val) => { if (!settled) { settled = true; resolve(val); } };
+      let errText = '';
+      const finish = (ok) => { if (!settled) { settled = true; resolve({ ok, error: ok ? '' : errText.trim().slice(-600) }); } };
 
       const child = spawn(
         ffmpegPath,
@@ -253,6 +271,7 @@ class HardwareDetectionService {
         ],
         { windowsHide: true }
       );
+      if (child.stderr) child.stderr.on('data', (d) => { errText = (errText + d.toString('utf8')).slice(-2000); });
 
       const timer = setTimeout(() => {
         try { child.kill('SIGKILL'); } catch (_) {}

@@ -26,19 +26,40 @@ function registerIpcHandlers(ctx) {
   require('./deviceHandlers')(logger, lutSyncService);
   require('./libraryHandlers')(paths, watcherService, { libManager, settingsManager });
   // 'isBusy': limpar o armazenamento temporário durante uma tarefa apagaria arquivos em uso
-  require('./systemHandlers')(paths, settingsManager, {
-    isBusy: () => {
-      try {
-        return Boolean(
-          (liveService(services.downloadService)?.getQueue?.() || []).some((i) => i.status === 'downloading') ||
-          liveService(services.converterService)?.running ||
-          services.silenceService.running ||
-          services.metadataService.currentProcess ||
-          liveService(services.youtubeUploadQueue)?.running
-        );
-      } catch (_) { return false; }
-    }
-  });
+  const isBusy = () => {
+    try {
+      return Boolean(
+        (liveService(services.downloadService)?.getQueue?.() || []).some((i) => i.status === 'downloading') ||
+        liveService(services.converterService)?.running ||
+        services.silenceService.running ||
+        services.metadataService.currentProcess ||
+        liveService(services.youtubeUploadQueue)?.running
+      );
+    } catch (_) { return false; }
+  };
+  require('./systemHandlers')(paths, settingsManager, { isBusy });
+
+  // Placa de vídeo NVIDIA com driver antigo para o FFmpeg padrão: o teste do NVENC falha e o app trocaria para o processador.
+  // O conserto troca UMA vez (no máximo duas) o FFmpeg pela versão estável e lembra a escolha (FfmpegAutoFix.js).
+  try {
+    const { toolUpdater } = require('../infrastructure/external-tools/ToolUpdater');
+    const { FfmpegAutoFix } = require('../infrastructure/external-tools/FfmpegAutoFix');
+    const hardwareDetection = require('../core/HardwareDetectionService');
+    const ffmpegAutoFix = new FfmpegAutoFix({
+      updater: toolUpdater,
+      getSettings: () => settingsManager.load(),
+      saveSettings: (patch) => settingsManager.save(patch),
+      getFfmpegVersion: () => {
+        const exe = ffmpegTool.resolve({ mustExist: true });
+        return exe ? toolUpdater._getVersion(exe, ['-version']) : null;
+      },
+      isBusy,
+      onFixed: () => hardwareDetection.invalidateCache(),
+      logger
+    });
+    ffmpegAutoFix.applyChannel();
+    hardwareDetection.onEncoderFailure = (encoder, error) => (/nvenc/i.test(encoder) ? ffmpegAutoFix.check(error) : null);
+  } catch (e) { logger.warn('ffmpeg:autofix_unavailable', { error: e && e.message }); }
   require('./recoveryHandlers')(videoRecoveryService, paths, rawRecoveryService, jpgRecoveryService);
   require('./photoPreviewHandlers')(services.photoPreviewService);
   require('./youtubeHandlers')();
@@ -49,7 +70,7 @@ function registerIpcHandlers(ctx) {
   require('./jobHandlers')();
   // O ModuleManager nasce logo abaixo: o assistente o pega só na hora de usar (transcrição).
   let moduleManager = null;
-  require('./aiHandlers')(paths, {
+  const aiApi = require('./aiHandlers')(paths, {
     settingsManager,
     isDev: !app.isPackaged,
     projectService,
@@ -64,6 +85,8 @@ function registerIpcHandlers(ctx) {
     bdsproPackageService,
     thumbnailsDir: appPaths.thumbnailsDir
   });
+  // Organização dos arquivos ao copiar de um dispositivo (o sistema local é o mesmo do assistente, ligado só sob demanda)
+  require('./organizerHandlers')({ getLlm: () => aiApi.localLlm, projectService });
   // O ModuleManager é devolvido para ser cancelado no encerramento do app.
   moduleManager = require('./moduleHandlers')(paths, {
     getFfmpegPath: () => ffmpegTool.resolve({ mustExist: false }),

@@ -3,6 +3,7 @@ import { enhanceModals } from '../utils/modal.js';
 import { friendlyError } from '../utils/friendlyError.js';
 import { bdsmErrorInfo, pairingStateMessage } from '../utils/bdsmError.js';
 import { setAppStatus } from '../app.js';
+import { askOrganize } from './devices-organize.js';
 
 /** Mensagem legível de um erro vindo do IPC (remove o prefixo "Error invoking remote method"). */
 const errMsg = (err) => friendlyError(err, 'Algo deu errado ao falar com o dispositivo. Tente de novo.');
@@ -938,6 +939,19 @@ async function onExplorerImport() {
   const keys = [...ex.selected];
   const finalDest = `${importRoot()}/${safeSegment(dev.title)}/${safeSegment(eventName, 'Importacao')}`;
 
+  // Como organizar: o plano de pastas e nomes aparece antes de copiar (regras de data e tipo; sugestões do sistema local, opcionais)
+  const picked = new Map(keys.map((k) => [k, ex.items.find((i) => i.key === k)]).filter(([, i]) => i));
+  const org = await askOrganize([...picked.values()].map((i) => ({ key: i.key, name: i.name, size: i.size })));
+  if (org === null) return;
+  const groups = org.skip ? [{ folder: '', keys }] : org.groups;
+  const destOf = (g) => (g.folder ? `${finalDest}/${g.folder}` : finalDest);
+  const renameGroup = async (g, dest) => {
+    const pairs = g.keys.filter((k) => org.renames && org.renames[k] && picked.get(k)).map((k) => ({ from: picked.get(k).name, to: org.renames[k] }));
+    if (!pairs.length) return;
+    try { await window.bds.organizerApplyRenames(dest, pairs); } catch (e) { console.error('[DEVICES] Renomear:', e); }
+  };
+  let offset = 0; // arquivos de pastas anteriores já copiados (o progresso é do conjunto)
+
   ex.importing = true;
   if (btn) {
     btn.disabled = true;
@@ -975,15 +989,23 @@ async function onExplorerImport() {
     let ok;
     if (ex.mode === 'flat') {
       unsub = window.bds.onSonyImportProgress?.((data) => {
-        const done = Number(data.completed ?? data.index ?? completed);
+        const done = offset + Number(data.completed ?? data.index ?? completed);
         const overall = total ? Math.min(100, ((done + (Number(data.percent) || 0) / 100) / total) * 100) : 0;
         showProgress(overall, `Copiando: ${data.currentItem || data.file || ''}`, null, 0);
       }) || (() => {});
-      const items = keys.map((k) => ex.items.find((i) => i.key === k)?.raw).filter(Boolean);
-      const result = await window.bds.sonyImportItems(dev.rawDevice.id, items, finalDest);
-      const failed = (result && result.failed) ? result.failed.length : 0;
-      ok = (result && Array.isArray(result.imported) ? result.imported.length : 0) > 0 || failed === 0;
-      if (failed) window.bdsModal.alert(`${failed} arquivo(s) não puderam ser importados.`);
+      ok = true;
+      let failedTotal = 0;
+      for (const g of groups) {
+        const dest = destOf(g);
+        const items = g.keys.map((k) => ex.items.find((i) => i.key === k)?.raw).filter(Boolean);
+        const result = await window.bds.sonyImportItems(dev.rawDevice.id, items, dest);
+        const failed = (result && result.failed) ? result.failed.length : 0;
+        failedTotal += failed;
+        ok = ok && ((result && Array.isArray(result.imported) ? result.imported.length : 0) > 0 || failed === 0);
+        await renameGroup(g, dest);
+        offset += g.keys.length;
+      }
+      if (failedTotal) window.bdsModal.alert(`${failedTotal} arquivo(s) não puderam ser importados.`);
     } else {
       unsub = window.bds.onMtpProgress((data) => {
         const filePercent = data.percent || 0;
@@ -998,9 +1020,16 @@ async function onExplorerImport() {
         }
         showProgress(overall, `Copiando: ${data.file}`, data.speedBps != null ? data.speedBps : null, eta);
       });
-      ok = dev.kind === 'usb'
-        ? await window.bds.importUsbItems(dev.rawDevice.storage[0].path, ex.path, keys, finalDest)
-        : await window.bds.importMtpItems(dev.title, ex.path, keys, finalDest);
+      ok = true;
+      for (const g of groups) {
+        const dest = destOf(g);
+        const groupOk = dev.kind === 'usb'
+          ? await window.bds.importUsbItems(dev.rawDevice.storage[0].path, ex.path, g.keys, dest)
+          : await window.bds.importMtpItems(dev.title, ex.path, g.keys, dest);
+        ok = ok && Boolean(groupOk);
+        await renameGroup(g, dest);
+        offset += g.keys.length;
+      }
     }
     finish();
     if (ok) {
@@ -1281,16 +1310,43 @@ async function onBdsmImportClick() {
   const btn = $('btnBdsmImportAction');
   const stats = $('bdsmStats');
 
+  // Como organizar: plano de pastas e nomes antes de copiar. As miniaturas vêm do próprio celular (até 8), só para as sugestões.
+  const org = await askOrganize(items.map((m) => ({ key: String(m.id), name: String(m.name) })), {
+    allowProject: true,
+    projectName: (id) => { const o = [...($('bdsmProjectSelect')?.options || [])].find((x) => x.value === String(id)); return o ? o.textContent.trim() : ''; },
+    thumbsFor: async (list) => {
+      const out = {};
+      await Promise.allSettled(list.slice(0, 8).map(async (it) => {
+        const url = await window.bds.getBdsmThumbnail(dev.rawDevice.ip, dev.rawDevice.port, it.key);
+        if (typeof url === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(url)) out[it.key] = url;
+      }));
+      return out;
+    }
+  });
+  if (org === null) return;
+  const groups = org.skip ? [{ folder: '', keys: items.map((m) => String(m.id)) }] : org.groups;
+  const importProject = org.skip ? projectId : (org.projectId || projectId);
+  let offset = 0;
+
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-rounded dev-spin" aria-hidden="true">sync</span> Importando...'; }
   const unsub = window.bds.onBdsmProgress?.((data) => {
-    if (stats) stats.textContent = `Importando ${data.completed}/${data.total}: ${data.current}`;
+    if (stats) stats.textContent = `Importando ${offset + data.completed}/${items.length}: ${data.current}`;
   });
   try {
-    const imported = await withPairing(dev, () => window.bds.importBdsmMedia({
-      ip: dev.rawDevice.ip, port: dev.rawDevice.port, deviceId: dev.rawDevice.id,
-      items, destFolder: importRoot(), projectId
-    }));
-    if (imported === undefined) { renderBdsmList(); return; } // pareamento cancelado
+    let imported = 0;
+    for (const g of groups) {
+      const sub = items.filter((m) => g.keys.includes(String(m.id)));
+      const dest = g.folder ? `${importRoot()}/${g.folder}` : importRoot();
+      const n = await withPairing(dev, () => window.bds.importBdsmMedia({
+        ip: dev.rawDevice.ip, port: dev.rawDevice.port, deviceId: dev.rawDevice.id,
+        items: sub, destFolder: dest, projectId: importProject
+      }));
+      if (n === undefined) { renderBdsmList(); return; } // pareamento cancelado
+      imported += Number(n) || 0;
+      const pairs = sub.filter((m) => org.renames && org.renames[String(m.id)]).map((m) => ({ from: String(m.name), to: org.renames[String(m.id)] }));
+      if (pairs.length) { try { await window.bds.organizerApplyRenames(dest, pairs); } catch (e) { console.error('[DEVICES] Renomear:', e); } }
+      offset += sub.length;
+    }
     closeBdsmImport();
     const n = Number(imported);
     window.bdsModal.alert(Number.isFinite(n) && n < items.length

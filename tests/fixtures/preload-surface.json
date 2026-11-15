@@ -485,13 +485,15 @@
   },
   "aiLocalLlmInstall": {
     "type": "function",
-    "length": 0,
+    "length": 1,
     "withSentinels": {
       "made": [
         {
           "op": "invoke",
           "ch": "ai:localLlmInstall",
-          "args": []
+          "args": [
+            "@1"
+          ]
         }
       ],
       "returns": "promise"
@@ -501,7 +503,9 @@
         {
           "op": "invoke",
           "ch": "ai:localLlmInstall",
-          "args": []
+          "args": [
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"
@@ -526,6 +530,34 @@
           "op": "invoke",
           "ch": "ai:localLlmRemove",
           "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "aiLocalLlmSetModel": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmSetModel",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:localLlmSetModel",
+          "args": [
+            "__undefined__"
+          ]
         }
       ],
       "returns": "promise"
@@ -7432,6 +7464,88 @@
           "args": [
             "__undefined__"
           ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "organizerApplyRenames": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:applyRenames",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:applyRenames",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "organizerPlan": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:plan",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:plan",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "organizerStatus": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:status",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "organizer:status",
+          "args": []
         }
       ],
       "returns": "promise"

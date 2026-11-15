@@ -397,7 +397,8 @@ define('ai', 'wrap', {
   // Agentes de IA externos (servidor MCP local, desligado por padrão). O token nunca volta ao renderer: ai:mcpCopyConfig copia a configuração pronta (antigravity | http | stdio) direto para a área de transferência.
   // Modelo local do app (llama.cpp + Qwen pequeno, fontes oficiais com SHA-256): estado, instalar (progresso em ai:localLlmProgress), cancelar e remover.
   'ai:localLlmStatus': { returns: 'Estado do modelo local { supported, installed, running, sizeBytes, modelLabel, providerAdded, busy }', api: ['aiLocalLlmStatus'] },
-  'ai:localLlmInstall': { returns: 'Estado do modelo local (depois de instalar e acrescentar o provedor)', api: ['aiLocalLlmInstall'] },
+  'ai:localLlmInstall': { args: [STR('modelId', 80, { optional: true, label: 'Modelo' })], returns: 'Estado do modelo local (depois de instalar o modelo pedido ou o escolhido e acrescentar o provedor)', api: ['aiLocalLlmInstall'] },
+  'ai:localLlmSetModel': { args: [STR('modelId', 80, { nonBlank: true, label: 'Modelo' })], returns: 'Estado do modelo local (troca para um modelo já instalado)', api: ['aiLocalLlmSetModel'] },
   'ai:localLlmCancel': { returns: 'true se havia instalação para cancelar', api: ['aiLocalLlmCancel'] },
   'ai:localLlmRemove': { returns: 'Estado do modelo local (arquivos e provedor removidos)', api: ['aiLocalLlmRemove'] },
   'ai:mcpStatus': { returns: 'Estado do servidor MCP { enabled, running, port, url, calls, client, error }', api: ['aiMcpStatus'] },
@@ -754,6 +755,28 @@ define('projects', 'throw', {
 });
 
 // --- Jobs (JobManager; sem exposição no preload por enquanto) ----------------------------------
+// --- Organização dos arquivos copiados de um dispositivo (regras + sistema local opcional) ------------------
+define('organizer', 'throw', {
+  'organizer:status': { returns: 'Estado { aiAvailable, vision }: o sistema local está instalado? enxerga imagens?', api: ['organizerStatus'] },
+  'organizer:plan': {
+    args: [OBJ('data', {
+      items: t.array(t.any('itens { key, name, size?, date? }; o serviço valida cada um'), { max: 5000 }),
+      thumbs: t.object({}, { optional: true, maxKeys: 40, label: 'Miniaturas' }),
+      eventName: t.string({ max: 200, optional: true }),
+      structure: t.string({ max: 20, optional: true }),
+      rename: t.string({ max: 20, optional: true }),
+      useAi: t.boolean({ optional: true })
+    }, { label: 'Plano' })],
+    returns: 'Plano { groups:[{folder,keys}], renames, projectId, usedAi, aiNote, vision, total }',
+    api: ['organizerPlan']
+  },
+  'organizer:applyRenames': {
+    args: [ABS('destFolder', 'Pasta de destino'), t.array(t.any('pares { from, to } só com nomes; o serviço valida cada um'), { name: 'pairs', max: 5000 })],
+    returns: 'Resultado { renamed, failed }',
+    api: ['organizerApplyRenames']
+  }
+});
+
 define('jobs', 'throw', {
   'jobs:getStatus': { returns: 'Estado do JobManager' },
   'jobs:cancel': { args: [STR('jobId', 200, { min: 1, label: 'Tarefa' })], returns: 'Resultado' },

@@ -220,9 +220,15 @@ function registerAiHandlers(paths, deps = {}) {
   const embeddedProviders = () => ai.getPublicConfig().providers.filter((p) => p.preset === 'embedded');
   const llmState = () => ({ ...localLlm.getStatus(), providerAdded: embeddedProviders().length > 0 });
   handle('ai:localLlmStatus', () => llmState());
-  handle('ai:localLlmInstall', async () => {
-    await localLlm.install();
+  handle('ai:localLlmInstall', async (_, modelId) => {
+    await localLlm.install(modelId ? { modelId } : {});
     if (!embeddedProviders().length) ai.saveConfig({ addProvider: { preset: 'embedded' } });
+    if (isCreated(chat)) chat.forgetToolSupport();
+    return llmState();
+  });
+  // Troca para um modelo JÁ instalado (o novo modelo lembra de novo se aceita ferramentas)
+  handle('ai:localLlmSetModel', async (_, modelId) => {
+    await localLlm.setModel(modelId);
     if (isCreated(chat)) chat.forgetToolSupport();
     return llmState();
   });

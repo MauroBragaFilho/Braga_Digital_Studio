@@ -14,6 +14,14 @@
 /** Porta fixa do modelo local do app (llama-server em 127.0.0.1): faz parte do endereço do provedor "embedded". */
 const EMBEDDED_PORT = 18741;
 
+/**
+ * Janela de contexto (tokens) do modelo local do app: o llama-server sobe com `-c` igual a isto (LocalLlm).
+ * DECISÃO (medido em 13/11/2026, Qwen2.5 0.5B na CPU): 8192 custa ~48 MB a mais que 4096 e o mesmo tempo para a
+ * mesma conversa (primeira pergunta ~15 s com 3,2 mil tokens; as seguintes < 1 s, o servidor reaproveita o prefixo).
+ * Com 4096, o prompt e as ferramentas deixavam só ~800 tokens para a conversa.
+ */
+const EMBEDDED_CONTEXT = 8192;
+
 const PRESETS = Object.freeze([
   { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyRequired: true, unverified: false, hosts: ['api.groq.com'] },
   { id: 'qwencloud', label: 'Qwen', baseUrl: 'https://maas.qwencloudapi.com/compatible-mode/v1', model: 'qwen-plus', keyRequired: true, unverified: false, hosts: ['maas.qwencloudapi.com'] },
@@ -49,4 +57,4 @@ function publicList() {
   }));
 }
 
-module.exports = { PRESETS, EMBEDDED_PORT, byId, detectPreset, publicList };
+module.exports = { PRESETS, EMBEDDED_PORT, EMBEDDED_CONTEXT, byId, detectPreset, publicList };

@@ -1596,15 +1596,34 @@ async function setupLocalLlmCard() {
     if (!r || !r.ok) throw new Error(r?.error || 'O aplicativo não respondeu.');
     return r.data;
   };
+  const modelRow = document.getElementById('aiLocalLlmModelRow');
+  const modelSel = document.getElementById('aiLocalLlmModel');
+  const gb = (n) => `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} GB`;
+  let last = null; // último estado recebido (a troca de modelo olha a lista)
   const render = (s, installing = false) => {
-    if (sizeEl && s.sizeBytes) sizeEl.textContent = `${(s.sizeBytes / 1024 ** 3).toFixed(1).replace('.', ',')} GB`;
-    installBtn.hidden = installing || s.installed || !s.supported;
+    if (s.models) last = s;
+    // Seletor: só aparece havendo mais de um modelo; o escolhido é o selecionado, os demais mostram o tamanho
+    if (modelRow && modelSel && last && Array.isArray(last.models) && last.models.length > 1) {
+      const keep = modelSel.value;
+      modelSel.innerHTML = last.models.map((m) => `<option value="${m.id}">${m.label} (${m.installed ? 'instalado' : gb(m.sizeBytes)})${m.vision ? ' — entende imagens' : ''}</option>`).join('');
+      modelSel.value = installing && keep ? keep : (last.models.find((m) => m.selected) || last.models[0]).id;
+      modelSel.disabled = installing;
+      modelRow.hidden = !s.supported;
+    }
+    const picked = last && last.models ? last.models.find((m) => m.id === (modelSel ? modelSel.value : '')) : null;
+    const pickedMissing = Boolean(picked && !picked.installed);
+    if (sizeEl) {
+      const bytes = picked ? picked.sizeBytes + Math.max(0, (s.sizeBytes || 0) - ((last.models.find((m) => m.selected) || picked).sizeBytes)) : s.sizeBytes;
+      if (bytes) sizeEl.textContent = gb(bytes);
+    }
+    installBtn.hidden = installing || (s.installed && !pickedMissing) || !s.supported;
     installBtn.disabled = !s.supported;
     if (cancelBtn) cancelBtn.hidden = !installing;
     if (advanced) advanced.hidden = !s.installed || installing;
     if (bar) bar.hidden = !installing;
     if (hint && !installing) {
       if (!s.supported) hint.textContent = s.reason || 'Indisponível neste sistema.';
+      else if (pickedMissing) hint.textContent = `Não instalado: ${picked.label}. A troca vale quando a instalação terminar.`;
       else if (s.installed) hint.textContent = `Instalado (${s.modelLabel}). Liga sozinho quando o assistente precisa e desliga depois de alguns minutos sem uso.`;
       else hint.textContent = 'Não instalado.';
     }
@@ -1619,14 +1638,32 @@ async function setupLocalLlmCard() {
   });
   window.addEventListener('pagehide', () => { try { if (typeof off === 'function') off(); } catch (_) { /* noop */ } }, { once: true });
 
+  modelSel?.addEventListener('change', async () => {
+    const chosen = last && last.models ? last.models.find((m) => m.id === modelSel.value) : null;
+    say('');
+    try {
+      if (chosen && chosen.installed && !chosen.selected) {
+        render(await call(window.bds.aiLocalLlmSetModel, chosen.id));
+        say('Modelo trocado. Vale já na próxima pergunta.');
+        window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
+      } else if (last) {
+        render(last);
+      }
+    } catch (err) {
+      say(`Não foi possível trocar. ${friendlyError(err, 'Tente novamente.')}`);
+      try { render(await call(window.bds.aiLocalLlmStatus)); } catch (_) { /* noop */ }
+    }
+  });
+
   installBtn.addEventListener('click', async () => {
     installing = true;
     say('');
     if (bar) bar.value = 0;
+    const wanted = modelSel && modelSel.value ? modelSel.value : undefined;
     render({ installed: false, supported: true, sizeBytes: 0 }, true);
     if (hint) hint.textContent = 'Preparando…';
     try {
-      const s = await call(window.bds.aiLocalLlmInstall);
+      const s = await call(window.bds.aiLocalLlmInstall, wanted);
       installing = false;
       render(s);
       say('Pronto. O modelo local entrou na lista de servidores, como reserva.');

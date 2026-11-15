@@ -220,7 +220,8 @@ const api = {
   aiAnalyzeTranscript: (path) => ipcRenderer.invoke('ai:analyzeTranscript', { path }),
   aiCancelAnalysis: () => ipcRenderer.invoke('ai:cancelAnalysis'),
   aiLocalLlmStatus: () => ipcRenderer.invoke('ai:localLlmStatus'),
-  aiLocalLlmInstall: () => ipcRenderer.invoke('ai:localLlmInstall'),
+  aiLocalLlmInstall: (modelId) => ipcRenderer.invoke('ai:localLlmInstall', modelId),
+  aiLocalLlmSetModel: (modelId) => ipcRenderer.invoke('ai:localLlmSetModel', modelId),
   aiLocalLlmCancel: () => ipcRenderer.invoke('ai:localLlmCancel'),
   aiLocalLlmRemove: () => ipcRenderer.invoke('ai:localLlmRemove'),
   aiMcpStatus: () => ipcRenderer.invoke('ai:mcpStatus'),
@@ -401,6 +402,11 @@ const api = {
   deleteWaveformCache: (uuid, streamIndex) => ipcRenderer.invoke('projects:deleteWaveformCache', uuid, streamIndex),
   getTrackAudioPath: (params) => ipcRenderer.invoke('projects:getTrackAudioPath', params),
   runAudioSync: (params) => ipcRenderer.invoke('projects:runAudioSync', params),
+
+  // --- organizer ---
+  organizerStatus: () => ipcRenderer.invoke('organizer:status'),
+  organizerPlan: (data) => ipcRenderer.invoke('organizer:plan', data),
+  organizerApplyRenames: (destFolder, pairs) => ipcRenderer.invoke('organizer:applyRenames', destFolder, pairs),
 
   // --- Eventos (main → renderer) ---
   onMontageProgress: (cb) => registerListener('montage:progress', cb),

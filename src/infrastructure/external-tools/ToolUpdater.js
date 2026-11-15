@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { getExecutableName, resolveCanonicalToolKey } = require('./ToolManifest');
 const { hasSource, resolveDownloadUrl, unavailableReason, ToolUnavailableError } = require('./ToolSources');
+const { nvidiaDriverMajor } = require('./FfmpegChannel');
 const { toolResolver } = require('./ToolResolver');
 const logger = require('../../services/logService');
 const { downloadFile, sha256File, fetchJson } = require('../../core/modules/FileDownloader');
@@ -31,6 +32,8 @@ function logUpdater(message, data = null) {
 class ToolUpdater {
   constructor() {
     this._toolsDir = null;
+    // O NVENC já falhou por versão de driver neste computador (FfmpegAutoFix): sempre o FFmpeg estável. Vem das configurações.
+    this.ffmpegPreferStable = false;
   }
 
   init(toolsDir) {
@@ -302,7 +305,7 @@ class ToolUpdater {
    * Reexecute com `opts.allowUnverified = true` após confirmação explícita do usuário.
    * @param {string} rawToolKey
    * @param {Function} [onProgress]
-   * @param {{ allowUnverified?: boolean }} [opts]
+   * @param {{ allowUnverified?: boolean, force?: boolean }} [opts] force: reinstala mesmo na "mesma versão" (troca de canal do FFmpeg)
    */
   async update(rawToolKey, onProgress, opts = {}) {
     const toolKey = resolveCanonicalToolKey(rawToolKey);
@@ -347,7 +350,7 @@ class ToolUpdater {
     // Comparar só com o manifesto local fazia a atualização ser ignorada mesmo havendo versão nova.
     const localManifest = this._readManifest(toolKey);
     const exePath = toolResolver.resolve(toolKey, this._toolsDir, { mustExist: false });
-    if (exePath && fs.existsSync(exePath) && localManifest?.version) {
+    if (!opts.force && exePath && fs.existsSync(exePath) && localManifest?.version) {
       const latestNorm = this._extractVersion(latestTag);
       const installedVersion = await this._getVersion(exePath, config.versionArgs);
       const installedNorm = this._extractVersion(installedVersion) || this._extractVersion(localManifest.version);
@@ -363,7 +366,14 @@ class ToolUpdater {
       }
     }
 
-    const downloadUrl = config.downloadUrl(latestTag, process.platform);
+    // FFmpeg do Windows: a versão certa para a placa de vídeo (NVIDIA com driver antigo recebe a estável) entre as que a release publica
+    let ctx = null;
+    if (toolKey === 'ffmpeg' || toolKey === 'ffprobe') {
+      const driver = await nvidiaDriverMajor().catch(() => null);
+      const names = release && Array.isArray(release.assets) ? release.assets.map((a) => a.name) : [];
+      ctx = { driver, preferStable: this.ffmpegPreferStable === true, available: new Set(names) };
+    }
+    const downloadUrl = config.downloadUrl(latestTag, ctx);
     const archiveType = this._detectArchiveType(downloadUrl);
     const expectedDigest = release ? this._findAssetDigest(release, downloadUrl) : null;
 
@@ -867,7 +877,7 @@ class ToolUpdater {
     }
     // A URL vem da tabela (plataforma, arquitetura) -> fonte oficial de ToolSources.js; lança
     // ToolUnavailableError quando o projeto oficial não publica o programa para este sistema.
-    return { ...config, downloadUrl: (tag) => resolveDownloadUrl(toolKey, tag, process.platform, process.arch) };
+    return { ...config, downloadUrl: (tag, ctx) => resolveDownloadUrl(toolKey, tag, process.platform, process.arch, ctx) };
   }
 
   /**
