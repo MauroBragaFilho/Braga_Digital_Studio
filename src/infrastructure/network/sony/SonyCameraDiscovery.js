@@ -2,6 +2,7 @@ const dgram = require('dgram');
 const http = require('http');
 const { EventEmitter } = require('events');
 const logger = require('../../../services/logService');
+const { lanAddresses } = require('../lanAddresses');
 
 const SSDP_ADDRESS = '239.255.255.250';
 const SSDP_PORT = 1900;
@@ -107,13 +108,23 @@ class SonyCameraDiscovery extends EventEmitter {
         ].join('\r\n');
 
         const message = Buffer.from(msearch);
-        this.socket.send(message, 0, message.length, SSDP_PORT, SSDP_ADDRESS, (err) => {
-            if (err) {
-                logger.warn(`[SonyDiscovery] Falha ao enviar M-SEARCH: ${err.message}`);
-            } else {
-                logger.info('[SonyDiscovery] Pacote M-SEARCH SSDP enviado.');
+        // O pacote sai por CADA rede local: o Windows manda multicast só pela rede "padrão" e, com uma VPN ligada, ela não é o
+        // Wi-Fi da câmera (a câmera nunca recebia a pergunta). Sem rede local conhecida, uma vez pela padrão.
+        const interfaces = lanAddresses();
+        for (const ip of (interfaces.length ? interfaces : [null])) {
+            try {
+                if (ip) this.socket.setMulticastInterface(ip);
+                this.socket.send(message, 0, message.length, SSDP_PORT, SSDP_ADDRESS, (err) => {
+                    if (err) {
+                        logger.warn(`[SonyDiscovery] Falha ao enviar M-SEARCH${ip ? ` (${ip})` : ''}: ${err.message}`);
+                    } else {
+                        logger.info(`[SonyDiscovery] Pacote M-SEARCH SSDP enviado${ip ? ` (${ip})` : ''}.`);
+                    }
+                });
+            } catch (err) {
+                logger.warn(`[SonyDiscovery] Falha ao enviar M-SEARCH${ip ? ` (${ip})` : ''}: ${err.message}`);
             }
-        });
+        }
     }
 
     /**

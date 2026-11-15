@@ -19,6 +19,9 @@ const errMsg = (err) => friendlyError(err, 'Algo deu errado ao falar com o dispo
 const GB = 1024 ** 3;
 const DEFAULT_IMPORT_ROOT = 'C:/Users/Public/Videos/BDSM DEVICES';
 const FOCUS_REFRESH_MIN_MS = 5000; // ao voltar o foco à janela, procura de novo (cartão novo não gera evento)
+// Com a tela aberta, procura sozinha a cada poucos segundos: cartão, pen drive, câmera e cabo USB não avisam o app que chegaram.
+// (O processo principal só refaz a enumeração pesada quando o hardware muda; a conferência de cada volta é barata.)
+const autoRefreshMs = () => (Number(window.__BDS_DEVICES_POLL_MS) > 0 ? Number(window.__BDS_DEVICES_POLL_MS) : 3000); // (os testes encurtam)
 
 const KINDS = {
   usb: { label: 'Cartão / unidade USB', icon: 'sd_card', tone: 'usb' },
@@ -35,6 +38,7 @@ const state = {
   tab: 'geral',
   loading: false,
   error: null,
+  issues: [],         // o que o app não conseguiu consultar agora: [{ source, message }]
   updatedAt: null,
   deviceFolder: ''    // settings.deviceFolder
 };
@@ -43,6 +47,9 @@ let cleanups = [];
 let staticBound = false;
 let refreshSeq = 0;
 let refreshTimer = null;
+let autoTimer = null;
+let inFlight = 0;        // buscas em andamento (a automática nunca atropela uma em andamento)
+let listKey = '';        // resumo da última lista: a grade só é redesenhada quando algo visível mudou
 let lastFocusRefresh = 0;
 let bdsmDevice = null;      // dispositivo do modal de importação do celular
 let bdsmItems = [];
@@ -244,8 +251,12 @@ function normalizeDevice(raw, index) {
 
   const st = raw.Storages && raw.Storages[0];
   const battery = num(raw.BatteryLevel);
+  const locked = !Array.isArray(raw.Storages) || raw.Storages.length === 0; // celular bloqueado ou sem permissão: ainda sem pastas
   return {
-    ...base, id: `mtp_${index}`, kind: 'mtp', kindLabel: mtpKindLabel(raw.Type),
+    // id pelo nome (não pela posição): a lista é refeita sozinha e a seleção não pode pular para outro aparelho
+    ...base, id: `mtp_${String(name).replace(/[^a-zA-Z0-9]/g, '') || index}`, kind: 'mtp', kindLabel: mtpKindLabel(raw.Type),
+    status: locked ? 'Aguardando liberação' : base.status,
+    notice: locked ? 'Desbloqueie o aparelho e escolha “Transferência de arquivos” (ou permita o acesso) para ver as pastas.' : null,
     connection: 'Conectado por cabo USB', image: getDeviceImage('mtp', `${raw.Type || ''} ${name}`), battery,
     storage: st ? buildStorage(st.TotalSize, st.FreeSpace) : null,
     details: [
@@ -266,10 +277,16 @@ function applyDevices(rawList) {
     raw
   }));
   state.devices = [];
+  const taken = new Set();
   rawList.forEach((raw, index) => {
     const name = raw.name || raw.Name || 'Dispositivo sem nome';
     if (state.hidden.includes(name)) return;
-    try { state.devices.push(normalizeDevice(raw, index)); } catch (e) { console.error('[DEVICES] Dispositivo ignorado (dados inválidos):', e); }
+    try {
+      const dev = normalizeDevice(raw, index);
+      if (taken.has(dev.id)) dev.id = `${dev.id}_${index}`; // dois aparelhos com o mesmo nome
+      taken.add(dev.id);
+      state.devices.push(dev);
+    } catch (e) { console.error('[DEVICES] Dispositivo ignorado (dados inválidos):', e); }
   });
   if (state.selectedId && !state.devices.some((d) => d.id === state.selectedId)) state.selectedId = null;
 }
@@ -333,6 +350,25 @@ function bindLive() {
   cleanups.push(() => window.removeEventListener('focus', onFocus));
   document.addEventListener('error', onImageError, true);
   cleanups.push(() => document.removeEventListener('error', onImageError, true));
+  startAutoRefresh();
+  cleanups.push(stopAutoRefresh);
+}
+
+/** Busca sozinha enquanto a tela está ativa e visível; uma busca só começa depois que a anterior terminou. */
+function startAutoRefresh() {
+  stopAutoRefresh();
+  const tick = async () => {
+    autoTimer = null;
+    if (!cleanups.length) return; // tela inativa
+    if (!document.hidden) await refresh({ silent: true, auto: true });
+    if (cleanups.length && !autoTimer) autoTimer = setTimeout(tick, autoRefreshMs());
+  };
+  autoTimer = setTimeout(tick, autoRefreshMs());
+}
+
+function stopAutoRefresh() {
+  clearTimeout(autoTimer);
+  autoTimer = null;
 }
 
 /** Imagem que não carregou: troca por um ícone (o evento 'error' não borbulha, por isso o listener é de captura). */
@@ -354,22 +390,62 @@ function scheduleRefresh(delay = 700) {
   refreshTimer = setTimeout(() => refresh({ silent: true }), delay);
 }
 
-async function refresh({ force = false, silent = false } = {}) {
-  const seq = ++refreshSeq;
+/** A resposta do processo principal é { devices, issues } (a lista simples também é aceita). */
+function splitScan(res) {
+  if (Array.isArray(res)) return { list: res, issues: [] };
+  return {
+    list: res && Array.isArray(res.devices) ? res.devices : [],
+    issues: res && Array.isArray(res.issues) ? res.issues.filter((i) => i && i.message) : []
+  };
+}
+
+/** Resumo do que a tela mostra: só muda quando algo visível mudou (o carimbo de "visto por último" não conta). */
+function summarize(list, issues) {
+  return JSON.stringify([
+    list.map((d) => { const { last_seen: _seen, ...rest } = d || {}; return rest; }),
+    issues.map((i) => `${i.source}:${i.message}`),
+    state.hidden // ocultar/mostrar também muda o que aparece
+  ]);
+}
+
+/**
+ * Procura os dispositivos. `auto` = busca periódica (silenciosa: não mostra "Procurando…", não redesenha a grade se nada mudou e,
+ * se falhar, mantém a lista que já estava na tela).
+ */
+async function refresh({ force = false, silent = false, auto = false } = {}) {
   if (!window.bds?.getAllDevices) return;
-  if (!silent || !state.devices.length) { state.loading = true; renderAll(); }
-  state.error = null;
+  if (auto && inFlight > 0) return;
+  const seq = ++refreshSeq;
+  inFlight++;
+  if (!auto && (!silent || !state.devices.length)) { state.loading = true; renderAll(); }
+  if (!auto) state.error = null;
+  let changed = true;
   try {
-    const list = await window.bds.getAllDevices(force);
+    const { list, issues } = splitScan(await window.bds.getAllDevices(force));
     if (seq !== refreshSeq) return; // chegou uma resposta mais nova
-    applyDevices(Array.isArray(list) ? list : []);
+    const key = summarize(list, issues);
+    changed = key !== listKey || !state.updatedAt;
+    listKey = key;
+    state.error = null;
+    state.issues = issues;
+    if (changed) {
+      const before = new Set(state.devices.map((d) => d.id));
+      const first = !state.updatedAt;
+      applyDevices(list);
+      const added = state.devices.filter((d) => !before.has(d.id));
+      if ((auto || silent) && !first && added.length) setAppStatus(added.length === 1 ? `${added[0].title} conectado.` : `${added.length} dispositivos conectados.`, 'success');
+    }
     state.updatedAt = new Date();
   } catch (e) {
     if (seq !== refreshSeq) return;
     console.error('[DEVICES] Falha ao procurar dispositivos:', e);
-    state.error = errMsg(e) || 'Falha ao procurar dispositivos.';
+    if (!auto || !state.devices.length) state.error = errMsg(e) || 'Falha ao procurar dispositivos.';
   } finally {
-    if (seq === refreshSeq) { state.loading = false; renderAll(); }
+    inFlight--;
+    if (seq === refreshSeq) {
+      state.loading = false;
+      if (auto && !changed) renderControlBar(); else renderAll();
+    }
   }
 }
 
@@ -444,6 +520,18 @@ function errorHtml() {
     </div>`;
 }
 
+/** Aviso leve: parte da procura falhou (tempo esgotado, PowerShell ocupado...). Diferente de "nada conectado". */
+function scanNoticeHtml() {
+  if (!state.issues.length) return '';
+  const text = [...new Set(state.issues.map((i) => i.message))].join(' ');
+  return `
+    <div class="devices-error devices-notice" role="status">
+      <span class="material-symbols-rounded" aria-hidden="true">warning</span>
+      <div><strong>Não consegui conferir tudo agora.</strong><span>${escapeHtml(text)} Tento de novo sozinho.</span></div>
+      <button class="devices-btn-secondary" data-action="rescan" type="button">Tentar agora</button>
+    </div>`;
+}
+
 function renderGrid() {
   const grid = $('devicesGrid');
   if (!grid) return;
@@ -451,13 +539,23 @@ function renderGrid() {
 
   if (state.loading && !state.devices.length) { grid.innerHTML = skeletonHtml(); return; }
   if (state.error && !state.devices.length) { grid.innerHTML = errorHtml(); return; }
-  if (!state.devices.length) { grid.innerHTML = emptyHtml(); return; }
+  if (!state.devices.length) {
+    // Procura incompleta e nada visto: não dizer "nenhum dispositivo conectado" (pode haver, só não deu para olhar)
+    grid.innerHTML = state.issues.length && !state.rawAll.length ? scanNoticeHtml() : emptyHtml();
+    return;
+  }
 
-  grid.innerHTML = (state.error ? errorHtml() : '') + state.devices.map(cardHtml).join('');
+  grid.innerHTML = (state.error ? errorHtml() : '') + scanNoticeHtml() + state.devices.map(cardHtml).join('');
 }
 
 function cardMiddleHtml(dev) {
   const parts = [];
+  if (dev.notice) {
+    parts.push(`
+      <div class="dev-card-middle dev-card-note">
+        <span class="material-symbols-rounded" aria-hidden="true">lock</span><span>${escapeHtml(dev.notice)}</span>
+      </div>`);
+  }
   if (dev.ip) {
     parts.push(`
       <div class="dev-card-middle dev-card-middle-wifi">

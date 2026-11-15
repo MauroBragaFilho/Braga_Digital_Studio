@@ -247,7 +247,7 @@ define('history', 'throw', {
 define('devices', 'throw', {
   'devices:get-all': {
     args: [t.any('sinalizador truthy ("forçar nova varredura"); o handler converte com !!force', { name: 'force', optional: true })],
-    returns: 'Lista unificada MTP/USB/BDSM/Sony',
+    returns: '{ devices, issues }: lista unificada MTP/USB/BDSM/Sony e o que não pôde ser consultado agora (issues: [{ source, message }])',
     api: [{ name: 'getAllDevices', params: 'force = false', call: 'force' }]
   },
   'usb:list-folder': { args: [ABS('basePath', 'Dispositivo USB'), SEGMENTS('pathArray')], returns: 'Itens da pasta', api: ['listUsbFolder'] },

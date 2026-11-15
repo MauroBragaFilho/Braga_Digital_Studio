@@ -1,8 +1,15 @@
 const { EventEmitter } = require('events');
 const logger = require('../../services/logService');
 const { execFile } = require('child_process');
+const { lanAddresses, isLanAddress } = require('../../infrastructure/network/lanAddresses');
 const { probeInfo } = require('../integrations/bdsm/BdsmPairing');
 const { backoffDelay, deviceChanged } = require('./backoff');
+
+/**
+ * Intervalo entre 'adb devices' quando não há celular no cabo: 4 s, 8 s e depois 15 s. O 'adb devices' custa ~50 ms, e quem
+ * pluga o celular espera vê-lo logo: o backoff longo do padrão (30 s, 60 s, 5 min) deixava o celular invisível por minutos.
+ */
+const ADB_POLL_STEPS_MS = [4000, 8000, 15000];
 
 /**
  * Porta de teste (BDS_TEST_BDSM_PORT): só em desenvolvimento (app não empacotado), a sondagem "USB" vai para
@@ -30,8 +37,8 @@ class DeviceDiscoveryService extends EventEmitter {
     constructor() {
         super();
         this.devices = new Map(); // device_id -> device info
-        this.bonjour = null;
-        this.bonjourBrowser = null;
+        this._mdns = [];        // uma busca mDNS por rede local: [{ ip, bonjour, browser }]
+        this._mdnsKey = '';     // redes locais cobertas pelas buscas (quando muda, refaz)
         this.usbPollInterval = null;
         this.cleanupInterval = null;
         this._isPolling = false;
@@ -44,6 +51,7 @@ class DeviceDiscoveryService extends EventEmitter {
         this._adbFailures = 0;
         this._adbNextAt = 0;
         this._adbRunning = false;
+        this._mdnsSettleMs = 700; // espera, no "atualizar", pelas respostas mDNS (testes zeram)
     }
 
     start() {
@@ -64,28 +72,55 @@ class DeviceDiscoveryService extends EventEmitter {
     }
 
     startMdns() {
+        this._stopMdns();
+        let Bonjour;
         try {
-            if (!this.bonjour) {
-                // require tardio: o módulo só é carregado quando a descoberta realmente inicia
-                const { Bonjour } = require('bonjour-service');
-                this.bonjour = new Bonjour();
-            }
-            if (this.bonjourBrowser) {
-                try { this.bonjourBrowser.stop(); } catch (_) {}
-            }
-
-            this.bonjourBrowser = this.bonjour.find({ type: 'bdsm' }, (service) => {
-                logger.debug(`[Discovery] Serviço BDSM via Wi-Fi encontrado: ${service.name}`);
-                const ip = this._extractBestIp(service);
-                if (ip) {
-                    this.probeDevice(ip, service.port || 8080, 'wifi');
-                } else {
-                    logger.warn(`[Discovery] Serviço BDSM encontrado sem endereço IPv4 válido: ${service.name}`);
-                }
-            });
+            // require tardio: o módulo só é carregado quando a descoberta realmente inicia
+            ({ Bonjour } = require('bonjour-service'));
         } catch (e) {
             logger.error(`[Discovery] Falha ao iniciar Bonjour: ${e.message}`);
+            return;
         }
+        const addresses = lanAddresses();
+        this._mdnsKey = addresses.join(',');
+        // Uma busca por rede local (a pergunta sai pela interface escolhida); sem rede local conhecida, a busca padrão
+        for (const ip of (addresses.length ? addresses : [null])) {
+            try {
+                const bonjour = new Bonjour(ip ? { interface: ip, bind: '0.0.0.0' } : {}, (err) => {
+                    logger.warn(`[Discovery] mDNS${ip ? ` (${ip})` : ''}: ${err && err.message}`);
+                });
+                // 'error' sem ouvinte derrubaria o app (porta em uso, sem permissão): vira só um aviso no log
+                try {
+                    const mdns = bonjour.server && bonjour.server.mdns;
+                    if (mdns && typeof mdns.on === 'function') {
+                        mdns.on('error', (err) => logger.warn(`[Discovery] mDNS${ip ? ` (${ip})` : ''}: ${err && err.message}`));
+                        mdns.on('warning', () => {});
+                    }
+                } catch (_) { /* sem como ouvir: segue */ }
+                const browser = bonjour.find({ type: 'bdsm' }, (service) => this._onMdnsService(service));
+                this._mdns.push({ ip, bonjour, browser });
+            } catch (e) {
+                logger.error(`[Discovery] Falha ao iniciar Bonjour${ip ? ` (${ip})` : ''}: ${e.message}`);
+            }
+        }
+    }
+
+    _onMdnsService(service) {
+        logger.debug(`[Discovery] Serviço BDSM via Wi-Fi encontrado: ${service.name}`);
+        const ip = this._extractBestIp(service);
+        if (ip) {
+            this.probeDevice(ip, service.port || 8080, 'wifi');
+        } else {
+            logger.warn(`[Discovery] Serviço BDSM encontrado sem endereço IPv4 válido: ${service.name}`);
+        }
+    }
+
+    _stopMdns() {
+        for (const { bonjour, browser } of this._mdns) {
+            try { if (browser) browser.stop(); } catch (_) {}
+            try { if (bonjour) bonjour.destroy(); } catch (_) {}
+        }
+        this._mdns = [];
     }
 
     _extractBestIp(service) {
@@ -106,6 +141,41 @@ class DeviceDiscoveryService extends EventEmitter {
             return service.host;
         }
         return null;
+    }
+
+    /**
+     * Refaz a pergunta mDNS (por todas as redes locais) e descarta anúncios vencidos. Se as redes locais mudaram (Wi-Fi que
+     * conectou depois, ponto de acesso do celular, VPN que ligou), refaz as buscas para cobrir a rede nova. Nunca lança.
+     */
+    _refreshMdns() {
+        if (!this._started) return; // descoberta desligada (ou fora do app, como nos testes): não abre sockets por conta própria
+        try {
+            if (lanAddresses().join(',') !== this._mdnsKey) { this.startMdns(); return; }
+            for (const { browser } of this._mdns) {
+                if (!browser) continue;
+                if (typeof browser.expire === 'function') browser.expire();
+                if (typeof browser.update === 'function') browser.update();
+            }
+        } catch (e) {
+            logger.debug(`[Discovery] Falha ao reconsultar o mDNS: ${e.message}`);
+        }
+    }
+
+    /** Endereços (ip, porta) dos celulares anunciados na rede e ainda válidos (de todas as buscas, sem repetir). */
+    _mdnsEndpoints() {
+        const out = [];
+        const seen = new Set();
+        for (const { browser } of this._mdns) {
+            const services = browser && Array.isArray(browser.services) ? browser.services : [];
+            for (const service of services) {
+                const ip = this._extractBestIp(service);
+                if (!ip) continue;
+                const port = service.port || 8080;
+                const key = `${ip}:${port}`;
+                if (!seen.has(key)) { seen.add(key); out.push({ ip, port }); }
+            }
+        }
+        return out;
     }
 
     /** Resolve `where adb` uma única vez; devolve o caminho ou null se o adb não existe. */
@@ -153,7 +223,7 @@ class DeviceDiscoveryService extends EventEmitter {
             if (!targetDevice) {
                 this._lastAdbForwardDevice = null;
                 this._adbFailures++;
-                this._adbNextAt = Date.now() + backoffDelay(this._adbFailures);
+                this._adbNextAt = Date.now() + backoffDelay(this._adbFailures, ADB_POLL_STEPS_MS);
                 return;
             }
 
@@ -192,19 +262,22 @@ class DeviceDiscoveryService extends EventEmitter {
                 this.setupAdbForward().catch(() => {});
             }
 
-            const probePromises = [];
+            // Pergunta de novo na rede quem está anunciando e esquece anúncios vencidos (o navegador do Bonjour só pergunta
+            // uma vez ao começar): sem isto, um celular que liga o Wi-Fi depois do app aberto só aparecia em "Atualizar".
+            this._refreshMdns();
 
-            // 1. Polling USB (localhost)
-            probePromises.push(this.probeDevice('127.0.0.1', testBdsmPort() || 8080, 'usb', true));
-
-            // 2. Polling Wi-Fi (manter vivos os dispositivos encontrados via Bonjour ou sondagem anterior)
-            for (const [id, device] of this.devices.entries()) {
-                if (device.connection === 'wifi' && device.ip && device.ip !== '127.0.0.1') {
-                    probePromises.push(this.probeDevice(device.ip, device.port || 8080, 'wifi', true));
-                }
+            // Endereços a sondar, sem repetir: USB (localhost), Wi-Fi já conhecidos (mantê-los vivos) e serviços anunciados na
+            // rede. Os anunciados entram sempre: o Bonjour não repete o aviso de um serviço que já viu, então um celular que
+            // saiu da lista por inatividade e voltou (app reaberto, Wi-Fi religado) nunca mais seria sondado.
+            const targets = new Map();
+            const add = (ip, port, connection) => { const key = `${ip}:${port}`; if (ip && !targets.has(key)) targets.set(key, [ip, port, connection]); };
+            add('127.0.0.1', testBdsmPort() || 8080, 'usb');
+            for (const device of this.devices.values()) {
+                if (device.connection === 'wifi' && device.ip && device.ip !== '127.0.0.1') add(device.ip, device.port || 8080, 'wifi');
             }
+            for (const ep of this._mdnsEndpoints()) add(ep.ip, ep.port, 'wifi');
 
-            await Promise.allSettled(probePromises);
+            await Promise.allSettled([...targets.values()].map(([ip, port, connection]) => this.probeDevice(ip, port, connection, true)));
         } finally {
             this._isPolling = false;
         }
@@ -265,14 +338,7 @@ class DeviceDiscoveryService extends EventEmitter {
         if (this.usbPollInterval) clearInterval(this.usbPollInterval);
         this.cleanupInterval = null;
         this.usbPollInterval = null;
-        if (this.bonjourBrowser) {
-            try { this.bonjourBrowser.stop(); } catch (_) {}
-            this.bonjourBrowser = null;
-        }
-        if (this.bonjour) {
-            try { this.bonjour.destroy(); } catch (_) {}
-            this.bonjour = null;
-        }
+        this._stopMdns();
     }
 
     registerDevice(deviceData) {
@@ -315,7 +381,12 @@ class DeviceDiscoveryService extends EventEmitter {
         this._adbFailures = 0;
         this._adbPath = undefined;
         this._adbResolving = null;
+        this._lastAdbForwardDevice = null; // refaz o forward do cabo
         this.startMdns();
+        // O forward do adb precisa existir ANTES da sondagem USB (senão o celular só aparecia na sondagem seguinte)
+        await this.setupAdbForward().catch(() => {});
+        // Dá um instante para os celulares da rede responderem à nova pergunta mDNS antes de sondar
+        if (this._mdns.length && this._mdnsSettleMs > 0) await new Promise((resolve) => setTimeout(resolve, this._mdnsSettleMs));
         await this.pollAllDevices();
     }
 }
@@ -323,3 +394,5 @@ class DeviceDiscoveryService extends EventEmitter {
 module.exports = new DeviceDiscoveryService();
 module.exports.pickPreferredConnection = pickPreferredConnection;
 module.exports.testBdsmPort = testBdsmPort;
+module.exports.lanAddresses = lanAddresses;
+module.exports.isLanAddress = isLanAddress;

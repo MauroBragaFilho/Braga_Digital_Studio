@@ -4,9 +4,16 @@ const EventEmitter = require('node:events');
 const path = require('node:path');
 const { cachedAsync } = require('./cachedAsync');
 
-// Enumerar MTP/USB custa um PowerShell cada: o resultado é reaproveitado por este tempo
-// (sidebar de armazenamento, tela Dispositivos) e chamadas simultâneas são deduplicadas.
-const DEVICE_LIST_TTL_MS = 25000;
+// Enumerar MTP/USB custa um PowerShell cada (~1 s): o resultado é reaproveitado (sidebar de armazenamento, tela
+// Dispositivos) e chamadas simultâneas são deduplicadas. Com a "assinatura" do hardware (algo foi plugado ou removido?) a
+// lista é refeita assim que ela muda e o tempo abaixo é só uma rede de segurança; sem a assinatura, o cache é curto.
+const LIST_TTL_SIGNED_MS = 20000;
+const LIST_TTL_UNSIGNED_MS = 8000;
+const MTP_PENDING_TTL_MS = 4000;          // aparelho conectado mas sem armazenamento (celular bloqueado): confere de novo logo
+const SIGNATURE_MIN_INTERVAL_MS = 1500;   // no máximo uma leitura da assinatura por intervalo, não importa quem pergunte
+
+/** Aparelho MTP que ainda não mostrou o armazenamento (celular bloqueado, "permitir acesso" pendente). */
+const hasNoStorage = (d) => !d || !Array.isArray(d.Storages) || d.Storages.length === 0;
 
 /**
  * Valida a lista de segmentos de caminho/nomes vindos do renderer: só nomes simples
@@ -59,13 +66,42 @@ const normBase = (p) => path.resolve(String(p)).replace(/[\\/]+$/, '').toLowerCa
  *   deviceManager.on('progress', (data) => ...);
  */
 class DeviceManager extends EventEmitter {
-  constructor() {
+  /**
+   * @param {{ readSignature?: () => Promise<string|null>, now?: () => number, providers?: { mtp: object, storage: object } }} [opts]
+   *   (só os testes passam opções: relógio, leitor da assinatura e providers falsos)
+   */
+  constructor({ readSignature = null, now = Date.now, providers = null } = {}) {
     super();
     this._mtpProvider = null;
     this._storageProvider = null;
     this._initialized = false;
-    this._mtpList = cachedAsync(() => { this._ensureInit(); return this._mtpProvider.getDevices(); }, DEVICE_LIST_TTL_MS);
-    this._storageList = cachedAsync(() => { this._ensureInit(); return this._storageProvider.getDevices(); }, DEVICE_LIST_TTL_MS);
+    this._now = now;
+    this._readSignatureFn = readSignature;
+    this._signature = null;
+    this._signatureAt = -Infinity;
+    this._signatureInflight = null;
+    this._signatureWorks = false;
+    this._mtpPending = false;
+    this._busy = 0;
+    this._mtpList = cachedAsync(async () => {
+      this._ensureInit();
+      const list = await this._mtpProvider.getDevices();
+      this._mtpPending = list.some(hasNoStorage);
+      return list;
+    }, () => (this._mtpPending ? MTP_PENDING_TTL_MS : this._ttl()), now);
+    this._storageList = cachedAsync(() => { this._ensureInit(); return this._storageProvider.getDevices(); }, () => this._ttl(), now);
+    if (providers) this._useProviders(providers.mtp, providers.storage);
+  }
+
+  _ttl() { return this._signatureWorks ? LIST_TTL_SIGNED_MS : LIST_TTL_UNSIGNED_MS; }
+
+  _useProviders(mtp, storage) {
+    this._mtpProvider = mtp;
+    this._storageProvider = storage;
+    // Repassa eventos de progresso dos providers para os listeners do DeviceManager
+    mtp.on('progress', (data) => this.emit('progress', data));
+    storage.on('progress', (data) => this.emit('progress', data));
+    this._initialized = true;
   }
 
   /**
@@ -80,28 +116,87 @@ class DeviceManager extends EventEmitter {
     if (platform === 'win32') {
       const { WindowsMtpProvider } = require('./windows/WindowsMtpProvider');
       const { WindowsStorageProvider } = require('./windows/WindowsStorageProvider');
-      this._mtpProvider = new WindowsMtpProvider();
-      this._storageProvider = new WindowsStorageProvider();
+      if (!this._readSignatureFn) this._readSignatureFn = require('./windows/hardwareSignature').readSignature;
+      this._useProviders(new WindowsMtpProvider(), new WindowsStorageProvider());
     } else {
-      // Linux e macOS: MTP via stub (futuro), Storage via lsblk/fs
+      // Linux e macOS: MTP via stub (futuro), Storage via lsblk/fs (sem assinatura: o cache por tempo é mais curto)
       const { LinuxMtpProvider } = require('./linux/LinuxMtpProvider');
       const { LinuxStorageProvider } = require('./linux/LinuxStorageProvider');
-      this._mtpProvider = new LinuxMtpProvider();
-      this._storageProvider = new LinuxStorageProvider();
+      this._useProviders(new LinuxMtpProvider(), new LinuxStorageProvider());
     }
+  }
 
-    // Repassa eventos de progresso dos providers para os listeners do DeviceManager
-    this._mtpProvider.on('progress', (data) => this.emit('progress', data));
-    this._storageProvider.on('progress', (data) => this.emit('progress', data));
+  // ─── Mudanças no hardware ─────────────────────────────────────────────────
 
-    this._initialized = true;
+  /**
+   * Confere (no máximo uma vez por SIGNATURE_MIN_INTERVAL_MS) se algo foi plugado ou removido; se foi, descarta as listas em
+   * cache para a próxima consulta já refazer a enumeração. Nunca lança.
+   */
+  _syncSignature() {
+    if (this._signatureInflight) return this._signatureInflight;
+    if (this._now() - this._signatureAt < SIGNATURE_MIN_INTERVAL_MS) return Promise.resolve();
+    this._ensureInit();
+    const read = this._readSignatureFn || (() => Promise.resolve(null));
+    this._signatureInflight = (async () => {
+      let sig = null;
+      try { sig = await read(); } catch (_) { sig = null; }
+      this._signatureAt = this._now();
+      this._signatureWorks = sig != null;
+      if (sig != null) {
+        if (this._signature != null && sig !== this._signature) this.invalidateDeviceCache();
+        this._signature = sig;
+      }
+    })().finally(() => { this._signatureInflight = null; });
+    return this._signatureInflight;
+  }
+
+  /**
+   * Executa `fn` marcando o DeviceManager como ocupado (cópia ou navegação em um aparelho MTP). Enquanto houver operação em
+   * andamento, nenhuma enumeração nova é feita: o Windows atende o aparelho um pedido de cada vez e a varredura atrasaria a cópia.
+   */
+  async track(fn) {
+    this._busy++;
+    try { return await fn(); } finally { this._busy--; }
   }
 
   // ─── MTP ──────────────────────────────────────────────────────────────────
 
-  /** @returns {Promise<Array>} */
-  getMtpDevices({ force = false } = {}) {
-    return this._mtpList.get({ force });
+  /** @returns {Promise<Array>} nunca rejeita: se a consulta falhar, devolve a última lista boa ou vazio */
+  async getMtpDevices({ force = false } = {}) {
+    return this._list(this._mtpList, { force });
+  }
+
+  /** Lista de um tipo de dispositivo com a assinatura em dia; em caso de falha, a última lista boa (ou vazio). */
+  async _list(list, { force }) {
+    this._ensureInit();
+    if (this._busy === 0) await this._syncSignature();
+    try { return await list.get({ force: force && this._busy === 0 }); } catch (_) { const last = list.peek(); return last !== undefined ? last : []; }
+  }
+
+  /**
+   * MTP e USB de uma vez, com o que deu errado em cada fonte. Quem mostra a lista usa isto: "não há nada conectado" e
+   * "não consegui consultar" são coisas diferentes e o usuário precisa saber qual das duas aconteceu.
+   * Se a consulta falhar, a última lista boa continua valendo (o aparelho não some da tela por um tempo esgotado), mas só enquanto
+   * o hardware não mudou; com o hardware mudado, falhou significa "não sei" e a lista daquela fonte vem vazia.
+   * @returns {Promise<{ mtp: Array, usb: Array, issues: Array<{source: 'mtp'|'usb', message: string}> }>}
+   */
+  async scan({ force = false } = {}) {
+    this._ensureInit();
+    const busy = this._busy > 0;
+    if (!busy) await this._syncSignature();
+    const issues = [];
+    const grab = async (source, list) => {
+      if (busy) { const last = list.peek(); if (last !== undefined) return last; }
+      try {
+        return await list.get({ force: force && !busy });
+      } catch (err) {
+        issues.push({ source, message: err && err.message ? String(err.message) : 'Falha ao consultar.' });
+        const last = list.peek();
+        return last !== undefined ? last : [];
+      }
+    };
+    const [mtp, usb] = await Promise.all([grab('mtp', this._mtpList), grab('usb', this._storageList)]);
+    return { mtp, usb, issues };
   }
 
   /**
@@ -130,12 +225,12 @@ class DeviceManager extends EventEmitter {
 
   // ─── Storage / USB ────────────────────────────────────────────────────────
 
-  /** @returns {Promise<Array>} */
-  getStorageDevices({ force = false } = {}) {
-    return this._storageList.get({ force });
+  /** @returns {Promise<Array>} nunca rejeita: se a consulta falhar, devolve a última lista boa ou vazio */
+  async getStorageDevices({ force = false } = {}) {
+    return this._list(this._storageList, { force });
   }
 
-  /** Descarta as listas em cache (ex.: após importar/ejetar). */
+  /** Descarta as listas em cache (algo foi plugado/removido, ou o usuário pediu para procurar de novo). */
   invalidateDeviceCache() {
     this._mtpList.invalidate();
     this._storageList.invalidate();

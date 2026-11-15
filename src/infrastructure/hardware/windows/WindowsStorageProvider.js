@@ -8,11 +8,67 @@ const { StorageProvider } = require('../StorageProvider');
 const { systemExe } = require('../systemExe');
 const logger = require('../../../services/logService');
 
+/** Tempo máximo da enumeração. O leitor de cartão vazio de alguns computadores leva ~2 s só para dizer "sem mídia". */
+const ENUMERATE_TIMEOUT_MS = 20000;
+
+/**
+ * Script que lista as unidades removíveis COM mídia. Parte dos discos físicos (Win32_DiskDrive, rápido) e só então
+ * pergunta pelas letras deles: consultar o tamanho de um leitor de cartão vazio (Win32_LogicalDisk) trava de 2 a 8 s.
+ * Entram discos em barramento USB (cartão, pen drive, SSD/HD externo, câmera em modo de armazenamento) e discos que
+ * se declaram removíveis; discos internos ficam de fora.
+ */
+const DRIVES_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$rows = @()
+$disks = @(Get-CimInstance Win32_DiskDrive | Where-Object {
+    ($_.InterfaceType -eq 'USB' -or $_.MediaType -match 'Removable|External' -or $_.PNPDeviceID -like 'USBSTOR*') -and $_.Size -gt 0
+})
+foreach ($disk in $disks) {
+    foreach ($part in @(Get-CimAssociatedInstance -InputObject $disk -Association Win32_DiskDriveToDiskPartition)) {
+        foreach ($ld in @(Get-CimAssociatedInstance -InputObject $part -Association Win32_LogicalDiskToPartition)) {
+            $rows += [pscustomobject]@{ id = $ld.DeviceID; name = $ld.VolumeName; size = $ld.Size; free = $ld.FreeSpace; model = $disk.Model }
+        }
+    }
+}
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+ConvertTo-Json -Compress -InputObject @($rows)
+`;
+
+/**
+ * Converte a saída do script nos dispositivos da tela. Só entra unidade com letra e tamanho (leitor vazio não é dispositivo).
+ * @param {string} stdout JSON (lista, objeto único ou vazio)
+ * @returns {Array<{id, name, type, storage}>}
+ * @throws {Error} se o texto não for JSON válido
+ */
+function parseDrives(stdout) {
+  const text = String(stdout || '').trim();
+  if (!text) return [];
+  let rows = JSON.parse(text);
+  if (!Array.isArray(rows)) rows = [rows];
+  const seen = new Set();
+  const out = [];
+  for (const d of rows) {
+    if (!d || !/^[A-Za-z]:$/.test(String(d.id || ''))) continue;
+    const letter = String(d.id).toUpperCase();
+    if (seen.has(letter) || d.name === 'PMHOME') continue; // PMHOME: volume virtual da câmera (PlayMemories), não é mídia
+    const size = Number(d.size);
+    if (!Number.isFinite(size) || size <= 0) continue;
+    seen.add(letter);
+    out.push({
+      id: letter,
+      name: d.name ? String(d.name) : `Unidade USB (${letter})`,
+      type: 'usb',
+      storage: [{ name: 'Mass Storage', path: `${letter}\\`, capacity: size, free: Number(d.free) || 0 }]
+    });
+  }
+  return out;
+}
+
 /**
  * WindowsStorageProvider — Implementacao Windows-only do provider USB/Mass Storage.
  *
  * Encapsula TODA a logica de PowerShell / CIM para enumeracao de unidades
- * removiveis (cartoes SD, pendrives) no Windows via Win32_LogicalDisk.
+ * removiveis (cartoes SD, pendrives, discos USB) no Windows.
  *
  * A listagem de pasta e importacao de arquivos usam o Node.js fs nativo
  * (multiplataforma), sem PowerShell — o PowerShell so e necessario na
@@ -24,55 +80,26 @@ const logger = require('../../../services/logService');
  */
 class WindowsStorageProvider extends StorageProvider {
   /**
-   * Lista drives removiveis USB via CIM Win32_LogicalDisk.
+   * Lista as unidades removiveis com midia (cartao, pen drive, disco USB).
+   * Falhou (tempo esgotado, PowerShell indisponivel): REJEITA, para o chamador nao confundir "deu erro" com "nao ha nada".
    * @returns {Promise<Array<{id, name, type, storage}>>}
    */
-  async getDevices() {
-    return new Promise((resolve) => {
-      const psScript = `
-$disks = Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 -and $_.VolumeName -ne "PMHOME" }
-$results = @()
-foreach ($disk in $disks) {
-    $results += @{
-        id = $disk.DeviceID
-        name = if ($disk.VolumeName) { $disk.VolumeName } else { "Unidade USB ($($disk.DeviceID))" }
-        capacity = $disk.Size
-        free = $disk.FreeSpace
-        type = "usb"
-        path = "$($disk.DeviceID)\\"
-    }
-}
-$results | ConvertTo-Json -Compress
-      `;
-      const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
+  getDevices() {
+    return new Promise((resolve, reject) => {
+      const encodedCommand = Buffer.from(DRIVES_SCRIPT, 'utf16le').toString('base64');
       execOffThread(
         `"${systemExe('powershell')}" -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
-        { encoding: 'utf8', timeout: 8000, windowsHide: true },
+        { encoding: 'utf8', timeout: ENUMERATE_TIMEOUT_MS, windowsHide: true },
         (error, stdout) => {
           if (error) {
             logger.error('WindowsStorageProvider:getDevices:error', { error: error.message });
-            return resolve([]);
+            return reject(new Error(error.killed || /timed out|ETIMEDOUT/i.test(error.message) ? 'A consulta às unidades demorou demais.' : 'Não foi possível consultar as unidades.'));
           }
           try {
-            const str = stdout.trim();
-            if (!str) return resolve([]);
-            let parsed = JSON.parse(str);
-            if (!Array.isArray(parsed)) parsed = [parsed];
-            const devices = parsed.map(disk => ({
-              id: disk.id,
-              name: disk.name,
-              type: 'usb',
-              storage: [{
-                name: 'Mass Storage',
-                path: disk.path,
-                capacity: disk.capacity || 0,
-                free: disk.free || 0
-              }]
-            }));
-            resolve(devices);
+            resolve(parseDrives(stdout));
           } catch (e) {
             logger.error('WindowsStorageProvider:getDevices:parse_error', { error: e.message });
-            resolve([]);
+            reject(new Error('Resposta inesperada ao consultar as unidades.'));
           }
         }
       );
@@ -157,4 +184,4 @@ $results | ConvertTo-Json -Compress
   }
 }
 
-module.exports = { WindowsStorageProvider };
+module.exports = { WindowsStorageProvider, parseDrives, DRIVES_SCRIPT, ENUMERATE_TIMEOUT_MS };

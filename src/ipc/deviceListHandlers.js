@@ -10,20 +10,33 @@ const sonyCameraService = require('../core/devices/SonyCameraService');
 const MtpService = require('../core/MtpService');
 const UsbService = require('../core/UsbService');
 
-/** Lista unificada de dispositivos (MTP/USB/BDSM/Sony) e navegação/importação USB e MTP. */
+const SONY_RESCAN_MIN_MS = 8000;
+
+/**
+ * Lista unificada de dispositivos (MTP/USB/BDSM/Sony) e navegação/importação USB e MTP.
+ * `devices:get-all` devolve { devices, issues }: `issues` diz o que NÃO pôde ser consultado (tempo esgotado, PowerShell
+ * indisponível...), para a tela não confundir "não consegui olhar" com "não há nada conectado".
+ */
 module.exports = function registerDeviceListHandlers() {
+  // A busca de câmeras Sony só repete a cada 30 s sozinha; com a tela aberta e perguntando a cada poucos segundos, repete a
+  // cada 8 s (uma câmera ligada agora aparece logo) e na hora no "atualizar".
+  let lastSonyRescan = 0;
   // Devices & Hardware
   handle('devices:get-all', async (_, force = false) => {
-    if (force) {
+    const now = Date.now();
+    if (force || now - lastSonyRescan >= SONY_RESCAN_MIN_MS) {
+      lastSonyRescan = now;
       sonyCameraService.rescan();
-      await deviceDiscoveryService.forceRescan();
     }
-    // MTP e USB em paralelo, reaproveitando o cache de 25 s do DeviceManager (compartilhado com a
-    // sidebar de armazenamento); "force" (atualizar manualmente) ignora o cache.
-    const [mtpDevices, usbDevices] = await Promise.all([
-      deviceManager.getMtpDevices({ force: !!force }),
-      deviceManager.getStorageDevices({ force: !!force })
+    // MTP e USB em paralelo (e em paralelo com a nova busca de celulares, no "atualizar"), reaproveitando o cache do
+    // DeviceManager (compartilhado com a sidebar de armazenamento), que só é refeito quando o hardware muda ou vence;
+    // "force" (atualizar manualmente) ignora o cache.
+    const [scan] = await Promise.all([
+      deviceManager.scan({ force: !!force }),
+      // A busca de celulares é complemento: se ela falhar, a lista de cartões, câmeras e celulares já vistos segue valendo
+      force ? Promise.resolve(deviceDiscoveryService.forceRescan()).catch((err) => logger.warn(`devices:get-all:forceRescan:error ${err && err.message}`)) : null
     ]);
+    const { mtp: mtpDevices, usb: usbDevices, issues } = scan;
     const bdsmDevices = deviceDiscoveryService.getDevices();
     const sonyDevices = sonyCameraService.getCameras();
 
@@ -43,12 +56,15 @@ module.exports = function registerDeviceListHandlers() {
       return !matchesBdsm;
     });
 
-    return [
-      ...mtpDevicesFiltered.map(d => ({ ...d, type: 'MTP', isBdsm: false })),
-      ...usbDevices.map(d => ({ ...d, type: 'USB', isBdsm: false })),
-      ...bdsmDevices.map(d => ({ ...d, type: 'BDSM', isBdsm: true })),
-      ...sonyDevices.map(d => ({ ...d, type: 'SONY', isBdsm: false }))
-    ];
+    return {
+      devices: [
+        ...mtpDevicesFiltered.map(d => ({ ...d, type: 'MTP', isBdsm: false })),
+        ...usbDevices.map(d => ({ ...d, type: 'USB', isBdsm: false })),
+        ...bdsmDevices.map(d => ({ ...d, type: 'BDSM', isBdsm: true })),
+        ...sonyDevices.map(d => ({ ...d, type: 'SONY', isBdsm: false }))
+      ],
+      issues
+    };
   });
   handle('usb:list-folder', (_, basePath, pathArray) => UsbService.listFolder(basePath, pathArray));
   // Barra de tarefas: o andamento por arquivo chega pelo evento 'progress' do DeviceManager (events/devices.js);
@@ -58,6 +74,7 @@ module.exports = function registerDeviceListHandlers() {
     try { const r = await fn(); taskProgressCenter.reportIdle('copy'); return r; } catch (err) { taskProgressCenter.reportError('copy'); throw err; }
   };
   handle('usb:import-items', (_, basePath, pathArray, itemNames, destFolder) => withTaskbar(() => UsbService.importItems(basePath, pathArray, itemNames, destFolder)));
-  handle('mtp:list-folder', (_, deviceName, pathArray) => MtpService.listMtpFolder(deviceName, pathArray));
-  handle('mtp:import-items', (_, deviceName, pathArray, itemNames, destFolder) => withTaskbar(() => MtpService.importMtpItems(deviceName, pathArray, itemNames, destFolder)));
+  // Aparelho MTP em uso (navegando ou copiando): o DeviceManager não varre dispositivos enquanto isso, para não atrasar a cópia
+  handle('mtp:list-folder', (_, deviceName, pathArray) => deviceManager.track(() => MtpService.listMtpFolder(deviceName, pathArray)));
+  handle('mtp:import-items', (_, deviceName, pathArray, itemNames, destFolder) => deviceManager.track(() => withTaskbar(() => MtpService.importMtpItems(deviceName, pathArray, itemNames, destFolder))));
 };

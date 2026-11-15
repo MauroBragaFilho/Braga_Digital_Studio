@@ -3,35 +3,27 @@
 const { spawn } = require('node:child_process');
 const { execOffThread } = require('../offThreadExec'); // criação do powershell fora do processo principal
 const { StorageProvider } = require('../StorageProvider');
+const { systemExe } = require('../systemExe');
 const logger = require('../../../services/logService');
 
+/** Tempo máximo da enumeração. Com o celular bloqueado, o Windows pode demorar a responder sobre os armazenamentos. */
+const ENUMERATE_TIMEOUT_MS = 20000;
+
 /**
- * WindowsMtpProvider — Implementacao Windows-only do provider MTP.
- *
- * Encapsula TODA a logica de PowerShell / Shell.Application para interacao com
- * dispositivos MTP (cameras, smartphones) no Windows.
- *
- * Regra do roadmap (Sprint 5):
- *   Nenhum arquivo fora de src/infrastructure/hardware/windows/ deve conter
- *   chamadas a powershell.exe para dispositivos MTP.
+ * Script que lista os dispositivos portáteis (câmeras, celulares) da pasta "Este Computador". Servidores de mídia da rede
+ * (DLNA/UPnP, ex.: o compartilhamento do próprio Windows) aparecem ali também e NÃO são dispositivos: ficam de fora antes de
+ * abrir a pasta deles, que pode demorar.
  */
-class WindowsMtpProvider extends StorageProvider {
-  /**
-   * Lista dispositivos MTP conectados via Shell.Application COM.
-   * @returns {Promise<Array>}
-   */
-  async getDevices() {
-    return new Promise((resolve) => {
-      const psScript = `
+const DEVICES_SCRIPT = `
 $shell = New-Object -ComObject Shell.Application
 $computer = $shell.NameSpace(17)
 $devices = @()
 
 foreach ($item in $computer.Items()) {
-    if ($item.Path -notmatch '^[a-zA-Z]:\\\\?$' -and $item.Type -notmatch 'Network|Rede|System|Sistema') {
+    if ($item.Path -notmatch '^[a-zA-Z]:\\\\?$' -and $item.Path -notmatch 'uuid:' -and $item.Type -notmatch 'Network|Rede|System|Sistema|Media Server|Servidor de m') {
         $storageItems = @()
         $battery = $item.ExtendedProperty("System.BatteryPercentage")
-        
+
         if ($item.GetFolder -ne $null) {
             foreach ($subItem in $item.GetFolder.Items()) {
                 $size = $subItem.ExtendedProperty("System.Capacity")
@@ -46,6 +38,7 @@ foreach ($item in $computer.Items()) {
         $devices += @{
             Name = $item.Name
             Type = $item.Type
+            Path = $item.Path
             BatteryLevel = $battery
             Storages = $storageItems
         }
@@ -53,26 +46,61 @@ foreach ($item in $computer.Items()) {
 }
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $devices | ConvertTo-Json -Depth 5
-      `;
+`;
 
-      const encodedCommand = Buffer.from(psScript, 'utf16le').toString('base64');
+/** Itens de "Este Computador" que não são dispositivos portáteis: servidor de mídia da rede (UPnP/DLNA). */
+function isNetworkMediaServer(d) {
+  return /uuid:/i.test(String(d.Path || '')) || /media server|servidor de m[ií]dia/i.test(String(d.Type || ''));
+}
+
+/**
+ * Converte a saída do script em dispositivos. Texto vazio = nenhum dispositivo.
+ * @param {string} stdout
+ * @returns {Array<{Name, Type, Path, BatteryLevel, Storages: Array}>}
+ * @throws {Error} se o texto não for JSON válido
+ */
+function parseMtpDevices(stdout) {
+  const text = String(stdout || '').trim();
+  if (!text) return [];
+  let parsed = JSON.parse(text);
+  if (!Array.isArray(parsed)) parsed = [parsed];
+  return parsed
+    .filter((d) => d && d.Name && !isNetworkMediaServer(d))
+    .map((d) => ({ ...d, Storages: Array.isArray(d.Storages) ? d.Storages : (d.Storages ? [d.Storages] : []) }));
+}
+
+/**
+ * WindowsMtpProvider — Implementacao Windows-only do provider MTP.
+ *
+ * Encapsula TODA a logica de PowerShell / Shell.Application para interacao com
+ * dispositivos MTP (cameras, smartphones) no Windows.
+ *
+ * Regra do roadmap (Sprint 5):
+ *   Nenhum arquivo fora de src/infrastructure/hardware/windows/ deve conter
+ *   chamadas a powershell.exe para dispositivos MTP.
+ */
+class WindowsMtpProvider extends StorageProvider {
+  /**
+   * Lista dispositivos MTP conectados via Shell.Application COM.
+   * Falhou (tempo esgotado, PowerShell indisponivel): REJEITA, para o chamador nao confundir "deu erro" com "nao ha nada".
+   * @returns {Promise<Array>}
+   */
+  getDevices() {
+    return new Promise((resolve, reject) => {
+      const encodedCommand = Buffer.from(DEVICES_SCRIPT, 'utf16le').toString('base64');
       execOffThread(
-        `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
-        { encoding: 'utf8', timeout: 8000, windowsHide: true },
+        `"${systemExe('powershell')}" -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
+        { encoding: 'utf8', timeout: ENUMERATE_TIMEOUT_MS, windowsHide: true },
         (error, stdout) => {
           if (error) {
             logger.error('WindowsMtpProvider:getDevices:error', { error: error.message });
-            return resolve([]);
+            return reject(new Error(error.killed || /timed out|ETIMEDOUT/i.test(error.message) ? 'A consulta às câmeras e celulares demorou demais.' : 'Não foi possível consultar as câmeras e celulares.'));
           }
           try {
-            const output = stdout.trim();
-            if (!output) return resolve([]);
-            let parsed = JSON.parse(output);
-            if (!Array.isArray(parsed)) parsed = [parsed];
-            resolve(parsed);
+            resolve(parseMtpDevices(stdout));
           } catch (e) {
             logger.error('WindowsMtpProvider:getDevices:parse_error', { error: e.message });
-            resolve([]);
+            reject(new Error('Resposta inesperada ao consultar as câmeras e celulares.'));
           }
         }
       );
@@ -355,4 +383,4 @@ foreach ($itemName in $itemNames) {
 if ($failed) { exit 1 }
 `;
 
-module.exports = { WindowsMtpProvider };
+module.exports = { WindowsMtpProvider, parseMtpDevices, isNetworkMediaServer, DEVICES_SCRIPT, ENUMERATE_TIMEOUT_MS };
