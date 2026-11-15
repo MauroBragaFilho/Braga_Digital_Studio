@@ -24,6 +24,8 @@ const PAUSE_MAX_SEC = 3600;
 const DAILY_LIMIT_DEFAULT = 10;
 const DAILY_LIMIT_MAX = 100;
 const VISIBILITIES = ['private', 'unlisted', 'public'];
+// Declaração "para crianças": '' = ainda não escolhida (o vídeo não pode ser enviado)
+const AUDIENCES = ['not_kids', 'kids'];
 const TITLE_MAX = 100;
 const DESCRIPTION_MAX = 5000;
 
@@ -67,6 +69,7 @@ function sanitizeMeta(patch, fallback = {}) {
     if (typeof patch.title === 'string' && patch.title.trim()) out.title = patch.title.trim().slice(0, TITLE_MAX);
     if (typeof patch.description === 'string') out.description = patch.description.slice(0, DESCRIPTION_MAX);
     if (VISIBILITIES.includes(patch.visibility)) out.visibility = patch.visibility;
+    if (patch.audience === '' || AUDIENCES.includes(patch.audience)) out.audience = patch.audience;
     if (typeof patch.playlist === 'string') out.playlist = patch.playlist.trim().slice(0, PLAYLIST_MAX);
     if (typeof patch.thumbnail === 'string') out.thumbnail = patch.thumbnail.trim(); // '' remove a miniatura
   }
@@ -121,8 +124,9 @@ class YoutubeUploadQueue extends EventEmitter {
     this._waitUntil = null;
     this._wakeWait = null;
     this._seq = 0;
-    // Padrões aplicados a cada vídeo que entra na fila (descrição e playlist iguais para todos)
-    this.defaults = { description: '', playlist: '' };
+    // Padrões aplicados a cada vídeo que entra na fila (descrição e playlist iguais para todos). O público ("para
+    // crianças") só entra aqui se o usuário o escolheu nesta sessão: nunca é gravado nem vem pré-marcado.
+    this.defaults = { description: '', playlist: '', audience: '' };
     this._doneLog = [];
     this._loadStore();
   }
@@ -145,6 +149,7 @@ class YoutubeUploadQueue extends EventEmitter {
         title: defaultTitle(filePath),
         description: this.defaults.description,
         visibility: prefs.visibility,
+        audience: this.defaults.audience,
         playlist: this.defaults.playlist,
         thumbnail: findThumbnail(filePath)
       }));
@@ -168,7 +173,7 @@ class YoutubeUploadQueue extends EventEmitter {
     return added.map((i) => ({ ...i }));
   }
 
-  /** Edita título/descrição/visibilidade de um item ainda não enviado. */
+  /** Edita título/descrição/visibilidade/público de um item ainda não enviado. */
   update(id, patch) {
     const item = this.items.find((i) => i.id === id);
     if (!item) return { ok: false, error: 'Vídeo não está na fila.' };
@@ -187,11 +192,13 @@ class YoutubeUploadQueue extends EventEmitter {
     const p = patch && typeof patch === 'object' ? patch : {};
     if (typeof p.description === 'string') this.defaults.description = p.description.slice(0, DESCRIPTION_MAX);
     if (typeof p.playlist === 'string') this.defaults.playlist = p.playlist.trim().slice(0, PLAYLIST_MAX);
+    if (p.audience === '' || AUDIENCES.includes(p.audience)) this.defaults.audience = p.audience;
     if (applyToQueued) {
       for (const item of this.items) {
         if (item.status !== 'queued' && item.status !== 'failed') continue;
         if (typeof p.description === 'string') item.description = this.defaults.description;
         if (typeof p.playlist === 'string') item.playlist = this.defaults.playlist;
+        if (AUDIENCES.includes(p.audience)) item.audience = p.audience; // nunca apaga uma escolha já feita no vídeo
       }
     }
     this._saveStore();
@@ -242,6 +249,17 @@ class YoutubeUploadQueue extends EventEmitter {
     if (!this._driver) return { ok: false, error: 'A página do YouTube Studio não está disponível.' };
     const prefs = readUploadSettings(this.getSettings());
     if (!prefs.enabled) return { ok: false, error: 'O envio automático está desligado nas Configurações.' };
+    // Nenhum vídeo sai sem a declaração de público feita pelo usuário
+    const missing = this.items.filter((i) => i.status === 'queued' && !AUDIENCES.includes(i.audience)).length;
+    if (missing) {
+      return {
+        ok: false,
+        needsAudience: true,
+        error: missing === 1
+          ? 'Escolha se o vídeo é para crianças antes de enviar (em Editar, ou em "Para todos os vídeos").'
+          : `Escolha se os ${missing} vídeos são para crianças antes de enviar (em Editar, ou em "Para todos os vídeos").`
+      };
+    }
     this.paused = false;
     this.attention = null;
     if (this.running) { this._emitUpdated(); return { ok: true, already: true }; }
@@ -305,6 +323,13 @@ class YoutubeUploadQueue extends EventEmitter {
         break;
       }
 
+      // Vídeo que entrou na fila durante o envio, sem a declaração de público: para e espera a escolha do usuário
+      if (!AUDIENCES.includes(next.audience)) {
+        this.attention = { message: `Escolha se "${next.title || next.name}" é para crianças e clique em Continuar.`, kind: 'audience' };
+        this.emit('attention', { ...this.attention });
+        break;
+      }
+
       await this._runItem(next);
       if (this.paused || this.attention) break;
 
@@ -335,7 +360,7 @@ class YoutubeUploadQueue extends EventEmitter {
 
     try {
       const result = await this._driver.upload({
-        path: item.path, title: item.title, description: item.description, visibility: item.visibility,
+        path: item.path, title: item.title, description: item.description, visibility: item.visibility, audience: item.audience,
         thumbnail: item.thumbnail || '', playlist: item.playlist || ''
       }, { onProgress });
       if (item.status === 'cancelled') { item.finishedAt = this._now(); this.emit('item-cancelled', { ...item }); return; }
@@ -418,7 +443,9 @@ class YoutubeUploadQueue extends EventEmitter {
       const cutoff = this._now() - 2 * 24 * 3600 * 1000;
       this._doneLog = this._doneLog.filter((n) => n >= cutoff);
       fs.mkdirSync(path.dirname(this.storeFile), { recursive: true });
-      fs.writeFileSync(this.storeFile, JSON.stringify({ done: this._doneLog, defaults: this.defaults }), 'utf8');
+      // O público ("para crianças") nunca é gravado: cada sessão começa sem escolha
+      const { description, playlist } = this.defaults;
+      fs.writeFileSync(this.storeFile, JSON.stringify({ done: this._doneLog, defaults: { description, playlist } }), 'utf8');
     } catch (err) { this._log('warn', '[YoutubeUpload] Não foi possível gravar o estado da fila', { error: err && err.message }); }
   }
 }
@@ -430,5 +457,6 @@ module.exports.defaultTitle = defaultTitle;
 module.exports.findThumbnail = findThumbnail;
 module.exports.THUMBNAIL_EXTENSIONS = THUMBNAIL_EXTENSIONS;
 module.exports.VISIBILITIES = VISIBILITIES;
+module.exports.AUDIENCES = AUDIENCES;
 module.exports.PAUSE_MAX_SEC = PAUSE_MAX_SEC;
 module.exports.DAILY_LIMIT_MAX = DAILY_LIMIT_MAX;

@@ -58,7 +58,7 @@ class SettingsManager {
       uploadsFolder: path.join(os.homedir(), 'Videos', 'Uploads'),
       autoUpdateDeps: false,
       cookiesFile: path.join(dataDir, 'cookies.txt'),
-      // Pausa aleatória entre os downloads de uma lista (evita bloqueio do YouTube), em segundos
+      // Pausa aleatória entre os downloads de uma lista (ritmo moderado, sem sobrecarregar o site), em segundos
       // Playlist em MP3: subpasta com o nome da playlist e a capa como ícone
       playlistFolders: true,
       downloadPauseEnabled: true,

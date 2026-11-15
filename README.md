@@ -154,6 +154,12 @@ O que acessa a internet: verificação e download de atualizações (GitHub), da
 
 Nenhuma informação sensível é salva neste repositório: banco de dados, caches, logs, pastas `data` e sessões de autenticação estão bloqueados pelas regras do `.gitignore`.
 
+Encontrou uma falha de segurança? Veja a [Política de Segurança](SECURITY.md) e relate em particular, não numa issue pública.
+
+## ⚖️ Direitos autorais e uso responsável
+
+O BDS baixa os vídeos e áudios que **você** pedir, de sites que o programa não controla; o conteúdo continua sendo de quem detém os direitos. Baixe só o que você tem direito de baixar (conteúdo seu, de licença livre ou com autorização de quem o detém): respeitar os direitos autorais e os termos de cada site é responsabilidade de quem baixa. Músicas de serviços de streaming servem para uso pessoal; usá-las como trilha de um vídeo publicado exige licença. O mesmo vale para o envio ao YouTube: publique só o que você tem direito de publicar, com atenção às músicas e às imagens de terceiros.
+
 ## 📄 Licença
 
 Copyright © 2026 **Mauro Braga**. Todos os direitos reservados.

@@ -154,6 +154,12 @@ What reaches the internet: update checks and downloads (GitHub), tools and model
 
 No sensitive information is stored in this repository: databases, caches, logs, `data` folders and authentication sessions are blocked by the `.gitignore` rules.
 
+Found a security flaw? See the [Security Policy](SECURITY.md) and report it privately, not in a public issue.
+
+## ⚖️ Copyright and responsible use
+
+BDS downloads the videos and audio that **you** ask for, from sites the program does not control; the content still belongs to whoever holds the rights. Download only what you have the right to download (your own content, freely licensed content, or content you have permission to use): respecting copyright and each site's terms is the responsibility of the person downloading. Music from streaming services is for personal use; using it as the soundtrack of a published video requires a license. The same goes for uploading to YouTube: publish only what you have the right to publish, paying attention to third-party music and images.
+
 ## 📄 License
 
 Copyright © 2026 **Mauro Braga**. All rights reserved.

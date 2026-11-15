@@ -28,7 +28,7 @@ process.emitWarning = function (warning, ...rest) {
   return origEmitWarning.call(this, warning, ...rest);
 };
 
-const NAMESPACES = new Set(['downloads', 'recovery']);
+const NAMESPACES = new Set(['downloads', 'recovery', 'youtubeUpload']);
 
 /** Respostas padrão plausíveis (o preload real nunca devolve undefined para estes). */
 const DEFAULT_BDS = {

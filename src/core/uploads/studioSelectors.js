@@ -46,6 +46,8 @@ const STUDIO_SELECTORS = Object.freeze({
   playlistItemLabel: ['.label', 'span.checkbox-label', '#checkbox-label', '.checkbox-label'],
   playlistDone: ['ytcp-playlist-dialog .done-button', 'ytcp-playlist-dialog ytcp-button.done-button', 'ytcp-playlist-dialog #done-button'],
   playlistCancel: ['ytcp-playlist-dialog .cancel-button', 'ytcp-playlist-dialog ytcp-button.cancel-button'],
+  // Declaração de público (obrigatória no Studio): a escolha é sempre do usuário
+  madeForKids: ['ytcp-uploads-dialog tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_MFK"]', 'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_MFK"]'],
   notMadeForKids: ['ytcp-uploads-dialog tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]', 'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]'],
 
   // Navegação do diálogo

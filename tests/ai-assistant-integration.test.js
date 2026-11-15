@@ -452,6 +452,7 @@ test('add_download: o diálogo mostra a URL COMPLETA, formato, qualidade e desti
   assert.ok(req.detail.includes('Qualidade: 720p'));
   assert.ok(req.detail.includes(`Destino: ${mp4Dir}`));
   assert.match(req.detail, /Nada é apagado/);
+  assert.match(req.detail, /direitos autorais e termos do site são de responsabilidade de quem baixa/);
 
   const ok = makeBox();
   const r2 = await run(ok.box, 'add_download', { url: LINK, formato: 'audio', qualidade: '192kbps' });

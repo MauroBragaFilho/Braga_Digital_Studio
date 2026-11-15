@@ -118,6 +118,7 @@ const add_download = {
     ];
     if (waiting) parts.push(`Já há ${plural(waiting, 'item', 'itens')} na fila de Downloads; ${waiting === 1 ? 'ele também será iniciado' : 'eles também serão iniciados'}.`);
     parts.push('O arquivo entra na fila de Downloads e, ao terminar, na Biblioteca. Nada é apagado.');
+    parts.push('Baixe só o que você tem direito de baixar: direitos autorais e termos do site são de responsabilidade de quem baixa.');
     return {
       message: `O assistente quer baixar ${isAudio ? 'uma música (MP3)' : 'um vídeo (MP4)'}.`,
       detail: parts.join('\n\n'),

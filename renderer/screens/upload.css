@@ -295,8 +295,11 @@
   color: var(--muted);
   font-size: var(--fs-label);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .bds-upl-item[data-status="failed"] .bds-upl-item-sub { color: var(--status-bad); }
 .bds-upl-item .bds-upl-icon-btn { opacity: 0; width: 28px; height: 28px; }
@@ -364,11 +367,17 @@ textarea.bds-upl-input { resize: vertical; min-height: 64px; }
 
 .bds-upl-queue-foot {
   display: flex;
-  justify-content: flex-end;
-  padding: 4px 12px 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 12px 8px;
   border-top: 1px solid var(--line);
 }
+.bds-upl-queue-foot .bds-upl-link { align-self: flex-end; }
 .bds-upl-queue-foot .bds-upl-link.hidden { display: none; }
+.bds-upl-rights-note { margin: 0; color: var(--muted); font-size: var(--fs-label); line-height: 1.4; }
+/* Vídeo ainda sem a declaração "para crianças": a linha de estado fica em destaque */
+.bds-upl-item[data-audience="missing"] .bds-upl-item-sub { color: var(--status-warn); }
 
 /* Fila recolhida: botão flutuante sobre a página para reabrir */
 .bds-upl-expand {

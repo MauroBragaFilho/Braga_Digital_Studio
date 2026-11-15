@@ -47,6 +47,14 @@
             <span>Playlist</span>
             <input type="text" id="uploadDefaultsPlaylist" class="bds-upl-input" maxlength="150" placeholder="Nome exato de uma playlist do canal" spellcheck="false" />
           </label>
+          <label class="bds-upl-field">
+            <span>Conteúdo para crianças</span>
+            <select id="uploadDefaultsAudience" class="bds-upl-input">
+              <option value="">Escolher em cada vídeo</option>
+              <option value="not_kids">Não é para crianças</option>
+              <option value="kids">É para crianças</option>
+            </select>
+          </label>
           <label class="bds-upl-check">
             <input type="checkbox" id="uploadDefaultsApply" />
             <span>Aplicar também aos vídeos que já estão na fila</span>
@@ -80,6 +88,7 @@
       </div>
 
       <footer class="bds-upl-queue-foot">
+        <p id="uploadRightsNote" class="bds-upl-rights-note">Envie só vídeos que você tem direito de publicar, com atenção às músicas e imagens de terceiros. Você declara, vídeo a vídeo, se ele é para crianças.</p>
         <button type="button" id="btnUploadClearDone" class="bds-upl-link hidden">Limpar concluídos</button>
       </footer>
     </aside>
@@ -139,6 +148,14 @@
             <option value="private">Privado</option>
             <option value="unlisted">Não listado</option>
             <option value="public">Público</option>
+          </select>
+        </label>
+        <label class="bds-upl-field">
+          <span>Conteúdo para crianças</span>
+          <select class="bds-upl-input bds-upl-f-aud">
+            <option value="">Escolha uma opção</option>
+            <option value="not_kids">Não é para crianças</option>
+            <option value="kids">É para crianças</option>
           </select>
         </label>
         <label class="bds-upl-field">

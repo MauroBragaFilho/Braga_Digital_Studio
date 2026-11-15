@@ -49,12 +49,14 @@ function fakeDriver(plan = []) {
 const flush = () => new Promise((r) => setImmediate(r));
 async function finished(q) { while (q.running) await flush(); }
 
-function makeQueue(settings = {}, extra = {}) {
+function makeQueue(settings = {}, extra = {}, { audience = 'not_kids' } = {}) {
   const c = clock();
   const q = new YoutubeUploadQueue({
     getSettings: () => ({ uploadAutoEnabled: true, uploadPauseEnabled: false, ...settings }),
     sleep: c.sleep, now: c.now, random: () => 0.5, ...extra
   });
+  // A declaração "para crianças" é do usuário (sem padrão); aqui o padrão da sessão já vem escolhido para os vídeos entrarem prontos
+  q.defaults.audience = audience;
   return { q, c };
 }
 
@@ -292,10 +294,10 @@ test('padrões da fila: descrição e playlist valem para os novos; applyToQueue
   assert.equal(q.items.find((i) => i.id === b.id).playlist, '', 'playlist não foi passada: fica como estava (vazia)');
   assert.equal(q.items.find((i) => i.id === c.id).playlist, 'Lives');
   assert.equal(q.items.find((i) => i.id === a.id).description, '', 'já enviado não muda');
-  assert.deepEqual(q.getState().defaults, { description: 'Nova', playlist: 'Lives' });
+  assert.deepEqual(q.getState().defaults, { description: 'Nova', playlist: 'Lives', audience: 'not_kids' });
 
   const { q: q2 } = makeQueue({}, { storeFile: store });
-  assert.deepEqual(q2.defaults, { description: 'Nova', playlist: 'Lives' }, 'padrões sobrevivem ao reinício');
+  assert.deepEqual([q2.defaults.description, q2.defaults.playlist], ['Nova', 'Lives'], 'padrões sobrevivem ao reinício');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -308,6 +310,120 @@ test('driver recebe miniatura e playlist; avisos não fatais ficam no item', asy
   assert.deepEqual([d.calls[0].thumbnail, d.calls[0].playlist], ['/v/1.png', 'Lives']);
   assert.equal(q.items[0].status, 'done');
   assert.match(q.items[0].warnings[0], /Playlist não aplicada/);
+});
+
+// ---------------------------------------------------------------- declaração "para crianças" (sempre do usuário)
+
+test('público: o vídeo entra sem escolha e a fila só inicia depois que o usuário declara, vídeo a vídeo', async () => {
+  const { q } = makeQueue({}, {}, { audience: '' });
+  const [a, b] = q.add(['/v/1.mp4', '/v/2.mp4']);
+  assert.deepEqual([a.audience, b.audience], ['', '']);
+  const d = fakeDriver();
+  const r = q.start(d);
+  assert.equal(r.ok, false);
+  assert.equal(r.needsAudience, true);
+  assert.match(r.error, /Escolha se os 2 vídeos são para crianças/);
+  assert.equal(q.running, false);
+  assert.equal(d.calls.length, 0, 'nada foi enviado');
+
+  assert.equal(q.update(a.id, { audience: 'talvez' }).ok, true);
+  assert.equal(q.items[0].audience, '', 'valor inválido é ignorado');
+  q.update(a.id, { audience: 'kids' });
+  assert.match(q.start(d).error, /Escolha se o vídeo é para crianças/, 'falta um dos dois');
+  q.update(b.id, { audience: 'not_kids' });
+  assert.equal(q.start(d).ok, true);
+  await finished(q);
+  assert.deepEqual(d.calls.map((c) => c.audience), ['kids', 'not_kids'], 'o driver recebe exatamente a escolha de cada vídeo');
+});
+
+test('público padrão da sessão: vale para os novos; applyToQueued só aplica uma escolha real; nunca é gravado', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bds-upl-'));
+  const store = path.join(dir, 'youtube-uploads.json');
+  try {
+    const { q } = makeQueue({}, { storeFile: store }, { audience: '' });
+    const [a, b] = q.add(['/v/1.mp4', '/v/2.mp4']);
+    q.update(a.id, { audience: 'kids' });
+
+    q.setDefaults({ audience: 'not_kids' });
+    const [c] = q.add(['/v/3.mp4']);
+    assert.equal(c.audience, 'not_kids', 'o padrão da sessão vale para os novos');
+    assert.deepEqual([q.items[0].audience, q.items[1].audience], ['kids', ''], 'sem applyToQueued os antigos ficam como estavam');
+
+    q.setDefaults({ audience: 'kids' }, { applyToQueued: true });
+    assert.deepEqual(q.items.map((i) => i.audience), ['kids', 'kids', 'kids']);
+
+    q.setDefaults({ audience: '' }, { applyToQueued: true });
+    assert.equal(q.getState().defaults.audience, '', 'o padrão da sessão pode voltar a "escolher em cada vídeo"');
+    assert.deepEqual(q.items.map((i) => i.audience), ['kids', 'kids', 'kids'], 'limpar o padrão nunca apaga a escolha dos vídeos');
+    assert.equal(q.items.find((i) => i.id === b.id).audience, 'kids');
+
+    q.setDefaults({ audience: 'not_kids', description: 'D' });
+    const saved = JSON.parse(fs.readFileSync(store, 'utf8'));
+    assert.deepEqual(saved.defaults, { description: 'D', playlist: '' }, 'o público não vai para o arquivo');
+    const { q: q2 } = makeQueue({}, { storeFile: store }, { audience: '' });
+    assert.equal(q2.defaults.description, 'D');
+    assert.equal(q2.defaults.audience, '', 'cada sessão começa sem escolha');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('público: vídeo que entra na fila durante o envio, sem declaração, para a fila e pede a escolha', async () => {
+  const { q } = makeQueue({}, {}, { audience: '' });
+  q.add(['/v/1.mp4'], { audience: 'not_kids' });
+  const d = fakeDriver([async () => { q.add(['/v/2.mp4']); return { videoUrl: 'https://youtu.be/1' }; }]);
+  q.start(d);
+  await finished(q);
+  assert.equal(d.calls.length, 1, 'o segundo vídeo não foi enviado');
+  assert.equal(q.attention.kind, 'audience');
+  assert.match(q.attention.message, /é para crianças/);
+  assert.equal(q.items[1].status, 'queued');
+  assert.equal(q.start(d).ok, false, 'sem a escolha, Continuar não passa');
+  q.update(q.items[1].id, { audience: 'kids' });
+  assert.equal(q.start(d).ok, true);
+  await finished(q);
+  assert.equal(d.calls.length, 2);
+  assert.equal(d.calls[1].audience, 'kids');
+});
+
+test('driver: recusa vídeo sem a declaração de público antes de tocar na página', async () => {
+  const YoutubeStudioDriver = require('../src/core/uploads/YoutubeStudioDriver');
+  const file = path.join(os.tmpdir(), `bds-upl-${process.pid}-aud.mp4`);
+  fs.writeFileSync(file, 'x');
+  try {
+    const guest = { executeJavaScript: async () => { throw new Error('não era para tocar na página'); } };
+    const driver = new YoutubeStudioDriver(guest);
+    for (const audience of [undefined, '', 'talvez']) {
+      await assert.rejects(driver.upload({ path: file, title: 't', audience }), /Escolha se o vídeo é para crianças/);
+    }
+    assert.equal(driver.busy, false);
+  } finally { fs.rmSync(file, { force: true }); }
+});
+
+test('driver: clica na opção que o usuário escolheu (para crianças ou não) e nunca na outra', async () => {
+  const YoutubeStudioDriver = require('../src/core/uploads/YoutubeStudioDriver');
+  const file = path.join(os.tmpdir(), `bds-upl-${process.pid}-aud2.mp4`);
+  fs.writeFileSync(file, 'x');
+  const S = STUDIO_SELECTORS;
+  assert.match(S.madeForKids[0], /name="VIDEO_MADE_FOR_KIDS_MFK"\]$/);
+  assert.match(S.notMadeForKids[0], /name="VIDEO_MADE_FOR_KIDS_NOT_MFK"\]$/);
+  try {
+    for (const [audience, chosen, other] of [['kids', S.madeForKids, S.notMadeForKids], ['not_kids', S.notMadeForKids, S.madeForKids]]) {
+      const driver = new YoutubeStudioDriver({ executeJavaScript: async () => '' }, { sleep: async () => {}, random: () => 0 });
+      const clicks = [];
+      driver._ensureStudio = async () => {};
+      driver._openUploadDialog = async () => {};
+      driver._waitFor = async (sel) => sel[0];
+      driver._setFileInput = async () => {};
+      driver._confirmFileAccepted = async () => {};
+      driver._typeInto = async () => {};
+      driver._click = async (sel) => { clicks.push(sel); };
+      driver._clickIfPresent = async () => false;
+      driver._waitUpload = async () => 'https://youtu.be/abc';
+      const r = await driver.upload({ path: file, title: 't', visibility: 'private', audience });
+      assert.equal(r.videoUrl, 'https://youtu.be/abc');
+      assert.equal(clicks[0], chosen, `${audience}: a primeira ação do formulário é a declaração escolhida`);
+      assert.ok(!clicks.includes(other), `${audience}: a outra opção nunca é clicada`);
+    }
+  } finally { fs.rmSync(file, { force: true }); }
 });
 
 // ---------------------------------------------------------------- driver / handlers

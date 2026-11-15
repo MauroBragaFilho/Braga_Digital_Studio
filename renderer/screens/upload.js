@@ -14,6 +14,7 @@ const STATUS_LABEL = {
     cancelled: 'Cancelado'
 };
 const VISIBILITY_LABEL = { private: 'Privado', unlisted: 'Não listado', public: 'Público' };
+const AUDIENCE_LABEL = { not_kids: 'Não é para crianças', kids: 'É para crianças' };
 
 export function onLeave() {
     clearTimeout(statusTimer);
@@ -145,6 +146,7 @@ async function initQueuePanel(webview) {
         const payload = {
             description: document.getElementById('uploadDefaultsDescription')?.value || '',
             playlist: (document.getElementById('uploadDefaultsPlaylist')?.value || '').trim(),
+            audience: document.getElementById('uploadDefaultsAudience')?.value || '',
             applyToQueued: !!applyEl?.checked
         };
         try {
@@ -262,19 +264,22 @@ function renderQueue(state) {
     }
 
     // Padrões da fila: preenche o formulário só quando o usuário não está editando nele
-    const d = state.defaults || { description: '', playlist: '' };
+    const d = state.defaults || { description: '', playlist: '', audience: '' };
     const descEl = document.getElementById('uploadDefaultsDescription');
     const plEl = document.getElementById('uploadDefaultsPlaylist');
+    const audEl = document.getElementById('uploadDefaultsAudience');
     const form = document.getElementById('uploadDefaultsForm');
     if (form && !form.contains(document.activeElement)) {
         if (descEl) descEl.value = d.description || '';
         if (plEl) plEl.value = d.playlist || '';
+        if (audEl) audEl.value = d.audience || '';
     }
     const hint = document.getElementById('uploadDefaultsHint');
     if (hint) {
         const bits = [];
         if (d.description) bits.push('descrição');
         if (d.playlist) bits.push(`playlist "${d.playlist}"`);
+        if (AUDIENCE_LABEL[d.audience]) bits.push(AUDIENCE_LABEL[d.audience].toLowerCase());
         hint.textContent = bits.length ? bits.join(' · ') : '';
     }
 
@@ -315,17 +320,21 @@ function renderQueue(state) {
 
 function fillItem(li, item) {
     li.dataset.status = item.status;
+    li.dataset.audience = AUDIENCE_LABEL[item.audience] ? 'set' : 'missing';
     li.querySelector('.bds-upl-item-title').textContent = item.title || item.name;
     const sub = [STATUS_LABEL[item.status] || item.status];
     if (item.status === 'uploading') sub[0] = `${item.stage || 'Enviando'} ${item.progress ? `${item.progress}%` : ''}`.trim();
     if (item.status === 'failed' && item.error) sub.push(item.error);
     else if (item.status !== 'uploading') {
         sub.push(VISIBILITY_LABEL[item.visibility] || item.visibility);
+        sub.push(AUDIENCE_LABEL[item.audience] || 'Escolher se é para crianças');
         if (item.playlist) sub.push(`playlist "${item.playlist}"`);
         if (item.thumbnail) sub.push('miniatura');
         if (Array.isArray(item.warnings) && item.warnings.length) sub.push(item.warnings.join(' '));
     }
-    li.querySelector('.bds-upl-item-sub').textContent = sub.join(' · ');
+    const subEl = li.querySelector('.bds-upl-item-sub');
+    subEl.textContent = sub.join(' · ');
+    subEl.title = subEl.textContent; // texto inteiro ao passar o mouse, caso a linha seja cortada
     const icon = li.querySelector('.bds-upl-item-icon');
     if (icon) icon.textContent = { done: 'check_circle', failed: 'error', cancelled: 'block', uploading: 'cloud_upload' }[item.status] || 'movie';
 
@@ -389,12 +398,13 @@ function toggleEdit(li, item) {
     const form = li.querySelector('.bds-upl-item-form');
     if (!form) return;
     const open = form.classList.contains('hidden');
-    // Só um formulário aberto por vez
-    document.querySelectorAll('.bds-upl-item-form:not(.hidden)').forEach((f) => f.classList.add('hidden'));
+    // Só um formulário de vídeo aberto por vez (o de "Para todos os vídeos" é outro painel e não pode ser escondido aqui)
+    document.querySelectorAll('.bds-upl-item .bds-upl-item-form:not(.hidden)').forEach((f) => f.classList.add('hidden'));
     if (!open) { editingId = null; return; }
     form.querySelector('.bds-upl-f-title').value = item.title || '';
     form.querySelector('.bds-upl-f-desc').value = item.description || '';
     form.querySelector('.bds-upl-f-vis').value = item.visibility || 'private';
+    form.querySelector('.bds-upl-f-aud').value = item.audience || '';
     form.querySelector('.bds-upl-f-playlist').value = item.playlist || '';
     renderThumbRow(form, item.thumbnail);
     form.classList.remove('hidden');
@@ -413,6 +423,7 @@ async function onEditSubmit(e) {
         title: form.querySelector('.bds-upl-f-title').value.trim(),
         description: form.querySelector('.bds-upl-f-desc').value,
         visibility: form.querySelector('.bds-upl-f-vis').value,
+        audience: form.querySelector('.bds-upl-f-aud').value,
         playlist: form.querySelector('.bds-upl-f-playlist').value.trim()
     };
     if (!patch.title) { toast('Informe um título para o vídeo.', 'error'); return; }

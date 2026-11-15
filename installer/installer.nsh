@@ -601,7 +601,7 @@ Var BdsDlg            ; diálogo interno das páginas próprias (nsDialogs); vaz
 !macro customWelcomePage
   !define MUI_PAGE_CUSTOMFUNCTION_PRE BdsSkipIfUpdated
   !define MUI_WELCOMEPAGE_TITLE "Bem-vindo ao ${PRODUCT_NAME}"
-  !define MUI_WELCOMEPAGE_TEXT "Este assistente instala o ${PRODUCT_NAME} no seu computador.$\r$\n$\r$\nClique em Próximo para continuar."
+  !define MUI_WELCOMEPAGE_TEXT "Este assistente instala o ${PRODUCT_NAME} no seu computador.$\r$\n$\r$\nO ${PRODUCT_NAME} baixa os vídeos e áudios que você pedir. Baixe só o que você tem direito de baixar: respeitar os direitos autorais e os termos de cada site é responsabilidade de quem baixa.$\r$\n$\r$\nClique em Próximo para continuar."
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW BdsPageShow
   !insertmacro MUI_PAGE_WELCOME
 

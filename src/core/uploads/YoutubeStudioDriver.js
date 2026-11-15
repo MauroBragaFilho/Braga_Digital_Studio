@@ -29,6 +29,8 @@ class CancelledError extends Error {
 }
 
 const SAFE_VISIBILITY = new Set(['private', 'unlisted', 'public']);
+// Declaração de público do vídeo: sempre escolhida pelo usuário, nunca presumida pelo app
+const AUDIENCES = new Set(['kids', 'not_kids']);
 
 /** Código executado NA PÁGINA: utilitários comuns (primeiro seletor existente, texto visível, clique). */
 const PAGE_HELPERS = `
@@ -111,6 +113,7 @@ class YoutubeStudioDriver {
   async upload(item, { onProgress = () => {} } = {}) {
     if (this._busy) throw new Error('Já existe um envio em andamento.');
     if (!item || !item.path || !fs.existsSync(item.path)) throw new Error('Arquivo de vídeo não encontrado.');
+    if (!AUDIENCES.has(item.audience)) throw new Error('Escolha se o vídeo é para crianças antes de enviar: o YouTube exige essa declaração e ela é sua.');
     this._busy = true;
     this._cancelled = false;
     const S = STUDIO_SELECTORS;
@@ -144,7 +147,8 @@ class YoutubeStudioDriver {
         try { await this._selectPlaylist(item.playlist); } catch (err) { if (err && (err.code === 'EATTENTION' || err.code === 'ECANCELLED')) throw err; warnings.push(`Playlist não aplicada: ${err.message}`); }
         await this._humanPause();
       }
-      await this._clickIfPresent(S.notMadeForKids);
+      // Declaração de público: a escolha do usuário. Se o Studio não mostrar a opção, o envio falha em vez de seguir sem declarar.
+      await this._click(item.audience === 'kids' ? S.madeForKids : S.notMadeForKids);
 
       // Próximo ×3 (Detalhes → Elementos → Verificações → Visibilidade)
       for (let i = 0; i < 3; i++) {

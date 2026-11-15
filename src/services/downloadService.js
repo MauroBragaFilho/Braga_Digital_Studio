@@ -96,7 +96,7 @@ function normalizeQuality(value) {
 }
 
 /**
- * Pausa aleatória entre downloads de uma lista (evita que o YouTube trate a fila como robô).
+ * Pausa aleatória entre downloads de uma lista (mantém um ritmo moderado e não sobrecarrega o site).
  * Ajustável em Configurações → Mídia; padrão 10 s a 3 min.
  */
 const PAUSE_DEFAULT_MIN_SEC = 10;

@@ -197,7 +197,7 @@ function showWait(until) {
   const tick = () => {
     const left = (until - Date.now()) / 1000;
     if (left <= 0) { box.classList.add('hidden'); clearInterval(waitTimer); waitTimer = null; return; }
-    text.textContent = `Aguardando ${fmtClock(left)} antes do próximo download (evita bloqueio do YouTube).`;
+    text.textContent = `Aguardando ${fmtClock(left)} antes do próximo download (pausa entre os itens da lista).`;
     box.classList.remove('hidden');
   };
   tick();
