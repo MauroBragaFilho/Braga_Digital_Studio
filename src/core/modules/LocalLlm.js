@@ -415,7 +415,8 @@ class LocalLlm extends EventEmitter {
     const { dir } = this._asKind(kind);
     const m = this.model;
     const threads = String(Math.max(2, Math.min(8, Math.floor(os.cpus().length / 2))));
-    const args = ['-m', this._modelFile(m, 'model'), '--host', '127.0.0.1', '--port', String(this.port), '-c', String(m.context || EMBEDDED_CONTEXT), '--jinja', '-t', threads];
+    // --alias: o servidor anuncia o modelo pelo id (sem ele, /v1/models devolve o CAMINHO do arquivo, com a pasta do usuário)
+    const args = ['-m', this._modelFile(m, 'model'), '--alias', m.id, '--host', '127.0.0.1', '--port', String(this.port), '-c', String(m.context || EMBEDDED_CONTEXT), '--jinja', '-t', threads];
     const vision = this._modelFile(m, 'vision');
     if (vision) args.push('--mmproj', vision);
     if (kind === 'gpu') args.push('-ngl', '99');

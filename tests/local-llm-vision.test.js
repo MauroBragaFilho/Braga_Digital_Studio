@@ -110,6 +110,8 @@ test('modelo com visão: instala os dois arquivos, usa o pacote de placa de víd
     const a = log[0].args;
     assert.equal(a[a.indexOf('-m') + 1], path.join(llm.paths.models, 'visao', 'big.gguf'));
     assert.equal(a[a.indexOf('--mmproj') + 1], path.join(llm.paths.models, 'visao', 'mmproj-v.gguf'));
+    // o servidor anuncia o modelo pelo id; sem isto /v1/models devolve o CAMINHO do arquivo (com a pasta e o usuário do Windows)
+    assert.equal(a[a.indexOf('--alias') + 1], 'visao');
     assert.equal(a[a.indexOf('-c') + 1], '4096');
     assert.ok(a.includes('-ngl'));
     assert.equal(a[a.indexOf('--host') + 1], '127.0.0.1');
@@ -142,6 +144,7 @@ test('sem pacote de placa de vídeo para o sistema: só CPU; instalação antiga
     await llm.ensureRunning();
     assert.ok(!log[0].args.includes('-ngl'));
     assert.equal(log[0].args.includes('--mmproj'), false, 'modelo básico não usa projetor de imagem');
+    assert.ok(log[0].args.includes('--alias'), 'todo modelo sobe com um nome limpo');
   } finally { await llm.stop(); srv.close(); }
   // Instalação antiga: pacote de CPU e modelo já no disco, e agora o sistema oferece placa de vídeo
   const b = await make();

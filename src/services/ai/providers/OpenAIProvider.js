@@ -65,6 +65,39 @@ class OpenAIProvider {
   static normalizeBaseUrl(raw) { return normalizeBaseUrl(raw); }
   static isOfficialOpenAI(baseUrl) { try { return new URL(baseUrl).hostname === OPENAI_HOST; } catch (_) { return false; } }
 
+  /** O servidor está nesta máquina (localhost)? */
+  static isLocalBase(baseUrl) { try { return isLocalHost(new URL(baseUrl).hostname); } catch (_) { return false; } }
+
+  /**
+   * Parâmetros de amostragem pedidos por quem chama (ex.: a análise de transcrição), só para servidor LOCAL: llama.cpp, LM Studio
+   * e Ollama aceitam estes campos; Groq, OpenAI e similares seguem com os padrões deles (alguns recusam o pedido ou ignoram).
+   * Só entram números dentro da faixa válida de cada campo.
+   */
+  static samplingFor(baseUrl, sampling) {
+    if (!sampling || typeof sampling !== 'object' || !OpenAIProvider.isLocalBase(baseUrl)) return {};
+    const RANGES = {
+      temperature: [0, 2], top_p: [0, 1], min_p: [0, 1], top_k: [0, 200],
+      presence_penalty: [-2, 2], frequency_penalty: [-2, 2], repeat_penalty: [0.5, 2]
+    };
+    const out = {};
+    for (const [key, [min, max]] of Object.entries(RANGES)) {
+      if (sampling[key] === undefined || sampling[key] === null) continue;
+      const v = Number(sampling[key]);
+      if (Number.isFinite(v) && v >= min && v <= max) out[key] = key === 'top_k' ? Math.round(v) : v;
+    }
+    return out;
+  }
+
+  /**
+   * Tempo máximo de UMA resposta inteira (sem streaming). Servidor remoto: 5 min. Servidor local gera devagar (CPU: 3 a 10 tokens
+   * por segundo, e ler o pedido vem antes): o tempo cresce com o tamanho de resposta pedido, até 20 min.
+   */
+  static requestTimeoutMs(baseUrl, maxTokens) {
+    if (!OpenAIProvider.isLocalBase(baseUrl)) return 300000;
+    const tokens = Number.isFinite(maxTokens) && maxTokens > 0 ? Math.round(maxTokens) : 1024;
+    return Math.min(20 * 60 * 1000, 180000 + tokens * 400);
+  }
+
   _base() { return normalizeBaseUrl(this._getBaseUrl()); }
 
   /** Cabeçalhos da requisição, validando se a chave pode ser enviada para este servidor. */
@@ -129,14 +162,15 @@ class OpenAIProvider {
   }
 
   /**
-   * @param {{model:string, system:string, messages:Array<{role:string,content:string}>, maxTokens:number, signal?:AbortSignal}} p
+   * @param {{model:string, system:string, messages:Array<{role:string,content:string}>, maxTokens:number, signal?:AbortSignal,
+   *          sampling?:object}} p  `sampling` (opcional): temperature, top_p, top_k, presence_penalty... só vai a servidor local
    * @returns {Promise<{text:string, usage:object|null, finishReason:string|null}>}  finishReason 'length' = resposta cortada
    */
-  async chat({ model, system, messages, maxTokens, signal = null, tools = null }) {
+  async chat({ model, system, messages, maxTokens, signal = null, tools = null, sampling = null }) {
     const base = this._base();
     // A OpenAI atual exige max_completion_tokens; servidores compatíveis usam max_tokens.
     const limitField = OpenAIProvider.isOfficialOpenAI(base) ? 'max_completion_tokens' : 'max_tokens';
-    const body = { model, [limitField]: maxTokens, messages: [{ role: 'system', content: system }, ...messages] };
+    const body = { model, [limitField]: maxTokens, messages: [{ role: 'system', content: system }, ...messages], ...OpenAIProvider.samplingFor(base, sampling) };
     if (tools && tools.length) { body.tools = tools; body.tool_choice = 'auto'; }
     let data;
     try {
@@ -144,7 +178,7 @@ class OpenAIProvider {
         method: 'POST',
         headers: this._headers(base),
         body: JSON.stringify(body)
-      }, 300000, signal); // servidores locais podem demorar no primeiro carregamento do modelo
+      }, OpenAIProvider.requestTimeoutMs(base, maxTokens), signal); // servidor local pode demorar: carregar o modelo e gerar na CPU
     } catch (err) {
       if (tools && tools.length && NO_TOOLS_STATUS.includes(err.status) && mentionsTools(err.body)) throw noToolsError(err.body);
       throw err;

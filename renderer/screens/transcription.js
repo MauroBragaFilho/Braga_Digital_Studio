@@ -735,8 +735,10 @@ async function startTranscription() {
   } else {
     finish(result);
     const failedAi = items.filter((i) => i.ai && i.ai.state === 'error');
+    const weakAi = items.filter((i) => i.ai && i.ai.state === 'done' && i.ai.weak);
     if (analysisCancelled) showNotice('Análise cancelada. As transcrições foram mantidas.', 'info');
     else if (failedAi.length) showNotice(`A análise com IA falhou em ${plural(failedAi.length, 'arquivo', 'arquivos')}: ${friendlyError(failedAi[0].ai.message)}`, 'warning');
+    else if (weakAi.length) showNotice(`A análise de ${weakAi.length === 1 ? `“${weakAi[0].name}”` : plural(weakAi.length, 'arquivo', 'arquivos')} saiu incompleta: o modelo repetiu texto ou a resposta foi cortada. O aviso está no começo do arquivo; confira com a transcrição ou use um modelo maior.`, 'warning');
   }
   await refreshStatus();
 }
@@ -769,7 +771,8 @@ async function runAnalysis() {
     try {
       const out = await call(window.bds.aiAnalyzeTranscript, src.path);
       item.outputs.push({ kind: 'analise', path: out.path });
-      item.ai = { state: 'done', progress: 100, message: '' };
+      // Saiu, mas o modelo repetiu texto, a resposta foi cortada ou a união das partes falhou: o arquivo traz o aviso e a tela também
+      item.ai = { state: 'done', progress: 100, message: '', weak: Boolean(out.repeated || out.truncated || out.fallback) };
       failuresInRow = 0;
     } catch (err) {
       const stopped = err.code === 'CANCELLED';
@@ -793,7 +796,8 @@ function onAiProgress(p) {
   if (typeof p.percent === 'number') item.ai.progress = p.percent;
   item.ai.message = p.stage === 'part' ? `parte ${p.index} de ${p.total}`
     : p.stage === 'merge' ? 'juntando as partes'
-      : 'aguardando o modelo';
+      : p.stage === 'wait' ? `esperando o limite do servidor (${p.seconds} s)`
+        : 'aguardando o modelo';
   paintRow(item);
   setRun(((analysis.done + item.ai.progress / 100) / analysis.total) * 100, item.ai.message);
 }

@@ -15,14 +15,18 @@ const { writeUnique } = require('../../core/transcription/writeUnique');
 /**
  * @param {import('./AIService')} ai
  * @param {{filePath:string, signal?:AbortSignal, onProgress?:Function}} opts
- * @returns {Promise<{path:string, chunks:number, calls:number, truncated:boolean}>}
+ * @returns {Promise<{path:string, chunks:number, calls:number, truncated:boolean, repeated:boolean, fallback:boolean}>}
+ *   repeated: o modelo repetiu texto (as repetições foram cortadas); fallback: a união das partes falhou e o documento traz as partes
  */
 async function analyzeTranscriptFile(ai, { filePath, signal = null, onProgress = () => {} }) {
   readTranscriptFile(filePath); // valida caminho, formato e tamanho antes de falar com a IA
   const result = await ai.runTask('analyzeTranscript', { filePath }, { signal, onProgress });
   const stem = path.basename(filePath, path.extname(filePath));
   const out = writeUnique(path.join(path.dirname(filePath), `${stem}.analise.md`), result.document);
-  return { path: out, chunks: result.chunks, calls: result.calls, truncated: result.truncated };
+  return {
+    path: out, chunks: result.chunks, calls: result.calls, truncated: result.truncated,
+    repeated: result.repeated === true, fallback: result.fallback === true
+  };
 }
 
 module.exports = { analyzeTranscriptFile, writeUnique };

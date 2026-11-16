@@ -672,11 +672,28 @@ class AIService {
       // tem texto e botão próprios para ela. Chave recusada, limite de uso e modelo inexistente ganham frase amigável
       // (o texto do servidor pode citar pedaços da chave e nunca é repassado).
       if (!off && (code === 'AI_UNREACHABLE' || code === 'TIMEOUT' || ['down', 'config'].includes(f.reason))) return f.err;
-      return Object.assign(new Error(`${f.label}: ${REASON_TEXT[f.reason] || 'indisponível'}.${off ? ' A troca automática de provedor está desligada.' : ''} Confira as configurações da IA.`), { code: 'AI_ALL_FAILED' });
+      return Object.assign(new Error(`${f.label}: ${REASON_TEXT[f.reason] || 'indisponível'}.${off ? ' A troca automática de provedor está desligada.' : ''} Confira as configurações da IA.`), { code: 'AI_ALL_FAILED', ...this._failureHints(failures) });
     }
     const order = this._load().order;
     const all = [...plan.skipped, ...failures].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-    return Object.assign(new Error(`Não consegui usar nenhum servidor de IA agora: ${this._describe(all)}. Confira as configurações da IA.`), { code: 'AI_ALL_FAILED' });
+    return Object.assign(new Error(`Não consegui usar nenhum servidor de IA agora: ${this._describe(all)}. Confira as configurações da IA.`), { code: 'AI_ALL_FAILED', ...this._failureHints(failures) });
+  }
+
+  /**
+   * Dicas ESTRUTURADAS sobre as falhas, para quem chama decidir o que fazer (a análise de transcrição espera o limite por minuto
+   * passar em vez de desistir, e divide o pedido quando ele é grande demais). O texto do servidor nunca é repassado.
+   *  - tooLarge: o servidor recusou o pedido por tamanho (413, ou a mensagem diz "request too large");
+   *  - rateLimited + retryAfter: TODAS as falhas foram limite de uso (429); retryAfter = maior espera pedida, em segundos (ou null).
+   */
+  _failureHints(failures) {
+    const errs = (failures || []).map((f) => f.err).filter(Boolean);
+    const tooLarge = errs.some((e) => e.status === 413 || /request too large|reduce your message size/i.test(`${e.body || ''} ${e.message || ''}`));
+    const limited = !tooLarge && errs.length > 0 && failures.every((f) => f.reason === 'limit');
+    const waits = errs.map((e) => Number(e.retryAfter)).filter((n) => Number.isFinite(n) && n > 0);
+    return {
+      ...(tooLarge ? { tooLarge: true } : {}),
+      ...(limited ? { rateLimited: true, retryAfter: waits.length ? Math.max(...waits) : null } : {})
+    };
   }
 
   // --------------------------------------------------------------------- chat
@@ -736,17 +753,23 @@ class AIService {
     return base;
   }
 
-  /** Envia a conversa ao provedor ativo (com fallback). `signal` (opcional) cancela a requisição. */
-  async chat({ messages, system, signal = null, onProvider = () => {} } = {}) {
+  /**
+   * Envia a conversa ao provedor ativo (com fallback). `signal` (opcional) cancela a requisição. `maxTokens` (opcional) limita a
+   * resposta só nesta chamada (senão vale o limite das configurações) e `sampling` (opcional: temperature, top_p, top_k,
+   * presence_penalty...) só chega a servidor local (ver OpenAIProvider.samplingFor): a análise de transcrição usa os dois.
+   */
+  async chat({ messages, system, signal = null, onProvider = () => {}, maxTokens = null, sampling = null } = {}) {
     const clean = this._sanitizeMessages(messages);
+    const limit = Number.isFinite(maxTokens) && maxTokens > 0 ? Math.round(maxTokens) : this._load().maxTokens;
     const { result, provider } = await this._runChain(async (p) => {
       await this._prepare(p, signal, onProvider);
       return this._providerFor(p).chat({
         model: p.model,
         system: system || this._systemPrompt(),
         messages: clean,
-        maxTokens: this._load().maxTokens,
-        signal
+        maxTokens: limit,
+        signal,
+        sampling
       });
     }, { signal, onProvider, exemptHead: true });
     return { ...result, model: provider.model, provider: { id: provider.id, label: provider.label } };
