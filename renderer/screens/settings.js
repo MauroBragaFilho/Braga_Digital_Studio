@@ -1618,9 +1618,14 @@ async function setupLocalLlmCard() {
   };
   const modelRow = document.getElementById('aiLocalLlmModelRow');
   const modelSel = document.getElementById('aiLocalLlmModel');
+  const fitEl = document.getElementById('aiLocalLlmFit');
   const gb = (n) => `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} GB`;
+  const gbMB = (mb) => `${(mb / 1024).toFixed(1).replace('.', ',')} GB`;
+  // Como cada modelo se sai na placa de vídeo AGORA (o processo principal lê a memória livre dela)
+  const FIT_TEXT = { fits: 'cabe na placa de vídeo', tight: 'cabe se outros programas liberarem a placa', partial: 'parte roda no processador', slow: 'quase tudo no processador (lento)' };
   let last = null; // último estado recebido (a troca de modelo olha a lista)
   let pick = null; // modelo escolhido no seletor ainda não instalado (fica marcado até instalar ou desistir)
+  let touched = false; // o usuário já mexeu no seletor (antes disso, sem nada instalado, vem marcado o recomendado)
   const render = (s, installing = false) => {
     if (s.models) last = s;
     // Seletor: só aparece havendo mais de um modelo; o escolhido é o selecionado, os demais mostram o tamanho
@@ -1628,10 +1633,29 @@ async function setupLocalLlmCard() {
       const current = (last.models.find((m) => m.selected) || last.models[0]).id;
       if (pick && (!last.models.some((m) => m.id === pick) || pick === current)) pick = null;
       const keep = pick || modelSel.value;
-      modelSel.innerHTML = last.models.map((m) => `<option value="${m.id}">${m.label} (${m.installed ? 'instalado' : gb(m.sizeBytes)})${m.vision ? ' — entende imagens' : ''}</option>`).join('');
-      modelSel.value = (installing || pick) && keep ? keep : current;
+      const rec = last.recommendedId || '';
+      modelSel.innerHTML = last.models.map((m) => {
+        const note = m.fit && FIT_TEXT[m.fit.state] ? ` · ${FIT_TEXT[m.fit.state]}` : '';
+        return `<option value="${m.id}">${m.label} (${m.installed ? 'instalado' : gb(m.sizeBytes)})${m.vision ? ' — entende imagens' : ''}${note}${m.id === rec ? ' · recomendado' : ''}</option>`;
+      }).join('');
+      // Nada instalado e ainda sem escolha do usuário: já vem marcado o modelo recomendado para a placa, em vez do básico
+      const start = !s.installed && !pick && !touched && rec && last.models.some((m) => m.id === rec) ? rec : current;
+      modelSel.value = (installing || pick) && keep ? keep : start;
       modelSel.disabled = installing;
       modelRow.hidden = !s.supported;
+    }
+    if (fitEl) {
+      const mem = last && last.memory;
+      const recModel = last && Array.isArray(last.models) ? last.models.find((m) => m.id === last.recommendedId) : null;
+      let text = '';
+      if (mem && mem.checked && mem.gpu) text = `Placa de vídeo: ${mem.gpu.name} — ${gbMB(mem.gpu.freeMB)} livres de ${gbMB(mem.gpu.totalMB)}.`;
+      else if (mem && mem.checked) text = mem.integratedOnly ? 'Este computador só tem placa de vídeo integrada: o modelo roda no processador.' : 'Não encontrei uma placa de vídeo dedicada: o modelo roda no processador.';
+      if (text && recModel) text += ` Recomendado: ${recModel.label}.`;
+      if (text && last.plan && last.plan.mode === 'partial') text += ' Agora parte do modelo roda no processador: outros programas estão usando a placa.';
+      if (text && last.plan && last.plan.mode === 'cpu') text += ' Agora o modelo roda no processador: a placa está ocupada.';
+      if (text && last.gpuRetryAt) text += ' Não deu para usar a placa de vídeo da última vez: por enquanto o modelo roda no processador, e o app tenta a placa de novo mais tarde.';
+      fitEl.textContent = text;
+      fitEl.hidden = !text;
     }
     const picked = last && last.models ? last.models.find((m) => m.id === (modelSel ? modelSel.value : '')) : null;
     const pickedMissing = Boolean(picked && !picked.installed);
@@ -1662,6 +1686,7 @@ async function setupLocalLlmCard() {
   window.addEventListener('pagehide', () => { try { if (typeof off === 'function') off(); } catch (_) { /* noop */ } }, { once: true });
 
   modelSel?.addEventListener('change', async () => {
+    touched = true;
     const chosen = last && last.models ? last.models.find((m) => m.id === modelSel.value) : null;
     say('');
     try {

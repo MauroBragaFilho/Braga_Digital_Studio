@@ -624,11 +624,12 @@
 
         <div class="st-card" id="settingsLocalLlmCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">memory</span> Modelo local (sem internet)</h4>
-          <p class="st-card-desc">Um modelo de IA pequeno que roda neste computador, sem chave nem internet. É básico: serve de reserva quando os outros servidores caem e para pedidos simples (os comandos mais comuns, como baixar um link, o assistente já entende sozinho). O servidor e o modelo vêm das fontes oficiais, com conferência de integridade, e ocupam cerca de <span id="aiLocalLlmSize">0,5 GB</span>.</p>
+          <p class="st-card-desc">Um modelo de IA que roda neste computador, sem chave nem internet. Serve de reserva quando os outros servidores caem e para pedidos simples (os comandos mais comuns, como baixar um link, o assistente já entende sozinho). Os modelos que enxergam imagens também ajudam a organizar fotos; o tamanho que cabe depende da memória da sua placa de vídeo, e a lista abaixo diz qual é o recomendado. O servidor e o modelo vêm das fontes oficiais, com conferência de integridade, e ocupam cerca de <span id="aiLocalLlmSize">0,5 GB</span>.</p>
 
           <label class="st-row st-row-stack" id="aiLocalLlmModelRow" hidden>
             <span class="st-row-label">Modelo</span>
             <select id="aiLocalLlmModel" class="settings-select" aria-label="Modelo local"></select>
+            <span id="aiLocalLlmFit" class="st-row-hint" hidden></span>
           </label>
 
           <div class="st-row st-row-stack">

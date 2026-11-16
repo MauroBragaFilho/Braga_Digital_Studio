@@ -219,7 +219,8 @@ function registerAiHandlers(paths, deps = {}) {
   onceCreated(localLlm, (svc) => svc.on('progress', (p) => broadcast('ai:localLlmProgress', p)));
   const embeddedProviders = () => ai.getPublicConfig().providers.filter((p) => p.preset === 'embedded');
   const llmState = () => ({ ...localLlm.getStatus(), providerAdded: embeddedProviders().length > 0 });
-  handle('ai:localLlmStatus', () => llmState());
+  // A leitura da placa de vídeo (memória livre) leva ~1 s na primeira vez; passando de 3 s, devolve o estado sem ela
+  handle('ai:localLlmStatus', async () => { await localLlm.probeGpu().catch(() => null); return llmState(); });
   handle('ai:localLlmInstall', async (_, modelId) => {
     await localLlm.install(modelId ? { modelId } : {});
     if (!embeddedProviders().length) ai.saveConfig({ addProvider: { preset: 'embedded' } });

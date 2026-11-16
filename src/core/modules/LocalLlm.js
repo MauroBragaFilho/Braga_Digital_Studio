@@ -6,8 +6,10 @@
  * Duas peças, ambas de fontes OFICIAIS e conferidas por SHA-256 (nada é compilado nem vem de build de terceiros):
  *  - o servidor `llama-server` da release oficial do llama.cpp (github.com/ggml-org/llama.cpp), versão FIXADA aqui;
  *  - o modelo (Alibaba Qwen, licença Apache 2.0), em GGUF, do repositório oficial Qwen no Hugging Face, revisão FIXADA aqui:
- *    o Qwen2.5-0.5B (básico, ~490 MB) ou o Qwen3-VL 2B (enxerga imagens, ~1,5 GB), à escolha do usuário.
- *  Em Windows x64 usa o pacote com placa de vídeo (Vulkan) e volta sozinho para a CPU se ele não subir.
+ *    o Qwen2.5-0.5B (básico, ~490 MB, sem imagens) ou o Qwen3-VL de 2B, 4B ou 8B (enxergam imagens, de ~1,5 a ~5,8 GB), à
+ *    escolha do usuário; a tela recomenda o maior que cabe inteiro na placa de vídeo (ver llmMemory.js).
+ *  Em Windows x64 usa o pacote com placa de vídeo (Vulkan) só até onde há memória LIVRE nela (llmMemory.js). Se ele não sobe,
+ *  tenta mais uma vez e depois usa a CPU; a placa fica de molho por um tempo (1 h, 6 h, 24 h) e o app tenta de novo (ver _start).
  *
  * O servidor só liga quando o assistente precisa (`ensureRunning`), escuta SÓ em 127.0.0.1 e desliga sozinho depois de
  * alguns minutos sem uso. O app o trata como mais um provedor (preset "embedded", protocolo compatível com a OpenAI).
@@ -20,10 +22,11 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { EventEmitter } = require('node:events');
-const { spawn: nodeSpawn } = require('node:child_process');
+const { spawn: nodeSpawn, execFile } = require('node:child_process');
 const { downloadFile, sha256File, CANCELLED } = require('./FileDownloader');
 const { extractZip, extractTarball, walkFiles } = require('./ZipExtractor');
 const { EMBEDDED_PORT, EMBEDDED_CONTEXT } = require('../../services/ai/providers/presets');
+const memory = require('./llmMemory');
 
 /**
  * Release do llama.cpp testada com o BDS (somente CPU: serve em qualquer computador). Para atualizar: escolha uma tag
@@ -56,33 +59,72 @@ const LOCAL_MODEL = {
   file: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
   size: 491400032,
   sha256: '74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db',
-  license: 'Apache 2.0'
+  license: 'Apache 2.0',
+  kvBytesPerToken: 12288 // 2 × 24 camadas × 2 cabeças KV × 64 × 2 bytes (config.json oficial)
 };
 
 /**
- * Modelo com VISÃO (entende imagens: miniaturas de fotos e vídeos) e ferramentas. Repositório OFICIAL da Qwen (Apache 2.0),
- * revisão fixada; dois arquivos: o modelo (Q4_K_M) e o projetor de imagem (mmproj). Tamanhos e SHA-256 conferem com o
- * campo LFS do Hugging Face (copiados de lá em 14/11/2026).
+ * Modelos com VISÃO (entendem imagens: miniaturas de fotos e vídeos) e ferramentas: Qwen3-VL de 2B, 4B e 8B. Repositórios
+ * OFICIAIS da Qwen (Apache 2.0), revisão fixada; dois arquivos cada: o modelo (Q4_K_M) e o projetor de imagem (mmproj, Q8_0).
+ * Tamanhos e SHA-256 conferem com o campo LFS do Hugging Face (copiados de lá em 14/11/2026 o de 2B e em 15/11/2026 os de 4B e
+ * 8B). `kvBytesPerToken` = 2 (K e V) × camadas × cabeças KV × tamanho da cabeça × 2 bytes, do config.json oficial de cada um
+ * (usado só para dizer na lista o que cabe na placa de vídeo; quem posiciona as camadas é o servidor).
  */
 const VISION_REPO = 'Qwen/Qwen3-VL-2B-Instruct-GGUF';
 const VISION_REVISION = '52d6c8ffea26cc873ac5ad116f8631268d7eb503';
 const VISION_MODEL = {
   id: 'qwen3-vl-2b-instruct',
-  label: 'Qwen3-VL 2B Instruct (enxerga imagens)',
+  label: 'Qwen3-VL 2B Instruct',
   license: 'Apache 2.0',
   vision: true,
   context: 8192,
+  kvBytesPerToken: 114688, // 28 camadas, 8 cabeças KV, cabeça de 128
   files: [
     { role: 'model', repo: VISION_REPO, revision: VISION_REVISION, file: 'Qwen3VL-2B-Instruct-Q4_K_M.gguf', size: 1107409952, sha256: '089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae' },
     { role: 'vision', repo: VISION_REPO, revision: VISION_REVISION, file: 'mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf', size: 445053216, sha256: 'f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82' }
   ]
 };
 
+const VISION_MODEL_4B = {
+  id: 'qwen3-vl-4b-instruct',
+  label: 'Qwen3-VL 4B Instruct',
+  license: 'Apache 2.0',
+  vision: true,
+  context: 8192,
+  kvBytesPerToken: 147456, // 36 camadas, 8 cabeças KV, cabeça de 128
+  files: [
+    { role: 'model', repo: 'Qwen/Qwen3-VL-4B-Instruct-GGUF', revision: '1cd86afb9a95c410a6038ab3b40d8b578c892266', file: 'Qwen3VL-4B-Instruct-Q4_K_M.gguf', size: 2497281664, sha256: '66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a' },
+    { role: 'vision', repo: 'Qwen/Qwen3-VL-4B-Instruct-GGUF', revision: '1cd86afb9a95c410a6038ab3b40d8b578c892266', file: 'mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf', size: 453974304, sha256: '30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d' }
+  ]
+};
+
+const VISION_MODEL_8B = {
+  id: 'qwen3-vl-8b-instruct',
+  label: 'Qwen3-VL 8B Instruct',
+  license: 'Apache 2.0',
+  vision: true,
+  context: 8192,
+  kvBytesPerToken: 147456, // 36 camadas, 8 cabeças KV, cabeça de 128
+  files: [
+    { role: 'model', repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF', revision: 'f982a07559d4a2f6c8744d840bf6fccab30eea96', file: 'Qwen3VL-8B-Instruct-Q4_K_M.gguf', size: 5027784800, sha256: '67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2' },
+    { role: 'vision', repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF', revision: 'f982a07559d4a2f6c8744d840bf6fccab30eea96', file: 'mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf', size: 752289728, sha256: 'c6ba85508d82f42590e6eb77d5340369ab6fecf107a7561d809523d8aa5f3bfd' }
+  ]
+};
+
 /** Modelos que o app sabe instalar. O primeiro é o padrão (e o único das instalações antigas: arquivo model.gguf). */
-const MODELS = [LOCAL_MODEL, VISION_MODEL];
+const MODELS = [LOCAL_MODEL, VISION_MODEL, VISION_MODEL_4B, VISION_MODEL_8B];
 
 const IDLE_MS = 10 * 60 * 1000;      // sem uso por 10 min: desliga o servidor e libera a memória
+const GPU_CACHE_MS = 15 * 1000;      // a memória livre da placa muda a toda hora: a leitura vale 15 s
 const START_TIMEOUT_MS = 120 * 1000; // carregar o modelo na memória
+// A placa de vídeo não subiu (nem na segunda tentativa): o app usa a CPU e tenta a placa de novo depois de 1 h; falhando de novo,
+// depois de 6 h e depois de 24 h (o driver pode ter sido atualizado, o outro programa fechado). Ligar a placa zera a contagem.
+const GPU_RETRY_MS = [60 * 60 * 1000, 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000];
+const GPU_RETRY_PAUSE_MS = 500; // entre as duas tentativas: a memória de vídeo do servidor que caiu leva um instante para voltar (medido: ~0,3 s)
+const gpuRetryWaitMs = (fails) => GPU_RETRY_MS[Math.min(Math.max(Number(fails) || 1, 1), GPU_RETRY_MS.length) - 1];
+
+/** Falha ao ligar o servidor; `reason` diz como foi: 'exited' (o processo caiu), 'timeout' (demorou) ou 'spawn' (nem iniciou). */
+const startFailure = (message, reason) => Object.assign(new LlmError(message, 'START_FAILED'), { reason });
 
 class LlmError extends Error {
   constructor(message, code) { super(message); this.name = 'LlmError'; this.code = code; }
@@ -124,6 +166,7 @@ class LocalLlm extends EventEmitter {
     this._platform = config.platform || process.platform;
     this._arch = config.arch || process.arch;
     this._spawn = config.spawn || nodeSpawn;
+    this._now = config.now || Date.now; // relógio (testes trocam): a falha da placa de vídeo vale até uma hora marcada
     this._serverFile = config.serverFile || (this._platform === 'win32' ? 'llama-server.exe' : 'llama-server');
     this._githubBase = (config.githubBaseUrl || 'https://github.com').replace(/\/+$/, '');
     this._hfBase = (config.huggingFaceBaseUrl || 'https://huggingface.co').replace(/\/+$/, '');
@@ -133,6 +176,9 @@ class LocalLlm extends EventEmitter {
     this._childModel = null;
     this._starting = null;
     this._idleTimer = null;
+    this._gpuCache = null;   // última leitura da placa de vídeo: { at, value:{ gpu, integratedOnly, safetyMB } }
+    this._gpuPending = null;
+    this._plan = null;       // como o servidor em uso foi posicionado na placa: { mode, gpuPercent, args }
   }
 
   // ------------------------------------------------------------------ modelos
@@ -187,8 +233,39 @@ class LocalLlm extends EventEmitter {
   _asset() { return this._cpuAsset(); }
   supported() { return Boolean(this._cpuAsset()); }
 
-  _cpuOnly() { return Boolean((this._readJson(this.paths.runtimeFlag) || {}).cpuOnly); }
-  _setCpuOnly(on) { try { fs.mkdirSync(this.root, { recursive: true }); fs.writeFileSync(this.paths.runtimeFlag, JSON.stringify({ cpuOnly: on })); } catch (_) { /* só otimização */ } }
+  // Falha da placa de vídeo ao ligar, em runtime.json: { cpuOnly: true, failedAt, fails, modelId }. Não é mais uma marca para
+  // sempre: vale até a hora de tentar de novo (GPU_RETRY_MS) e só para o modelo que falhou. `cpuOnly` fica no arquivo para as
+  // versões antigas continuarem lendo.
+
+  /** Hora (ms) em que o app volta a tentar a placa de vídeo com o modelo em uso; null = a placa não está de molho. */
+  _gpuRetryAt() {
+    const f = this._readJson(this.paths.runtimeFlag) || {};
+    if (!f.cpuOnly) return null;
+    if (f.modelId && f.modelId !== this.model.id) return null; // a falha foi com outro modelo: com este ainda não se sabe
+    const failedAt = Number(f.failedAt);
+    if (!Number.isFinite(failedAt)) return null;               // marca da versão antiga (valia para sempre): tenta de novo
+    const retryAt = failedAt + gpuRetryWaitMs(f.fails);
+    const now = this._now();
+    return now >= failedAt && now < retryAt ? retryAt : null;  // data no futuro (o relógio foi mudado): tenta de novo
+  }
+  _cpuOnly() { return this._gpuRetryAt() !== null; }
+
+  /** A placa de vídeo não subiu com este modelo: anota quando e quantas vezes seguidas (a espera cresce a cada uma). */
+  _markGpuFailed(modelId) {
+    const prev = this._readJson(this.paths.runtimeFlag) || {};
+    const fails = prev.cpuOnly && prev.modelId === modelId ? Math.min((Number(prev.fails) || 1) + 1, 99) : 1;
+    try {
+      fs.mkdirSync(this.root, { recursive: true });
+      fs.writeFileSync(this.paths.runtimeFlag, JSON.stringify({ cpuOnly: true, failedAt: this._now(), fails, modelId }));
+    } catch (_) { /* só otimização */ }
+  }
+
+  /** A placa de vídeo ligou com este modelo: esquece a falha anotada (a próxima começa de novo na espera de 1 h). */
+  _clearGpuFailure(modelId) {
+    const f = this._readJson(this.paths.runtimeFlag);
+    if (!f || !f.cpuOnly || (f.modelId && f.modelId !== modelId)) return;
+    try { fs.rmSync(this.paths.runtimeFlag, { force: true }); } catch (_) { /* noop */ }
+  }
 
   _asKind(kind) { return kind === 'gpu' ? { asset: this._gpuAsset(), dir: this.paths.runtimeGpu } : { asset: this._cpuAsset(), dir: this.paths.runtime }; }
   _runtimeInstalledKind(kind) { return Boolean(this._asKind(kind).asset) && fs.existsSync(path.join(this._asKind(kind).dir, this._serverFile)); }
@@ -212,6 +289,7 @@ class LocalLlm extends EventEmitter {
     const supported = this.supported();
     const kind = this._usableKind() || this._wantedKind();
     const current = this.model;
+    const view = this._memoryView();
     return {
       supported,
       reason: supported ? '' : `O modelo local ainda não está disponível para este sistema (${this._platform}, ${this._arch}).`,
@@ -223,10 +301,101 @@ class LocalLlm extends EventEmitter {
       license: current.license,
       vision: Boolean(current.vision),
       gpu: Boolean(this._gpuAsset()) && kind === 'gpu',
-      models: this.models.map((m) => ({ id: m.id, label: m.label, vision: Boolean(m.vision), sizeBytes: this._modelBytes(m), installed: this._modelInstalledOf(m), selected: m.id === current.id })),
+      gpuRetryAt: this._gpuRetryAt(), // a placa de vídeo não ligou: o app usa a CPU até esta hora (ms) e então tenta de novo; null = sem falha
+      // memória da placa de vídeo (null onde não há pacote com placa); `fit` diz como cada modelo se sai nela AGORA
+      memory: view.memory,
+      recommendedId: view.recommendedId,
+      plan: this.isRunning() && this._plan ? { mode: this._plan.mode, gpuPercent: this._plan.gpuPercent } : null,
+      models: this.models.map((m) => ({ id: m.id, label: m.label, vision: Boolean(m.vision), sizeBytes: this._modelBytes(m), installed: this._modelInstalledOf(m), selected: m.id === current.id, fit: view.fits[m.id] || null })),
       sizeBytes: this._modelBytes() + ((this._asKind(this._wantedKind()).asset || this._cpuAsset() || {}).size || 0),
       busy: this._active ? this._active.label : null
     };
+  }
+
+  // ------------------------------------------------------------------ memória da placa de vídeo (ver llmMemory.js)
+
+  /** O que o modelo pede na placa no contexto dele: pesos + projetor de imagem + cache do contexto + buffers. */
+  _estimateFor(m) {
+    const files = this._filesOf(m);
+    const bytesOf = (role) => files.filter((f) => f.role === role).reduce((n, f) => n + f.size, 0);
+    return memory.estimateMB({
+      weightsBytes: bytesOf('model'), projectorBytes: bytesOf('vision'),
+      kvBytesPerToken: m.kvBytesPerToken || undefined, ctx: m.context || EMBEDDED_CONTEXT
+    });
+  }
+
+  /** A placa, o que cabe nela e o modelo recomendado, pela última leitura (não espera nada: `probeGpu` atualiza a leitura). */
+  _memoryView() {
+    if (!this._gpuAsset()) return { memory: null, fits: {}, recommendedId: '' };
+    const probe = this._gpuCache ? this._gpuCache.value : null;
+    if (!probe) return { memory: { checked: false, gpu: null, integratedOnly: false, safetyMB: memory.MIN_SAFETY_MB }, fits: {}, recommendedId: '' };
+    const fits = {};
+    const entries = [];
+    for (const m of this.models) {
+      const est = this._estimateFor(m);
+      const fit = memory.fitFor(est, probe.gpu, probe.safetyMB);
+      fits[m.id] = fit;
+      entries.push({ id: m.id, vision: Boolean(m.vision), weightsMB: est.weightsMB, fit });
+    }
+    const g = probe.gpu;
+    return {
+      memory: {
+        checked: true,
+        gpu: g ? { name: g.name, totalMB: g.totalMB, freeMB: g.freeMB, source: g.source } : null,
+        integratedOnly: Boolean(probe.integratedOnly),
+        safetyMB: probe.safetyMB
+      },
+      fits,
+      recommendedId: memory.recommendId(entries)
+    };
+  }
+
+  /** Lê a placa de vídeo (nome, memória total e LIVRE de verdade) no nvidia-smi e no servidor (`--list-devices`). */
+  async _readGpu() {
+    const run = (file, args, ms) => new Promise((resolve) => {
+      try {
+        execFile(file, args, { timeout: ms, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => resolve(`${stdout || ''}\n${stderr || ''}`));
+      } catch (_) { resolve(''); }
+    });
+    const server = this._runtimeInstalledKind('gpu') ? path.join(this._asKind('gpu').dir, this._serverFile) : null;
+    const [vk, smi] = await Promise.all([
+      server ? run(server, ['--list-devices'], 8000) : '',
+      run('nvidia-smi', ['--query-gpu=name,memory.total,memory.free', '--format=csv,noheader,nounits'], 4000)
+    ]);
+    return { vulkan: memory.parseListDevices(vk), nvidia: memory.parseNvidiaSmi(smi) };
+  }
+
+  /**
+   * Lê a placa de vídeo e guarda a leitura por 15 s. Devolve a leitura de agora, ou a anterior se a nova demorar mais que
+   * `timeoutMs`. Com o servidor ligado na placa, a leitura de agora inclui a memória dele: vale a de antes de ligar.
+   * Nos testes (`config.spawn` trocado) não roda programa nenhum: `config.readGpu` entrega a leitura.
+   */
+  async probeGpu({ force = false, timeoutMs = 3000 } = {}) {
+    if (!this._gpuAsset()) return null;
+    const cached = this._gpuCache ? this._gpuCache.value : null;
+    const fresh = this._gpuCache && Date.now() - this._gpuCache.at < GPU_CACHE_MS;
+    if (cached && ((fresh && !force) || (this.isRunning() && this._childKind === 'gpu'))) return cached;
+    if (!this._gpuPending) {
+      const read = this.config.readGpu || (this.config.spawn ? async () => ({ vulkan: [], nvidia: [] }) : () => this._readGpu());
+      this._gpuPending = Promise.resolve().then(read).then((raw) => {
+        const gpu = memory.pickGpu(raw || {});
+        const integratedOnly = !gpu && ((raw && raw.vulkan) || []).some((d) => memory.isIntegratedGpu(d.name));
+        const value = { gpu, integratedOnly, safetyMB: memory.safetyFor(gpu ? gpu.totalMB : 0) };
+        this._gpuCache = { at: Date.now(), value };
+        return value;
+      }).catch(() => cached).finally(() => { this._gpuPending = null; });
+    }
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(cached), timeoutMs); if (timer.unref) timer.unref(); });
+    try { return await Promise.race([this._gpuPending, late]); } finally { clearTimeout(timer); }
+  }
+
+  /** Argumentos de memória do servidor para ESTE modelo e a memória livre de agora; null = sem leitura (tudo na placa, como antes). */
+  async _planMemory(m) {
+    let probe = null;
+    try { probe = await this.probeGpu({ force: true, timeoutMs: 8000 }); } catch (_) { probe = null; }
+    if (!probe || !probe.gpu) return null;
+    return memory.planLaunch({ gpu: probe.gpu, est: this._estimateFor(m), safetyMB: probe.safetyMB });
   }
 
   // ------------------------------------------------------------------ instalação
@@ -395,20 +564,31 @@ class LocalLlm extends EventEmitter {
     // Sobrou um servidor de antes (o app fechou sem desligá-lo): aproveita em vez de brigar pela porta
     if (!this.isRunning() && (await this._healthy())) return;
     const kind = this._usableKind();
-    try {
-      await this._launch(kind);
-    } catch (err) {
-      // A versão para placa de vídeo não subiu neste computador (driver, memória de vídeo...): lembra e usa a de CPU
-      if (kind !== 'gpu') throw err;
-      await this.stop();
-      this._setCpuOnly(true);
-      if (!this._runtimeInstalledKind('cpu')) {
-        rmrf(this.work);
-        fs.mkdirSync(this.work, { recursive: true });
-        try { await this._installRuntime('cpu', { signal: null }); } finally { rmrf(this.work); }
-      }
-      await this._launch('cpu');
+    if (kind !== 'gpu') { await this._launch(kind); return; }
+    const modelId = this.model.id;
+    // Se o servidor CAIU ao subir (e não só demorou), tenta mais uma vez, com leitura nova da placa: o motivo mais comum é outro
+    // programa ter tomado a memória de vídeo entre a leitura e a subida, e a segunda tentativa já enxerga isso.
+    let failure = await this._tryLaunch('gpu');
+    if (failure && failure.reason === 'exited') {
+      await new Promise((resolve) => setTimeout(resolve, this.config.retryPauseMs ?? GPU_RETRY_PAUSE_MS));
+      failure = await this._tryLaunch('gpu');
     }
+    if (!failure) { this._clearGpuFailure(modelId); return; }
+    // A placa de vídeo não sobe agora (driver, memória de vídeo...): usa a CPU e só tenta a placa de novo na hora marcada (ver
+    // _gpuRetryAt). A falha é anotada DEPOIS de a CPU subir: se ela também falhar (sem internet para baixar o pacote, por
+    // exemplo), nada fica marcado e a próxima pergunta tenta a placa de novo.
+    if (!this._runtimeInstalledKind('cpu')) {
+      rmrf(this.work);
+      fs.mkdirSync(this.work, { recursive: true });
+      try { await this._installRuntime('cpu', { signal: null }); } finally { rmrf(this.work); }
+    }
+    await this._launch('cpu');
+    this._markGpuFailed(modelId);
+  }
+
+  /** Liga o servidor do pacote `kind`: devolve null se subiu, ou o erro da falha (com o servidor já desligado). */
+  async _tryLaunch(kind) {
+    try { await this._launch(kind); return null; } catch (err) { await this.stop(); return err; }
   }
 
   async _launch(kind) {
@@ -419,31 +599,37 @@ class LocalLlm extends EventEmitter {
     const args = ['-m', this._modelFile(m, 'model'), '--alias', m.id, '--host', '127.0.0.1', '--port', String(this.port), '-c', String(m.context || EMBEDDED_CONTEXT), '--jinja', '-t', threads];
     const vision = this._modelFile(m, 'vision');
     if (vision) args.push('--mmproj', vision);
-    if (kind === 'gpu') args.push('-ngl', '99');
+    // Placa de vídeo: só até onde há memória LIVRE (llmMemory.js). Sem leitura da placa, tudo nela, como antes.
+    this._plan = null;
+    if (kind === 'gpu') {
+      this._plan = await this._planMemory(m);
+      args.push(...(this._plan ? this._plan.args : ['-ngl', '99']));
+    }
     let child;
     try {
       child = this._spawn(path.join(dir, this._serverFile), args, { cwd: dir, stdio: 'ignore', windowsHide: true });
     } catch (_) {
-      throw new LlmError('Não foi possível iniciar o modelo local.', 'START_FAILED');
+      throw startFailure('Não foi possível iniciar o modelo local.', 'spawn');
     }
     this._child = child;
     this._childKind = kind;
     this._childModel = m.id;
-    process.once('exit', () => { try { child.kill(); } catch (_) { /* noop */ } }); // o app fechou: não deixa o servidor órfão
+    const killOnExit = () => { try { child.kill(); } catch (_) { /* noop */ } };
+    process.once('exit', killOnExit); // o app fechou: não deixa o servidor órfão
     let exited = false;
-    child.on('exit', () => { exited = true; if (this._child === child) this._child = null; this.emit('status'); });
-    child.on('error', () => { exited = true; });
+    child.on('exit', () => { exited = true; process.removeListener('exit', killOnExit); if (this._child === child) this._child = null; this.emit('status'); });
+    child.on('error', () => { exited = true; process.removeListener('exit', killOnExit); });
     this.emit('status');
 
     // A placa de vídeo carrega o modelo mais devagar na primeira vez: dá tempo, mas desiste se o processo cair
     const deadline = Date.now() + (this.config.startTimeoutMs || START_TIMEOUT_MS);
     while (Date.now() < deadline) {
-      if (exited) throw new LlmError('O modelo local fechou ao iniciar. Tente reinstalá-lo em Configurações → Inteligência Artificial.', 'START_FAILED');
+      if (exited) throw startFailure('O modelo local fechou ao iniciar. Tente reinstalá-lo em Configurações → Inteligência Artificial.', 'exited');
       if (await this._healthy()) return;
       await new Promise((r) => setTimeout(r, 300));
     }
     await this.stop();
-    throw new LlmError('O modelo local demorou demais para iniciar.', 'START_FAILED');
+    throw startFailure('O modelo local demorou demais para iniciar.', 'timeout');
   }
 
   async stop() {
@@ -461,4 +647,4 @@ class LocalLlm extends EventEmitter {
   }
 }
 
-module.exports = { LocalLlm, LlmError, LLAMA_RELEASE, LOCAL_MODEL, VISION_MODEL, MODELS };
+module.exports = { LocalLlm, LlmError, LLAMA_RELEASE, LOCAL_MODEL, VISION_MODEL, VISION_MODEL_4B, VISION_MODEL_8B, MODELS };
