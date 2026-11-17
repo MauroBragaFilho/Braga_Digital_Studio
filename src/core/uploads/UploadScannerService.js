@@ -175,7 +175,11 @@ class UploadScannerService {
     async _generateThumbnail(filePath) {
         if (!fs.existsSync(this.ffmpegPath)) return null;
 
-        const hash = Buffer.from(filePath).toString('hex').substring(0, 16);
+        // Chave pelo caminho completo + data de modificação: arquivos diferentes não dividem miniatura
+        // e uma versão nova do mesmo arquivo gera outra.
+        let mtime = 0;
+        try { mtime = fs.statSync(filePath).mtimeMs; } catch (_) { /* sem data */ }
+        const hash = require('crypto').createHash('sha1').update(`${path.resolve(filePath)}|${mtime}`).digest('hex').substring(0, 24);
         const thumbName = `thumb_upl_${hash}.jpg`;
         const outputPath = path.join(this.thumbnailsDir, thumbName);
 

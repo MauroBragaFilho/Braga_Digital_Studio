@@ -60,6 +60,8 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/;
 
   // 2. Branch e remoto
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
+  // A release só é assinada e publicada a partir da main (o release-bds.yml confere isso).
+  if (branch !== 'main') fail(`a release sai da branch main, e você está em "${branch}". Integre as mudanças na main e rode de novo a partir dela.`);
   let upstream = '';
   try { upstream = git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'); } catch (_) { upstream = ''; }
   const remote = upstream ? upstream.split('/')[0] : 'origin';

@@ -38,7 +38,8 @@ class McpConfig {
       enabled: stored.enabled === true,
       port: validPort(stored.port) ? stored.port : DEFAULT_PORT,
       requireToken: stored.requireToken !== false,
-      autoConfirm: stored.autoConfirm === true,
+      // Sem token, qualquer processo local fala com o servidor: aí as ações sempre pedem confirmação.
+      autoConfirm: stored.autoConfirm === true && stored.requireToken !== false,
       token: typeof stored.token === 'string' && /^[0-9a-f]{64}$/.test(stored.token) ? stored.token : ''
     };
     this._data = d;
@@ -72,6 +73,8 @@ class McpConfig {
     const d = this.load();
     if (typeof requireToken === 'boolean') d.requireToken = requireToken;
     if (typeof autoConfirm === 'boolean') d.autoConfirm = autoConfirm;
+    // Nunca as duas ao mesmo tempo: sem token, as ações continuam pedindo confirmação.
+    if (d.requireToken === false) d.autoConfirm = false;
     this._save();
   }
 

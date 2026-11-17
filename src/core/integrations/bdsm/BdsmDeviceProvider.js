@@ -97,7 +97,10 @@ class BdsmDeviceProvider extends StorageProvider {
       for (const rawItem of itemIds) {
         const itemId = typeof rawItem === 'object' ? String(rawItem.id || rawItem.name) : String(rawItem);
         const media = mediaMap.get(itemId);
-        const fileName = media ? media.name : `bdsm_media_${itemId}.mp4`;
+        // O nome vem do celular: fica só o nome do arquivo, sem pastas nem caracteres proibidos no Windows.
+        const rawName = path.basename(String(media && media.name ? media.name : '').replace(/\\/g, '/'))
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+$/, '').trim();
+        const fileName = rawName || `bdsm_media_${itemId.replace(/[^\w.-]/g, '_')}.mp4`;
         const destFilePath = path.join(destFolder, fileName);
 
         await this._downloadStream(client, itemId, destFilePath, fileName);

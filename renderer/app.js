@@ -962,8 +962,9 @@ const startApp = () => {
   // A tela vem das Configurações; se a aba não existir ou estiver oculta (ex.: módulo só de
   // desenvolvimento), cai para a Home.
   // Espera o estado dos módulos (no máx. 3 s) para a tela escolhida não cair na Home só porque a aba ainda estava oculta.
-  const wanted = state.settings?.defaultStartScreen || 'home';
-  modulesReady.then(() => {
+  // As configurações chegam de forma assíncrona: espera por elas (no máx. 3 s) antes de ler a tela escolhida.
+  Promise.race([settingsLoaded, new Promise((r) => setTimeout(r, 3000))]).then(() => modulesReady).then(() => {
+    const wanted = state.settings?.defaultStartScreen || 'home';
     let startTab = document.querySelector(`.sidebar .tab-button[data-view="${wanted}"]`);
     if (!startTab || startTab.classList.contains('hidden') || startTab.style.display === 'none') {
       startTab = document.querySelector('.sidebar .tab-button[data-view="home"]');
@@ -1038,9 +1039,17 @@ function updateGlobalDownloadFooter(data, footerState) {
  * Escutas globais do processo principal (IPC) centralizadas.
  * Repassam os dados em tempo real para os módulos das telas se estiverem ativos/carregados.
  */
+let markSettingsLoaded = () => {};
+/** Resolve quando as configurações já foram lidas (mesmo se a leitura falhar). */
+const settingsLoaded = new Promise((r) => { markSettingsLoaded = r; });
+
 async function initGlobalElectronListeners() {
   // Carrega as configurações assim que o app inicia
-  state.settings = await window.bds.getSettings();
+  try {
+    state.settings = await window.bds.getSettings();
+  } finally {
+    markSettingsLoaded();
+  }
   // Aplica tema e cor de destaque sem flash, antes do primeiro render
   applyTheme(state.settings.theme, state.settings.accentColor);
   applyUiPreferences(state.settings);

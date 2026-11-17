@@ -160,7 +160,7 @@ test('desligar fecha a porta', async () => {
   await assert.rejects(rpc({ jsonrpc: '2.0', id: 1, method: 'ping' }));
 });
 
-test('opções: sem token a conexão local abre; sem confirmação a ação roda; Origin segue bloqueado', async () => {
+test('opções: sem token a conexão local abre mas a ação ainda pede confirmação; com token, sem confirmação a ação roda; Origin segue bloqueado', async () => {
   await svc.setEnabled(true);
   port = svc.status().port;
   svc.setOptions({ requireToken: false, autoConfirm: true });
@@ -168,10 +168,17 @@ test('opções: sem token a conexão local abre; sem confirmação a ação roda
   assert.equal((await rpc({ jsonrpc: '2.0', id: 1, method: 'ping' }, { auth: '', origin: 'https://evil.example.com' })).status, 403);
   svc.copyConfig('antigravity');
   assert.equal(JSON.parse(clip).mcpServers['braga-digital-studio'].headers, undefined);
-  asked = null;
   let ran = false;
   svc.server.getToolbox().deps.services.downloads.add = () => { ran = true; return { id: 1 }; };
+  // Sem token, "sem confirmação" é ignorado: qualquer processo local poderia agir sozinho.
+  asked = null; answer = false;
   await call(1, 'add_download', { url: 'https://example.com/video', formato: 'video' });
+  assert.ok(asked, 'sem token, a confirmação continua sendo pedida');
+  assert.equal(ran, false, 'recusado, nada foi feito');
+  // Com token, a ação sem confirmação continua possível.
+  svc.setOptions({ requireToken: true, autoConfirm: true });
+  asked = null;
+  await call(2, 'add_download', { url: 'https://example.com/video', formato: 'video' });
   assert.equal(asked, null, 'não abriu confirmação');
   assert.equal(ran, true, 'a ação foi executada');
   svc.setOptions({ requireToken: true, autoConfirm: false });
