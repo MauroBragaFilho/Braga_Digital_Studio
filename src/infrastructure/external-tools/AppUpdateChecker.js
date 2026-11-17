@@ -16,6 +16,9 @@ function safeUrl(u) {
   try { const p = new URL(u); return `${p.protocol}//${p.host}${p.pathname}`; } catch (_) { return '(url inválida)'; }
 }
 
+/** Início do nome de todos os arquivos da release (o "name" do package.json; igual ao LAUNCHER_STEM do release-bds.yml). */
+const ASSET_STEM = 'braga-digital-studio';
+
 const CONFIG_PATH = path.join(__dirname, '..', '..', 'config', 'appUpdate.config.json');
 
 /**
@@ -92,23 +95,30 @@ class AppUpdateChecker {
   }
 
   /**
-   * Localiza o URL de download do instalador (.exe do NSIS) nos assets da release.
-   * Prioriza exatamente o nome definido em package.json (artifactName), com fallback
-   * para o primeiro asset .exe encontrado.
+   * Asset da release com o nome no padrão único dos arquivos do BDS (o mesmo do release-bds.yml e do artifactName
+   * do package.json): braga-digital-studio-<X.Y.Z>-<sistema>-<arquitetura>.<ext>. Só esse nome é aceito: um .exe
+   * qualquer anexado à release nunca é escolhido. Com mais de uma versão, prefere a da tag da release.
+   * @param {object} release - Objeto de release retornado pela GitHub API.
+   * @param {string} suffix - 'windows-x64.exe' | 'linux-x86_64.AppImage' | 'linux-x86_64.deb'
+   * @returns {object|null}
+   */
+  _findAsset(release, suffix) {
+    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
+    const re = new RegExp(`^${ASSET_STEM}-(\\d+\\.\\d+\\.\\d+)-${suffix.replace(/\./g, '\\.')}$`, 'i');
+    const matches = assets.filter((a) => re.test(a.name || ''));
+    if (matches.length === 0) return null;
+    const tagVersion = String((release && release.tag_name) || '').replace(/^v/i, '');
+    return matches.find((a) => re.exec(a.name)[1] === tagVersion) || matches[0];
+  }
+
+  /**
+   * Localiza o URL de download do instalador do Windows (NSIS) nos assets da release.
    * @param {object} release - Objeto de release retornado pela GitHub API.
    * @returns {string|null}
    */
   _findInstallerUrl(release) {
-    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
-    if (assets.length === 0) return null;
-
-    const exeAssets = assets.filter((a) => (a.name || '').toLowerCase().endsWith('.exe'));
-    if (exeAssets.length === 0) return null;
-
-    // Preferencia exata pelo artifactName do electron-builder.
-    const setup = exeAssets.find((a) => /^BragaDigitalStudioSetup\.exe$/i.test(a.name || ''));
-    const chosen = setup || exeAssets[0];
-    return chosen.browser_download_url || chosen.url || null;
+    const chosen = this._findAsset(release, 'windows-x64.exe');
+    return chosen ? (chosen.browser_download_url || chosen.url || null) : null;
   }
 
   /**
@@ -119,17 +129,15 @@ class AppUpdateChecker {
    * @returns {{kind:'installer'|'manual', name:string, url:string|null, digest:string|null}|null}
    */
   _findPlatformAsset(release, platform = process.platform) {
-    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
-    const pick = (re) => assets.find((a) => re.test(a.name || ''));
     let asset = null;
     let kind = 'manual';
     if (platform === 'win32') {
-      asset = pick(/^BragaDigitalStudioSetup.exe$/i) || pick(/.exe$/i);
+      asset = this._findAsset(release, 'windows-x64.exe');
       kind = 'installer';
     } else if (platform === 'linux') {
       const preferAppImage = Boolean(process.env.APPIMAGE);
-      const appImage = pick(/.AppImage$/i);
-      const deb = pick(/.deb$/i);
+      const appImage = this._findAsset(release, 'linux-x86_64.AppImage');
+      const deb = this._findAsset(release, 'linux-x86_64.deb');
       asset = preferAppImage ? (appImage || deb) : (deb || appImage);
     }
     if (!asset) return null;
@@ -143,15 +151,8 @@ class AppUpdateChecker {
    * @returns {string|null} O digest no formato "sha256:..." ou null se não disponível.
    */
   _findInstallerDigest(release) {
-    const assets = (release && Array.isArray(release.assets)) ? release.assets : [];
-    if (assets.length === 0) return null;
-
-    const exeAssets = assets.filter((a) => (a.name || '').toLowerCase().endsWith('.exe'));
-    if (exeAssets.length === 0) return null;
-
-    const setup = exeAssets.find((a) => /^BragaDigitalStudioSetup\.exe$/i.test(a.name || ''));
-    const chosen = setup || exeAssets[0];
-    return chosen.digest || null;
+    const chosen = this._findAsset(release, 'windows-x64.exe');
+    return chosen ? (chosen.digest || null) : null;
   }
 
   /** Release mais recente conforme appUpdate.config.json (ou null se não configurada). */

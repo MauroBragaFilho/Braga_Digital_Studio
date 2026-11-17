@@ -1,6 +1,6 @@
 # Braga Digital Studio (BDS) 🎬
 
-[![License](https://img.shields.io/badge/License-Free%20to%20use-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-43-blue)](https://www.electronjs.org/)
 [![NodeJS](https://img.shields.io/badge/Node.js-22%2B-green)](https://nodejs.org/)
 
@@ -10,14 +10,14 @@ Braga Digital Studio (formerly Braga Media Downloader) is an advanced and profes
 
 ## 📥 Download & Install
 
-BDS is **free**. Get the latest installer from the [Releases](../../releases) page (`BragaDigitalStudioSetup.exe` for 64-bit Windows 10/11; `.AppImage` and `.deb` are also available for Linux).
+BDS is **free**. Get the latest installer from the [Releases](../../releases) page (`braga-digital-studio-<version>-windows-x64.exe` for 64-bit Windows 10/11; a portable `-windows-x64-portable.zip` and, for Linux, `-linux-x86_64.AppImage` and `-linux-x86_64.deb` are also available).
 
 During setup you choose between:
 
 - **Complete install (recommended):** installs the program, downloads the tools and the transcription feature, and leaves everything ready to use.
 - **Short install:** installs the program and the basic tools; transcription can be added later in *Settings → Modules*.
 
-The installer is not code-signed yet, so Windows (SmartScreen) may show a warning on first run: use "More info → Run anyway". Every release lists the installer's SHA-256. The app shows a notice in *Settings* when a new version is out (checking at startup is optional) and only installs after you confirm. Only the latest version gets fixes, on a best-effort basis.
+Until the installer ships code-signed, Windows (SmartScreen) may show a warning on first run: use "More info → Run anyway". Every release lists the installer's SHA-256, plus `SHA256SUMS.txt` with the hash of every file. The app shows a notice in *Settings* when a new version is out (checking at startup is optional) and only installs after you confirm. Only the latest version gets fixes, on a best-effort basis.
 
 ## 🚀 Key Features
 
@@ -65,14 +65,12 @@ The installer is not code-signed yet, so Windows (SmartScreen) may show a warnin
 
 ## 📦 Installation & Setup (Development)
 
-> The source code is reserved by the author (see the [license](LICENSE)); this section applies to people with access to the development repository.
-
-Ensure you have **Node.js** installed on your machine (version 22 or higher).
+The source code is open, under the [GPL v3](LICENSE). Ensure you have **Node.js** installed on your machine (version 22 or higher).
 
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/MauroBragaFilho/Braga_Digital_Studio.git
-   cd braga-digital-studio
+   cd Braga_Digital_Studio
    ```
 
 2. **Install essential dependencies:**
@@ -116,13 +114,30 @@ The `.github/workflows/ci.yml` workflow runs `npm ci`, `check`, `lint` and `test
 
 ## 🚢 Versioning & Release
 
-Publishing is **automatic**: on every push to `main` the **Release BDS (Windows + Linux)** workflow builds both systems, computes the version (starting from `package.json`; if that tag already exists it uses the next free patch number), creates the `vX.Y.Z` tag and publishes a single Release with the installers and their SHA-256. It then records the new version in `package.json` with a "chore(release) ... [skip release]" commit.
+A release comes from a **version tag** `vX.Y.Z` whose commit is on `main`. Pushing to `main` only runs CI.
 
-- To keep a commit from creating a release, put `[skip release]` in its message. Documentation-only changes (`*.md`, `.docs/`, `LICENSE`) do not trigger it either.
-- For a bigger version (minor/major), bump it first in `package.json`: `npm version minor --no-git-tag-version`.
-- You can also run it manually in Actions → "Release BDS (Windows + Linux)", or push a `v*` tag to use the single-platform workflows.
+```bash
+node scripts/release-tag.js
+```
 
-The installer must keep the name `BragaDigitalStudioSetup.exe`: the in-app updater looks for that asset name in the Release. Builds are not code-signed (SmartScreen may warn on first run).
+The script checks that you are on `main` with everything committed and in sync, suggests the next version, updates `package.json`, creates the tag and pushes it. The **Release BDS (Windows + Linux)** workflow then:
+
+1. builds Windows and Linux after `check`, `lint` and `test` pass;
+2. signs the Windows installer with SignPath (see the [code signing policy](CODE_SIGNING_POLICY.md));
+3. publishes a single Release with `SHA256SUMS.txt` and notes: the installer's SHA-256 and a **Mudanças** (changes) section listing every commit title since the previous tag. So write commit titles as sentences a user can understand.
+
+All Release files follow one pattern, which the in-app updater looks for:
+
+| File | What it is |
+|---|---|
+| `braga-digital-studio-<version>-windows-x64.exe` | Windows installer (what the updater downloads) |
+| `braga-digital-studio-<version>-windows-x64-portable.zip` | Portable Windows build |
+| `braga-digital-studio-<version>-linux-x86_64.AppImage` | Linux, no install needed |
+| `braga-digital-studio-<version>-linux-x86_64.deb` | Linux (Debian/Ubuntu) |
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. Before opening a PR, run `npm run check`, `npm run lint` and `npm test`. By contributing, you agree that your contribution is distributed under the same license (GPL v3). Security issues go through the [Security Policy](SECURITY.md), not a public issue.
 
 ## 🧩 Modules
 
@@ -162,6 +177,6 @@ BDS downloads the videos and audio that **you** ask for, from sites the program 
 
 ## 📄 License
 
-Copyright © 2026 **Mauro Braga**. All rights reserved.
+Copyright © 2026 **Mauro Braga**. Free software under the [GNU GPL v3.0](LICENSE): you may use, study, modify and redistribute it, as long as you keep the same license and the source open. Third-party components keep their own licenses (see *Settings → About and licenses*).
 
-Braga Digital Studio is **free to use**: you may install it and use it on as many computers as you like, for personal or professional work, and share the original installer, unmodified and without charging. Selling, modifying, reverse engineering and removing notices are not allowed; the source code is not licensed. Third-party components keep their own licenses (see *Settings → About and licenses*). Full text in [LICENSE](LICENSE) (Portuguese, with an English summary).
+Signed Windows installers: [Code Signing Policy](CODE_SIGNING_POLICY.md) — free code signing by [SignPath.io](https://signpath.io), certificate by the [SignPath Foundation](https://signpath.org).

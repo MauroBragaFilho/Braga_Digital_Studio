@@ -152,20 +152,20 @@ test('_persistPreviousAsBackup guarda a versão ANTERIOR (RK-072)', () => {
 test('AppUpdateChecker escolhe o asset por sistema (Windows .exe; Linux deb/AppImage só informativo; macOS nenhum)', () => {
   const c = new AppUpdateChecker();
   const release = { assets: [
-    { name: 'BragaDigitalStudioSetup.exe', browser_download_url: 'https://x/e.exe', digest: 'sha256:aa' },
-    { name: 'BragaDigitalStudioSetup.deb', browser_download_url: 'https://x/d.deb', digest: 'sha256:bb' },
-    { name: 'BragaDigitalStudioSetup.AppImage', browser_download_url: 'https://x/a.AppImage', digest: 'sha256:cc' }
+    { name: 'braga-digital-studio-1.2.0-windows-x64.exe', browser_download_url: 'https://x/e.exe', digest: 'sha256:aa' },
+    { name: 'braga-digital-studio-1.2.0-linux-x86_64.deb', browser_download_url: 'https://x/d.deb', digest: 'sha256:bb' },
+    { name: 'braga-digital-studio-1.2.0-linux-x86_64.AppImage', browser_download_url: 'https://x/a.AppImage', digest: 'sha256:cc' }
   ] };
   const win = c._findPlatformAsset(release, 'win32');
   assert.equal(win.kind, 'installer');
-  assert.equal(win.name, 'BragaDigitalStudioSetup.exe');
+  assert.equal(win.name, 'braga-digital-studio-1.2.0-windows-x64.exe');
   const prev = process.env.APPIMAGE;
   delete process.env.APPIMAGE;
   const deb = c._findPlatformAsset(release, 'linux');
   assert.equal(deb.kind, 'manual');
-  assert.equal(deb.name, 'BragaDigitalStudioSetup.deb');
+  assert.equal(deb.name, 'braga-digital-studio-1.2.0-linux-x86_64.deb');
   process.env.APPIMAGE = '/tmp/x.AppImage';
-  assert.equal(c._findPlatformAsset(release, 'linux').name, 'BragaDigitalStudioSetup.AppImage');
+  assert.equal(c._findPlatformAsset(release, 'linux').name, 'braga-digital-studio-1.2.0-linux-x86_64.AppImage');
   if (prev === undefined) delete process.env.APPIMAGE; else process.env.APPIMAGE = prev;
   assert.equal(c._findPlatformAsset(release, 'darwin'), null);
 });

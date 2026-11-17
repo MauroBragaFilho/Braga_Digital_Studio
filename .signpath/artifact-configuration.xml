@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuração de artefato do SignPath para o BDS (cole no portal: Project -> Artifact Configurations).
+  O actions/upload-artifact empacota o arquivo num ZIP, por isso a raiz é <zip-file>.
+  O nome do instalador leva a versão (braga-digital-studio-<versão>-windows-x64.exe), por isso o curinga.
+  Assina só o instalador NSIS (o app dentro dele fica comprimido no instalador e não pode ser assinado à parte).
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="braga-digital-studio-*-windows-x64.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

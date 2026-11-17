@@ -47,18 +47,18 @@ const dest = (n) => path.join(tmp, n);
 
 // ---- seleção de asset / versão ------------------------------------------------
 
-test('_findInstallerUrl/_findInstallerDigest preferem BragaDigitalStudioSetup.exe e ignoram outros formatos', () => {
+test('_findInstallerUrl/_findInstallerDigest preferem braga-digital-studio-1.2.0-windows-x64.exe e ignoram outros formatos', () => {
   const c = new AppUpdateChecker();
   const release = { assets: [
     { name: 'outro.exe', browser_download_url: 'https://x/outro.exe', digest: 'sha256:aa' },
-    { name: 'BragaDigitalStudioSetup.deb', browser_download_url: 'https://x/d.deb', digest: 'sha256:bb' },
-    { name: 'BragaDigitalStudioSetup.exe', browser_download_url: 'https://x/setup.exe', digest: 'sha256:cc' }
+    { name: 'braga-digital-studio-1.2.0-linux-x86_64.deb', browser_download_url: 'https://x/d.deb', digest: 'sha256:bb' },
+    { name: 'braga-digital-studio-1.2.0-windows-x64.exe', browser_download_url: 'https://x/setup.exe', digest: 'sha256:cc' }
   ] };
   assert.equal(c._findInstallerUrl(release), 'https://x/setup.exe');
   assert.equal(c._findInstallerDigest(release), 'sha256:cc');
   assert.equal(c._findInstallerUrl({ assets: [{ name: 'a.deb', browser_download_url: 'u' }] }), null);
   assert.equal(c._findInstallerUrl({}), null);
-  assert.equal(c._findInstallerDigest({ assets: [{ name: 'BragaDigitalStudioSetup.exe', browser_download_url: 'u' }] }), null);
+  assert.equal(c._findInstallerDigest({ assets: [{ name: 'braga-digital-studio-1.2.0-windows-x64.exe', browser_download_url: 'u' }] }), null);
 });
 
 test('_isNewer compara major.minor.patch numericamente', () => {
@@ -73,8 +73,8 @@ test('checkForUpdate: no Windows expõe installerUrl/digest; no Linux só o asse
   const release = {
     tag_name: 'v9.9.9', html_url: 'https://github.com/x/y/releases/tag/v9.9.9', body: 'notas',
     assets: [
-      { name: 'BragaDigitalStudioSetup.exe', browser_download_url: 'https://x/e.exe', digest: 'sha256:aa' },
-      { name: 'BragaDigitalStudioSetup.deb', browser_download_url: 'https://x/d.deb', digest: 'sha256:bb' }
+      { name: 'braga-digital-studio-1.2.0-windows-x64.exe', browser_download_url: 'https://x/e.exe', digest: 'sha256:aa' },
+      { name: 'braga-digital-studio-1.2.0-linux-x86_64.deb', browser_download_url: 'https://x/d.deb', digest: 'sha256:bb' }
     ]
   };
   const c = new AppUpdateChecker();
@@ -164,7 +164,7 @@ test('sem installerUrl, consulta a release uma única vez e usa URL + digest da 
   let consultas = 0;
   c._getLatestRelease = async () => {
     consultas += 1;
-    return { assets: [{ name: 'BragaDigitalStudioSetup.exe', browser_download_url: `${base}/setup.exe`, digest: `sha256:${sha('sha256')}` }] };
+    return { assets: [{ name: 'braga-digital-studio-1.2.0-windows-x64.exe', browser_download_url: `${base}/setup.exe`, digest: `sha256:${sha('sha256')}` }] };
   };
   const r = await comPlataforma('win32', () => c.downloadLatestInstaller(dest('mesma.exe')));
   assert.equal(consultas, 1);

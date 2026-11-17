@@ -1,0 +1,186 @@
+name: Release assinada (Windows + SignPath)
+
+# Gera o instalador Windows (NSIS), envia para assinatura Authenticode na SignPath Foundation e publica uma Release
+# no GitHub com o instalador ASSINADO e o SHA-256 dele.
+#
+# Quando roda: ao enviar uma TAG de versão (vX.Y.Z) cujo commit esteja na branch main.
+#     git tag v1.1.1 && git push origin v1.1.1
+# Execução manual (workflow_dispatch) só testa o build e a assinatura: NÃO publica Release.
+#
+# Configuração necessária (Settings -> Secrets and variables -> Actions) — passo a passo em .docs/ASSINATURA_SIGNPATH.md:
+#   Secret    SIGNPATH_API_TOKEN        token do usuário "submitter" do SignPath
+#   Variable  SIGNPATH_ORGANIZATION_ID  ID da organização no SignPath (não é segredo)
+#   Variable  SIGNPATH_PROJECT_SLUG     slug do projeto (padrão: braga-digital-studio)
+#   Variable  SIGNPATH_SIGNING_POLICY   slug da política (padrão: release-signing)
+#
+# NOTA: a assinatura de produção está integrada ao release-bds.yml (tag vX.Y.Z). Este workflow ficou como TESTE manual
+# da assinatura (build + SignPath, sem publicar) e como alternativa de Release própria se o gatilho de tag for reativado.
+
+on:
+  workflow_dispatch: {}
+  # A assinatura de produção agora roda dentro do release-bds.yml (job build-windows), disparada por tag.
+  # Para este workflow publicar uma Release própria neste repositório, reative:
+  # push:
+  #   tags:
+  #     - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-sign
+  cancel-in-progress: false
+
+env:
+  # Nome do instalador: braga-digital-studio-<versão>-windows-x64.exe (artifactName do nsis no package.json).
+  ASSET_STEM: braga-digital-studio
+
+jobs:
+  build-and-sign:
+    runs-on: windows-latest   # a SignPath Foundation exige runner hospedado pelo GitHub
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      installer: ${{ steps.version.outputs.installer }}
+    steps:
+      - name: Checkout (histórico completo, para conferir a main)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      # Política de assinatura: só tag cujo commit esteja na main é assinada.
+      - name: Conferir que a tag pertence à main
+        if: ${{ github.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::O commit da tag $GITHUB_REF_NAME não está na branch main. Só builds da main são assinados (CODE_SIGNING_POLICY.md)."
+            exit 1
+          fi
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Verificações de qualidade (sintaxe, lint, testes)
+        run: |
+          npm run check
+          npm run lint
+          npm test
+
+      - name: Definir a versão (da tag; no teste manual, a do package.json)
+        id: version
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "installer=$ASSET_STEM-$VERSION-windows-x64.exe" >> "$GITHUB_OUTPUT"
+          echo "INSTALLER_NAME=$ASSET_STEM-$VERSION-windows-x64.exe" >> "$GITHUB_ENV"
+
+      - name: Garantir pasta data/ e ícone
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path data | Out-Null
+          New-Item -ItemType File -Force -Path data/.gitkeep | Out-Null
+          if (-not (Test-Path "assets/icon.ico")) { Write-Error "assets/icon.ico não encontrado."; exit 1 }
+
+      # Sem certificado local: o electron-builder só empacota. A assinatura é feita depois, pela SignPath.
+      - name: Build do instalador Windows (sem assinatura)
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          $code = 1
+          for ($try = 1; $try -le 3; $try++) {
+            Write-Host "== electron-builder: tentativa $try/3 =="
+            & (Join-Path $PWD 'node_modules\.bin\electron-builder.cmd') --win nsis --publish never
+            $code = $LASTEXITCODE
+            if ($code -eq 0) { break }
+            if ($try -lt 3) { Start-Sleep -Seconds 20 }
+          }
+          if ($code -ne 0) { exit $code }
+          if (-not (Test-Path "dist/$env:INSTALLER_NAME")) { Write-Error "dist/$env:INSTALLER_NAME não foi gerado."; exit 1 }
+
+      # Só o instalador vai para a assinatura (a raiz do ZIP do artefato é tratada pelo .signpath/artifact-configuration.xml).
+      - name: Enviar o instalador sem assinatura (artefato do GitHub)
+        id: upload-unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-unsigned
+          path: dist/${{ env.INSTALLER_NAME }}
+          retention-days: 1
+
+      - name: Assinar na SignPath (aguarda a aprovação e baixa o assinado)
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'braga-digital-studio' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400   # dá tempo da aprovação manual (até 24 h)
+          output-artifact-directory: signed
+
+      - name: Conferir a assinatura e gerar o SHA-256
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "signed/$env:INSTALLER_NAME"
+          if (-not (Test-Path $exe)) { Write-Error "Instalador assinado não encontrado em signed/."; exit 1 }
+          $sig = Get-AuthenticodeSignature $exe
+          Write-Host "Assinatura: $($sig.Status) | $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { Write-Error "Assinatura inválida: $($sig.Status)"; exit 1 }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText((Join-Path $PWD 'signed/SHA256SUMS.txt'), "$hash  $env:INSTALLER_NAME`n")
+          [IO.File]::WriteAllText((Join-Path $PWD "signed/$env:INSTALLER_NAME.sha256"), "$hash`n")
+          Get-Content signed/SHA256SUMS.txt
+
+      - name: Guardar o instalador assinado para a publicação
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-signed
+          path: |
+            signed/${{ env.INSTALLER_NAME }}
+            signed/SHA256SUMS.txt
+            signed/${{ env.INSTALLER_NAME }}.sha256
+          retention-days: 1
+
+  # Publica só depois de assinar com sucesso e só em tag. Único job com permissão de escrita.
+  release:
+    if: ${{ github.ref_type == 'tag' }}
+    needs: build-and-sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      INSTALLER_NAME: ${{ needs.build-and-sign.outputs.installer }}
+    steps:
+      - name: Baixar o instalador assinado
+        uses: actions/download-artifact@v5
+        with:
+          name: installer-signed
+          path: release-files
+
+      - name: Publicar a Release no GitHub
+        run: |
+          ls -la release-files
+          cd release-files
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$INSTALLER_NAME" "$INSTALLER_NAME.sha256" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$INSTALLER_NAME" "$INSTALLER_NAME.sha256" SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --title "BDS $TAG" --generate-notes \
+              --notes "Instalador Windows assinado digitalmente (SignPath Foundation). Confira o SHA-256 em SHA256SUMS.txt."
+          fi

@@ -108,7 +108,7 @@ test('versão de desenvolvimento: não consulta a release nem oferece instalar o
 test('app instalado: baixa e verifica, NÃO instala sozinho; instalar abre o instalador separado e fecha o BDS', async () => {
   if (process.platform !== 'win32') return;
   const s = service({ packaged: true });
-  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/BragaDigitalStudioSetup.exe', installerDigest: 'sha256:abc' };
+  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/braga-digital-studio-1.2.0-windows-x64.exe', installerDigest: 'sha256:abc' };
   let downloads = 0;
   let silentInstalls = 0;
   const launches = [];
@@ -150,7 +150,7 @@ test('release SEM SHA-256: instalável, mas nunca anunciada como "verificada" (F
   const s = service({ packaged: true });
   const messages = [];
   s.on('progress', (p) => messages.push(p.message));
-  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/BragaDigitalStudioSetup.exe', installerDigest: null };
+  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/braga-digital-studio-1.2.0-windows-x64.exe', installerDigest: null };
   const patches = {
     checkForUpdate: async () => appInfo,
     // sem digest: o download é aceito, mas o conferidor devolve verified:false
@@ -178,7 +178,7 @@ test('release COM SHA-256 conferido: aparece como "baixada e verificada" e o fla
   const s = service({ packaged: true });
   const messages = [];
   s.on('progress', (p) => messages.push(p.message));
-  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/BragaDigitalStudioSetup.exe', installerDigest: 'sha256:abc' };
+  const appInfo = { hasUpdate: true, currentVersion: '1.0.5', latestVersion: '1.0.6', installerUrl: 'https://x/braga-digital-studio-1.2.0-windows-x64.exe', installerDigest: 'sha256:abc' };
   const patches = {
     checkForUpdate: async () => appInfo,
     downloadLatestInstaller: async (dest) => { fs.writeFileSync(dest, Buffer.alloc(600000)); return { path: dest, size: 600000, verified: true }; },

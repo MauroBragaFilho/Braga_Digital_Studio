@@ -1,6 +1,6 @@
 # Braga Digital Studio (BDS) 🎬
 
-[![Licença](https://img.shields.io/badge/Licen%C3%A7a-Uso%20gratuito-green.svg)](LICENSE)
+[![Licença](https://img.shields.io/badge/Licen%C3%A7a-GPL--3.0-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-43-blue)](https://www.electronjs.org/)
 [![NodeJS](https://img.shields.io/badge/Node.js-22%2B-green)](https://nodejs.org/)
 
@@ -10,14 +10,14 @@ Braga Digital Studio (anteriormente Braga Media Downloader) é uma central avan�
 
 ## 📥 Baixar e instalar
 
-O BDS é **gratuito**. Baixe o instalador mais recente na página de [Releases](../../releases) (`BragaDigitalStudioSetup.exe` para Windows 10/11 de 64 bits; também há `.AppImage` e `.deb` para Linux).
+O BDS é **gratuito**. Baixe o instalador mais recente na página de [Releases](../../releases) (`braga-digital-studio-<versão>-windows-x64.exe` para Windows 10/11 de 64 bits; também há o zip portátil `-windows-x64-portable.zip` e, para Linux, `-linux-x86_64.AppImage` e `-linux-x86_64.deb`).
 
 Na instalação você escolhe entre:
 
 - **Instalação completa (recomendada):** instala o programa, baixa as ferramentas e o recurso de transcrição e deixa tudo pronto para usar.
 - **Instalação curta:** instala o programa e as ferramentas básicas; a transcrição pode ser instalada depois em *Configurações → Módulos*.
 
-Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pode mostrar um aviso no primeiro uso: use "Mais informações → Executar assim mesmo". Cada release traz o SHA-256 do instalador. O programa avisa em *Configurações* quando há versão nova (a verificação ao abrir o app é opcional) e só instala depois da sua confirmação. Só a versão mais recente recebe correções, em regime de melhor esforço.
+Enquanto o instalador não sair com assinatura digital, o Windows (SmartScreen) pode mostrar um aviso no primeiro uso: use "Mais informações → Executar assim mesmo". Cada release traz o SHA-256 do instalador e o `SHA256SUMS.txt` com o de todos os arquivos. O programa avisa em *Configurações* quando há versão nova (a verificação ao abrir o app é opcional) e só instala depois da sua confirmação. Só a versão mais recente recebe correções, em regime de melhor esforço.
 
 ## 🚀 Principais Funcionalidades
 
@@ -65,14 +65,12 @@ Como o instalador ainda não tem assinatura digital, o Windows (SmartScreen) pod
 
 ## 📦 Instalação e Uso (Desenvolvimento)
 
-> O código-fonte é reservado ao autor (veja a [licença](LICENSE)); esta seção vale para quem tem acesso ao repositório de desenvolvimento.
-
-Certifique-se de ter o **Node.js** instalado na sua máquina (versão 22 ou superior).
+O código-fonte é aberto, sob a [GPL v3](LICENSE). Certifique-se de ter o **Node.js** instalado na sua máquina (versão 22 ou superior).
 
 1. **Clone o repositório:**
    ```bash
    git clone https://github.com/MauroBragaFilho/Braga_Digital_Studio.git
-   cd braga-digital-studio
+   cd Braga_Digital_Studio
    ```
 
 2. **Instale as dependências essenciais:**
@@ -116,13 +114,30 @@ O workflow `.github/workflows/ci.yml` roda `npm ci`, `check`, `lint` e `test` em
 
 ## 🚢 Versão e Release
 
-A publicação é **automática**: a cada push na branch `main` o workflow **Release BDS (Windows + Linux)** compila os dois sistemas, calcula a versão (parte do `package.json`; se a tag já existir, usa a próxima de correção livre), cria a tag `vX.Y.Z` e publica uma única Release com os instaladores e os respectivos SHA-256. Depois ele registra a versão nova no `package.json` com um commit "chore(release) ... [skip release]".
+Uma release sai de uma **tag de versão** `vX.Y.Z` cujo commit esteja na `main`. Push na `main` só roda o CI.
 
-- Para um commit **não** gerar release, coloque `[skip release]` na mensagem. Alterações só de documentação (`*.md`, `.docs/`, `LICENSE`) também não disparam.
-- Para uma versão maior (minor/major), suba antes no `package.json`: `npm version minor --no-git-tag-version`.
-- Também dá para rodar manualmente em Actions → "Release BDS (Windows + Linux)", ou enviar uma tag `v*` para usar os workflows individuais.
+```bash
+node scripts/release-tag.js
+```
 
-O instalador deve continuar se chamando `BragaDigitalStudioSetup.exe`: o atualizador interno procura esse nome de arquivo na Release. Os builds não são assinados digitalmente (o SmartScreen pode alertar no primeiro uso).
+O script confere se você está na `main` com tudo commitado e sincronizado, sugere a próxima versão, atualiza o `package.json`, cria a tag e a envia. O workflow **Release BDS (Windows + Linux)** então:
+
+1. compila Windows e Linux, depois de passar por `check`, `lint` e `test`;
+2. assina o instalador Windows na SignPath (veja a [política de assinatura](CODE_SIGNING_POLICY.md));
+3. publica uma única Release, com o `SHA256SUMS.txt` e as notas: o SHA-256 do instalador e a seção **Mudanças**, com o título de cada commit desde a tag anterior. Por isso vale escrever o título do commit como uma frase que o usuário entenda.
+
+Os arquivos da Release seguem um padrão só, que o atualizador interno procura:
+
+| Arquivo | O que é |
+|---|---|
+| `braga-digital-studio-<versão>-windows-x64.exe` | Instalador do Windows (é o que o atualizador baixa) |
+| `braga-digital-studio-<versão>-windows-x64-portable.zip` | Versão portátil do Windows |
+| `braga-digital-studio-<versão>-linux-x86_64.AppImage` | Linux, sem instalar |
+| `braga-digital-studio-<versão>-linux-x86_64.deb` | Linux (Debian/Ubuntu) |
+
+## 🤝 Como contribuir
+
+Issues e pull requests são bem-vindos. Antes de abrir um PR, rode `npm run check`, `npm run lint` e `npm test`. Ao contribuir, você concorda que a sua contribuição é distribuída sob a mesma licença (GPL v3). Falhas de segurança vão pela [Política de Segurança](SECURITY.md), não por issue pública.
 
 ## 🧩 Módulos
 
@@ -162,6 +177,6 @@ O BDS baixa os vídeos e áudios que **você** pedir, de sites que o programa n�
 
 ## 📄 Licença
 
-Copyright © 2026 **Mauro Braga**. Todos os direitos reservados.
+Copyright © 2026 **Mauro Braga**. Software livre sob a [GNU GPL v3.0](LICENSE): você pode usar, estudar, modificar e redistribuir, desde que mantenha a mesma licença e o código-fonte aberto. Os componentes de terceiros seguem as suas próprias licenças (veja *Configurações → Sobre e licenças*).
 
-O Braga Digital Studio é **gratuito**: você pode instalá-lo e usá-lo em quantos computadores quiser, para uso pessoal ou profissional, e compartilhar o instalador original, sem alterações e sem cobrar. Não é permitido vender, modificar, fazer engenharia reversa nem remover os avisos; o código-fonte não é cedido. Os componentes de terceiros seguem as suas próprias licenças (veja *Configurações → Sobre e licenças*). Texto completo em [LICENSE](LICENSE).
+Instaladores Windows assinados: [Política de Assinatura de Código](CODE_SIGNING_POLICY.md) — assinatura gratuita por [SignPath.io](https://signpath.io), certificado da [SignPath Foundation](https://signpath.org).

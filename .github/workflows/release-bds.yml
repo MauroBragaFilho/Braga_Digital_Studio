@@ -33,14 +33,19 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
-# As RELEASES (instaladores) são publicadas em um repositório SEPARADO do código: é de lá que o atualizador do app
+# As RELEASES (instaladores) são publicadas no mesmo repositório público do código: é de lá que o atualizador do app
 # baixa (src/config/appUpdate.config.json). Precisa do segredo RELEASES_TOKEN (Settings -> Secrets and variables -> Actions
 # deste repositório): token com permissão de escrita em "Contents" do repositório de releases.
 env:
   RELEASES_REPO: MauroBragaFilho/Braga_Digital_Studio
-  # Nome-base dos arquivos no padrão do ArtCraft Launcher (<stem>-<versão>-<os>-<arch>[-portable].<ext>), para o BDS poder
-  # entrar no catálogo dele: zip portátil no Windows (exe na raiz, com o nome do stem) e AppImage no Linux.
-  # Os instaladores atuais (BragaDigitalStudioSetup.*, lidos pelo atualizador do app) continuam na mesma release.
+  # TODOS os arquivos da Release seguem um padrão só (o do ArtCraft Launcher): <stem>-<versão>-<os>-<arch>[-portable].<ext>
+  #   braga-digital-studio-1.2.0-windows-x64.exe            instalador NSIS (assinado; é o que o atualizador do app baixa)
+  #   braga-digital-studio-1.2.0-windows-x64-portable.zip   zip portátil (exe na raiz, com o nome do stem)
+  #   braga-digital-studio-1.2.0-linux-x86_64.AppImage
+  #   braga-digital-studio-1.2.0-linux-x86_64.deb
+  #   SHA256SUMS.txt                                         SHA-256 de todos os arquivos acima
+  # Os nomes do instalador e dos pacotes Linux vêm do artifactName do package.json (nsis/linux); o atualizador do app
+  # (AppUpdateChecker) procura exatamente esse padrão. O stem é o "name" do package.json.
   LAUNCHER_STEM: braga-digital-studio
 
 # Mínimo por padrão; só o job `release` (publica a Release e dá push da versão) recebe contents: write.
@@ -127,7 +132,7 @@ jobs:
             echo "Release $TAG já existe: apagando para refazer."
             gh release delete "$TAG" --repo "$RELEASES_REPO" --yes --cleanup-tag || gh release delete "$TAG" --repo "$RELEASES_REPO" --yes
           fi
-          gh release create "$TAG" --repo "$RELEASES_REPO" --draft --title "BDS $TAG" --generate-notes
+          gh release create "$TAG" --repo "$RELEASES_REPO" --draft --title "BDS $TAG" --notes "Release em preparação."
           echo "Rascunho criado: $TAG"
 
   # ------------------------------------------------------------------------------------
@@ -139,6 +144,8 @@ jobs:
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0   # histórico completo: a assinatura confere que a tag pertence à main
 
       - name: Configurar Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -212,22 +219,66 @@ jobs:
             exit $code
           }
 
+      # Assinatura Authenticode (SignPath Foundation): só em tag de versão cujo commit esteja na main (CODE_SIGNING_POLICY.md).
+      # Troca o instalador de dist/ pelo assinado ANTES do SHA-256 e do upload, então o atualizador do app
+      # e o SHA256SUMS.txt já recebem o arquivo assinado. Só o instalador é assinado (o zip portátil não).
+      # Requer o secret SIGNPATH_API_TOKEN e as variables SIGNPATH_ORGANIZATION_ID (+ opcionais SIGNPATH_PROJECT_SLUG,
+      # SIGNPATH_SIGNING_POLICY). Guia: .docs/ASSINATURA_SIGNPATH.md.
+      - name: Conferir que a tag pertence à main
+        if: ${{ github.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::O commit da tag $GITHUB_REF_NAME não está na main. Só builds da main são assinados."
+            exit 1
+          fi
+
+      - name: Enviar o instalador sem assinatura (artefato do GitHub)
+        if: ${{ github.ref_type == 'tag' }}
+        id: upload-unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-unsigned
+          path: dist/${{ env.LAUNCHER_STEM }}-${{ needs.determine-version.outputs.version }}-windows-x64.exe
+          retention-days: 1
+
+      - name: Assinar na SignPath (aguarda a aprovação e baixa o assinado)
+        if: ${{ github.ref_type == 'tag' }}
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'braga-digital-studio' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400
+          output-artifact-directory: signed
+
+      - name: Conferir a assinatura e usar o instalador assinado
+        if: ${{ github.ref_type == 'tag' }}
+        shell: pwsh
+        run: |
+          $name = "$env:LAUNCHER_STEM-${{ needs.determine-version.outputs.version }}-windows-x64.exe"
+          $signed = Join-Path $PWD "signed/$name"
+          if (-not (Test-Path $signed)) { Write-Error "Instalador assinado não encontrado em signed/."; exit 1 }
+          $sig = Get-AuthenticodeSignature $signed
+          Write-Host "Assinatura: $($sig.Status) | $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { Write-Error "Assinatura inválida: $($sig.Status)"; exit 1 }
+          Copy-Item $signed "dist/$name" -Force
+
       - name: Localizar o instalador gerado
         id: find_installer
         shell: pwsh
         run: |
-          $installer = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -First 1
+          $name = "$env:LAUNCHER_STEM-${{ needs.determine-version.outputs.version }}-windows-x64.exe"
+          $installer = Get-Item -Path (Join-Path 'dist' $name) -ErrorAction SilentlyContinue
           if (-not $installer) {
-            Write-Error "Nenhum instalador .exe foi encontrado em dist/ após o build."
+            Write-Error "O instalador $name não foi encontrado em dist/ após o build."
             exit 1
           }
           echo "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
-
-      - name: Calcular SHA-256
-        shell: pwsh
-        run: |
-          $hash = Get-FileHash "${{ steps.find_installer.outputs.installer_path }}" -Algorithm SHA256
-          $hash.Hash | Out-File -Encoding ascii "${{ steps.find_installer.outputs.installer_path }}.sha256"
 
       # Zip portátil no padrão do ArtCraft Launcher: o conteúdo de dist/win-unpacked (já gerado pelo build acima) com o
       # exe renomeado para <stem>.exe na raiz do zip.
@@ -261,12 +312,15 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
-          $files = @(Get-ChildItem -Path dist -File | Where-Object { $_.Name -like '*.exe' -or $_.Name -like '*-portable.zip' })
+          # Só os arquivos no padrão do nome (fica de fora o que mais o electron-builder deixar em dist/).
+          $prefix = "$env:LAUNCHER_STEM-${{ needs.determine-version.outputs.version }}-windows-x64"
+          $files = @(Get-ChildItem -Path dist -File | Where-Object { $_.Name -eq "$prefix.exe" -or $_.Name -eq "$prefix-portable.zip" })
+          if ($files.Count -ne 2) { Write-Error "Esperava $prefix.exe e $prefix-portable.zip em dist/."; exit 1 }
           if ($files.Count -eq 0) { Write-Error "Nenhum instalador ou zip portátil em dist/."; exit 1 }
           $lines = foreach ($f in $files) { "{0}  {1}" -f (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower(), $f.Name }
           [IO.File]::WriteAllText((Join-Path $PWD 'dist\SHA256SUMS-windows.txt'), (($lines | Sort-Object) -join "`n") + "`n")
           Get-Content dist\SHA256SUMS-windows.txt
-          $upload = @(Get-ChildItem -Path dist -File | Where-Object { $_.Name -like '*.exe' -or $_.Name -like '*.exe.sha256' -or $_.Name -like '*-portable.zip' -or $_.Name -eq 'SHA256SUMS-windows.txt' }) | ForEach-Object { $_.FullName }
+          $upload = @($files | ForEach-Object { $_.FullName }) + (Join-Path $PWD 'dist\SHA256SUMS-windows.txt')
           gh release upload $env:TAG @upload --repo $env:RELEASES_REPO --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -347,20 +401,17 @@ jobs:
       - name: Localizar os pacotes gerados
         id: find_packages
         run: |
-          APPIMAGE=$(find dist -maxdepth 1 -iname "*.AppImage" | head -n1)
-          DEB=$(find dist -maxdepth 1 -iname "*.deb" | head -n1)
-          if [ -z "$APPIMAGE" ] || [ -z "$DEB" ]; then
-            echo "::error::AppImage ou .deb não encontrados em dist/ após o build."
+          PREFIX="dist/${LAUNCHER_STEM}-${{ needs.determine-version.outputs.version }}-linux-x86_64"
+          APPIMAGE="$PREFIX.AppImage"
+          DEB="$PREFIX.deb"
+          if [ ! -f "$APPIMAGE" ] || [ ! -f "$DEB" ]; then
+            echo "::error::$APPIMAGE ou $DEB não encontrados após o build."
+            ls -la dist || true
             exit 1
           fi
           echo "appimage_path=$APPIMAGE" >> "$GITHUB_OUTPUT"
           echo "deb_path=$DEB" >> "$GITHUB_OUTPUT"
           chmod +x "$APPIMAGE"
-
-      - name: Calcular SHA-256
-        run: |
-          sha256sum "${{ steps.find_packages.outputs.appimage_path }}" | awk '{print $1}' > "${{ steps.find_packages.outputs.appimage_path }}.sha256"
-          sha256sum "${{ steps.find_packages.outputs.deb_path }}" | awk '{print $1}' > "${{ steps.find_packages.outputs.deb_path }}.sha256"
 
       - name: Validar estrutura do pacote .deb
         run: dpkg-deb --info "${{ steps.find_packages.outputs.deb_path }}"
@@ -396,21 +447,18 @@ jobs:
             exit 1
           fi
 
-      # Cópia do AppImage com o nome no padrão do ArtCraft Launcher (o original continua, o atualizador do app o conhece).
-      - name: Nomear o AppImage no padrão do launcher
-        run: cp "${{ steps.find_packages.outputs.appimage_path }}" "dist/${LAUNCHER_STEM}-${{ needs.determine-version.outputs.version }}-linux-x86_64.AppImage"
-
-      # Direto para a Release em rascunho (sem artefatos do Actions); SHA256SUMS-linux.txt cobre os pacotes, sem os .sha256.
+      # Direto para a Release em rascunho (sem artefatos do Actions); SHA256SUMS-linux.txt cobre os dois pacotes.
       - name: Enviar os pacotes Linux para a Release (rascunho)
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
+          APPIMAGE="$(basename "${{ steps.find_packages.outputs.appimage_path }}")"
+          DEB="$(basename "${{ steps.find_packages.outputs.deb_path }}")"
           cd dist
-          ls -1 *.AppImage *.deb >/dev/null
-          sha256sum *.AppImage *.deb | sort -k2 > SHA256SUMS-linux.txt
+          sha256sum "$APPIMAGE" "$DEB" | sort -k2 > SHA256SUMS-linux.txt
           cat SHA256SUMS-linux.txt
-          gh release upload "$TAG" *.AppImage *.AppImage.sha256 *.deb *.deb.sha256 SHA256SUMS-linux.txt --repo "$RELEASES_REPO" --clobber
+          gh release upload "$TAG" "$APPIMAGE" "$DEB" SHA256SUMS-linux.txt --repo "$RELEASES_REPO" --clobber
 
   # ------------------------------------------------------------------------------------
   # Publica a Release (tira do rascunho) só depois que os DOIS builds enviaram seus arquivos com sucesso.
@@ -428,7 +476,7 @@ jobs:
     steps:
       # SHA256SUMS.txt (formato do sha256sum): é o que o ArtCraft Launcher usa para conferir os downloads quando o GitHub
       # não informa o digest do arquivo. Junta as listas parciais que cada build enviou (uma por sistema), que então
-      # saem da release. Cobre todos os arquivos, menos os .sha256 individuais.
+      # saem da release. Cobre todos os arquivos publicados.
       - name: Montar o SHA256SUMS.txt a partir das listas de cada build
         run: |
           gh release download "$TAG" --repo "$RELEASES_REPO" --pattern 'SHA256SUMS-*.txt' --dir sums
@@ -439,6 +487,36 @@ jobs:
           for f in sums/SHA256SUMS-*.txt; do
             gh release delete-asset "$TAG" "$(basename "$f")" --repo "$RELEASES_REPO" --yes
           done
+
+      # Lista de mudanças (como no Braga Frame): o título de cada commit desde a tag de versão anterior, sem os prefixos
+      # "fix:", "feat(ia):"... e sem os commits de versão. Sem tag anterior, os últimos 20 commits.
+      - name: Checkout do código (histórico completo, para a lista de mudanças)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          path: code
+
+      - name: Escrever as notas da Release
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          SHA=$(awk -v f="${LAUNCHER_STEM}-${VERSION}-windows-x64.exe" '$2==f {print $1}' SHA256SUMS.txt)
+          cd code
+          PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^ 2>/dev/null || true)
+          if [ -n "$PREV" ]; then RANGE="$PREV..HEAD"; else RANGE="-n 20 HEAD"; fi
+          {
+            echo "Instalador para Windows 10 e 11 (64 bits), zip portátil e pacotes para Linux (AppImage e .deb)."
+            echo
+            if [ -n "$SHA" ]; then echo "SHA-256 do instalador Windows: \`$SHA\`"; echo; fi
+            echo "O SHA-256 de todos os arquivos está no SHA256SUMS.txt."
+            echo
+            echo "## Mudanças"
+            # shellcheck disable=SC2086
+            git log --no-merges --pretty='%s' $RANGE \
+              | grep -v -E '^chore\(release\)' \
+              | sed -E 's/^[a-z]+(\([^)]*\))?!?:[[:space:]]*//; s/^./\U&/; s/^/- /'
+          } > ../notas.md
+          cat ../notas.md
+          gh release edit "$TAG" --repo "$RELEASES_REPO" --notes-file ../notas.md
 
       - name: Conferir os arquivos da Release
         run: gh release view "$TAG" --repo "$RELEASES_REPO" --json assets --jq '.assets[] | "\(.size)\t\(.name)"'
