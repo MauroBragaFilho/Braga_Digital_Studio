@@ -197,7 +197,14 @@ class ToolUpdater {
     const localManifest = this._readManifest(toolKey);
 
     const installedSha256 = isInstalled ? await this._computeSha256(target) : null;
-    const needsUpdate = !isInstalled || !manifestEntry?.sha256 || installedSha256 !== manifestEntry.sha256;
+    // Para pacotes (zip/tar) o SHA-256 do servidor é o do PACOTE, não o do executável extraído: compara
+    // também com o hash do pacote guardado no manifesto local na instalação (senão fica sempre "pendente").
+    const expected = String(manifestEntry?.sha256 || '').toLowerCase();
+    const matches = Boolean(expected) && (
+      String(installedSha256 || '').toLowerCase() === expected ||
+      String(localManifest?.packageSha256 || '').toLowerCase() === expected
+    );
+    const needsUpdate = !isInstalled || !matches;
 
     return {
       tool: toolKey,
@@ -315,12 +322,8 @@ class ToolUpdater {
       throw new ToolUnavailableError(unavailableReason(toolKey, process.platform, process.arch), toolKey);
     }
 
-    // O `-U` do yt-dlp só funciona com o binário já instalado. Na primeira instalação cai no fluxo
-    // comum (download do release oficial, com staging, checksum e smoke-test).
-    if (toolKey === 'ytdlp') {
-      const ytPath = toolResolver.resolve('ytdlp', this._toolsDir, { mustExist: false });
-      if (ytPath && fs.existsSync(ytPath)) return this._updateYtDlpSelf(onProgress);
-    }
+    // O yt-dlp também passa pelo fluxo comum (release oficial, SHA-256, staging, smoke-test, backup e
+    // rollback). O antigo `-U` trocava o binário fora desse pipeline, sem backup nem reversão.
 
     const config = this._getConfig(toolKey);
     const exeName = getExecutableName(toolKey);
@@ -375,7 +378,10 @@ class ToolUpdater {
     }
     const downloadUrl = config.downloadUrl(latestTag, ctx);
     const archiveType = this._detectArchiveType(downloadUrl);
-    const expectedDigest = release ? this._findAssetDigest(release, downloadUrl) : null;
+    // SHA-256 publicado pela própria release: o `digest` do asset (GitHub) ou, na falta dele, o arquivo de
+    // checksums oficial da release (ex.: SHA2-256SUMS do yt-dlp, checksums.sha256 da BtbN).
+    let expectedDigest = release ? this._findAssetDigest(release, downloadUrl) : null;
+    if (!expectedDigest && release) expectedDigest = await this._findDigestInSumsFile(release, downloadUrl);
 
     if (!expectedDigest) {
       const reason = repoInfo.useGitTags ? 'download de tag/código-fonte do Git' : 'release sem digest';
@@ -628,6 +634,8 @@ class ToolUpdater {
         platform: process.platform,
         architecture: process.arch,
         sha256: installedSha256,
+        // Hash do arquivo baixado (o pacote, quando é zip/tar): usado para comparar com o Update Server.
+        ...(isArchive ? { packageSha256: downloaded.sha256 } : {}),
         source,
         updatedAt: new Date().toISOString(),
       });
@@ -791,18 +799,6 @@ class ToolUpdater {
     }
   }
 
-  async _updateYtDlpSelf(onProgress) {
-    const { ytDlpTool } = require('./adapters/YtDlpTool');
-    logUpdater('Iniciando atualização de motor de download...');
-    logger.info('toolUpdater:update:start', { tool: 'ytdlp', mode: 'self-update' });
-    if (onProgress) onProgress(20);
-    await ytDlpTool.selfUpdate('stable');
-    if (onProgress) onProgress(100);
-    logUpdater('Motor de download atualizado com sucesso.');
-    logger.info('toolUpdater:update:done', { tool: 'ytdlp', mode: 'self-update' });
-    return this.check('ytdlp');
-  }
-
   /**
    * Argumentos de versão para componentes que não têm configuração de release do GitHub
    * (ex: distribuídos via Update Server / manifest.json), usados apenas para o smoke-test
@@ -934,6 +930,33 @@ class ToolUpdater {
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  /**
+   * Procura o SHA-256 do asset no arquivo de checksums publicado na MESMA release oficial
+   * (SHA2-256SUMS, SHA256SUMS, checksums.sha256, sha256sums.txt). Linhas no formato
+   * "<hex64>  <nome>" (o nome pode vir com "*" ou "./" na frente). Retorna o hex ou null.
+   */
+  async _findDigestInSumsFile(release, downloadUrl) {
+    const assets = Array.isArray(release && release.assets) ? release.assets : [];
+    const sums = assets.find((a) => a && /^(sha2-256sums|sha256sums|checksums?\.sha256|sha256sums\.txt)$/i.test(String(a.name || '')));
+    if (!sums || !sums.browser_download_url) return null;
+    const targetName = String(downloadUrl || '').split('?')[0].split('/').pop();
+    const tmpDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'bds-sums-'));
+    try {
+      const got = await this._downloadFile(sums.browser_download_url, path.join(tmpDir, 'sums.txt'));
+      const text = fs.readFileSync(got.path || path.join(tmpDir, 'sums.txt'), 'utf8');
+      for (const line of text.split(/\r?\n/)) {
+        const m = line.trim().match(/^([a-fA-F0-9]{64})\s+\*?(?:\.\/)?(.+)$/);
+        if (m && m[2].trim() === targetName) return m[1].toLowerCase();
+      }
+      return null;
+    } catch (err) {
+      logUpdater(`Não foi possível ler o arquivo de checksums da release (${sums.name}): ${err.message}`);
+      return null;
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { /* noop */ }
     }
   }
 

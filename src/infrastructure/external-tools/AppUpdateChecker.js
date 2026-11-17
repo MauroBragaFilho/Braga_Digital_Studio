@@ -226,11 +226,16 @@ class AppUpdateChecker {
       }
       result.verified = true;
     } else {
-      // Decisão do responsável: enquanto o instalador não tem assinatura (Authenticode), uma release sem digest
-      // ainda pode ser instalada. O chamador é avisado via `verified:false` (updateService expõe digestVerified).
-      // Quando a release publica o SHA-256, ele continua sendo conferido (bloco acima).
-      result.verified = false;
+      // Sem digest publicado não há como conferir o instalador (que ainda não tem assinatura Authenticode).
+      // Um arquivo não verificado nunca é executado automaticamente: é apagado e o usuário baixa pela página da release.
       logger.warn('AppUpdateChecker:download:no_digest', { url: safeUrl(url) });
+      try { fs.rmSync(result.path, { force: true }); } catch (_) { /* noop */ }
+      const err = new Error(
+        'A release não publica o código de verificação do instalador, então a atualização automática foi recusada por segurança. ' +
+        'Baixe o instalador manualmente pela página da release.'
+      );
+      err.code = 'NO_CHECKSUM';
+      throw err;
     }
 
     return result;
@@ -355,7 +360,7 @@ class AppUpdateChecker {
    *
    * Formato inválido ou algoritmo desconhecido/fraco => ok:false com `invalid:true` (o chamador
    * rejeita o instalador). A ausência total de digest é tratada fora daqui (ver
-   * downloadLatestInstaller: `verified:false`).
+   * downloadLatestInstaller: o download é recusado e apagado).
    * @returns {Promise<{ok: boolean, invalid?: boolean, expected: string, actual: string}>}
    */
   async _checkDigest(result, expectedDigest) {

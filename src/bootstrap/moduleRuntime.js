@@ -116,7 +116,11 @@ function ensureDownloaderTool(ctx) {
     if (!updateService) return;
     logger.info('Módulo Downloads ligado: baixando o yt-dlp ausente.');
     ctx.bridge?.send?.('dependencies:downloading');
-    Promise.resolve(updateService.updateTool('ytdlp', null, { allowUnverified: true }))
+    // Confere o SHA-256 da release oficial; sem ele não instala em silêncio (o usuário confirma em Configurações).
+    Promise.resolve(updateService.updateTool('ytdlp', null))
+      .then((r) => {
+        if (r && r.needsConfirmation) logger.warn('yt-dlp não instalado: a fonte não publica verificação de integridade; aguardando confirmação do usuário.');
+      })
       .catch((err) => logger.error('Erro ao baixar o yt-dlp ao ligar Downloads', { error: err.message }))
       .finally(() => ctx.bridge?.send?.('dependencies:done'));
   } catch (err) {

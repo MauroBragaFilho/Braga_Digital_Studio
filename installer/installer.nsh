@@ -723,9 +723,36 @@ Var BdsDlg            ; diálogo interno das páginas próprias (nsDialogs); vaz
     Delete "$oldDesktopLink"
     ; Apaga os dados só se o usuário escolheu "Apagar tudo" (em modo silencioso nunca apaga; use --delete-app-data).
     ${If} $BdsUnDelete == "1"
+      ; tira a barra final para comparar caminhos
+      StrCpy $1 "$BdsDataDir" "" -1
+      ${If} $1 == "\"
+        StrCpy $BdsDataDir "$BdsDataDir" -1
+      ${EndIf}
+      ; nunca apaga raiz de unidade nem pastas do sistema ou do usuário (importa com /DADOS=)
+      StrCpy $2 "1"
       StrLen $0 "$BdsDataDir"
-      ${If} $0 > 9
-      ${AndIf} ${FileExists} "$BdsDataDir\*.*"
+      ${If} $0 <= 9
+        StrCpy $2 "0"
+      ${EndIf}
+      ${If} $BdsDataDir == "$PROFILE"
+      ${OrIf} $BdsDataDir == "$WINDIR"
+      ${OrIf} $BdsDataDir == "$SYSDIR"
+      ${OrIf} $BdsDataDir == "$PROGRAMFILES"
+      ${OrIf} $BdsDataDir == "$PROGRAMFILES32"
+      ${OrIf} $BdsDataDir == "$PROGRAMFILES64"
+      ${OrIf} $BdsDataDir == "$APPDATA"
+      ${OrIf} $BdsDataDir == "$LOCALAPPDATA"
+      ${OrIf} $BdsDataDir == "$DESKTOP"
+      ${OrIf} $BdsDataDir == "$DOCUMENTS"
+      ${OrIf} $BdsDataDir == "$INSTDIR"
+        StrCpy $2 "0"
+      ${EndIf}
+      ; só apaga se parecer a pasta de dados do app (arquivos que o BDS cria nela)
+      ${IfNot} ${FileExists} "$BdsDataDir\config\settings.json"
+      ${AndIfNot} ${FileExists} "$BdsDataDir\database\*.*"
+        StrCpy $2 "0"
+      ${EndIf}
+      ${If} $2 == "1"
         RMDir /r "$BdsDataDir"
       ${EndIf}
     ${EndIf}

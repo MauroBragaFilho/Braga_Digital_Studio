@@ -8,6 +8,7 @@ const {
   assertSafeFileName, assertNonEmpty, assertPositiveInt, assertIdArray, assertUserDirectory,
   assertAbsolutePath, sqlPlaceholders, chunk
 } = require('./validate');
+const { DEVICE_IMPORT_TYPE } = require('./deviceImportLibrary');
 const { countMediaLinks, countLibraryLinks, countAllLinks, describeLinks } = require('../core/library/mediaLinks');
 
 const MAX_IDS = 50000;   // limite por operação em lote
@@ -82,8 +83,12 @@ module.exports = function registerLibraryHandlers(paths, watcherService, deps = 
     // Validação de entrada no esquema do canal (channels.js): nome de 1 a 120 caracteres e pasta
     // absoluta, existente e que não seja a raiz de um drive (já resolvida).
 
-    let lib = db.prepare('SELECT * FROM libraries WHERE path = ? OR name = ?').get(folderPath, name);
+    // Procura só pela pasta (P11): antes "OR name" reaproveitava uma fonte de mesmo nome em outra pasta e
+    // ignorava a pasta nova. Nome repetido com pasta diferente é recusado com mensagem clara.
+    let lib = db.prepare('SELECT * FROM libraries WHERE path = ?').get(folderPath);
     if (!lib) {
+      const sameName = db.prepare('SELECT id FROM libraries WHERE name = ?').get(name);
+      if (sameName) throw new Error(`Já existe uma fonte chamada "${name}" em outra pasta. Escolha outro nome.`);
       const info = db.prepare('INSERT INTO libraries (name, type, path) VALUES (?, ?, ?)').run(name, name, folderPath);
       lib = { id: info.lastInsertRowid, name, type: name, path: folderPath };
     }
@@ -116,7 +121,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService, deps = 
     const defaultTypes = ['OBS', 'SHADOWPLAY', 'BDSM_DEVICE', 'OBS Studio', 'NVIDIA ShadowPlay', 'NVIDIA Shadowplay', 'BDSM Devices'];
     const libraries = db.prepare('SELECT id, name, type, path FROM libraries').all();
     // 'MANUAL' (Importação Manual dos projetos) é interna: não aparece nem pode ser alterada/removida (RK-034)
-    return libraries.filter(l => l.type !== 'MANUAL' && !defaultTypes.includes(l.name) && !defaultTypes.includes(l.type));
+    return libraries.filter(l => l.type !== 'MANUAL' && l.type !== DEVICE_IMPORT_TYPE && !defaultTypes.includes(l.name) && !defaultTypes.includes(l.type));
   });
 
   // Quantos vínculos de projeto seriam apagados ao excluir estas mídias (diálogo de confirmação, RK-015)
@@ -137,6 +142,7 @@ module.exports = function registerLibraryHandlers(paths, watcherService, deps = 
     const libId = assertPositiveInt(id, 'ID da fonte');
     const folder = newFolderPath; // pasta validada e resolvida pelo esquema do canal
     const target = db.prepare('SELECT type FROM libraries WHERE id = ?').get(libId);
+    if (target && target.type === DEVICE_IMPORT_TYPE) throw new Error('A biblioteca de importações de dispositivos é interna e não pode ser alterada.');
     if (target && target.type === 'MANUAL') throw new Error('A biblioteca "Importação Manual" é interna e não pode ser alterada.');
 
     db.prepare('UPDATE libraries SET path = ? WHERE id = ?').run(folder, libId);
@@ -163,10 +169,11 @@ module.exports = function registerLibraryHandlers(paths, watcherService, deps = 
     // O nome usado para limpar `origin` vem do banco, não do renderer.
     const lib = db.prepare('SELECT id, name, type FROM libraries WHERE id = ?').get(libId);
     if (lib && lib.type === 'MANUAL') throw new Error('A biblioteca "Importação Manual" é interna e não pode ser removida.');
+    if (lib && lib.type === DEVICE_IMPORT_TYPE) throw new Error('A biblioteca de importações de dispositivos é interna e não pode ser removida.');
     const libName = lib ? lib.name : (typeof name === 'string' ? name : '');
 
     // Remover a fonte apaga as mídias dela e, em cascata, os vínculos de projeto: avisa antes (RK-015)
-    const impact = countLibraryLinks(db, libId, libName);
+    const impact = countLibraryLinks(db, libId, null); // só por library_id, igual à exclusão abaixo (P10)
     if (impact.links > 0) {
       const ok = await appConfirm({
         webContents: event.sender,
@@ -179,7 +186,8 @@ module.exports = function registerLibraryHandlers(paths, watcherService, deps = 
     }
 
     if (watcherService) watcherService.stopWatcher(libId);
-    db.prepare('DELETE FROM media WHERE library_id = ? OR origin = ?').run(libId, libName || '\u0000');
+    // Só as mídias desta biblioteca (P10): "OR origin = nome" atingia mídias de outras bibliotecas com a mesma origem.
+    db.prepare('DELETE FROM media WHERE library_id = ?').run(libId);
     db.prepare('DELETE FROM libraries WHERE id = ?').run(libId);
 
     EventBus.emit('MEDIA_IMPORTED', { action: 'delete_source', name: libName });

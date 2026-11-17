@@ -100,8 +100,13 @@ async function regenerateMissingThumbnailsImpl({
       `SELECT COUNT(*) AS c FROM media WHERE ${readyCond} AND thumbnail IS NULL AND (media_type IS NULL OR media_type != 'audio')`
     ).get();
     if (present.size >= registered.c && unregistered.c === 0) {
-      logger.info(`${logPrefix} Miniaturas completas (${present.size} arquivos >= ${registered.c} registradas): varredura ignorada.`);
-      return { regenerated: 0, failed: 0, total: 0 };
+      // Confere pelos nomes (não só pela contagem): arquivos órfãos na pasta mascaravam ausências (P31)
+      const allPresent = db.prepare(`SELECT thumbnail FROM media WHERE ${readyCond} AND thumbnail IS NOT NULL`).all()
+        .every((r) => present.has(r.thumbnail));
+      if (allPresent) {
+        logger.info(`${logPrefix} Miniaturas completas (${registered.c} registradas, todas na pasta): varredura ignorada.`);
+        return { regenerated: 0, failed: 0, total: 0 };
+      }
     }
   } catch (e) {
     logger.warn(`${logPrefix} Atalho de contagem indisponível (${e.message}); usando varredura completa.`);

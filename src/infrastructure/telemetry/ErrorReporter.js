@@ -10,6 +10,9 @@ const { localDateKey, zonedISO } = require('../../services/timeUtils');
 const { DEVELOPER_EMAIL } = require('../../config/appInfo');
 const { redact, redactDeep } = require('../../services/redact');
 
+/** Prazo de retenção dos relatórios de falha locais (LGPD: só o tempo útil para diagnóstico). */
+const CRASH_REPORT_RETENTION_DAYS = 30;
+
 /**
  * ErrorReporter — Sistema de captura, diagnóstico e envio de relatórios de erros para o desenvolvedor.
  *
@@ -57,6 +60,9 @@ class ErrorReporter {
     if (!fs.existsSync(this.crashReportsDir)) {
       fs.mkdirSync(this.crashReportsDir, { recursive: true });
     }
+    // LGPD: relatórios de falha podem ter caminhos e dados do usuário; não ficam para sempre.
+    // Na inicialização, apaga os .json com mais de CRASH_REPORT_RETENTION_DAYS (30 dias).
+    this.pruneOldReports();
 
     this._setupGlobalHandlers();
     this.initialized = true;
@@ -367,6 +373,33 @@ class ErrorReporter {
    * Remove todos os relatórios de crash salvos localmente.
    * @returns {{ deleted: number }} Quantidade de arquivos removidos.
    */
+  /**
+   * Retenção (LGPD): remove os relatórios .json mais antigos que `days` (pela data de modificação).
+   * @param {number} [days]
+   * @returns {{ deleted: number }}
+   */
+  pruneOldReports(days = CRASH_REPORT_RETENTION_DAYS) {
+    let deleted = 0;
+    try {
+      if (!this.crashReportsDir || !fs.existsSync(this.crashReportsDir)) return { deleted: 0 };
+      const limit = Date.now() - Math.max(1, Number(days) || CRASH_REPORT_RETENTION_DAYS) * 24 * 60 * 60 * 1000;
+      for (const file of fs.readdirSync(this.crashReportsDir)) {
+        if (!file.endsWith('.json')) continue;
+        const fullPath = path.join(this.crashReportsDir, file);
+        try {
+          if (fs.statSync(fullPath).mtimeMs < limit) {
+            fs.unlinkSync(fullPath);
+            deleted++;
+          }
+        } catch (_) { /* melhor esforço */ }
+      }
+      if (deleted) logger.info('ErrorReporter:pruneOldReports', { deleted });
+    } catch (e) {
+      logger.error('ErrorReporter:pruneOldReports:error', { error: e.message });
+    }
+    return { deleted };
+  }
+
   clearAllReports() {
     let deleted = 0;
     try {
@@ -566,4 +599,4 @@ class ErrorReporter {
 // Instância singleton
 const errorReporter = new ErrorReporter();
 
-module.exports = { ErrorReporter, errorReporter };
+module.exports = { ErrorReporter, errorReporter, CRASH_REPORT_RETENTION_DAYS };

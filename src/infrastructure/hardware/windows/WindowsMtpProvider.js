@@ -9,6 +9,9 @@ const logger = require('../../../services/logService');
 /** Tempo máximo da enumeração. Com o celular bloqueado, o Windows pode demorar a responder sobre os armazenamentos. */
 const ENUMERATE_TIMEOUT_MS = 20000;
 
+/** Importação: tempo máximo SEM nenhuma saída do PowerShell (o progresso chega várias vezes por segundo enquanto copia). */
+const IMPORT_IDLE_TIMEOUT_MS = 120000;
+
 /**
  * Script que lista os dispositivos portáteis (câmeras, celulares) da pasta "Este Computador". Servidores de mídia da rede
  * (DLNA/UPnP, ex.: o compartilhamento do próprio Windows) aparecem ali também e NÃO são dispositivos: ficam de fora antes de
@@ -120,7 +123,7 @@ class WindowsMtpProvider extends StorageProvider {
       const args = encodeArgs({ deviceName: String(deviceName || ''), pathArray: cleanSegments(pathArray) });
       const encodedCommand = Buffer.from(LIST_SCRIPT, 'utf16le').toString('base64');
       execOffThread(
-        `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
+        `"${systemExe('powershell')}" -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
         { encoding: 'utf8', windowsHide: true, timeout: 60000, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, BDS_MTP_ARGS: args } },
         (error, stdout) => {
           if (error) {
@@ -162,13 +165,30 @@ class WindowsMtpProvider extends StorageProvider {
         destPath: String(destFolder || ''),
       });
       const encodedCommand = Buffer.from(IMPORT_SCRIPT, 'utf16le').toString('base64');
-      const ps = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodedCommand], {
+      // spawn (e não execOffThread): o progresso chega linha a linha pelo stdout enquanto copia.
+      const ps = spawn(systemExe('powershell'), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodedCommand], {
         windowsHide: true,
         env: { ...process.env, BDS_MTP_ARGS: args },
       });
 
+      // Sem resposta do PowerShell por IMPORT_IDLE_TIMEOUT_MS (celular bloqueado/desconectado no meio): encerra,
+      // para a importação não ficar presa para sempre e travar o DeviceManager.
+      let settled = false;
+      let idleTimer = null;
+      const finish = (ok) => { if (settled) return; settled = true; clearTimeout(idleTimer); resolve(ok); };
+      const armIdle = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          logger.error('WindowsMtpProvider:importItems:idle_timeout', { ms: IMPORT_IDLE_TIMEOUT_MS });
+          try { ps.kill(); } catch (_) { /* já saiu */ }
+          finish(false);
+        }, IMPORT_IDLE_TIMEOUT_MS);
+      };
+      armIdle();
+
       let stdoutBuffer = '';
       ps.stdout.on('data', (data) => {
+        armIdle();
         stdoutBuffer += data.toString('utf8');
         const lines = stdoutBuffer.split('\n');
         stdoutBuffer = lines.pop();
@@ -192,9 +212,9 @@ class WindowsMtpProvider extends StorageProvider {
 
       ps.on('error', (err) => {
         logger.error('WindowsMtpProvider:importItems:spawn_error', { error: err.message });
-        resolve(false);
+        finish(false);
       });
-      ps.on('close', (code) => resolve(code === 0));
+      ps.on('close', (code) => finish(code === 0));
     });
   }
 }

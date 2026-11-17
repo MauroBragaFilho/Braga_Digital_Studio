@@ -8,6 +8,7 @@ const taskProgressCenter = require('../infrastructure/desktop/TaskProgressCenter
 const { assertAbsolutePath } = require('./validate');
 const sonyCameraService = require('../core/devices/SonyCameraService');
 const dbManager = require('../core/database/database');
+const { getDeviceImportLibrary } = require('./deviceImportLibrary');
 
 /** Integração com câmeras Sony. `deps` = { importQueue } (fila de importação da biblioteca). */
 module.exports = function registerSonyHandlers({ importQueue }) {
@@ -80,13 +81,8 @@ module.exports = function registerSonyHandlers({ importQueue }) {
           try {
             if (importQueue) {
               const db = dbManager.get();
-              let lib = db.prepare("SELECT * FROM libraries WHERE type = 'BDSM_DEVICE' OR type = 'DEVICE' LIMIT 1").get();
-              if (!lib) {
-                lib = db.prepare("SELECT * FROM libraries LIMIT 1").get();
-              }
-              if (lib) {
-                importQueue.add({ libraryId: lib.id, path: filePath, event: 'CREATE' });
-              }
+              const lib = getDeviceImportLibrary(db);
+              importQueue.add({ libraryId: lib.id, path: filePath, event: 'CREATE' });
             }
           } catch (qe) {
             logger.warn(`[Sony Import] Não foi possível indexar ${filePath}: ${qe.message}`);

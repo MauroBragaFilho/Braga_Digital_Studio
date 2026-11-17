@@ -2,7 +2,7 @@
 
 // AppUpdateChecker: seleção de asset por SO, conferência de digest e a política sem assinatura:
 //   - digest presente  -> SEMPRE conferido (diferente = rejeita e apaga o arquivo; formato inválido = rejeita);
-//   - digest ausente   -> INSTALA com verified:false (decisão do responsável enquanto não há Authenticode).
+//   - digest ausente   -> RECUSA e apaga o arquivo (nada sem verificação é executado automaticamente).
 // Servidor HTTP local e arquivos temporários; nenhuma rede externa. Complementa a seleção por SO já
 // testada em tool-sources-by-platform.test.js.
 
@@ -149,13 +149,14 @@ test('digest com algoritmo fraco/formato inválido -> rejeita e remove o arquivo
   }
 });
 
-test('digest AUSENTE -> política atual: INSTALA com verified:false (arquivo mantido)', async () => {
+test('digest AUSENTE -> recusa (NO_CHECKSUM) e remove o arquivo: nada é executado sem verificação', async () => {
   const c = new AppUpdateChecker();
   const d = dest('sem-digest.exe');
-  const r = await comPlataforma('win32', () => c.downloadLatestInstaller(d, null, null, `${base}/setup.exe`));
-  assert.equal(r.verified, false);
-  assert.equal(r.sha256, sha('sha256'), 'o hash calculado continua disponível para o chamador');
-  assert.ok(fs.readFileSync(d).equals(payload));
+  await assert.rejects(
+    () => comPlataforma('win32', () => c.downloadLatestInstaller(d, null, null, `${base}/setup.exe`)),
+    (err) => err.code === 'NO_CHECKSUM' && /recusada por segurança/.test(err.message)
+  );
+  assert.equal(fs.existsSync(d), false, 'instalador sem verificação não pode ficar no disco');
 });
 
 test('sem installerUrl, consulta a release uma única vez e usa URL + digest da MESMA release', async () => {

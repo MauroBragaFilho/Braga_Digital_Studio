@@ -165,8 +165,10 @@ class LibraryQueryService {
         }
 
         if (projects && projects.length > 0) {
-            filterSql += ` AND m.project_id IN (${projects.map(() => '?').join(',')})`;
-            filterParams.push(...projects);
+            // P26: o vínculo de verdade é project_media; media.project_id fica como leitura legada (sem migração)
+            const ph = projects.map(() => '?').join(',');
+            filterSql += ` AND (m.project_id IN (${ph}) OR EXISTS (SELECT 1 FROM project_media pm WHERE pm.media_id = m.id AND pm.project_id IN (${ph})))`;
+            filterParams.push(...projects, ...projects);
         }
 
         if (favorites) {
@@ -248,7 +250,10 @@ class LibraryQueryService {
         }
         const resolutions = [...resMap].map(([height, count]) => ({ height, count })).sort((a, b) => b.height - a.height);
         const fpsList = [...fpsMap].map(([fps, count]) => ({ fps, count })).sort((a, b) => b.fps - a.fps);
-        const projects = db.prepare('SELECT p.id, p.name, COUNT(m.id) as count FROM projects p LEFT JOIN media m ON m.project_id = p.id GROUP BY p.id ORDER BY p.name ASC').all();
+        const projects = db.prepare(`SELECT p.id, p.name, COUNT(v.media_id) as count FROM projects p
+            LEFT JOIN (SELECT project_id, media_id FROM project_media UNION SELECT project_id, id FROM media WHERE project_id IS NOT NULL) v
+              ON v.project_id = p.id
+            GROUP BY p.id ORDER BY p.name ASC`).all();
         const tags = db.prepare('SELECT t.id, t.name, t.color, COUNT(mt.media_id) as count FROM tags t LEFT JOIN media_tags mt ON mt.tag_id = t.id GROUP BY t.id ORDER BY t.name ASC').all();
         const favorites = db.prepare('SELECT COUNT(id) as count FROM media WHERE favorite = 1').get();
         const origins = db.prepare('SELECT DISTINCT origin, COUNT(id) as count FROM media WHERE origin IS NOT NULL GROUP BY origin ORDER BY count DESC').all();

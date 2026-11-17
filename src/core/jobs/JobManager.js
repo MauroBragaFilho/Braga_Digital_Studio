@@ -58,7 +58,8 @@ class JobManager extends EventEmitter {
         this.emit('job:failed', data);
       },
       cancelled: (data) => {
-        this._onJobFinished(job, JobStatus.CANCELLED);
+        // Em execução: a vaga só é liberada quando o executor parar de fato (ver _processNext)
+        if (!this.running.has(job.id)) this._onJobFinished(job, JobStatus.CANCELLED);
         this.emit('job:cancelled', data);
       }
     };
@@ -92,6 +93,11 @@ class JobManager extends EventEmitter {
       // Executa de forma assíncrona sem bloquear o loop
       job.run().catch((err) => {
         logger.error(`[JobManager] Erro na execução do job ${job.id}:`, { error: err.message });
+      }).finally(() => {
+        // Cancelado durante a execução: libera a vaga só agora, com o executor já parado
+        if (job.status === JobStatus.CANCELLED && this.running.has(job.id)) {
+          this._onJobFinished(job, JobStatus.CANCELLED);
+        }
       });
     }
 

@@ -46,3 +46,19 @@ test('PathGuard resolve caminho relativo contra o cwd (não contra a base)', () 
   assert.equal(PathGuard.isWithin(base, 'relativo.txt'), false);
   assert.equal(PathGuard.isWithin(process.cwd(), 'relativo.txt'), true);
 });
+
+test('PathGuard: junção dentro da pasta que aponta para fora é bloqueada', (t) => {
+  const fs = require('node:fs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bds-pg-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const inside = path.join(root, 'base');
+  const outside = path.join(root, 'fora');
+  fs.mkdirSync(inside); fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(inside, 'link'), 'junction');
+  assert.throws(() => PathGuard.assertWithin(inside, path.join(inside, 'link', 'x.txt')), /Acesso negado/);
+  assert.ok(PathGuard.isWithin(inside, path.join(inside, 'novo', 'y.txt')));
+});
+
+test('PathGuard: no Windows a comparação não diferencia maiúsculas', { skip: process.platform !== 'win32' }, () => {
+  assert.ok(PathGuard.isWithin(base, path.join(base.toUpperCase(), 'a.txt')));
+});

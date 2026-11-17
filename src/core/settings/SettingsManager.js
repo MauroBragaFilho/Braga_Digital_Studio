@@ -19,6 +19,9 @@ const START_SCREENS = ['home', 'download', 'converter', 'silence', 'metadata', '
 /**
  * SettingsManager — Gerenciamento e persistência das configurações da aplicação.
  */
+// Endereços aceitos só com https (ou vazio = desligado)
+const URL_SETTING_KEYS = ['updateServerUrl', 'errorReportingEndpoint'];
+
 class SettingsManager {
   /**
    * @param {string} configDir - Diretório de configurações (AppPaths.configDir)
@@ -172,7 +175,9 @@ class SettingsManager {
       // [PERF] Só regrava o arquivo quando o merge realmente adicionou campos novos
       const needsWrite = migrateSecrets || migratedAccent || migratedModules || removedLegacy.length > 0 || Object.keys(this.defaultSettings).some(k => saved[k] === undefined);
       if (needsWrite) {
-        this._writeAtomic(merged);
+        // Falha ao regravar (disco cheio, antivírus, permissão) NÃO é arquivo corrompido: o que foi lido continua valendo
+        // e o arquivo bom fica no lugar (só tenta regravar de novo na próxima vez).
+        try { this._writeAtomic(merged); } catch (err) { logger.warn('settings:failed_to_rewrite', { error: err.message }); }
       }
       this._setCache(merged);
       return { ...merged };
@@ -427,7 +432,40 @@ class SettingsManager {
         ? { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height), maximized: b.maximized === true }
         : null;
     }
+    // Por último (as regras específicas acima já converteram/limitaram o que sabem tratar)
+    this._checkKnownTypes(out);
     return out;
+  }
+
+  /**
+   * Chaves conhecidas (as que têm padrão): o valor precisa ter o mesmo tipo do padrão, senão é descartado e o atual
+   * fica. Número vindo como texto ("5") é convertido. Endereços (updateServerUrl, errorReportingEndpoint) só https ou vazio.
+   * Chaves sem padrão continuam passando (são gravadas por outras telas e serviços).
+   */
+  _checkKnownTypes(out) {
+    let defaults = {};
+    try { defaults = this.defaultSettings || {}; } catch (_) { defaults = {}; }
+    for (const key of Object.keys(out)) {
+      if (!Object.prototype.hasOwnProperty.call(defaults, key)) continue;
+      const def = defaults[key];
+      const v = out[key];
+      if (def === null || def === undefined) continue;
+      if (typeof def === 'boolean') { if (typeof v !== 'boolean') delete out[key]; }
+      else if (typeof def === 'number') {
+        const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+        if (Number.isFinite(n)) out[key] = n; else delete out[key];
+      } else if (typeof def === 'string') { if (typeof v !== 'string') delete out[key]; }
+      else if (Array.isArray(def)) { if (!Array.isArray(v)) delete out[key]; }
+      else if (typeof def === 'object') { if (!v || typeof v !== 'object' || Array.isArray(v)) delete out[key]; }
+    }
+    for (const key of URL_SETTING_KEYS) {
+      if (!(key in out)) continue;
+      const v = String(out[key] || '').trim();
+      if (v === '') { out[key] = ''; continue; }
+      let ok = false;
+      try { ok = new URL(v).protocol === 'https:'; } catch (_) { ok = false; }
+      if (ok) out[key] = v; else delete out[key];
+    }
   }
 
   _setCache(settings) {

@@ -12,23 +12,32 @@ class SonyCameraService extends EventEmitter {
     }
 
     start() {
-        this.discovery.on('camera_discovered', async (cameraInfo) => {
-            const provider = new SonyCameraProvider(cameraInfo);
-            await provider.initialize();
-            this.providers.set(cameraInfo.id, provider);
-            
-            logger.info(`[SonyCameraService] Câmera registrada: ${cameraInfo.name} (${cameraInfo.id})`);
-            this.emit('camera_connected', {
-                ...cameraInfo,
-                provider
-            });
-        });
+        // Idempotente: chamar start() de novo não duplica ouvintes nem o intervalo de telemetria
+        if (this._started) return;
+        this._started = true;
+        this._onDiscovered = async (cameraInfo) => {
+            try {
+                const provider = new SonyCameraProvider(cameraInfo);
+                await provider.initialize();
+                this.providers.set(cameraInfo.id, provider);
+
+                logger.info(`[SonyCameraService] Câmera registrada: ${cameraInfo.name} (${cameraInfo.id})`);
+                this.emit('camera_connected', {
+                    ...cameraInfo,
+                    provider
+                });
+            } catch (e) {
+                logger.warn(`[SonyCameraService] Falha ao registrar a câmera ${cameraInfo && cameraInfo.id}: ${e.message}`);
+            }
+        };
 
         // Câmera sem sinal: remove o provider (evita acumular providers e telemetria de câmeras ausentes)
-        this.discovery.on('camera_lost', (cameraInfo) => {
+        this._onLost = (cameraInfo) => {
             this.providers.delete(cameraInfo.id);
             this.emit('camera_disconnected', cameraInfo);
-        });
+        };
+        this.discovery.on('camera_discovered', this._onDiscovered);
+        this.discovery.on('camera_lost', this._onLost);
 
         this.discovery.start();
 
@@ -63,6 +72,11 @@ class SonyCameraService extends EventEmitter {
             clearInterval(this.telemetryInterval);
             this.telemetryInterval = null;
         }
+        if (this._onDiscovered) this.discovery.removeListener('camera_discovered', this._onDiscovered);
+        if (this._onLost) this.discovery.removeListener('camera_lost', this._onLost);
+        this._onDiscovered = null;
+        this._onLost = null;
+        this._started = false;
         this.discovery.stop();
         this.providers.clear();
     }

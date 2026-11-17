@@ -22,6 +22,13 @@ export function onLeave() {
     unsubscribers = [];
 }
 
+/** Volta à tela: reassina os eventos da fila removidos em onLeave e redesenha o estado atual. */
+export async function onEnter() {
+    if (unsubscribers.length) return;
+    bindQueueEvents();
+    try { renderQueue(await api()?.getState()); } catch (_) { /* fila indisponível */ }
+}
+
 export async function initScreen() {
     console.log('[UPLOAD] Inicializando tela do YouTube Studio...');
 

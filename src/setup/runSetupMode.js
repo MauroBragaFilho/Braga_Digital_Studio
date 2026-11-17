@@ -55,9 +55,9 @@ async function runSetupMode({ args, appPaths, appVersion = null, log = () => {} 
   const deps = {
     isToolInstalled: (tool) => { try { return Boolean(adapters[tool] && adapters[tool].exists()); } catch (_) { return false; } },
     isToolSupported: (tool) => hasSource(tool),
-    // Mesma política da primeira abertura do app para as ferramentas essenciais (ver bootstrap/startup.js):
-    // a integridade é conferida por SHA-256 sempre que a release oficial o publica.
-    installTool: (tool, onPercent) => toolUpdater.update(tool, onPercent, { allowUnverified: true }),
+    // Mesma política da primeira abertura do app (ver bootstrap/startup.js): confere o SHA-256 publicado pela
+    // release oficial; sem ele devolve needsConfirmation e o ComponentsSetup relata NO_CHECKSUM (não instala).
+    installTool: (tool, onPercent) => toolUpdater.update(tool, onPercent),
     modules: manager,
     enableTranscription: () => {
       const SM = SettingsManager.SettingsManager || SettingsManager;

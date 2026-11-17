@@ -160,9 +160,13 @@ async function checkInitialDependenciesImpl(ctx) {
         if ((tool === 'ffprobe' && externalTools.ffprobe.exists()) || (tool === 'ffmpeg' && externalTools.ffmpeg.exists())) continue;
       } catch (_) { /* segue e tenta instalar */ }
       try {
-        // Primeira instalação de um essencial ausente: sem ele o app não funciona, então instala
-        // mesmo que a fonte não publique checksum (o toolUpdater registra o aviso no log).
-        await updateService.updateTool(tool, null, { allowUnverified: true });
+        // Primeira instalação de um essencial ausente: o toolUpdater confere o SHA-256 publicado pela
+        // release oficial. Se a fonte não publicar, NÃO instala em silêncio: fica para o usuário
+        // confirmar em Configurações > Atualizações (que reexecuta com allowUnverified após o aviso).
+        const r = await updateService.updateTool(tool, null);
+        if (r && r.needsConfirmation) {
+          logger.warn(`${tool} não foi instalado: a fonte não publica verificação de integridade; aguardando confirmação do usuário.`);
+        }
       } catch (e) {
         logger.error(`Erro ao baixar ${tool} na inicialização`, { error: e.message });
       }

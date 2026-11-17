@@ -223,9 +223,8 @@ module.exports = function registerSystemHandlers(paths, settingsManager, { isBus
   const computeStorageInfo = async () => {
     const fs = require('fs/promises');
     try {
-      const rootsToCheck = process.platform === 'win32'
-        ? [appPaths.systemRoot, 'D:\\']
-        : [appPaths.systemRoot];
+      // Discos fixos reais (P13), não mais 'D:\' fixo.
+      const rootsToCheck = await require('./localDrives').listLocalDriveRoots(appPaths.systemRoot);
 
       // Disco do PC e provedores MTP/USB em paralelo (antes eram sequenciais). Os dispositivos só são
       // enumerados com o módulo Dispositivos ligado: desligado, nem o código deles é carregado.

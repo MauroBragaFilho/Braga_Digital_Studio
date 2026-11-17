@@ -535,6 +535,26 @@ class LocalLlm extends EventEmitter {
     });
   }
 
+  /** true se o servidor da porta anuncia o modelo `id` em /v1/models (o app sobe com --alias = id). */
+  _servesModel(id) {
+    return new Promise((resolve) => {
+      const req = http.get({ host: '127.0.0.1', port: this.port, path: '/v1/models', timeout: 1500 }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { if (body.length < 65536) body += c; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            const list = Array.isArray(data && data.data) ? data.data : [];
+            resolve(res.statusCode === 200 && list.some((m) => m && m.id === id));
+          } catch (_) { resolve(false); }
+        });
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+    });
+  }
+
   _touch() {
     if (this._idleTimer) clearTimeout(this._idleTimer);
     this._idleTimer = setTimeout(() => { this.stop(); }, this.config.idleMs || IDLE_MS);
@@ -562,7 +582,9 @@ class LocalLlm extends EventEmitter {
 
   async _start() {
     // Sobrou um servidor de antes (o app fechou sem desligá-lo): aproveita em vez de brigar pela porta
-    if (!this.isRunning() && (await this._healthy())) return;
+    // Só aproveita se for o llama-server do app com ESTE modelo (o --alias faz /v1/models anunciar o id); outro programa
+    // na porta ou outro modelo não é reaproveitado (a subida abaixo falha com erro claro se a porta estiver ocupada).
+    if (!this.isRunning() && (await this._healthy()) && (await this._servesModel(this.model.id))) return;
     const kind = this._usableKind();
     if (kind !== 'gpu') { await this._launch(kind); return; }
     const modelId = this.model.id;

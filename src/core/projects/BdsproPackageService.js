@@ -22,6 +22,12 @@ function isUncPath(p) {
     return typeof p === 'string' && /^[\\/]{2}/.test(p.trim());
 }
 
+/** Nome de miniatura aceito no pacote: nome base simples de imagem (ex.: "<uuid>.jpg"), sem pastas. */
+const THUMB_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.(?:jpe?g|png|webp)$/i;
+function isSafeThumbName(name) {
+    return typeof name === 'string' && THUMB_NAME_RE.test(name);
+}
+
 /** true se `target` está dentro de `baseDir` (ou é ele mesmo). */
 function isInsideDir(baseDir, target) {
     const rel = path.relative(path.resolve(baseDir), path.resolve(target));
@@ -91,6 +97,11 @@ function validateProjectData(data) {
         if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('project.json inválido: item de mídia malformado.');
         // uuid vira nome de arquivo (miniaturas): só caracteres seguros; senão descarta e gera outro na importação
         if (m.uuid !== undefined && m.uuid !== null && !(typeof m.uuid === 'string' && UUID_RE.test(m.uuid))) m.uuid = null;
+        // P22: miniatura só como nome simples de imagem (vai para a pasta de miniaturas); senão descarta
+        if (m.thumbnail !== undefined && m.thumbnail !== null) {
+            const base = typeof m.thumbnail === 'string' ? m.thumbnail.split(/[\\/]/).pop() : '';
+            m.thumbnail = isSafeThumbName(base) ? base : null;
+        }
     }
 }
 
@@ -126,11 +137,13 @@ class BdsproPackageService {
             if (thumbnailsDir && fs.existsSync(thumbnailsDir)) {
                 for (const item of (projectModel.media || [])) {
                     if (item.thumbnail) {
-                        const thumbPath = path.isAbsolute(item.thumbnail) 
-                            ? item.thumbnail 
+                        const thumbPath = path.isAbsolute(item.thumbnail)
+                            ? item.thumbnail
                             : path.join(thumbnailsDir, item.thumbnail);
-                        
-                        if (fs.existsSync(thumbPath)) {
+
+                        // P22: só imagem dentro da pasta de miniaturas (um pacote importado não embute outro arquivo)
+                        if (isSafeThumbName(path.basename(thumbPath)) && isInsideDir(thumbnailsDir, thumbPath)
+                            && fs.existsSync(thumbPath)) {
                             const thumbBuffer = fs.readFileSync(thumbPath);
                             zip.addFile(`thumbnails/${path.basename(thumbPath)}`, thumbBuffer);
                         }
@@ -391,7 +404,8 @@ class BdsproPackageService {
                 if (!fs.existsSync(thumbnailsDir)) fs.mkdirSync(thumbnailsDir, { recursive: true });
                 const entries = zip.getEntries();
                 for (const entry of entries) {
-                    if (entry.entryName.startsWith('thumbnails/') && !entry.isDirectory) {
+                    if (entry.entryName.startsWith('thumbnails/') && !entry.isDirectory
+                        && isSafeThumbName(path.basename(entry.entryName))) {
                         const targetThumbPath = path.join(thumbnailsDir, path.basename(entry.entryName));
                         if (!fs.existsSync(targetThumbPath)) {
                             fs.writeFileSync(targetThumbPath, entry.getData());
@@ -423,18 +437,16 @@ class BdsproPackageService {
             const binIdMap = new Map(); // oldBinId -> newBinId
             const folders = projectData.folders || [];
             
-            // Cria pastas raiz primeiro
-            const rootFolders = folders.filter(f => !f.parent_id);
-            for (const rf of rootFolders) {
-                const newId = this.projectService.createBin(newProjectId, null, rf.name);
-                binIdMap.set(rf.id, newId);
-            }
-            // Cria subpastas
-            const subFolders = folders.filter(f => f.parent_id);
-            for (const sf of subFolders) {
-                const parentNewId = binIdMap.get(sf.parent_id) || null;
-                const newId = this.projectService.createBin(newProjectId, parentNewId, sf.name);
-                binIdMap.set(sf.id, newId);
+            // P24: cria em ondas (pai antes do filho), qualquer profundidade e ordem; pai ausente ou ciclo vira raiz
+            let pending = folders.filter(f => f && typeof f === 'object');
+            while (pending.length > 0) {
+                const ready = pending.filter(f => !f.parent_id || binIdMap.has(f.parent_id));
+                const batch = ready.length > 0 ? ready : [pending[0]];
+                for (const f of batch) {
+                    const parentNewId = f.parent_id ? (binIdMap.get(f.parent_id) || null) : null;
+                    binIdMap.set(f.id, this.projectService.createBin(newProjectId, parentNewId, f.name));
+                }
+                pending = pending.filter(f => !batch.includes(f));
             }
 
             // 5. Mapear e recriar Mídias no SQLite
@@ -459,9 +471,9 @@ class BdsproPackageService {
                     const insertStmt = db.prepare(`
                         INSERT INTO media (
                             uuid, filename, filepath, filesize, duration, width, height, fps,
-                            video_codec, audio_codec, bitrate, thumbnail, status,
+                            video_codec, audio_codec, bitrate, thumbnail, status, missing,
                             bdsm_camera, bdsm_profile, bdsm_lut, bdsm_metadata_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     `);
                     const bdsm = m.bdsm_metadata || {};
                     const uuidVal = m.uuid || `import_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -479,6 +491,7 @@ class BdsproPackageService {
                         m.bitrate || 0,
                         m.thumbnail || null,
                         fs.existsSync(effectivePath) ? 'READY' : 'MISSING',
+                        fs.existsSync(effectivePath) ? 0 : 1, // P25: missing=1 para a mídia aparecer como ausente
                         bdsm.camera || m.bdsm_camera || null,
                         bdsm.profile || m.bdsm_profile || null,
                         bdsm.lut || m.bdsm_lut || null,
@@ -577,8 +590,9 @@ class BdsproPackageService {
             const syncGroups = projectData.syncGroups || [];
             for (const sg of syncGroups) {
                 const masterMapped = mediaIdMap.get(sg.master_media_id)?.mediaId || null;
-                const itemsMapped = (sg.items || []).map(item => ({
-                    media_id: mediaIdMap.get(item.media_id)?.mediaId || item.media_id,
+                // P23: item sem mapeamento é descartado (o id do banco de origem não vale aqui)
+                const itemsMapped = (sg.items || []).filter(item => item && mediaIdMap.get(item.media_id)?.mediaId).map(item => ({
+                    media_id: mediaIdMap.get(item.media_id).mediaId,
                     offset_seconds: item.offset_seconds || 0.0,
                     confidence: item.confidence || 0,
                     drift_rate_ppm: item.drift_rate_ppm || 0

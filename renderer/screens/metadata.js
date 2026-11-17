@@ -63,6 +63,12 @@ function bindDelegation() {
   });
 }
 
+/** Volta à tela: religa a delegação das listas (removida em onLeave) e o retorno do progresso. */
+export function onEnter() {
+  active = true;
+  if (!cleanups.length) bindDelegation();
+}
+
 export const destroy = onLeave;
 
 function bindEvents() {

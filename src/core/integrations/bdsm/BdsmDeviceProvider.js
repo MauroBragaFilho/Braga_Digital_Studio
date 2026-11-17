@@ -2,6 +2,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { Readable, Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { StorageProvider } = require('../../../infrastructure/hardware/StorageProvider');
 const BdsmClient = require('./BdsmClient');
 const logger = require('../../../services/logService');
@@ -123,29 +125,31 @@ class BdsmDeviceProvider extends StorageProvider {
     const response = await client.openMediaDownload(itemId); // com o token de pareamento; erro HTTP vira BdsmError
 
     const totalBytes = parseInt(response.headers.get('content-length') || '0', 10);
-    const fileStream = fs.createWriteStream(destPath);
-
+    // Grava num .part com pipeline (respeita a contrapressão e trata erro de escrita); só renomeia no fim
+    const partPath = `${destPath}.part`;
     let receivedBytes = 0;
-    const reader = response.body.getReader();
+    const counter = new Transform({
+      transform: (chunk, _enc, cb) => {
+        receivedBytes += chunk.length;
+        const percent = totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : 0;
+        this.emit('progress', {
+          file: fileName,
+          percent,
+          currentSize: receivedBytes,
+          totalSize: totalBytes,
+          type: 'bdsm'
+        });
+        cb(null, chunk);
+      }
+    });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      receivedBytes += value.length;
-      fileStream.write(Buffer.from(value));
-
-      const percent = totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : 0;
-      this.emit('progress', {
-        file: fileName,
-        percent,
-        currentSize: receivedBytes,
-        totalSize: totalBytes,
-        type: 'bdsm'
-      });
+    try {
+      await pipeline(Readable.fromWeb(response.body), counter, fs.createWriteStream(partPath));
+      await fs.promises.rename(partPath, destPath);
+    } catch (err) {
+      await fs.promises.rm(partPath, { force: true }).catch(() => {});
+      throw err;
     }
-
-    await new Promise((resolve, reject) => fileStream.end((err) => (err ? reject(err) : resolve())));
   }
 }
 

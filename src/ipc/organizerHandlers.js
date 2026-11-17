@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { getDeviceImportLibrary } = require('./deviceImportLibrary');
 const { DeviceOrganizer, applyRenames, applyMoves } = require('../services/organizer/DeviceOrganizer');
 
 const IMAGE_RE = /\.(jpe?g|png|webp|bmp|gif)$/i;
@@ -68,9 +69,8 @@ function createOrganizerApi({ getLlm, projectService = null, importQueue = null,
       if (!files.length || !projectService.getProjectById(projectId)) return { linked: 0, total: files.length };
       const db = getDb();
       if (importQueue) {
-        let lib = db.prepare("SELECT * FROM libraries WHERE type = 'BDSM_DEVICE' OR type = 'DEVICE' LIMIT 1").get();
-        if (!lib) lib = db.prepare('SELECT * FROM libraries LIMIT 1').get();
-        if (lib) for (const f of files) importQueue.add({ libraryId: lib.id, path: f, event: 'CREATE' });
+        const lib = getDeviceImportLibrary(db);
+        for (const f of files) importQueue.add({ libraryId: lib.id, path: f, event: 'CREATE' });
       }
       const norm = (p) => path.resolve(p).toLowerCase();
       const wanted = new Map(files.map((f) => [norm(f), f]));

@@ -66,13 +66,16 @@ module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, 
   handle('modules:getStatus', () => manager.getStatus());
   // .zip local fora do SHA-256 oficial só instala com confirmação NATIVA (o renderer não consegue
   // se autoconfirmar), com aviso de origem não oficial (RK-065).
-  const mainWebContents = () => {
-    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+  // O diálogo vai para a janela que pediu a instalação (P14): getFocusedWindow() podia ser outra janela
+  // (ou nenhuma, com o app sem foco). Sem remetente válido, cai na primeira janela do app.
+  const senderWebContents = (sender) => {
+    if (sender && typeof sender.isDestroyed === 'function' && !sender.isDestroyed()) return sender;
+    const win = BrowserWindow.getAllWindows()[0] || null;
     return win && !win.isDestroyed() ? win.webContents : null;
   };
-  const confirmUnofficialZip = async ({ zipPath, sha256 }) => {
+  const confirmUnofficialZip = async ({ zipPath, sha256 }, sender) => {
     return appConfirm({
-      webContents: mainWebContents(),
+      webContents: senderWebContents(sender),
       title: 'Pacote de origem não oficial',
       message: 'Este arquivo não é o pacote oficial do recurso de transcrição.',
       detail: `A verificação de integridade não confere com o pacote oficial. O conteúdo será executado no seu computador; instale só se você confia na origem.
@@ -83,9 +86,9 @@ Arquivo: ${zipPath}`,
   };
 
   // Os esquemas do canal (channels.js) já garantem os tipos e limites: textos de 1 a 500 caracteres.
-  handle('modules:installEngine', (_, payload) => manager.installEngine({
+  handle('modules:installEngine', (event, payload) => manager.installEngine({
     zipPath: payload && payload.zipPath ? payload.zipPath : null,
-    confirmUnofficial: confirmUnofficialZip
+    confirmUnofficial: (info) => confirmUnofficialZip(info, event && event.sender)
   }));
   handle('modules:uninstallEngine', () => manager.uninstallEngine());
   handle('modules:installModel', (_, id) => manager.installModel(id));

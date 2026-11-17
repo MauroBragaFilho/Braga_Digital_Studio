@@ -3,6 +3,9 @@ const path = require('node:path');
 const initSqlJs = require('sql.js');
 const logger = require('./logService');
 
+/** Prazo de retenção do histórico de downloads/conversões (LGPD: dado pessoal só pelo tempo útil). */
+const HISTORY_RETENTION_DAYS = 180;
+
 class HistoryService {
   static async create(databaseDir) {
     // [PERF] Reaproveita o módulo WASM do sql.js já inicializado pelo dbManager (evita carregar
@@ -67,6 +70,10 @@ class HistoryService {
     this._downloadsSaveTimer = null;
     this._conversionsSaveTimer = null;
 
+    // LGPD: o histórico guarda URL, título e pasta. Não há motivo para manter isso para sempre:
+    // na inicialização, apaga os registros com mais de HISTORY_RETENTION_DAYS (180 dias).
+    this.applyRetention();
+
     // Salva os arquivos físicos caso tenham acabado de ser criados
     this.persistDownloads();
     this.persistConversions();
@@ -87,6 +94,28 @@ class HistoryService {
       try { fs.renameSync(file, `${file}.corrupt-${Date.now()}`); } catch (_) { /* melhor esforço */ }
       return new this.SQL.Database();
     }
+  }
+
+  /**
+   * Retenção do histórico (LGPD): remove downloads e conversões mais antigos que `days`.
+   * As datas são gravadas com datetime('now', 'localtime'), então a comparação usa a mesma base.
+   * Registros sem data ficam (não dá para saber a idade).
+   * @param {number} [days]
+   * @returns {{ downloads: number, conversions: number }} quantos registros saíram
+   */
+  applyRetention(days = HISTORY_RETENTION_DAYS) {
+    const removed = { downloads: 0, conversions: 0 };
+    const modifier = `-${Math.max(1, Math.floor(Number(days) || HISTORY_RETENTION_DAYS))} days`;
+    try {
+      this.downloadsDb.run("DELETE FROM downloads WHERE data_download IS NOT NULL AND data_download < datetime('now', 'localtime', $m)", { $m: modifier });
+      removed.downloads = this.downloadsDb.getRowsModified();
+      this.conversionsDb.run("DELETE FROM conversions WHERE data_conversao IS NOT NULL AND data_conversao < datetime('now', 'localtime', $m)", { $m: modifier });
+      removed.conversions = this.conversionsDb.getRowsModified();
+      if (removed.downloads || removed.conversions) logger.info('[History] Retenção aplicada.', removed);
+    } catch (err) {
+      logger.error('[History] Falha ao aplicar a retenção do histórico.', { error: err.message });
+    }
+    return removed;
   }
 
   /** Escrita atômica: grava em .tmp e renomeia sobre o destino (o arquivo antigo nunca fica pela metade). */
@@ -285,3 +314,4 @@ class HistoryService {
 }
 
 module.exports = HistoryService;
+module.exports.HISTORY_RETENTION_DAYS = HISTORY_RETENTION_DAYS;

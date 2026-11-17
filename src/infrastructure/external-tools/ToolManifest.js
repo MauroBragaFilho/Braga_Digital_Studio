@@ -46,6 +46,13 @@ const ToolManifest = {
     linux:  'untrunc',
     darwin: 'untrunc',
   },
+  // Leitor de metadados (ExifTool): fonte em ToolSources.js. No Windows o pacote do ShareX traz
+  // "exiftool.exe" (ou "exiftool(-k).exe", tratado em ToolUpdater); no Linux/macOS é o script Perl "exiftool".
+  exiftool: {
+    win32:  'exiftool.exe',
+    linux:  'exiftool',
+    darwin: 'exiftool',
+  },
   // Motor de decodificação/reparo RAW (LibRaw via rawpy, empacotado em binário único) — instalação manual
   rawrecoveryengine: {
     win32:  'RawRecoveryEngine.exe',
