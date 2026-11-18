@@ -47,6 +47,12 @@ env:
   # Os nomes do instalador e dos pacotes Linux vêm do artifactName do package.json (nsis/linux); o atualizador do app
   # (AppUpdateChecker) procura exatamente esse padrão. O stem é o "name" do package.json.
   LAUNCHER_STEM: braga-digital-studio
+  # TRANSIÇÃO: nas 2 primeiras Releases publicadas depois da v1.1.1, a Release leva TAMBÉM as cópias com os nomes
+  # antigos (BragaDigitalStudioSetup.exe/.AppImage/.deb e o .sha256 de cada um), para quem está numa versão antiga
+  # atualizar pelo caminho de sempre. Da 3ª em diante sai só o padrão novo (a conta é feita em determine-version).
+  # Depois disso, este bloco e os trechos "nomes antigos" podem ser apagados.
+  LEGACY_AFTER: 1.1.1
+  LEGACY_RELEASES: 2
 
 # Mínimo por padrão; só o job `release` (publica a Release e dá push da versão) recebe contents: write.
 permissions:
@@ -71,6 +77,7 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
       tag: ${{ steps.get_version.outputs.tag }}
       bumped: ${{ steps.get_version.outputs.bumped }}
+      legacy: ${{ steps.legacy.outputs.legacy }}
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -111,6 +118,25 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
           echo "Commit avaliado: $(git rev-parse --short HEAD) | package.json: $BASE | Release: v$VERSION (bump automático: $BUMPED)"
+
+      # Conta as Releases publicadas (sem rascunho) acima de LEGACY_AFTER e abaixo desta: menos de LEGACY_RELEASES
+      # = esta Release ainda leva as cópias com os nomes antigos.
+      - name: Nomes antigos (transição)
+        id: legacy
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]; }
+          COUNT=0
+          for T in $(gh release list --repo "$RELEASES_REPO" --exclude-drafts --limit 100 --json tagName -q '.[].tagName'); do
+            V="${T#v}"
+            echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || continue
+            if newer "$V" "$LEGACY_AFTER" && newer "$VERSION" "$V"; then COUNT=$((COUNT+1)); fi
+          done
+          if newer "$VERSION" "$LEGACY_AFTER" && [ "$COUNT" -lt "$LEGACY_RELEASES" ]; then LEGACY=true; else LEGACY=false; fi
+          echo "legacy=$LEGACY" >> "$GITHUB_OUTPUT"
+          echo "Releases publicadas depois da v$LEGACY_AFTER: $COUNT | nomes antigos nesta Release: $LEGACY"
 
   # ------------------------------------------------------------------------------------
   # Cria a Release como RASCUNHO no repositório de releases antes dos builds. Cada build envia seus arquivos
@@ -321,6 +347,15 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $PWD 'dist\SHA256SUMS-windows.txt'), (($lines | Sort-Object) -join "`n") + "`n")
           Get-Content dist\SHA256SUMS-windows.txt
           $upload = @($files | ForEach-Object { $_.FullName }) + (Join-Path $PWD 'dist\SHA256SUMS-windows.txt')
+          # Transição: cópia do instalador com o nome antigo (o atualizador das versões até a 1.1.1 procura esse nome).
+          if ('${{ needs.determine-version.outputs.legacy }}' -eq 'true') {
+            $old = Join-Path $PWD 'dist\legacy\BragaDigitalStudioSetup.exe'
+            New-Item -ItemType Directory -Force (Split-Path $old) | Out-Null
+            Copy-Item (Join-Path $PWD "dist\$prefix.exe") $old -Force
+            (Get-FileHash $old -Algorithm SHA256).Hash | Out-File -Encoding ascii "$old.sha256"
+            $upload += @($old, "$old.sha256")
+            Write-Host "Nomes antigos: BragaDigitalStudioSetup.exe (+ .sha256) também vai para a Release."
+          }
           gh release upload $env:TAG @upload --repo $env:RELEASES_REPO --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -459,6 +494,17 @@ jobs:
           sha256sum "$APPIMAGE" "$DEB" | sort -k2 > SHA256SUMS-linux.txt
           cat SHA256SUMS-linux.txt
           gh release upload "$TAG" "$APPIMAGE" "$DEB" SHA256SUMS-linux.txt --repo "$RELEASES_REPO" --clobber
+          # Transição: cópias com os nomes antigos e o .sha256 de cada uma.
+          if [ "${{ needs.determine-version.outputs.legacy }}" = "true" ]; then
+            mkdir -p legacy
+            cp "$APPIMAGE" legacy/BragaDigitalStudioSetup.AppImage
+            cp "$DEB" legacy/BragaDigitalStudioSetup.deb
+            for F in legacy/BragaDigitalStudioSetup.AppImage legacy/BragaDigitalStudioSetup.deb; do
+              sha256sum "$F" | awk '{print $1}' > "$F.sha256"
+            done
+            gh release upload "$TAG" legacy/* --repo "$RELEASES_REPO" --clobber
+            echo "Nomes antigos: BragaDigitalStudioSetup.AppImage/.deb (+ .sha256) também foram para a Release."
+          fi
 
   # ------------------------------------------------------------------------------------
   # Publica a Release (tira do rascunho) só depois que os DOIS builds enviaram seus arquivos com sucesso.
