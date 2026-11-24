@@ -7,7 +7,7 @@ Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 ## Escopo
 
 Esta política vale para os instaladores Windows (`braga-digital-studio-<versão>-windows-x64.exe`) do **Braga Digital Studio (BDS)**,
-publicados em <https://github.com/MauroBragaFilho/Braga-Digital-Studio-BACKUP>. O projeto é software livre,
+publicados em <https://github.com/MauroBragaFilho/Braga_Digital_Studio>. O projeto é software livre,
 licenciado sob a [GPL-3.0](LICENSE). Só são assinados binários construídos a partir do código-fonte deste
 repositório; o BDS não assina nem redistribui binários de terceiros como se fossem seus.
 
