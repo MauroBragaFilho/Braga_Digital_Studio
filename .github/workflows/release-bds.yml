@@ -254,6 +254,8 @@ jobs:
       # e o SHA256SUMS.txt já recebem o arquivo assinado. Só o instalador é assinado (o zip portátil não).
       # Requer o secret SIGNPATH_API_TOKEN e as variables SIGNPATH_ORGANIZATION_ID (+ opcionais SIGNPATH_PROJECT_SLUG,
       # SIGNPATH_SIGNING_POLICY). Guia: .docs/ASSINATURA_SIGNPATH.md.
+      # OPCIONAL: sem o token ou sem o Organization ID, a assinatura é PULADA e o instalador sai sem assinar (o atualizador
+      # do app confere o SHA-256, não a assinatura). Com os dois configurados, a assinatura volta a ser exigida.
       - name: Conferir que a tag pertence à main
         if: ${{ github.ref_type == 'tag' }}
         shell: bash
@@ -264,8 +266,23 @@ jobs:
             exit 1
           fi
 
+      - name: Decidir se assina
+        id: sign
+        shell: bash
+        env:
+          SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ] && [ -n "$SIGNPATH_TOKEN" ] && [ -n "$SIGNPATH_ORG" ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Sem SIGNPATH_API_TOKEN ou SIGNPATH_ORGANIZATION_ID (ou fora de tag): o instalador sai SEM assinatura."
+          fi
+
       - name: Enviar o instalador sem assinatura (artefato do GitHub)
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ steps.sign.outputs.sign == 'true' }}
         id: upload-unsigned
         uses: actions/upload-artifact@v7
         with:
@@ -274,7 +291,7 @@ jobs:
           retention-days: 1
 
       - name: Assinar na SignPath (aguarda a aprovação e baixa o assinado)
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ steps.sign.outputs.sign == 'true' }}
         uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -287,7 +304,7 @@ jobs:
           output-artifact-directory: signed
 
       - name: Conferir a assinatura e usar o instalador assinado
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ steps.sign.outputs.sign == 'true' }}
         shell: pwsh
         run: |
           $name = "$env:LAUNCHER_STEM-${{ needs.determine-version.outputs.version }}-windows-x64.exe"

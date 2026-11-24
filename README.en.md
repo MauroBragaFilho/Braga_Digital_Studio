@@ -141,7 +141,7 @@ node scripts/release-tag.js --dry-run  # only shows what it would do (--yes skip
 The script checks that you are on `main` with everything committed and in sync, refuses a tag that already exists (locally or on the remote), updates `package.json` and `package-lock.json`, creates the annotated tag and pushes it. The **Release BDS (Windows + Linux)** workflow (`release-bds.yml`) then:
 
 1. builds Windows and Linux, after passing `check`, `lint` and `test`;
-2. signs the Windows installer on SignPath, only if the tag's commit is on `main` (see the [signing policy](CODE_SIGNING_POLICY.md));
+2. signs the Windows installer on SignPath (when the SignPath token is configured; without it the installer ships unsigned), only if the tag's commit is on `main` (see the [signing policy](CODE_SIGNING_POLICY.md));
 3. publishes a single Release, with `SHA256SUMS.txt` and the notes: the installer's SHA-256 and the **Mudanças** (Changes) section, with the title of each commit since the previous tag. That is why it pays to write the commit title as a sentence the user understands.
 
 The same workflow can be run by hand (without a tag): it takes the next free version and makes a `chore(release): vX.Y.Z [skip release]` commit on `main`. The `build-bds-release.yml` (Windows only), `build-bds-linux.yml` (Linux only, with a launch test via Xvfb) and `release-sign.yml` workflows are run manually; production signing runs inside `release-bds.yml`.
