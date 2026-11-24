@@ -14,7 +14,7 @@ const lerCss = (rel) => fs.readFileSync(path.join(R, rel), 'utf8');
 
 const TELAS = [
   'screens/home.css', 'screens/download.css', 'screens/settings.css', 'screens/library.css', 'screens/transcription.css',
-  'screens/converter.css', 'screens/silence.css', 'screens/metadata.css', 'screens/luts.css', 'screens/devices.css',
+  'screens/converter.css', 'screens/metadata.css', 'screens/luts.css', 'screens/devices.css',
   'screens/projects.css', 'screens/project_workspace.css', 'screens/upload.css',
   'components/ai-assistant.css', 'components/modules-panel.css',
   'components/preview/audio-preview.css', 'components/preview/photo-preview.css',

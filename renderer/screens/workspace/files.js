@@ -9,6 +9,7 @@ import {
   thumbCss, debounce, drawWaveform, synced, reloadMedia, reloadMissing, emitChange, setAppStatus, friendlyError, showMenu
 } from './state.js';
 import { openMonitor } from './monitor.js';
+import { bindSilence } from './silence.js';
 
 let dragged = null; // { type: 'media'|'bin'|'library', id }
 let goTo = () => {};
@@ -55,6 +56,7 @@ export function bindFiles(navigate) {
   $('wsInspRemove')?.addEventListener('click', async () => { const pm = inspected(); if (!pm) return; ws.selected = new Set([pm.pm_id]); await removeSelection(); });
   $('wsBinRename')?.addEventListener('click', renameCurrentBin);
   $('wsBinDelete')?.addEventListener('click', deleteCurrentBin);
+  bindSilence();
   setupDropzone();
 }
 

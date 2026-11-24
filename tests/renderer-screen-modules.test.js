@@ -9,7 +9,7 @@ const { mountScreen, settle } = require('./helpers/renderer-harness');
 const MODULES = (enabled) => [
   ['download', ['download']], ['converter', ['converter']], ['library', ['library']], ['projects', ['projects', 'project_workspace']],
   ['upload', ['upload']], ['devices', ['devices']], ['luts', ['luts']], ['transcription', ['transcription']],
-  ['metadata', ['metadata']], ['silence', ['silence']], ['ai', []]
+  ['metadata', ['metadata']], ['silence', []], ['ai', []]
 ].map(([id, screens]) => ({ id, title: id, description: '', screens, enabled: enabled.includes(id), hasEngine: false, available: true }));
 
 const hidden = (el) => !el || el.classList.contains('hidden') || el.classList.contains('st-devhidden') || el.hidden === true || el.style.display === 'none';

@@ -932,7 +932,7 @@ const startApp = () => {
       'downloads': 'download',
       'converter': 'converter',
       'copy':      'upload',
-      'silence':   'silence',
+      'silence':   'projects',
       'projects':  'projects',
     };
     window.bds.onNavigateToScreen((screen) => {

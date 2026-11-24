@@ -48,7 +48,7 @@ const TOOL_MODULES = Object.freeze({
   convert_media: 'converter', converter_status: 'converter',
   devices_list: 'devices',
   transcribe_media: 'transcription', transcription_status: 'transcription', get_transcript: 'transcription',
-  remove_silence: 'silence'
+  remove_silence: 'projects'
 });
 
 /** `enabled` vazio/ausente = sem informação de módulos (uso isolado): não bloqueia. */

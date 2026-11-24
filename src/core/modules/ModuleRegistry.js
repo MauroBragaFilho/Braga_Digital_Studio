@@ -112,16 +112,6 @@ const BASE_MODULES = [
     order: 20
   },
   {
-    id: 'silence',
-    title: 'Remover Silêncios',
-    description: 'Corta automaticamente os trechos de silêncio de vídeos e áudios.',
-    screens: ['silence'],
-    devOnly: false,
-    defaultEnabled: false,
-    hasEngine: false,
-    order: 30
-  },
-  {
     id: 'recovery',
     title: 'Recuperar',
     description: 'Tenta recuperar vídeos e fotos corrompidos ou incompletos.',

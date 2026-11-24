@@ -41,7 +41,7 @@ test('instalação nova (sem settings.json): módulos pesados desligados e assis
   } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
 });
 
-test('instalação existente sem enabledModules: migra transcription, metadata e silence ligados', () => {
+test('instalação existente sem enabledModules: migra transcription e metadata ligados', () => {
   const dirs = tmpDirs();
   try {
     fs.mkdirSync(dirs.configDir, { recursive: true });
@@ -50,13 +50,13 @@ test('instalação existente sem enabledModules: migra transcription, metadata e
     assert.equal(s.theme, 'light');
     assert.equal(s.modulesMigrated, true);
     // 'ai' fica ausente de propósito: quem nunca escolheu recebe o padrão do módulo (ligado)
-    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, transcription: true, metadata: true, silence: true, recovery: false, montage: false });
+    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, transcription: true, metadata: true, recovery: false, montage: false });
     const e = reg.resolveEnabled(s, { isDev: true });
-    assert.deepEqual([e.transcription, e.metadata, e.silence, e.recovery, e.montage, e.ai], [true, true, true, false, false, true]);
+    assert.deepEqual([e.transcription, e.metadata, e.recovery, e.montage, e.ai], [true, true, false, false, true]);
     assert.equal(reg.resolveEnabled(s, { isDev: false }).ai, true, 'também no app empacotado');
     const disk = readDisk(dirs);
     assert.equal(disk.modulesMigrated, true);
-    assert.equal(disk.enabledModules.silence, true);
+    assert.equal(disk.enabledModules.silence, undefined);
   } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
 });
 
@@ -67,14 +67,14 @@ test('rodar duas vezes não sobrescreve a escolha do usuário', () => {
     fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({ theme: 'dark' }));
     const first = manager(dirs);
     first.load();
-    first.save({ enabledModules: { transcription: false, metadata: true, silence: false } });
+    first.save({ enabledModules: { transcription: false, metadata: true, montage: false } });
 
     // novo gerenciador = novo início do app, lendo o arquivo gravado
     const second = manager(dirs).load();
-    assert.deepEqual(second.enabledModules, { transcription: false, metadata: true, silence: false });
+    assert.deepEqual(second.enabledModules, { transcription: false, metadata: true, montage: false });
     assert.equal(second.modulesMigrated, true);
     const third = manager(dirs).load();
-    assert.deepEqual(third.enabledModules, { transcription: false, metadata: true, silence: false });
+    assert.deepEqual(third.enabledModules, { transcription: false, metadata: true, montage: false });
   } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
 });
 
@@ -82,9 +82,9 @@ test('enabledModules já existente sem a flag: preserva e só marca como migrado
   const dirs = tmpDirs();
   try {
     fs.mkdirSync(dirs.configDir, { recursive: true });
-    fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({ enabledModules: { silence: false } }));
+    fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({ enabledModules: { montage: false } }));
     const s = manager(dirs).load();
-    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, silence: false });
+    assert.deepEqual(s.enabledModules, { ...SCREENS_ON, montage: false });
     assert.equal(s.modulesMigrated, true);
     assert.equal(readDisk(dirs).modulesMigrated, true);
   } finally { fs.rmSync(dirs.root, { recursive: true, force: true }); }
@@ -107,11 +107,11 @@ test('assistente de IA: o que o usuário já escolheu (inclusive ai: false) nunc
     fs.mkdirSync(dirs.configDir, { recursive: true });
     fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({
       modulesMigrated: true,
-      enabledModules: { transcription: true, metadata: true, silence: false, recovery: false, montage: false, ai: false }
+      enabledModules: { transcription: true, metadata: true, recovery: false, montage: false, ai: false }
     }));
     const s = manager(dirs).load();
     assert.equal(s.enabledModules.ai, false, 'a escolha gravada tem prioridade');
-    assert.equal(s.enabledModules.silence, false, 'as outras escolhas ficam');
+    assert.equal(s.enabledModules.recovery, false, 'as outras escolhas ficam');
     assert.equal(reg.isEnabled('ai', s, { isDev: false }), false);
     assert.equal('assistantDefaultMigrated' in readDisk(dirs), false, 'sem flag de migração do assistente');
 
@@ -159,7 +159,7 @@ test('telas principais como módulos: quem já tinha módulos migrados recebe as
     fs.mkdirSync(dirs.configDir, { recursive: true });
     fs.writeFileSync(path.join(dirs.configDir, 'settings.json'), JSON.stringify({
       modulesMigrated: true,
-      enabledModules: { transcription: true, metadata: false, silence: true, library: false }
+      enabledModules: { transcription: true, metadata: false, library: false }
     }));
     const s = manager(dirs).load();
     assert.equal(s.screenModulesMigrated, true);

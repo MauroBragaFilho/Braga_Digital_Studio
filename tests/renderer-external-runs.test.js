@@ -75,15 +75,4 @@ test('Conversor: aberta com uma conversão em andamento, já mostra a fila', asy
   await h.cleanup();
 });
 
-test('Remover Silêncio: processamento iniciado pelo assistente mostra os arquivos e o andamento', async () => {
-  const files = ['D:/v/palestra 1.mp4', 'D:/v/palestra 2.mp4'];
-  const h = await mountScreen('silence', { bds: { silenceGetState: async () => ({ running: true, files }) } });
-  await settle(300);
-  assert.match(text(h, '#silenceMainBody, tbody'), /palestra 1\.mp4/);
-  h.bds.emit('onSilenceProgress', { index: 1, total: 2, file: 'palestra 1.mp4', percent: 55, status: 'Processando...' });
-  await settle(30);
-  const body = text(h, '#silenceMainBody, tbody');
-  assert.match(body, /palestra 2\.mp4/);
-  assert.match(body, /55%/);
-  await h.cleanup();
-});
+// Remover Silêncio não é mais uma tela: a janela dentro de Projetos só abre pelo usuário (tests/renderer-workspace-silence.test.js).

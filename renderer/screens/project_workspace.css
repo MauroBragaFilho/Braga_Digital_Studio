@@ -394,3 +394,14 @@
 .ws-dest-row { display: flex; flex-direction: column; }
 .ws-dest-row .ws-field-label { margin-top: 0; }
 .ws-modal-narrow { width: 440px; }
+
+/* --- Remover silêncio (janela do projeto) --- */
+.ws-sil-files { list-style: none; margin: 0; padding: 0; max-height: 132px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.ws-sil-files li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: var(--fs-label); }
+.ws-sil-files li + li { border-top: 1px solid var(--line); }
+.ws-sil-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-sil-adv summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); }
+.ws-sil-adv-grid { display: grid; grid-template-columns: 1fr 96px; align-items: center; gap: 8px 12px; padding-top: 8px; }
+.ws-sil-progress { display: flex; flex-direction: column; gap: 8px; }
+.ws-sil-progress .ws-progressbar span { transition: width var(--dur-slow) var(--ease); }
+.ws-sil-result { margin: 0; font-size: var(--fs-label); white-space: pre-line; color: var(--text); }

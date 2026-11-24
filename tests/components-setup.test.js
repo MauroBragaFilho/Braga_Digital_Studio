@@ -480,7 +480,7 @@ test('enableTranscriptionModule: instalação nova e instalação antiga (migra�
     const mods = enableTranscriptionModule(sm);
     assert.equal(mods.transcription, true);
     assert.equal(mods.metadata, true, 'quem já usava o app mantém Metadados');
-    assert.equal(mods.silence, true);
+    assert.equal(mods.silence, undefined);
     const disk = JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8'));
     assert.equal(disk.theme, 'light');
     assert.equal(disk.modulesMigrated, true);

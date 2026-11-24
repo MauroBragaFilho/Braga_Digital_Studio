@@ -330,7 +330,7 @@ const remove_silence = {
   },
   status: () => 'Aguardando sua confirmação…',
   prepare(args, ctx) {
-    requireModule(ctx, 'silence', 'Remover Silêncio');
+    requireModule(ctx, 'projects', 'Projetos');
     const silence = requireService(ctx, 'silence', 'Remover Silêncio');
     if (silence.running) throw new ToolError('Já existe uma remoção de silêncio em andamento. Tente de novo quando terminar.', 'BUSY');
     const mode = SILENCE_MODES[args.modo || 'remover'];

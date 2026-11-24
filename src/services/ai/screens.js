@@ -15,7 +15,6 @@ const AI_SCREENS = Object.freeze([
   { id: 'home', label: 'Home', module: null },
   { id: 'download', label: 'Downloads', module: 'download' },
   { id: 'converter', label: 'Conversor', module: 'converter' },
-  { id: 'silence', label: 'Remover Silêncio', module: 'silence' },
   { id: 'metadata', label: 'Metadados', module: 'metadata' },
   { id: 'transcription', label: 'Transcrição', module: 'transcription' },
   { id: 'library', label: 'Biblioteca', module: 'library' },

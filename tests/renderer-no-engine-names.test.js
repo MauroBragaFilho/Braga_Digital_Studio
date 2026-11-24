@@ -9,7 +9,7 @@ const { SCREENS_DIR } = require('./helpers/renderer-harness');
 
 const FORBIDDEN = /yt-dlp|youtube-dl|ffmpeg|ffprobe|whisper|ggml|spotdl|untrunc|exiftool|librawn|rawpy|sql\.js|sqlite|cuda|cublas|direct stream|stream copy|spotify/i;
 
-for (const name of ['download', 'converter', 'silence', 'metadata', 'transcription', 'upload']) {
+for (const name of ['download', 'converter', 'metadata', 'transcription', 'upload']) {
   test(`${name}.html sem nomes de motores`, () => {
     const html = fs.readFileSync(path.join(SCREENS_DIR, `${name}.html`), 'utf8');
     assert.doesNotMatch(html.replace(/<!--[\s\S]*?-->/g, ''), FORBIDDEN);
@@ -24,7 +24,7 @@ test('download.js: rótulos de música não exibem a marca', () => {
 });
 
 test('todas as telas de produção importam o tradutor de erros (exceto upload)', () => {
-  for (const name of ['download', 'converter', 'silence', 'metadata', 'transcription']) {
+  for (const name of ['download', 'converter', 'metadata', 'transcription']) {
     const js = fs.readFileSync(path.join(SCREENS_DIR, `${name}.js`), 'utf8');
     assert.match(js, /friendlyError\.js/, name);
     assert.doesNotMatch(js, /\$\{(?:err|e|error)\.message\}/, `${name}: err.message cru na interface`);

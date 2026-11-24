@@ -14,7 +14,7 @@ const SECRET_SETTING_KEYS = [];
 const REMOVED_SETTING_KEYS = ['telegramNotificationsEnabled', 'telegramBotToken', 'telegramBotTokenEnc', 'telegramChatId'];
 
 /** Telas que podem ser a tela inicial (a opção "Assistente IA" foi removida: agora é um botão flutuante). */
-const START_SCREENS = ['home', 'download', 'converter', 'silence', 'metadata', 'library', 'projects', 'upload', 'devices', 'luts'];
+const START_SCREENS = ['home', 'download', 'converter', 'metadata', 'library', 'projects', 'upload', 'devices', 'luts'];
 
 /**
  * SettingsManager — Gerenciamento e persistência das configurações da aplicação.
@@ -199,7 +199,7 @@ class SettingsManager {
   _legacyModulesPatch() {
     return {
       // 'ai' fica de fora de propósito: chave ausente = padrão do módulo (ligado)
-      enabledModules: { ...Object.fromEntries(CORE_SCREEN_MODULE_IDS.map((id) => [id, true])), transcription: true, metadata: true, silence: true, recovery: false, montage: false },
+      enabledModules: { ...Object.fromEntries(CORE_SCREEN_MODULE_IDS.map((id) => [id, true])), transcription: true, metadata: true, recovery: false, montage: false },
       modulesMigrated: true,
       screenModulesMigrated: true
     };
@@ -208,7 +208,7 @@ class SettingsManager {
   /**
    * Migração única do sistema de módulos. Se `enabledModules` não existe nas configurações salvas e a
    * flag `modulesMigrated` ainda não foi gravada, o settings.json é de uma versão anterior: grava
-   * Transcrição, Metadados e Remover Silêncios ligados (demais desligados). Depois disso a flag impede
+   * Transcrição e Metadados ligados (demais desligados). Depois disso a flag impede
    * nova execução, então a escolha do usuário nunca é sobrescrita. Altera `merged`; true = precisa gravar.
    */
   _migrateModules(saved, merged) {

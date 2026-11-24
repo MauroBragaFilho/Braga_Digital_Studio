@@ -15,11 +15,11 @@ test('padrões: todos os módulos desligados, exceto o assistente de IA (ligado 
 });
 
 test('chave ausente ou enabledModules inválido usa o padrão (desligado)', () => {
-  for (const s of [undefined, null, {}, { enabledModules: null }, { enabledModules: [] }, { enabledModules: { silence: 'sim' } }]) {
-    assert.equal(reg.resolveEnabled(s).silence, false);
+  for (const s of [undefined, null, {}, { enabledModules: null }, { enabledModules: [] }, { enabledModules: { metadata: 'sim' } }]) {
+    assert.equal(reg.resolveEnabled(s).metadata, false);
   }
-  assert.equal(reg.resolveEnabled({ enabledModules: { silence: true } }).silence, true);
-  assert.equal(reg.resolveEnabled({ enabledModules: { silence: false } }).silence, false);
+  assert.equal(reg.resolveEnabled({ enabledModules: { metadata: true } }).metadata, true);
+  assert.equal(reg.resolveEnabled({ enabledModules: { metadata: false } }).metadata, false);
 });
 
 test('devOnly (Montagem e Recuperação) nunca fica ligado fora do desenvolvimento; o assistente liberado fica ligado também no app final', () => {
@@ -43,15 +43,16 @@ test('isEnabled e ids desconhecidos', () => {
 
 test('sanitizeEnabledModules mantém só ids conhecidos com booleano', () => {
   assert.deepEqual(
-    reg.sanitizeEnabledModules({ silence: false, ai: 1, foo: true, metadata: true }),
-    { silence: false, metadata: true }
+    reg.sanitizeEnabledModules({ montage: false, silence: true, ai: 1, foo: true, metadata: true }),
+    { montage: false, metadata: true }
   );
   assert.deepEqual(reg.sanitizeEnabledModules('x'), {});
   assert.deepEqual(reg.sanitizeEnabledModules([true]), {});
 });
 
 test('moduleForScreen e definições coerentes', () => {
-  assert.equal(reg.moduleForScreen('silence').id, 'silence');
+  assert.equal(reg.moduleForScreen('silence'), null, 'não é mais uma tela: a função vive em Projetos');
+  assert.equal(reg.isKnownId('silence'), false, 'Remover Silêncios não é mais um módulo (módulos são as telas do menu)');
   assert.equal(reg.moduleForScreen('home'), null);
   const orders = reg.MODULES.map((m) => m.order);
   assert.deepEqual(orders, [...orders].sort((a, b) => a - b));
@@ -63,7 +64,7 @@ test('motores: transcrição usa o painel do Whisper; recuperação baixa o moto
   const recovery = reg.getModule('recovery');
   assert.equal(recovery.hasEngine, true);
   assert.equal(recovery.engine, 'tool:untrunc');
-  for (const id of ['silence', 'metadata', 'montage', 'ai']) assert.equal(reg.getModule(id).hasEngine, false);
+  for (const id of ['metadata', 'montage', 'ai']) assert.equal(reg.getModule(id).hasEngine, false);
 });
 
 test('assistente de IA: módulo sem tela (botão flutuante), liberado no app final e ligado por padrão', () => {

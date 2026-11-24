@@ -127,6 +127,7 @@
           <span id="wsSelCount">0 selecionados</span>
           <button id="wsSelMove" class="ws-btn-outline" type="button">Mover para…</button>
           <button id="wsSelSync" class="ws-btn-outline" type="button">Sincronizar câmeras</button>
+          <button id="wsSelSilence" class="ws-btn-outline" type="button">Remover silêncio</button>
           <button id="wsSelRemove" class="ws-btn-outline tone-bad" type="button">Remover do projeto</button>
           <button id="wsSelClear" class="ws-link" type="button">Limpar seleção</button>
         </div>
@@ -326,6 +327,49 @@
         <button id="wsBtnMarkOut" class="ws-btn-outline" type="button" title="Marcar Out (O)"><span class="material-symbols-rounded">last_page</span> Out</button>
       </div>
       <div class="ws-monitor-labels"><span>In: <b id="wsInLabel">--:--:--:--</b></span><span>Seleção: <b id="wsSelDurationLabel">--:--:--:--</b></span><span>Out: <b id="wsOutLabel">--:--:--:--</b></span></div>
+    </div>
+  </div>
+
+  <!-- MODAL: REMOVER SILÊNCIO (a função da antiga tela "Remover Silêncio") -->
+  <div id="wsSilenceModal" class="ws-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wsSilTitle">
+    <div class="ws-modal-box ws-modal-narrow">
+      <div class="ws-modal-header">
+        <h3 id="wsSilTitle">Remover silêncio</h3>
+        <button id="wsSilClose" class="ws-icon-btn" type="button" title="Fechar" aria-label="Fechar"><span class="material-symbols-rounded">close</span></button>
+      </div>
+      <p id="wsSilSummary" class="ws-muted"></p>
+      <ul id="wsSilFiles" class="ws-sil-files"></ul>
+      <label class="ws-field-label" for="wsSilMode">O que fazer com o silêncio</label>
+      <select id="wsSilMode" class="ws-field-input">
+        <option value="remove">Remover por completo</option>
+        <option value="reduce05">Reduzir para 0,5 s</option>
+        <option value="reduce10">Reduzir para 1 s</option>
+      </select>
+      <details class="ws-sil-adv">
+        <summary>Ajustes</summary>
+        <div class="ws-sil-adv-grid">
+          <label class="ws-field-label" for="wsSilThreshold">Sensibilidade (dB)</label>
+          <input id="wsSilThreshold" class="ws-field-input" type="number" min="-60" max="-10" step="1" value="-30" />
+          <label class="ws-field-label" for="wsSilMin">Duração mínima do silêncio (s)</label>
+          <input id="wsSilMin" class="ws-field-input" type="number" min="0.1" max="5" step="0.1" value="0.5" />
+        </div>
+      </details>
+      <label class="ws-field-label" for="wsSilFolder">Salvar em</label>
+      <div class="ws-add-row">
+        <input id="wsSilFolder" class="ws-field-input" type="text" readonly />
+        <button id="wsSilFolderBtn" class="ws-btn-outline" type="button">Alterar</button>
+      </div>
+      <div id="wsSilProgress" class="ws-sil-progress hidden" role="status" aria-live="polite">
+        <div class="ws-progressbar"><span id="wsSilBar"></span></div>
+        <span id="wsSilStatus" class="ws-muted"></span>
+      </div>
+      <p id="wsSilResult" class="ws-sil-result hidden"></p>
+      <div class="ws-modal-footer">
+        <button id="wsSilReveal" class="ws-link hidden" type="button">Mostrar a pasta</button>
+        <span></span>
+        <button id="wsSilStop" class="ws-btn-outline hidden" type="button">Cancelar</button>
+        <button id="wsSilRun" class="ws-btn-accent" type="button"><span class="material-symbols-rounded">graphic_eq</span> Remover silêncio</button>
+      </div>
     </div>
   </div>
 

@@ -16,7 +16,6 @@ export const AI_SCREENS = Object.freeze([
   Object.freeze({ id: 'home', label: 'Home', module: null }),
   Object.freeze({ id: 'download', label: 'Downloads', module: 'download' }),
   Object.freeze({ id: 'converter', label: 'Conversor', module: 'converter' }),
-  Object.freeze({ id: 'silence', label: 'Remover Silêncio', module: 'silence' }),
   Object.freeze({ id: 'metadata', label: 'Metadados', module: 'metadata' }),
   Object.freeze({ id: 'transcription', label: 'Transcrição', module: 'transcription' }),
   Object.freeze({ id: 'library', label: 'Biblioteca', module: 'library' }),
