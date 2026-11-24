@@ -118,17 +118,24 @@ test('adicionar preset: o cartão traz nome, estado, modelo sugerido e a chave p
   await stop(t);
 });
 
-test('chave: só "Chave guardada" (nunca o valor); Trocar abre o campo vazio; Remover apaga; cada provedor tem a sua', async () => {
+test('chave: o campo fica sempre à vista e vazio (nunca o valor); sem "Trocar"; vazio não muda nada; Remover pede confirmação; cada provedor tem a sua', async () => {
   const t = await mountPanel();
   await add(t, 'groq');
   await add(t, 'qwencloud');
   const [groq] = cards(t.host);
+  assert.equal(groq.querySelector('.ana-key').getAttribute('placeholder'), 'Cole a chave aqui');
+  assert.equal(groq.querySelector('.ana-key-remove'), null, 'sem chave guardada não há o que remover');
   groq.querySelector('.ana-key').value = 'sk-groq-segredo-111';
   click(t.h, groq.querySelector('.ana-save'));
   await settle(60);
   const g = cards(t.host)[0];
-  assert.match(g.textContent, /Chave guardada/);
-  assert.equal(g.querySelector('.ana-key'), null, 'sem campo de chave quando já há uma guardada');
+  const field = g.querySelector('.ana-key');
+  assert.ok(field, 'com chave guardada o campo continua à vista');
+  assert.equal(field.value, '', 'o campo nunca traz o valor');
+  assert.equal(field.getAttribute('type'), 'password');
+  assert.equal(field.getAttribute('placeholder'), 'Chave guardada, cole outra para trocar');
+  assert.equal(g.querySelector('.ana-key-change'), null, 'não há botão Trocar');
+  assert.match(g.textContent, /Chave guardada/, 'o texto de apoio diz que há chave guardada');
   assert.match(g.querySelector('.ana-state').textContent, /Aviso pendente|Ativo/);
   assert.ok(!t.h.document.body.innerHTML.includes('sk-groq-segredo'), 'a chave não aparece em lugar nenhum da tela');
   assert.ok(!t.h.document.body.textContent.includes('sk-groq-segredo'));
@@ -137,22 +144,71 @@ test('chave: só "Chave guardada" (nunca o valor); Trocar abre o campo vazio; Re
   assert.match(cards(t.host)[1].textContent, /Obrigatória/, 'o Qwen continua sem chave própria');
   assert.equal(cards(t.host)[1].querySelector('.ana-key').value, '');
 
-  click(t.h, g.querySelector('.ana-key-change'));
-  await settle(10);
-  const field = cards(t.host)[0].querySelector('.ana-key');
-  assert.ok(field);
-  assert.equal(field.value, '', 'o campo de troca nasce vazio');
+  // campo vazio + Salvar e testar: a chave guardada continua a mesma (nada é enviado no lugar dela)
+  click(t.h, g.querySelector('.ana-save'));
+  await settle(60);
+  assert.equal(t.fetched.at(-1).auth, 'Bearer sk-groq-segredo-111', 'vazio não troca a chave');
+  assert.equal(t.ai.getPublicConfig().providers[0].hasKey, true);
 
-  // recarrega a lista: continua guardada; remover volta ao campo
-  field.value = '';
-  await t.ai.saveConfig({ provider: { id: t.ai.getPublicConfig().providers[0].id, apiKey: 'sk-groq-outra-chave-2' } });
-  await t.mod.mountAnalysisPanel(t.host);
-  await settle(20);
-  assert.match(cards(t.host)[0].textContent, /Chave guardada/);
+  // colar outra troca a chave
+  cards(t.host)[0].querySelector('.ana-key').value = 'sk-groq-outra-chave-2';
+  click(t.h, cards(t.host)[0].querySelector('.ana-save'));
+  await settle(60);
+  assert.equal(t.fetched.at(-1).auth, 'Bearer sk-groq-outra-chave-2');
+  assert.equal(cards(t.host)[0].querySelector('.ana-key').value, '', 'a chave enviada sai do campo');
+
+  // remover pede confirmação; recusar mantém a chave
+  t.h.window.bdsModal.confirm = async (msg) => { t.h.dialogs.confirms.push(String(msg)); return false; };
   click(t.h, cards(t.host)[0].querySelector('.ana-key-remove'));
   await settle(20);
-  assert.ok(cards(t.host)[0].querySelector('.ana-key'));
+  assert.equal(t.h.dialogs.confirms.length, 1);
+  assert.match(t.h.dialogs.confirms[0], /Remover a chave guardada de Groq\?/);
+  assert.equal(t.ai.getPublicConfig().providers[0].hasKey, true, 'recusou: a chave continua guardada');
+
+  t.h.window.bdsModal.confirm = async (msg) => { t.h.dialogs.confirms.push(String(msg)); return true; };
+  click(t.h, cards(t.host)[0].querySelector('.ana-key-remove'));
+  await settle(20);
+  assert.equal(t.h.dialogs.confirms.length, 2);
   assert.equal(t.ai.getPublicConfig().providers[0].hasKey, false);
+  assert.equal(cards(t.host)[0].querySelector('.ana-key').getAttribute('placeholder'), 'Cole a chave aqui');
+  assert.equal(cards(t.host)[0].querySelector('.ana-key-remove'), null);
+  await stop(t);
+});
+
+test('chave: o que o usuário digitou num cartão não se perde quando a lista é redesenhada (abrir outro cartão)', async () => {
+  const t = await mountPanel();
+  await add(t, 'groq');
+  await add(t, 'qwencloud');
+  cards(t.host)[0].querySelector('.ana-key').value = 'sk-groq-digitando';
+  click(t.h, cards(t.host)[1].querySelector('.ana-toggle'));
+  await settle(10);
+  assert.equal(cards(t.host)[0].querySelector('.ana-key').value, 'sk-groq-digitando');
+  assert.equal(cards(t.host)[1].querySelector('.ana-key').value, '');
+  await stop(t);
+});
+
+test('"Salvar e testar" traz o nome do provedor no aria-label, sem mudar o texto visível', async () => {
+  const t = await mountPanel();
+  await add(t, 'groq');
+  await add(t, 'qwencloud');
+  const saves = cards(t.host).map((c) => c.querySelector('.ana-save'));
+  assert.deepEqual(saves.map((b) => b.getAttribute('aria-label')), ['Salvar e testar Groq', 'Salvar e testar Qwen']);
+  assert.ok(saves.every((b) => /Salvar e testar$/.test(b.textContent.trim())), 'o texto visível continua "Salvar e testar"');
+  await stop(t);
+});
+
+test('ordem: com um provedor só as setas nem são desenhadas (o interruptor continua); com dois voltam', async () => {
+  const t = await mountPanel();
+  await add(t, 'groq');
+  const one = cards(t.host)[0];
+  assert.equal(one.querySelector('.ana-up'), null);
+  assert.equal(one.querySelector('.ana-down'), null);
+  assert.ok(one.querySelector('.ana-enabled'), 'o interruptor fica');
+  await add(t, 'qwencloud');
+  assert.equal(cards(t.host).length, 2);
+  assert.ok(cards(t.host).every((c) => c.querySelector('.ana-up') && c.querySelector('.ana-down')));
+  assert.equal(cards(t.host)[0].querySelector('.ana-up').disabled, true);
+  assert.equal(cards(t.host)[1].querySelector('.ana-down').disabled, true);
   await stop(t);
 });
 

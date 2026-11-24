@@ -8,13 +8,14 @@
  * Textos entram sempre por textContent.
  */
 
+import { localShortcut, LOCAL_SHORTCUT_HINT } from './ai-local-shortcut.js';
+
 let host = null;
 let cloud = null;            // modulesCloudGet: { encryptionAvailable, providers:[{ id, label, hasKey, keySource, model, models }] }
 let order = [];              // todos os motores, na ordem escolhida
 let enabled = new Set();     // motores ligados
 let localStatus = null;      // modulesGetStatus().whisper
 let expanded = new Set();
-let keyEdit = new Set();
 let rowStatus = new Map();   // id -> { text, kind }
 let found = [];              // catálogo de modelos de áudio por provedor de chat: [{ label, host, count }] (só informação)
 
@@ -153,7 +154,7 @@ async function saveAndTest(id, btn) {
     if (model) patch.model = model.value;
     setRowStatus(id, 'Salvando…');
     cloud = await call(window.bds?.modulesCloudSet, patch);
-    keyEdit.delete(id);
+    if (key) key.value = '';   // já seguiu para o main: não fica no campo
     setRowStatus(id, 'Testando a chave…');
     const res = await call(window.bds?.modulesCloudTest, id);
     rowStatus.set(id, { text: res && res.limited ? `A chave do ${p.label} é válida (com permissões restritas).` : `A chave do ${p.label} está funcionando.`, kind: 'ok' });
@@ -181,39 +182,36 @@ async function removeKey(id) {
 
 function buildLocalDetail() {
   const model = localStatus && Array.isArray(localStatus.models) ? localStatus.models.find((m) => m.active) : null;
+  const missing = Boolean(localStatus) && (!localStatus.engine.installed || !model);
   const text = !localStatus ? 'O estado da transcrição neste computador não está disponível agora.'
     : !localStatus.engine.installed ? 'A transcrição neste computador ainda não está instalada.'
-      : model ? `Usa o modelo ${model.label}. Nada sai do computador.` : 'Nenhum modelo instalado ainda.';
-  return [
-    h('p', { class: 'mod-hint', text }),
-    h('button', {
-      class: 'mod-btn mod-btn-secondary mod-btn-sm aud-self-start', type: 'button',
-      onclick: () => window.dispatchEvent(new CustomEvent('bds:ai-open-sub', { detail: 'local' }))
-    }, [icon('tune'), 'Gerenciar modelos'])
-  ];
+      : model ? `Usa o modelo ${model.label}. Nada sai do computador. ${LOCAL_SHORTCUT_HINT}` : 'Nenhum modelo instalado ainda.';
+  const parts = [h('p', { class: 'mod-hint', text })];
+  // O atalho só aparece quando falta algo instalado; com tudo pronto a dica diz onde trocar ou apagar modelos
+  if (missing) {
+    const shortcut = localShortcut();
+    shortcut.classList.add('aud-self-start');
+    parts.push(shortcut);
+  }
+  return parts;
 }
 
 function buildCloudDetail(p) {
   const st = rowStatus.get(p.id);
   const shared = p.keySource === 'chat';
-  const editing = keyEdit.has(p.id);
   const parts = [h('p', { class: 'mod-hint', text: `O áudio é enviado ao ${p.label} pela internet. A cobrança é do seu plano nele.` })];
 
-  if (p.hasKey && !editing) {
-    parts.push(h('div', { class: 'mod-field' }, [
-      h('span', { class: 'mod-field-label', text: 'Chave de API' }),
-      h('div', { class: 'aud-keyrow' }, [
-        h('span', { class: 'aud-keysaved' }, [icon('lock'), shared ? 'Usando a chave do provedor de chat' : 'Chave guardada']),
-        h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm aud-key-change', type: 'button', 'aria-label': `Trocar a chave do ${p.label}`, onclick: () => { keyEdit.add(p.id); render(); } }, shared ? 'Usar outra' : 'Trocar')
-      ])
-    ]));
-  } else {
-    parts.push(h('div', { class: 'mod-field' }, [
-      h('label', { class: 'mod-field-label', for: `audKey-${p.id}`, text: 'Chave de API' }),
-      h('input', { id: `audKey-${p.id}`, class: 'mod-input aud-key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'Cole a chave aqui', disabled: !(cloud && cloud.encryptionAvailable) }),
-      h('span', { class: 'mod-hint', text: cloud && cloud.encryptionAvailable ? 'Fica criptografada neste computador e nunca é exibida de novo.' : 'A criptografia do sistema não está disponível: não é possível guardar a chave.' })
-    ]));
-  }
+  // O campo da chave fica sempre à vista (nunca mostra o valor); vazio não muda nada, colar outra troca.
+  const encrypted = Boolean(cloud && cloud.encryptionAvailable);
+  let hint = 'Fica criptografada neste computador e nunca é exibida de novo.';
+  if (!encrypted) hint = 'A criptografia do sistema não está disponível: não é possível guardar a chave.';
+  else if (shared) hint = 'Usando a chave do provedor de chat. Cole outra aqui para usar uma chave só do áudio.';
+  else if (p.hasKey) hint = 'Chave guardada e criptografada neste computador; nunca é exibida de novo. Deixe o campo vazio para mantê-la.';
+  parts.push(h('div', { class: 'mod-field' }, [
+    h('label', { class: 'mod-field-label', for: `audKey-${p.id}`, text: 'Chave de API' }),
+    h('input', { id: `audKey-${p.id}`, class: 'mod-input aud-key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: p.hasKey ? 'Chave guardada, cole outra para trocar' : 'Cole a chave aqui', disabled: !encrypted }),
+    h('span', { class: 'mod-hint', text: hint })
+  ]));
 
   if (p.models.length > 1) {
     parts.push(h('div', { class: 'mod-field' }, [
@@ -226,7 +224,7 @@ function buildCloudDetail(p) {
     ]));
   }
   parts.push(h('div', { class: 'mod-actions' }, [
-    h('button', { class: 'mod-btn mod-btn-primary aud-save', type: 'button', onclick: (e) => saveAndTest(p.id, e.currentTarget) }, [icon('wifi_tethering'), 'Salvar e testar'])
+    h('button', { class: 'mod-btn mod-btn-primary aud-save', type: 'button', 'aria-label': `Salvar e testar ${p.label}`, onclick: (e) => saveAndTest(p.id, e.currentTarget) }, [icon('wifi_tethering'), 'Salvar e testar'])
   ]));
   parts.push(h('div', { class: `aud-status${st && st.kind ? ` aud-${st.kind}` : ''}`, 'data-aud-status': p.id, role: 'status', text: st ? st.text : '' }));
   if (p.hasKey && !shared) {
@@ -260,8 +258,9 @@ function buildRow(id, index) {
       icon(open ? 'expand_less' : 'expand_more')
     ]),
     h('div', { class: 'ana-prov-tools' }, [
-      h('button', { class: 'mod-icon-btn aud-up', type: 'button', title: 'Subir', 'aria-label': `Subir ${labelOf(id)}`, disabled: index === 0, onclick: () => move(index, -1) }, [icon('arrow_upward')]),
-      h('button', { class: 'mod-icon-btn aud-down', type: 'button', title: 'Descer', 'aria-label': `Descer ${labelOf(id)}`, disabled: index === order.length - 1, onclick: () => move(index, 1) }, [icon('arrow_downward')]),
+      // com um motor só não há o que reordenar: as setas nem são desenhadas
+      order.length > 1 ? h('button', { class: 'mod-icon-btn aud-up', type: 'button', title: 'Subir', 'aria-label': `Subir ${labelOf(id)}`, disabled: index === 0, onclick: () => move(index, -1) }, [icon('arrow_upward')]) : null,
+      order.length > 1 ? h('button', { class: 'mod-icon-btn aud-down', type: 'button', title: 'Descer', 'aria-label': `Descer ${labelOf(id)}`, disabled: index === order.length - 1, onclick: () => move(index, 1) }, [icon('arrow_downward')]) : null,
       h('input', {
         type: 'checkbox', class: 'st-switch aud-enabled', checked: enabled.has(id), disabled: !canEnable,
         title: canEnable ? '' : 'Informe a chave para ligar', 'aria-label': `Usar ${labelOf(id)} no modo Automático`,
@@ -314,6 +313,8 @@ function bindDrag(list) {
 
 function render() {
   if (!host) return;
+  // a chave que o usuário está digitando sobrevive a um redesenho (só passa pelo DOM, não é guardada)
+  const typed = [...host.querySelectorAll('.aud-row')].map((li) => [li.dataset.id, li.querySelector('.aud-key')]).filter(([, el]) => el && el.value).map(([id, el]) => [id, el.value]);
   clear(host);
   if (!cloud && !localStatus) {
     host.append(h('p', { class: 'mod-muted', text: 'Não foi possível carregar os motores de transcrição.' }));
@@ -326,6 +327,10 @@ function render() {
     h('p', { class: 'mod-hint aud-note', text: 'Vale para o modo Automático da tela de Transcrição: o primeiro ligado e pronto transcreve; se falhar por causa do serviço, o próximo continua. De fábrica só este computador está ligado.' })
   );
   if (found.length) host.append(h('div', { class: 'aud-catalog' }, found.map(buildFound)));
+  for (const [id, value] of typed) {
+    const again = host.querySelector(`.aud-row[data-id="${id}"] .aud-key`);
+    if (again && !again.disabled) again.value = value;
+  }
 }
 
 // ------------------------------------------------------------------ ciclo de vida
@@ -347,6 +352,5 @@ export function unmountAudioSection() {
   order = [];
   enabled = new Set();
   expanded = new Set();
-  keyEdit = new Set();
   rowStatus = new Map();
 }

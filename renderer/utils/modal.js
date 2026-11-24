@@ -1,5 +1,6 @@
 // Acessibilidade para modais baseados em <div> overlay (aberto/fechado por classe CSS).
 // Adiciona role="dialog", aria-modal, aria-labelledby, focus trap, Esc e restauração do foco.
+// O Esc clica no botão de fechar do diálogo (o primeiro do DOM que casa com o seletor de closeViaButton): uma trava de "ocupado" vai no clique desse botão.
 // O observer fica preso ao próprio elemento (descartado junto com ele); é idempotente.
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let uidCounter = 0;
@@ -66,7 +67,8 @@ export function enhanceModalOverlay(overlay, { isOpen = defaultIsOpen } = {}) {
     wasOpen = open;
     if (open) {
       lastFocus = doc.activeElement;
-      const target = focusables()[0] || overlay;
+      // [data-autofocus] marca o campo que recebe o foco ao abrir (senão seria o botão de fechar, o primeiro do diálogo)
+      const target = focusables().find((n) => n.hasAttribute('data-autofocus')) || focusables()[0] || overlay;
       if (target === overlay) overlay.setAttribute('tabindex', '-1');
       setTimeout(() => { try { target.focus(); } catch (_) { /* tela descartada */ } }, 0);
     } else if (lastFocus && doc.contains(lastFocus)) {

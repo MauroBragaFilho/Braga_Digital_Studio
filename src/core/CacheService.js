@@ -39,8 +39,8 @@ class CacheService {
     const tempExtra = appPaths.dataDir ? [path.join(appPaths.dataDir, 'temp')] : [];
     const tempExtraDirs = tempExtra.filter((d) => !appPaths.tempDir || dirKey(d) !== dirKey(appPaths.tempDir));
     this.categories = [
-      { key: 'thumbnails', dir: appPaths.thumbnailsDir, label: 'Thumbnails' },
-      { key: 'waveforms',  dir: appPaths.waveformsDir,  label: 'Waveforms' },
+      { key: 'thumbnails', dir: appPaths.thumbnailsDir, label: 'Miniaturas' },
+      { key: 'waveforms',  dir: appPaths.waveformsDir,  label: 'Ondas de áudio' },
       ...(previewsDir ? [{ key: 'previews', dir: previewsDir, label: 'Previews de Fotos' }] : []),
       { key: 'temp',       dir: appPaths.tempDir,       label: 'Arquivos Temporários',
         extraDirs: tempExtraDirs },

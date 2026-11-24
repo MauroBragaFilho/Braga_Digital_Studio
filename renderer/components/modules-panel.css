@@ -55,6 +55,7 @@
 .mod-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mod-row-text strong { font-size: var(--fs-body); }
 .mod-row-text span { font-size: var(--fs-label); }
+.mod-advanced-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-2) 0; }
 .mod-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 /* ----- Botões: pílulas ----- */
@@ -127,9 +128,6 @@
 .ana-prov p { margin: 0; }
 .ana-note { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-label); color: var(--status-warn); }
 .ana-note .material-symbols-rounded { font-size: 16px; flex-shrink: 0; }
-.ana-keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ana-keysaved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); }
-.ana-keysaved .material-symbols-rounded { font-size: 18px; color: var(--status-ok); }
 .ana-consent { display: flex; align-items: center; gap: 12px; font-size: var(--fs-label); cursor: pointer; }
 .ana-consent input { flex-shrink: 0; }
 .ana-adv-body { display: flex; flex-direction: column; gap: 12px; max-width: 540px; }
@@ -169,9 +167,6 @@
 .aud-status:empty { display: none; }
 .aud-ok { color: var(--status-ok); }
 .aud-error { color: var(--danger-fg); }
-.aud-keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aud-keysaved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); }
-.aud-keysaved .material-symbols-rounded { font-size: 18px; color: var(--status-ok); }
 .aud-self-start { align-self: flex-start; }
 .aud-note { margin: 0; }
 .med-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg); }
@@ -208,37 +203,25 @@
 /* ----- Painel embutido nas Configurações ----- */
 .mod-embedded { height: auto; overflow: visible; padding-right: 0; }
 
-/* ----- Tabela de modelos (Configurações > Transcrição) ----- */
-.mod-table-wrap { overflow-x: auto; container-type: inline-size; }
-.mod-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; font-size: var(--fs-body); }
-.mod-table thead th { text-align: left; font-size: var(--fs-label); font-weight: 600; letter-spacing: 0; color: var(--muted); padding: 0 16px 2px; white-space: nowrap; }
-.mod-trow > * { padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: middle; }
-.mod-trow > :first-child { border-left: 1px solid var(--line); border-radius: var(--radius-md) 0 0 var(--radius-md); text-align: left; }
-.mod-trow > :last-child { border-right: 1px solid var(--line); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
-.mod-trow.installed > * { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
-.mod-trow.active > * { border-color: var(--accent); background: var(--accent-light); }
-.mod-tcell-name { font-weight: 400; min-width: 180px; text-transform: none; letter-spacing: 0; }
-.mod-tcell-name strong { display: block; font-size: var(--fs-body); letter-spacing: 0; }
-.mod-tcell-name .mod-muted { display: block; font-size: var(--fs-label); margin-top: 2px; }
-.mod-tcell-stars, .mod-tcell-size { white-space: nowrap; }
-.mod-tcell-size { color: var(--muted); font-variant-numeric: tabular-nums; }
-.mod-tcell-actions .mod-actions { justify-content: flex-end; flex-wrap: nowrap; }
+/* ----- Lista de escolha de modelos (Configurações > Transcrição; D10: para reverter, trocar pelo bloco da tabela) ----- */
+.mod-choice-list { display: flex; flex-direction: column; gap: 8px; }
+.mod-choice { display: flex; align-items: center; gap: 12px; padding: 4px 16px 4px 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.mod-choice.installed { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.mod-choice.selected { border-color: var(--accent); background: var(--accent-light); }
+.mod-choice:focus-within { outline: var(--focus-ring); outline-offset: 2px; }
+.mod-choice-main { display: flex; align-items: center; flex: 1; gap: 12px; flex-wrap: wrap; min-width: 0; padding: 8px 0 8px 16px; cursor: pointer; }
+.mod-choice-main input[type="radio"] { flex-shrink: 0; margin: 0; padding: 0; width: 18px; height: 18px; min-height: 0; accent-color: var(--accent); cursor: pointer; }
+.mod-choice-name { display: flex; flex-direction: column; gap: 2px; flex: 1 1 200px; min-width: 0; }
+.mod-choice-name strong { font-size: var(--fs-body); }
+.mod-choice-name .mod-muted { font-size: var(--fs-label); }
+.mod-choice-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: var(--fs-label); white-space: nowrap; }
+.mod-choice-stat { display: inline-flex; align-items: center; gap: 6px; }
+.mod-choice-size { min-width: 64px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mod-choice-action { display: flex; align-items: center; min-height: 40px; }
+.mod-choice-action p { margin: 0; }
 .mod-stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; }
 .mod-stars-on { color: var(--status-warn); }
 .mod-stars-off { color: color-mix(in srgb, var(--text) 22%, transparent); }
-
-/* Janela estreita: cada modelo vira um cartão (nome em cima, estrelas e tamanho embaixo) */
-@container (max-width: 680px) {
-  .mod-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .mod-table, .mod-table tbody { display: block; }
-  .mod-trow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px 16px; margin-bottom: 8px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg); }
-  .mod-trow.active { border-color: var(--accent); }
-  .mod-trow > * { background: none; border: 0 !important; border-radius: 0 !important; padding: 0; }
-  .mod-tcell-name { grid-column: 1 / -1; }
-  .mod-tcell-stars::before, .mod-tcell-size::before { content: attr(data-label) ' '; font-size: var(--fs-label); color: var(--muted); display: block; }
-  .mod-tcell-actions { grid-column: 1 / -1; }
-  .mod-tcell-actions .mod-actions { justify-content: flex-start; }
-}
 
 /* ----- Pergunta da aceleração NVIDIA ----- */
 .mod-dialog { max-width: 440px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--card); color: var(--text); padding: 24px; box-shadow: 0 8px 24px var(--shadow); }

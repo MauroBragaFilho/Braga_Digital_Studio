@@ -9,8 +9,11 @@ let status = null;
 let unsubs = [];
 let root = null;
 let nvidiaDetected = false;
+let advancedOpen = false;   // "Ajustes avançados" aberto: o bloco é refeito a cada evento de status, então o estado fica aqui
+let pickedId = null;        // modelo marcado na lista (D10); fica marcado até a pessoa baixar, usar ou marcar outro
+let activating = false;     // ativando um modelo já baixado (os botões ficam desabilitados até acabar)
 
-const $ = (id) => (root ? root.querySelector(`#${id}`) : null);
+const $ =(id) => (root ? root.querySelector(`#${id}`) : null);
 
 // ------------------------------------------------------------------ utilitários
 
@@ -117,7 +120,7 @@ function onProgress(p) {
 
 // ------------------------------------------------------------------ seções
 
-function busy() { return Boolean(status && status.busy); }
+function busy() { return Boolean((status && status.busy) || activating); }
 
 /** Estrelas de 1 a 5 (texto acessível: "3 de 5"). */
 function stars(level, max = 5) {
@@ -178,12 +181,9 @@ function renderMain() {
     return h('div', { class: 'mod-section' }, children);
   }
 
-  // Instalado: estado + remover
+  // Instalado: só o estado; remover a transcrição e a aceleração ficam em "Ajustes avançados"
   children.push(h('div', { class: 'mod-row' }, [
-    h('div', { class: 'mod-row-text' }, [h('strong', { text: 'Transcrição instalada' })]),
-    h('div', { class: 'mod-actions' }, [
-      h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm', type: 'button', disabled: b, onclick: removeEngine }, [icon('delete'), 'Remover'])
-    ])
+    h('div', { class: 'mod-row-text' }, [h('strong', { text: 'Transcrição instalada' })])
   ]));
 
   // Aceleração NVIDIA: só aparece com placa NVIDIA detectada (ou se já estiver instalada, para poder remover)
@@ -194,67 +194,131 @@ function renderMain() {
         h('strong', { text: c.installed ? 'Aceleração NVIDIA ativa' : 'Placa NVIDIA detectada' }),
         h('span', { class: 'mod-muted', text: c.installed ? 'A transcrição usa a placa de vídeo.' : 'A aceleração deixa a transcrição bem mais rápida.' })
       ]),
-      h('div', { class: 'mod-actions' }, [
-        c.installed
-          ? h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm', type: 'button', disabled: b, onclick: removeCuda }, [icon('delete'), 'Remover'])
-          : h('button', { class: 'mod-btn mod-btn-primary mod-btn-sm', type: 'button', disabled: b, onclick: askNvidia }, [icon('bolt'), 'Ativar aceleração'])
+      c.installed ? null : h('div', { class: 'mod-actions' }, [
+        h('button', { class: 'mod-btn mod-btn-primary mod-btn-sm', type: 'button', disabled: b, onclick: askNvidia }, [icon('bolt'), 'Ativar aceleração'])
       ])
     ]));
   }
+  children.push(renderAdvanced(c, b));
   return h('div', { class: 'mod-section' }, children);
 }
 
-/** Tabela de modelos: nome, velocidade e precisão em estrelas, tamanho e ações. */
-function renderModels() {
-  const w = status.whisper;
-  const b = busy();
+/** Ações raras (remover a transcrição e a aceleração) num bloco recolhido; as confirmações continuam em cada ação. */
+function renderAdvanced(c, b) {
+  const row = (title, hint, label, onclick) => h('div', { class: 'mod-row' }, [
+    h('div', { class: 'mod-row-text' }, [h('strong', { text: title }), h('span', { class: 'mod-muted', text: hint })]),
+    h('div', { class: 'mod-actions' }, [
+      h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm', type: 'button', disabled: b, title: label, 'aria-label': label, onclick }, [icon('delete'), label])
+    ])
+  ]);
+  const rows = [row('Remover a transcrição', 'Os modelos e a aceleração já baixados continuam no disco.', 'Remover a transcrição', removeEngine)];
+  if (c.installed) rows.push(row('Remover a aceleração NVIDIA', 'A transcrição volta a usar só o processador.', 'Remover a aceleração NVIDIA', removeCuda));
+  const details = h('details', { class: 'st-advanced mod-advanced', open: advancedOpen }, [
+    h('summary', { text: 'Ajustes avançados' }),
+    h('div', { class: 'mod-advanced-body' }, rows)
+  ]);
+  details.addEventListener('toggle', () => { advancedOpen = details.hasAttribute('open'); });
+  return details;
+}
 
-  const rows = w.models.map((m) => {
-    const size = fmtBytes(m.sizeOnDisk || m.sizeBytes);
-    let actions;
-    if (m.installed) {
-      actions = [
-        m.active
-          ? h('span', { class: 'mod-badge mod-badge-ok', text: 'Em uso' })
-          : h('button', { class: 'mod-btn mod-btn-secondary mod-btn-sm', type: 'button', disabled: b, onclick: () => act(window.bds.modulesSetActiveModel, m.id) }, 'Usar'),
-        h('button', {
-          class: 'mod-icon-btn mod-icon-danger', type: 'button', disabled: b,
-          title: `Apagar ${m.label} (libera ${size})`, 'aria-label': `Apagar o modelo ${m.label}`,
-          onclick: () => removeModel(m)
-        }, [icon('delete')])
-      ];
-    } else {
-      actions = [h('button', { class: 'mod-btn mod-btn-primary mod-btn-sm', type: 'button', disabled: b || !w.engine.installed, title: w.engine.installed ? '' : 'Instale a transcrição primeiro', onclick: () => act(window.bds.modulesInstallModel, m.id) }, [icon('download'), 'Baixar'])];
-    }
+// ===== Lista de escolha de modelos (D10): início do bloco. Reverter = trocar este bloco pela tabela original =====
 
-    return h('tr', { class: `mod-trow${m.active ? ' active' : ''}${m.installed ? ' installed' : ''}` }, [
-      h('th', { scope: 'row', class: 'mod-tcell-name' }, [
+/** Modelo que a lista mostra marcado: o que a pessoa marcou por último (mesmo depois de baixar), senão o que está em uso. */
+function selectedModelId() {
+  const models = status.whisper.models;
+  const picked = models.find((m) => m.id === pickedId);
+  if (picked) return picked.id;
+  const active = models.find((m) => m.active);
+  return active ? active.id : null;
+}
+
+/** Marcar só marca (as setas do teclado marcam a cada passo): baixar ou usar é um clique no botão contextual embaixo. */
+function chooseModel(m) {
+  pickedId = m.id;
+  render();
+}
+
+/** Passa a usar o modelo marcado, que já está baixado; depois a marca volta para o que está em uso (agora ele mesmo). */
+async function useModel(m) {
+  if (busy()) return;
+  activating = true;
+  render();
+  let done = false;
+  try { done = Boolean(await act(window.bds.modulesSetActiveModel, m.id)); }
+  finally { activating = false; if (done) pickedId = null; render(); }
+}
+
+function modelChoice(m, selected, b) {
+  const size = fmtBytes(m.sizeOnDisk || m.sizeBytes);
+  const state = m.active
+    ? h('span', { class: 'mod-badge mod-badge-ok', text: 'Em uso' })
+    : (m.installed ? h('span', { class: 'mod-badge mod-muted', text: 'Baixado' }) : null);
+  return h('div', { class: `mod-choice${m.id === selected ? ' selected' : ''}${m.installed ? ' installed' : ''}${m.active ? ' active' : ''}` }, [
+    h('label', { class: 'mod-choice-main' }, [
+      h('input', { type: 'radio', name: 'modModel', value: m.id, checked: m.id === selected, onchange: () => chooseModel(m) }),
+      h('span', { class: 'mod-choice-name' }, [
         h('strong', { text: m.label }),
         h('span', { class: 'mod-muted', text: m.description })
       ]),
-      h('td', { class: 'mod-tcell-stars', 'data-label': 'Velocidade' }, [stars(m.speedLevel)]),
-      h('td', { class: 'mod-tcell-stars', 'data-label': 'Precisão' }, [stars(m.quality)]),
-      h('td', { class: 'mod-tcell-size', 'data-label': 'Tamanho', text: size }),
-      h('td', { class: 'mod-tcell-actions' }, [h('div', { class: 'mod-actions' }, actions)])
-    ]);
-  });
-
-  const table = h('table', { class: 'mod-table' }, [
-    h('thead', {}, [h('tr', {}, [
-      h('th', { scope: 'col', text: 'Modelo' }),
-      h('th', { scope: 'col', text: 'Velocidade' }),
-      h('th', { scope: 'col', text: 'Precisão' }),
-      h('th', { scope: 'col', text: 'Tamanho' }),
-      h('th', { scope: 'col', class: 'mod-sr', text: 'Ações' })
-    ])]),
-    h('tbody', {}, rows)
-  ]);
-
-  return h('div', { class: 'mod-section' }, [
-    h('h4', { class: 'mod-section-title' }, [icon('neurology'), 'Modelos']),
-    h('div', { class: 'mod-table-wrap' }, [table])
+      h('span', { class: 'mod-choice-meta' }, [
+        h('span', { class: 'mod-choice-stat' }, [h('span', { class: 'mod-muted', text: 'Velocidade' }), stars(m.speedLevel)]),
+        h('span', { class: 'mod-choice-stat' }, [h('span', { class: 'mod-muted', text: 'Precisão' }), stars(m.quality)]),
+        h('span', { class: 'mod-choice-size', text: size })
+      ])
+    ]),
+    state,
+    m.installed ? h('button', {
+      id: `modDelete-${m.id}`, class: 'mod-icon-btn mod-icon-danger', type: 'button', disabled: b,
+      title: `Apagar ${m.label} (libera ${size})`, 'aria-label': `Apagar o modelo ${m.label}`,
+      onclick: () => removeModel(m)
+    }, [icon('delete')]) : null
   ]);
 }
+
+/**
+ * Lista de escolha de modelos: um único botão contextual para o modelo marcado, sempre no mesmo lugar:
+ * "Baixar <nome> (<tamanho>)" se ainda falta baixar, "Usar <nome>" se já foi baixado e não está em uso.
+ */
+function renderModels() {
+  const w = status.whisper;
+  const b = busy();
+  const selected = selectedModelId();
+  const sel = w.models.find((m) => m.id === selected);
+
+  let action = null;
+  if (sel && !sel.installed) {
+    action = w.engine.installed
+      ? h('button', { id: 'modDownloadModel', class: 'mod-btn mod-btn-primary', type: 'button', disabled: b, onclick: () => act(window.bds.modulesInstallModel, sel.id) }, [icon('download'), `Baixar ${sel.label} (${fmtBytes(sel.sizeBytes)})`])
+      : h('p', { class: 'mod-muted', text: 'Instale a transcrição para baixar modelos.' });
+  } else if (sel && !sel.active) {
+    action = h('button', { id: 'modUseModel', class: 'mod-btn mod-btn-primary', type: 'button', disabled: b, onclick: () => useModel(sel) }, [icon('check_circle'), `Usar ${sel.label}`]);
+  }
+
+  return h('div', { class: 'mod-section' }, [
+    h('h4', { id: 'modModelsTitle', class: 'mod-section-title' }, [icon('neurology'), 'Modelos']),
+    h('div', { class: 'mod-choice-list', role: 'radiogroup', 'aria-labelledby': 'modModelsTitle' }, w.models.map((m) => modelChoice(m, selected, b))),
+    h('div', { class: 'mod-choice-action', 'aria-live': 'polite' }, action)
+  ]);
+}
+
+/** A lista é refeita a cada evento de status: guarda onde estava o foco e o devolve (ou leva ao modelo marcado, se o botão sumiu). */
+function modelsFocusKey() {
+  const a = document.activeElement;
+  const host = $('modModels');
+  if (!a || !host || !host.contains(a)) return null;
+  return a.matches('input[type="radio"]') ? 'radio' : (a.id || 'radio');
+}
+function restoreModelsFocus(key) {
+  if (!key) return;
+  const host = $('modModels');
+  let el = key === 'radio' ? null : host.querySelector(`#${key}`);
+  if (el && el.disabled) el = null;
+  const all = [...host.querySelectorAll('input[type="radio"]')];
+  el = el || all.find((r) => r.checked) || all[0];
+  if (el) el.focus();
+}
+
+// ===== Lista de escolha de modelos (D10): fim do bloco =====
 
 // ------------------------------------------------------------------ NVIDIA (pergunta + termos)
 
@@ -330,10 +394,12 @@ async function removeCuda() {
 // ------------------------------------------------------------------ render geral
 
 function render() {
-  if (!status) return;
+  if (!status || !root) return;
   clear($('modWhisperHead')).append(renderHead());
   clear($('modMain')).append(renderMain());
+  const focusKey = modelsFocusKey();
   clear($('modModels')).append(renderModels());
+  restoreModelsFocus(focusKey);
   $('modProgressCancel').disabled = !status.busy;
   if (!status.busy) $('modProgress').classList.add('hidden');
 }
@@ -349,6 +415,9 @@ function subscribe() {
 /** Constrói o esqueleto do painel dentro de `container` e carrega o estado. */
 export async function mountModulesPanel(container) {
   root = container;
+  advancedOpen = false;
+  pickedId = null;
+  activating = false;
   clear(root);
   root.append(
     h('div', { class: 'mod-screen mod-embedded' }, [
@@ -377,4 +446,7 @@ export function unmountModulesPanel() {
   unsubs = [];
   if (root) clear(root);
   root = null;
+  advancedOpen = false;
+  pickedId = null;
+  activating = false;
 }

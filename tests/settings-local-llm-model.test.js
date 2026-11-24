@@ -196,3 +196,25 @@ test('sem placa dedicada, só integrada, ou sem leitura: a dica diz a verdade ou
   const other = await mount(t, { aiLocalLlmStatus: async () => rich({ memory: null, fits: {}, recommendedId: '' }) });
   assert.equal(el(other, 'aiLocalLlmFit').hidden, true, 'sistema sem pacote com placa: nada a dizer');
 });
+
+test('Remover o modelo local pede confirmação: recusar não apaga nada, aceitar remove e avisa', async (t) => {
+  const removed = [];
+  const h = await mount(t, {
+    aiLocalLlmStatus: async () => state(),
+    aiLocalLlmRemove: async () => { removed.push(1); return { ok: true, data: { ...state().data, installed: false } }; }
+  });
+  const btn = el(h, 'aiLocalLlmRemoveBtn');
+  h.window.bdsModal.confirm = async (msg) => { h.dialogs.confirms.push(String(msg)); return false; };
+  btn.click();
+  await settle(30);
+  assert.equal(h.dialogs.confirms.length, 1);
+  assert.match(h.dialogs.confirms[0], /Remover o modelo local\?/);
+  assert.equal(removed.length, 0, 'recusou: nada foi removido');
+  assert.equal(el(h, 'aiLocalLlmStatus').textContent, '');
+
+  h.window.bdsModal.confirm = async (msg) => { h.dialogs.confirms.push(String(msg)); return true; };
+  btn.click();
+  await settle(30);
+  assert.equal(removed.length, 1);
+  assert.match(el(h, 'aiLocalLlmStatus').textContent, /Modelo local removido/);
+});

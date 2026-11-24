@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseHTML } = require('linkedom');
 const { mountScreen, settle, SCREENS_DIR } = require('./helpers/renderer-harness');
 
 const read = (...p) => fs.readFileSync(path.join(SCREENS_DIR, ...p), 'utf8');
@@ -19,6 +20,17 @@ test('o HTML tem o cartão "Conta do YouTube": opção desligada de fábrica e b
   assert.doesNotMatch(input[0], /\bchecked\b/, 'vem desligada: o uso da conta é opcional');
   assert.match(html, /<button id="btnYoutubeSignOut"[^>]*>\s*Sair e apagar a sessão\s*<\/button>/);
   assert.match(html, /Enquanto baixa, o BDS cria um arquivo temporário com a sessão e o apaga ao terminar/);
+});
+
+test('"Sair e apagar a sessão" continua visível no cartão: controle de privacidade, nunca escondido nem recolhido', () => {
+  const { document } = parseHTML(`<!doctype html><html><body>${read('settings.html')}</body></html>`);
+  const btn = document.getElementById('btnYoutubeSignOut');
+  assert.ok(btn, 'botão de sair');
+  assert.equal(btn.closest('details'), null, 'fora de "Ajustes avançados" (que ficam recolhidos)');
+  assert.equal(btn.classList.contains('hidden'), false);
+  assert.equal(btn.closest('.st-row').classList.contains('hidden'), false, 'a linha também não nasce escondida');
+  assert.match(btn.closest('.st-card').querySelector('.st-card-title').textContent, /Conta do YouTube/);
+  assert.equal(btn.textContent.trim(), 'Sair e apagar a sessão', 'texto claro, não um ícone solto');
 });
 
 test('a opção reflete o que está salvo, entra no que é salvo e o botão pede confirmação antes de sair da conta', async () => {
@@ -41,12 +53,12 @@ test('a opção reflete o que está salvo, entra no que é salvo e o botão pede
     assert.equal(box.checked, true, 'mostra a escolha salva');
 
     box.checked = false;
-    doc.getElementById('saveSettingsButton').click();
+    doc.getElementById('settingsSaveBarSave').click();
     await settle(60);
     assert.ok(saved.length >= 1, 'salvou');
     assert.equal(saved.at(-1).useYoutubeAccount, false, 'a escolha vai no que é salvo');
     box.checked = true;
-    doc.getElementById('saveSettingsButton').click();
+    doc.getElementById('settingsSaveBarSave').click();
     await settle(60);
     assert.equal(saved.at(-1).useYoutubeAccount, true);
 

@@ -19,7 +19,7 @@ const PROVIDERS = [
   { id: 'elevenlabs', label: 'ElevenLabs', hasKey: false, keySource: null, model: 'scribe_v2', models: [{ id: 'scribe_v2', label: 'Scribe v2', hint: 'ElevenLabs' }] }
 ];
 
-async function mountAudio({ settings = {}, confirm = true, ai = null } = {}) {
+async function mountAudio({ settings = {}, confirm = true, ai = null, extra = {} } = {}) {
   const saved = [];
   const h = await mountScreen('luts', {
     init: false,
@@ -28,7 +28,8 @@ async function mountAudio({ settings = {}, confirm = true, ai = null } = {}) {
       modulesCloudGet: { ok: true, data: { encryptionAvailable: true, providers: PROVIDERS } },
       modulesGetStatus: { ok: true, data: { whisper: { ready: true, engine: { installed: true }, models: [{ id: 'small', label: 'Small', active: true }] } } },
       getSettings: async () => ({ transcriptionOrder: ['local', 'groq', 'elevenlabs'], transcriptionFallback: ['local'], ...settings }),
-      saveSettings: async (patch) => { saved.push(patch); return {}; }
+      saveSettings: async (patch) => { saved.push(patch); return {}; },
+      ...extra
     }
   });
   h.window.bdsModal.confirm = async () => confirm;
@@ -96,6 +97,66 @@ test('Áudio: desligar não pergunta; chave do chat aparece como tal; a chave nu
   assert.deepEqual(t.saved.at(-1).transcriptionFallback, ['groq']);
   assert.match(rows(t.host)[1].querySelector('.aud-detail').textContent, /Usando a chave do provedor de chat/);
   assert.ok(!t.host.innerHTML.includes('gsk_'), 'nenhuma chave na tela');
+  await t.h.cleanup();
+});
+
+test('Áudio: o campo da chave fica sempre à vista, sem "Trocar"; com chave diz "Chave guardada, cole outra para trocar" e vazio não muda nada', async () => {
+  const t = await mountAudio({ settings: { transcriptionFallback: ['local'] } });
+  const key = (i) => rows(t.host)[i].querySelector('.aud-key');
+  assert.equal(key(0), null, 'o motor local não tem chave');
+  assert.ok(key(1), 'Groq (chave do chat) mostra o campo');
+  assert.equal(key(1).getAttribute('placeholder'), 'Chave guardada, cole outra para trocar');
+  assert.equal(key(1).getAttribute('type'), 'password');
+  assert.equal(key(1).value, '');
+  assert.match(rows(t.host)[1].querySelector('.aud-detail').textContent, /Usando a chave do provedor de chat/);
+  assert.equal(key(2).getAttribute('placeholder'), 'Cole a chave aqui', 'sem chave: pede colar');
+  assert.equal(t.host.querySelector('.aud-key-change'), null, 'não há botão Trocar nem Usar outra');
+  assert.equal(t.host.querySelector('.aud-keyrow'), null);
+  await t.h.cleanup();
+});
+
+test('Áudio: Salvar e testar com o campo vazio não envia chave; colando uma, ela segue uma vez e o campo é limpo', async () => {
+  const sets = [];
+  const t = await mountAudio({ settings: { transcriptionFallback: ['local'] }, extra: {
+    modulesCloudSet: async (patch) => { sets.push(patch); return { ok: true, data: { encryptionAvailable: true, providers: PROVIDERS } }; },
+    modulesCloudTest: { ok: true, data: {} }
+  } });
+  click(t.h, rows(t.host)[1].querySelector('.aud-save'));
+  await settle(30);
+  assert.equal(sets.length, 1);
+  assert.equal('apiKey' in sets[0], false, 'vazio não troca a chave');
+  rows(t.host)[1].querySelector('.aud-key').value = '  gsk_nova_chave  ';
+  click(t.h, rows(t.host)[1].querySelector('.aud-save'));
+  await settle(30);
+  assert.equal(sets[1].apiKey, 'gsk_nova_chave');
+  assert.equal(rows(t.host)[1].querySelector('.aud-key').value, '', 'a chave enviada sai do campo');
+  assert.ok(!t.host.innerHTML.includes('gsk_nova'), 'a chave não fica na tela');
+  await t.h.cleanup();
+});
+
+test('Áudio: o que foi digitado num campo de chave sobrevive a um redesenho da lista (abrir outra linha)', async () => {
+  const t = await mountAudio();
+  rows(t.host)[2].querySelector('.aud-key').value = 'el_digitando';
+  click(t.h, rows(t.host)[0].querySelector('.aud-toggle'));
+  await settle(10);
+  assert.equal(rows(t.host)[2].querySelector('.aud-key').value, 'el_digitando');
+  await t.h.cleanup();
+});
+
+test('Áudio: "Salvar e testar" traz o nome do motor no aria-label; Remover a chave guardada continua confirmando', async () => {
+  const t = await mountAudio({ settings: { transcriptionFallback: ['local'] } });
+  const saves = rows(t.host).map((r) => r.querySelector('.aud-save')).filter(Boolean);
+  assert.deepEqual(saves.map((b) => b.getAttribute('aria-label')), ['Salvar e testar Groq', 'Salvar e testar ElevenLabs']);
+  assert.ok(saves.every((b) => /Salvar e testar$/.test(b.textContent.trim())));
+  await t.h.cleanup();
+});
+
+test('Áudio: com um motor só (sem os serviços de nuvem) as setas nem são desenhadas', async () => {
+  const t = await mountAudio({ extra: { modulesCloudGet: { ok: false, error: 'indisponível' } } });
+  assert.equal(rows(t.host).length, 1);
+  assert.equal(rows(t.host)[0].querySelector('.aud-up'), null);
+  assert.equal(rows(t.host)[0].querySelector('.aud-down'), null);
+  assert.ok(rows(t.host)[0].querySelector('.aud-enabled'));
   await t.h.cleanup();
 });
 
@@ -196,6 +257,49 @@ test('Imagem lê o estado do modelo local e acrescenta, por provedor, quantos mo
   assert.deepEqual(lines, ['Também entendem imagens: 2 modelos em Groq (uso em breve).', 'Também entendem imagens: 1 modelo em OpenAI (uso em breve).']);
   assert.equal(t.image.querySelector('button'), null, 'quando está tudo certo não há botão');
   await t.h.cleanup();
+});
+
+// ------------------------------------------------------------------ atalho único para "Neste computador"
+
+const shortcutOf = (el) => [...el.querySelectorAll('button')].filter((b) => b.getAttribute('aria-label') === 'Gerenciar modelos neste computador');
+const listenOpenSub = (h) => { const got = []; h.window.addEventListener('bds:ai-open-sub', (e) => got.push(e.detail)); return got; };
+
+test('Atalho único: Áudio só mostra "Gerenciar modelos" quando falta algo instalado; pronto vira frase na dica', async () => {
+  const ready = await mountAudio();
+  const localDetail = rows(ready.host)[0].querySelector('.aud-detail');
+  assert.equal(shortcutOf(localDetail).length, 0, 'tudo pronto: sem botão');
+  assert.match(localDetail.textContent, /Usa o modelo Small\. Nada sai do computador\. Para trocar ou apagar modelos, abra "Neste computador"\./);
+  await ready.h.cleanup();
+
+  const noEngine = await mountAudio({ extra: { modulesGetStatus: { ok: true, data: { whisper: { ready: false, engine: { installed: false }, models: [] } } } } });
+  const open = listenOpenSub(noEngine.h);
+  const btns = shortcutOf(rows(noEngine.host)[0].querySelector('.aud-detail'));
+  assert.equal(btns.length, 1, 'sem a transcrição instalada: o atalho aparece');
+  assert.equal(btns[0].textContent.replace(/^tune/, ''), 'Gerenciar modelos');
+  assert.equal(btns[0].getAttribute('title'), 'Gerenciar modelos neste computador');
+  click(noEngine.h, btns[0]);
+  assert.deepEqual(open, ['local'], 'o mesmo evento de sempre, abrindo o subpainel Neste computador');
+  await noEngine.h.cleanup();
+
+  const noModel = await mountAudio({ extra: { modulesGetStatus: { ok: true, data: { whisper: { ready: false, engine: { installed: true }, models: [{ id: 'small', label: 'Small', active: false }] } } } } });
+  assert.equal(shortcutOf(rows(noModel.host)[0].querySelector('.aud-detail')).length, 1, 'transcrição instalada, mas sem modelo em uso: o atalho aparece');
+  await noModel.h.cleanup();
+});
+
+test('Atalho único: Imagem usa o mesmo botão (mesmo rótulo e aria-label) só quando falta algo, e o evento não muda', async () => {
+  const missing = await mountMedia(null, { supported: true, installed: false, vision: false, models: [{ id: 'a', vision: true, installed: false }] });
+  const open = listenOpenSub(missing.h);
+  const btns = shortcutOf(missing.image);
+  assert.equal(btns.length, 1);
+  assert.equal(btns[0].textContent.replace(/^tune/, ''), 'Gerenciar modelos');
+  assert.equal(missing.image.querySelectorAll('button').length, 1, 'continua um botão só');
+  click(missing.h, btns[0]);
+  assert.deepEqual(open, ['local']);
+  await missing.h.cleanup();
+
+  const ready = await mountMedia(null);
+  assert.equal(ready.image.querySelector('button'), null, 'pronto: nenhum botão');
+  await ready.h.cleanup();
 });
 
 test('Vídeo: a seção INTEIRA some sem modelos de vídeo no catálogo e aparece (só leitura) com eles', async () => {

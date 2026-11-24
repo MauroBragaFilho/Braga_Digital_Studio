@@ -5,9 +5,6 @@
     <div class="st-header-text">
       <p class="settings-description">Personalize a aparência, os padrões e o comportamento do BDS.</p>
     </div>
-    <button id="saveSettingsButton" class="settings-btn-primary" type="button">
-      <span class="material-symbols-rounded">save</span> Salvar Alterações
-    </button>
   </div>
 
   <div class="settings-layout">
@@ -158,8 +155,11 @@
           <h4 class="st-card-title"><span class="material-symbols-rounded">swap_vert</span> Menu lateral e atalhos</h4>
           <p class="st-card-desc">Escolha a ordem das telas no menu lateral: arraste os itens ou use as setas. A Home fica sempre em primeiro. Pressione <kbd class="st-kbd">Ctrl</kbd> + <kbd class="st-kbd">1</kbd> a <kbd class="st-kbd">9</kbd> em qualquer tela para abrir a tela daquela posição.</p>
           <ol id="sidebarOrderList" class="st-order-list" aria-label="Ordem das telas no menu lateral"></ol>
-          <div class="st-order-actions">
-            <button id="sidebarOrderResetButton" class="settings-btn-outline" type="button">Restaurar ordem padrão</button>
+          <div class="st-order-actions hidden" data-reset-row>
+            <button id="sidebarOrderResetButton" class="st-reset-icon hidden" type="button" data-reset-kind="order" aria-label="Restaurar a ordem padrão do menu lateral" title="Restaurar padrão: ordem original do menu">
+              <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span>
+              <span class="st-sr">Restaurar ordem padrão</span>
+            </button>
           </div>
         </div>
         </div>
@@ -522,16 +522,20 @@
           <div id="customFoldersGroup" class="settings-folder-list">
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="mp3FolderInput">Pasta de destino para áudio</label>
-              <div class="settings-folder-controls">
+              <div class="st-path-field">
                 <input type="text" id="mp3FolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
-                <button id="mp3FolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+                <button id="mp3FolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta de destino do áudio" title="Escolher a pasta de destino do áudio">
+                  <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                </button>
               </div>
             </div>
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="mp4FolderInput">Pasta de destino para vídeo</label>
-              <div class="settings-folder-controls">
+              <div class="st-path-field">
                 <input type="text" id="mp4FolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
-                <button id="mp4FolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+                <button id="mp4FolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta de destino do vídeo" title="Escolher a pasta de destino do vídeo">
+                  <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                </button>
               </div>
             </div>
           </div>
@@ -542,9 +546,10 @@
             </div>
             <input type="checkbox" id="playlistFoldersInput" class="st-switch" checked />
           </label>
-          <div class="st-restore-row">
-            <button id="restoreDownloadFoldersButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span> Restaurar padrão
+          <div class="st-restore-row hidden" data-reset-row>
+            <button id="restoreDownloadFoldersButton" class="st-reset-icon hidden" type="button" data-reset-kind="folders" aria-label="Restaurar as pastas padrão de áudio e vídeo" title="Restaurar padrão">
+              <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span>
+              <span class="st-sr">Restaurar padrão</span>
             </button>
           </div>
         </div>
@@ -553,14 +558,17 @@
           <h4 class="st-card-title"><span class="material-symbols-rounded">sync</span> Saída do Conversor</h4>
           <div class="st-row st-row-stack">
             <label class="st-row-label" for="converterFolderInput">Pasta dos arquivos convertidos</label>
-            <div class="settings-folder-controls">
+            <div class="st-path-field">
               <input type="text" id="converterFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
-              <button id="converterFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+              <button id="converterFolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta dos arquivos convertidos" title="Escolher a pasta dos arquivos convertidos">
+                <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+              </button>
             </div>
           </div>
-          <div class="st-restore-row">
-            <button id="restoreConverterFolderButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span> Restaurar padrão
+          <div class="st-restore-row hidden" data-reset-row>
+            <button id="restoreConverterFolderButton" class="st-reset-icon hidden" type="button" data-reset-kind="folders" aria-label="Restaurar a pasta padrão dos arquivos convertidos" title="Restaurar padrão">
+              <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span>
+              <span class="st-sr">Restaurar padrão</span>
             </button>
           </div>
         </div>
@@ -573,35 +581,32 @@
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="obsFolderInput">Gravações do OBS Studio</label>
               <span class="st-row-hint">Em branco, o BDS lê a pasta de gravação dos perfis do OBS e cria uma biblioteca por perfil.</span>
-              <div class="settings-folder-controls">
+              <div class="st-path-field">
                 <input type="text" id="obsFolderInput" class="settings-input" placeholder="Automático: detectado do OBS" spellcheck="false" />
-                <button id="obsFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+                <button id="obsFolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta de gravações do OBS Studio" title="Escolher a pasta de gravações do OBS Studio">
+                  <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                </button>
               </div>
               <span id="obsDetectedHint" class="st-row-hint" aria-live="polite"></span>
             </div>
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="shadowplayFolderInput">Gravações do NVIDIA ShadowPlay</label>
               <span class="st-row-hint">Em branco, o BDS usa a pasta configurada no NVIDIA App.</span>
-              <div class="settings-folder-controls">
+              <div class="st-path-field">
                 <input type="text" id="shadowplayFolderInput" class="settings-input" placeholder="Automático: detectado do NVIDIA App" spellcheck="false" />
-                <button id="shadowplayFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+                <button id="shadowplayFolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta de gravações do NVIDIA ShadowPlay" title="Escolher a pasta de gravações do NVIDIA ShadowPlay">
+                  <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                </button>
               </div>
               <span id="shadowplayDetectedHint" class="st-row-hint" aria-live="polite"></span>
             </div>
-            <div class="st-row">
-              <div class="st-row-text">
-                <span class="st-row-label">Detecção automática</span>
-                <span class="st-row-hint">Lê de novo a configuração do OBS e do NVIDIA App e atualiza as bibliotecas automáticas.</span>
-              </div>
-              <div class="st-row-control">
-                <button id="btnDetectRecordingFolders" class="settings-btn-outline" type="button">Detectar de novo</button>
-              </div>
-            </div>
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="deviceFolderInput">Importação de dispositivos</label>
-              <div class="settings-folder-controls">
+              <div class="st-path-field">
                 <input type="text" id="deviceFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
-                <button id="deviceFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+                <button id="deviceFolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta de importação de dispositivos" title="Escolher a pasta de importação de dispositivos">
+                  <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                </button>
               </div>
             </div>
           </div>
@@ -613,6 +618,7 @@
           <button id="btnSettingsAddCustomSource" class="settings-btn-accent" type="button">
             <span class="material-symbols-rounded">create_new_folder</span> Nova fonte
           </button>
+          <span id="settingsCustomSourcesStatus" class="st-row-hint" role="status" aria-live="polite"></span>
           <div id="settingsCustomSourcesList" class="settings-custom-sources-list"></div>
         </div>
         </div>
@@ -624,9 +630,11 @@
           <p class="st-row-hint">Pasta monitorada pelo scanner de uploads automáticos para YouTube.</p>
           <div class="st-row st-row-stack">
             <label class="st-row-label" for="uploadsFolderInput">Pasta de uploads</label>
-            <div class="settings-folder-controls">
+            <div class="st-path-field">
               <input type="text" id="uploadsFolderInput" class="settings-input" placeholder="Selecione uma pasta…" spellcheck="false" />
-              <button id="uploadsFolderButton" class="settings-btn-outline" type="button" aria-label="Escolher outra pasta">Alterar</button>
+              <button id="uploadsFolderButton" class="st-path-pick" type="button" aria-label="Escolher a pasta de uploads" title="Escolher a pasta de uploads">
+                <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+              </button>
             </div>
           </div>
         </div>
@@ -669,11 +677,8 @@
             <summary>Ajustes avançados</summary>
             <div class="st-row st-row-stack">
               <label class="st-row-label" for="aiAssistantInstructionsInput">Instruções personalizadas</label>
-              <span class="st-row-hint">Opcional. Por exemplo: "responda de forma curta". Valem para toda conversa.</span>
+              <span class="st-row-hint">Opcional. Por exemplo: "responda de forma curta". Valem para toda conversa. Salvam ao sair do campo.</span>
               <textarea id="aiAssistantInstructionsInput" class="settings-textarea" rows="3" maxlength="2000" spellcheck="true" placeholder="Ex.: responda de forma curta."></textarea>
-              <div class="st-row-control">
-                <button id="aiAssistantInstructionsSave" class="settings-btn-outline" type="button">Salvar instruções</button>
-              </div>
             </div>
           </details>
           <span id="aiAssistantStatus" class="st-row-hint" role="status" aria-live="polite"></span>
@@ -761,7 +766,7 @@
               </div>
               <input type="checkbox" id="aiMcpConfirmInput" class="st-switch" />
             </label>
-            <div class="st-row st-row-stack">
+            <div class="st-row st-row-stack" id="aiMcpRegenRow">
               <span class="st-row-label">Novo token</span>
               <span class="st-row-hint">Quem usa o token atual perde o acesso até você copiar a configuração de novo.</span>
               <div class="st-row-control">
@@ -784,34 +789,35 @@
           <div class="st-row st-row-stack">
             <span class="st-row-label">Imagem de referência atual</span>
             <div class="settings-folder-controls">
-              <input type="text" id="lutPreviewImageInput" class="settings-input" placeholder="Imagem padrão do sistema (./assets/lut_preview.jpg)" readonly />
-              <button id="lutPreviewImageSelectBtn" class="settings-btn-outline" type="button">Escolher imagem</button>
-              <button id="lutPreviewImageResetBtn" class="settings-btn-outline" type="button" title="Restaurar imagem padrão">Restaurar padrão</button>
+              <div class="st-path-field">
+                <input type="text" id="lutPreviewImageInput" class="settings-input" placeholder="Imagem padrão do sistema (./assets/lut_preview.jpg)" aria-describedby="lutPreviewImageHint" readonly />
+                <button id="lutPreviewImageSelectBtn" class="st-path-pick" type="button" aria-label="Escolher imagem de referência" title="Escolher imagem de referência">
+                  <span class="material-symbols-rounded" aria-hidden="true">image</span>
+                </button>
+              </div>
+              <button id="lutPreviewImageResetBtn" class="st-reset-icon hidden" type="button" data-reset-kind="empty" data-reset-fields="lutPreviewImageInput" aria-label="Restaurar a imagem padrão de pré-visualização" title="Restaurar padrão: imagem do sistema">
+                <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span>
+                <span class="st-sr">Restaurar padrão</span>
+              </button>
             </div>
           </div>
 
           <div class="st-lut-preview">
-            <div class="st-lut-thumb">
+            <div id="settingsLutPreviewThumbBox" class="st-lut-thumb" title="Escolher outra imagem de referência">
               <img id="settingsLutPreviewThumb" src="./assets/lut_preview.jpg" alt="Pré-visualização" />
             </div>
-            <span class="st-row-hint">Formatos suportados: PNG, JPG, JPEG, WEBP.</span>
+            <span id="lutPreviewImageHint" class="st-row-hint">Clique no campo ou na imagem para escolher outra. Formatos suportados: PNG, JPG, JPEG, WEBP.</span>
           </div>
         </div>
       </section>
 
       <!-- ================= TRANSCRIÇÃO ================= -->
-      <section id="settingsUpdatesView" class="settings-view st-has-sub hidden">
+      <section id="settingsUpdatesView" class="settings-view hidden">
         <h3 class="settings-section-title">Atualizações</h3>
 
-        <div class="st-subnav" role="tablist" aria-label="Seções das atualizações">
-          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsUpdatesView-components" data-sub="components" aria-selected="true" aria-controls="subpanel-settingsUpdatesView-components">Componentes</button>
-          <button type="button" class="st-subtab" role="tab" id="subtab-settingsUpdatesView-app" data-sub="app" aria-selected="false" aria-controls="subpanel-settingsUpdatesView-app">Aplicativo</button>
-        </div>
-
-        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsUpdatesView-components" data-sub-panel="components" aria-labelledby="subtab-settingsUpdatesView-components">
         <div class="st-card">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">deployed_code_update</span> Componentes do BDS</h4>
-          <p class="st-card-desc">Mantenha os recursos internos do BDS atualizados para baixar, converter e analisar mídia sem erros.</p>
+          <h4 class="st-card-title"><span class="material-symbols-rounded">deployed_code_update</span> Aplicativo e componentes</h4>
+          <p class="st-card-desc">Mantenha o BDS e os recursos internos atualizados para baixar, converter e analisar mídia sem erros.</p>
 
           <div class="settings-updates-unified-card" id="settingsUpdatesCard">
             <div class="settings-update-header">
@@ -819,9 +825,27 @@
                 <span class="material-symbols-rounded" id="updateStatusIcon">update</span>
               </div>
               <div class="settings-update-header-text" role="status" aria-live="polite">
-                <h4 id="updateHeadline">Atualizações dos componentes</h4>
+                <h4 id="updateHeadline">Atualizações do BDS</h4>
                 <p id="updateSubHeadline">Use "Verificar atualizações" para consultar as fontes oficiais.</p>
               </div>
+            </div>
+
+            <!-- Uma linha de estado para o aplicativo e outra para os componentes -->
+            <dl class="settings-update-lines">
+              <div class="settings-update-line">
+                <dt>Aplicativo</dt>
+                <dd id="appUpdateStatusText">Ainda não verificado.</dd>
+              </div>
+              <div class="settings-update-line">
+                <dt>Componentes</dt>
+                <dd id="componentsUpdateStatusText">Ainda não verificado.</dd>
+              </div>
+            </dl>
+
+            <!-- Notas da versão: só no estado "há atualização do aplicativo" -->
+            <div class="settings-update-notes hidden" id="updateReleaseNotes">
+              <h5 class="settings-update-notes-title" id="updateReleaseNotesTitle">Novidades desta versão</h5>
+              <p class="settings-update-notes-text" id="updateReleaseNotesText" role="region" aria-labelledby="updateReleaseNotesTitle" tabindex="0"></p>
             </div>
 
             <!-- Barra de Progresso Unificada (Oculta por padrão) -->
@@ -835,16 +859,11 @@
               </div>
             </div>
 
-            <!-- Ações Unificadas -->
-            <div class="settings-update-actions-bar" id="updateActionsBar">
-              <button id="checkUpdatesButton" class="settings-btn-outline" type="button">
-                <span class="material-symbols-rounded">sync</span> Verificar atualizações
-              </button>
-              <button id="updateNowButton" class="settings-btn-primary hidden" type="button">
-                <span class="material-symbols-rounded">download</span> Atualizar agora
-              </button>
-              <button id="updateLaterButton" class="settings-btn-outline hidden" type="button">
-                Mais tarde
+            <!-- Um único botão que muda de papel: Verificar, Baixar e atualizar, Reiniciar para instalar -->
+            <div class="settings-update-actions-bar" id="updateActionsBar" aria-live="polite" aria-atomic="true">
+              <button id="updateActionButton" class="settings-btn-outline" type="button" data-role="check">
+                <span class="material-symbols-rounded" id="updateActionIcon" aria-hidden="true">sync</span>
+                <span id="updateActionLabel">Verificar atualizações</span>
               </button>
             </div>
           </div>
@@ -867,31 +886,6 @@
               <input type="url" id="updateServerUrlInput" class="settings-input" placeholder="https://atualizacoes.exemplo.com" autocomplete="off" spellcheck="false" />
             </div>
           </details>
-        </div>
-        </div>
-
-        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsUpdatesView-app" data-sub-panel="app" aria-labelledby="subtab-settingsUpdatesView-app">
-        <!-- Atualização do Aplicativo (unificada no painel) -->
-        <div class="st-card" id="appUpdateZone">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">system_update</span> Aplicativo (BDS)</h4>
-          <p class="st-card-desc" id="appUpdateStatusText">
-            Verifique se há uma nova versão do Braga Digital Studio disponível.
-          </p>
-          <div>
-            <button class="settings-btn-outline" id="checkAppUpdateButton" type="button">
-              <span class="material-symbols-rounded">system_update</span> Verificar atualização do BDS
-            </button>
-          </div>
-          <div class="settings-app-update-progress hidden" id="appUpdateProgress">
-            <div class="settings-update-progress-bar">
-              <div class="settings-update-progress-fill" id="appUpdateProgressFill" style="width: 0%;"></div>
-            </div>
-            <div class="settings-update-progress-info">
-              <span id="appUpdateProgressStep">Preparando...</span>
-              <strong id="appUpdateProgressPercent">0%</strong>
-            </div>
-          </div>
-        </div>
         </div>
       </section>
 
@@ -944,31 +938,48 @@
             <span id="cacheResult" class="settings-check-hint st-cache-result" role="status" aria-live="polite"></span>
           </div>
 
-          <div id="cacheCategoriesList" class="settings-crash-list">
-            <div class="settings-crash-empty">
-              <span class="material-symbols-rounded">sync</span> Carregando informações do armazenamento...
-            </div>
-          </div>
-
           <div class="settings-crash-actions-bar">
-            <button id="refreshCacheButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded">refresh</span> Atualizar
-            </button>
             <button id="clearCacheButton" class="settings-btn-danger" type="button">
               <span class="material-symbols-rounded">delete_sweep</span> Limpar tudo
             </button>
           </div>
+
+          <details class="st-advanced" id="cacheAdvanced">
+            <summary>Detalhes por tipo de arquivo</summary>
+            <div id="cacheCategoriesList" class="st-cache-list">
+              <div class="st-row">
+                <div class="st-row-text">
+                  <span class="st-row-hint">Carregando o tamanho das miniaturas, das ondas de áudio e dos outros arquivos temporários...</span>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
         </div>
 
         <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsSystemView-support" data-sub-panel="support" aria-labelledby="subtab-settingsSystemView-support">
         <div class="st-card">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">bug_report</span> Relatórios de erros</h4>
+          <div class="st-card-head">
+            <h4 class="st-card-title"><span class="material-symbols-rounded">bug_report</span> Relatórios de erros e suporte</h4>
+            <div class="st-menu-wrap" id="supportMenuWrap">
+              <button type="button" id="supportMenuButton" class="st-icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="supportMenu" aria-label="Mais ações de relatórios e diagnóstico" title="Mais ações">
+                <span class="material-symbols-rounded" aria-hidden="true">more_horiz</span>
+              </button>
+              <div id="supportMenu" class="st-menu hidden" role="menu" aria-labelledby="supportMenuButton">
+                <button type="button" id="clearCrashReportsButton" class="st-menu-item st-menu-item-warn hidden" role="menuitem">
+                  <span class="material-symbols-rounded" aria-hidden="true">delete_sweep</span> Apagar relatórios guardados
+                </button>
+                <button type="button" id="exportLogsButton" class="st-menu-item" role="menuitem">
+                  <span class="material-symbols-rounded" aria-hidden="true">file_export</span> Exportar logs de diagnóstico
+                </button>
+              </div>
+            </div>
+          </div>
 
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
               <span class="st-row-label">Guardar relatórios de erros neste computador</span>
-              <span class="st-row-hint">Quando ativo, o BDS grava um relatório aqui a cada erro ou travamento. Nada é enviado sozinho: você decide se manda um relatório ao desenvolvedor, por e-mail, no botão abaixo.</span>
+              <span class="st-row-hint">Quando ativo, o BDS grava um relatório aqui a cada erro ou travamento. Nada é enviado sozinho: você decide se manda um relatório ao desenvolvedor, por e-mail.</span>
             </div>
             <input type="checkbox" id="errorReportingEnabledInput" class="st-switch" />
           </label>
@@ -981,25 +992,20 @@
           </div>
 
           <div class="settings-crash-actions-bar">
-            <button id="sendCrashReportsButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded">send</span> Enviar relatórios
-            </button>
-            <button id="clearCrashReportsButton" class="settings-btn-outline settings-btn-warn" type="button">
-              <span class="material-symbols-rounded">delete_sweep</span> Limpar relatórios
+            <button id="sendCrashReportsButton" class="settings-btn-outline hidden" type="button">
+              <span class="material-symbols-rounded" aria-hidden="true">send</span> <span id="sendCrashReportsLabel">Enviar relatórios</span>
             </button>
             <button id="reportProblemButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded">report</span> Relatar um problema
+              <span class="material-symbols-rounded" aria-hidden="true">report</span> Relatar um problema
             </button>
           </div>
-        </div>
 
-        <div class="st-card">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">assignment</span> Diagnóstico e suporte</h4>
-          <p class="st-card-desc">Salva um arquivo com o registro das atividades do BDS, para enviar ao suporte quando algo não funciona.</p>
-          <div>
-            <button id="exportLogsButton" class="settings-btn-outline" type="button">
-              <span class="material-symbols-rounded">file_export</span> Exportar logs de diagnóstico
-            </button>
+          <p id="supportResult" class="st-row-hint st-result" role="status" aria-live="polite"></p>
+          <div class="st-row">
+            <div class="st-row-text">
+              <span class="st-row-label">Diagnóstico e suporte</span>
+              <span class="st-row-hint">No menu de três pontos do cartão você pode apagar os relatórios guardados ou exportar os logs de diagnóstico: um arquivo com o registro das atividades do BDS, para enviar ao suporte quando algo não funciona.</span>
+            </div>
           </div>
         </div>
         </div>
@@ -1015,6 +1021,7 @@
               <span class="material-symbols-rounded">delete_sweep</span> Limpar banco de dados
             </button>
           </div>
+          <p id="dbResult" class="st-row-hint st-result" role="status" aria-live="polite"></p>
         </div>
         </div>
       </section>
@@ -1063,7 +1070,7 @@
     <span class="material-symbols-rounded" aria-hidden="true">edit_note</span>
     <span id="settingsSaveBarText" class="st-savebar-text">Você tem alterações não salvas.</span>
     <button id="settingsSaveBarDiscard" class="settings-btn-outline" type="button">Descartar</button>
-    <button id="settingsSaveBarSave" class="settings-btn-primary" type="button">
+    <button id="settingsSaveBarSave" class="settings-btn-primary" type="button" title="Salvar (Ctrl+S)">
       <span class="material-symbols-rounded">save</span> Salvar
     </button>
   </div>
@@ -1097,7 +1104,7 @@
         <span class="material-symbols-rounded">create_new_folder</span>
         Nova Fonte Personalizada
       </h3>
-      <button id="btnCloseSettingsCustomSourceModal" class="settings-modal-close" type="button" aria-label="Fechar">
+      <button id="btnCloseSettingsCustomSourceModal" class="settings-modal-close" type="button" aria-label="Fechar" title="Fechar (Esc)">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -1109,21 +1116,20 @@
     <div class="settings-modal-form">
       <div class="settings-form-group">
         <label class="settings-form-label" for="modalSettingsAddCustomSourceName">Nome da Fonte / Origem</label>
-        <input type="text" id="modalSettingsAddCustomSourceName" class="settings-input" placeholder="Ex: Podcast Studio, Câmera Sony, Cartão SD..." />
+        <input type="text" id="modalSettingsAddCustomSourceName" class="settings-input" data-autofocus placeholder="Ex: Podcast Studio, Câmera Sony, Cartão SD..." />
       </div>
       <div class="settings-form-group">
         <label class="settings-form-label" for="modalSettingsAddCustomSourcePath">Caminho da Pasta</label>
-        <div class="settings-folder-controls">
-          <input type="text" id="modalSettingsAddCustomSourcePath" class="settings-input" placeholder="Selecione a pasta no seu computador..." />
-          <button id="modalSettingsAddCustomSourceSelectBtn" class="settings-btn-icon" type="button" aria-label="Escolher pasta" title="Escolher pasta">
-            <span class="material-symbols-rounded">folder_open</span>
+        <div class="st-path-field">
+          <input type="text" id="modalSettingsAddCustomSourcePath" class="settings-input" placeholder="Selecione a pasta no seu computador..." spellcheck="false" />
+          <button id="modalSettingsAddCustomSourceSelectBtn" class="st-path-pick" type="button" aria-label="Escolher a pasta da fonte" title="Escolher a pasta da fonte">
+            <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
           </button>
         </div>
       </div>
     </div>
 
     <div class="settings-modal-footer">
-      <button id="modalSettingsAddCustomSourceCancel" class="settings-btn-outline" type="button">Cancelar</button>
       <button id="modalSettingsAddCustomSourceConfirm" class="settings-btn-primary" type="button">
         <span class="material-symbols-rounded">check_circle</span> Cadastrar e importar mídias
       </button>
@@ -1139,7 +1145,7 @@
         <span class="material-symbols-rounded">report</span>
         Relatar um Problema
       </h3>
-      <button id="btnCloseSettingsReportProblem" class="settings-modal-close" type="button" aria-label="Fechar">
+      <button id="btnCloseSettingsReportProblem" class="settings-modal-close" type="button" aria-label="Fechar" title="Fechar (Esc)">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
@@ -1150,12 +1156,11 @@
     <div class="settings-modal-form">
       <div class="settings-form-group">
         <label class="settings-form-label" for="modalSettingsReportProblemDesc">Descrição do problema</label>
-        <textarea id="modalSettingsReportProblemDesc" class="settings-textarea" rows="5"
+        <textarea id="modalSettingsReportProblemDesc" class="settings-textarea" rows="5" data-autofocus
           placeholder="Ex: Ao exportar um vídeo, o BDS travou e fechou inesperadamente."></textarea>
       </div>
     </div>
     <div class="settings-modal-footer">
-      <button id="modalSettingsReportProblemCancel" class="settings-btn-outline" type="button">Cancelar</button>
       <button id="modalSettingsReportProblemConfirm" class="settings-btn-primary" type="button">
         <span class="material-symbols-rounded">mail</span> Gerar e-mail de suporte
       </button>

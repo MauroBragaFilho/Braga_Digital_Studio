@@ -508,10 +508,153 @@ test('Configurações: o interruptor "Ativar assistente" grava na configuração
     assert.equal(notified, 1);
     assert.match(h.document.getElementById('aiAssistantStatus').textContent, /desativada/);
 
+    // Sem botão próprio: as instruções gravam ao mudar o campo
+    assert.equal(h.document.getElementById('aiAssistantInstructionsSave'), null);
     text.value = 'responda em uma frase';
-    fire(h, h.document.getElementById('aiAssistantInstructionsSave'), 'click');
+    fire(h, text, 'change');
     await settle(20);
     assert.deepEqual(h.bds.calls.aiSaveConfig.at(-1), [{ customInstructions: 'responda em uma frase' }]);
+    assert.match(h.document.getElementById('aiAssistantStatus').textContent, /Instruções salvas/);
+  } finally { await h.cleanup(); }
+});
+
+/** Configurações com a Yui: devolve o harness e o campo das instruções. */
+async function mountAssistantSettings({ save } = {}) {
+  const h = await mountScreen('settings', {
+    bds: {
+      aiGetConfig: { ok: true, data: { assistantEnabled: true, customInstructions: 'seja breve', presets: [], model: 'm', baseUrl: 'http://localhost:1234/v1', maxTokens: 512, hasKey: false } },
+      aiSaveConfig: save || (async () => ({ ok: true, data: {} }))
+    }
+  });
+  await settle(60);
+  return { h, text: h.document.getElementById('aiAssistantInstructionsInput'), status: h.document.getElementById('aiAssistantStatus') };
+}
+const savesOf = (h) => (h.bds.calls.aiSaveConfig || []).filter((c) => c[0] && 'customInstructions' in c[0]);
+
+test('instruções da Yui: gravam ao sair do campo (focusout), uma vez só, e nada é gravado sem mudança', async () => {
+  const { h, text } = await mountAssistantSettings();
+  try {
+    fire(h, text, 'focusout');
+    fire(h, text, 'change');
+    await settle(20);
+    assert.equal(savesOf(h).length, 0, 'texto igual ao salvo: não grava');
+    text.value = 'sempre em português';
+    fire(h, text, 'change'); // o navegador dispara change e depois focusout ao sair do campo
+    fire(h, text, 'focusout');
+    await settle(20);
+    assert.deepEqual(savesOf(h), [[{ customInstructions: 'sempre em português' }]]);
+    // pelo focusout sozinho também grava
+    text.value = 'sempre em português, curto';
+    fire(h, text, 'focusout');
+    await settle(20);
+    assert.deepEqual(savesOf(h).at(-1), [{ customInstructions: 'sempre em português, curto' }]);
+    assert.equal(savesOf(h).length, 2);
+  } finally { await h.cleanup(); }
+});
+
+test('instruções da Yui: trocar de aba, de subpainel ou sair da tela grava o que foi digitado', async () => {
+  const { h, text } = await mountAssistantSettings();
+  try {
+    text.value = 'ao trocar de aba';
+    h.document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
+    await settle(20);
+    assert.deepEqual(savesOf(h).at(-1), [{ customInstructions: 'ao trocar de aba' }]);
+
+    text.value = 'ao trocar de subpainel';
+    h.document.querySelector('#settingsAiView .st-subtab[data-sub="providers"]')?.click();
+    await settle(20);
+    assert.deepEqual(savesOf(h).at(-1), [{ customInstructions: 'ao trocar de subpainel' }]);
+
+    text.value = 'ao sair da tela';
+    h.mod.onLeave();
+    await settle(20);
+    assert.deepEqual(savesOf(h).at(-1), [{ customInstructions: 'ao sair da tela' }]);
+    assert.equal(savesOf(h).length, 3);
+  } finally { await h.cleanup(); }
+});
+
+test('instruções da Yui: falha ao gravar avisa na região de status e tenta de novo na próxima saída do campo', async () => {
+  let fail = true;
+  const { h, text, status } = await mountAssistantSettings({
+    save: async () => (fail ? { ok: false, error: 'Sem resposta.' } : { ok: true, data: {} })
+  });
+  try {
+    assert.equal(status.getAttribute('aria-live'), 'polite');
+    text.value = 'tente de novo';
+    fire(h, text, 'change');
+    await settle(20);
+    assert.match(status.textContent, /Não foi possível salvar as instruções/);
+    fail = false;
+    fire(h, text, 'focusout');
+    await settle(20);
+    assert.match(status.textContent, /Instruções salvas/);
+    assert.equal(savesOf(h).length, 2, 'a mesma instrução foi enviada de novo depois da falha');
+  } finally { await h.cleanup(); }
+});
+
+// ------------------------------------------------- Configurações: agentes (MCP), token
+
+const MCP_ON = { ok: true, data: { enabled: true, running: true, port: 8123, requireToken: true, autoConfirm: false } };
+
+async function mountMcpSettings({ status = MCP_ON } = {}) {
+  const h = await mountScreen('settings', {
+    bds: {
+      aiGetConfig: { ok: true, data: { assistantEnabled: true, customInstructions: '' } },
+      aiMcpStatus: status,
+      aiMcpSetOptions: async (patch) => ({ ok: true, data: { ...status.data, ...patch } }),
+      aiMcpRegenerateToken: { ok: true, data: status.data }
+    }
+  });
+  await settle(60);
+  return h;
+}
+
+test('MCP: "Gerar novo token" só aparece com "Exigir token" ligado (a linha some, não fica desabilitada)', async () => {
+  const h = await mountMcpSettings();
+  try {
+    const row = h.document.getElementById('aiMcpRegenRow');
+    const tokenSw = h.document.getElementById('aiMcpTokenInput');
+    assert.ok(row && tokenSw);
+    assert.equal(tokenSw.checked, true);
+    assert.equal(row.hidden, false);
+    assert.equal(h.document.getElementById('aiMcpRegenBtn').disabled, false);
+    tokenSw.checked = false;
+    fire(h, tokenSw, 'change');
+    await settle(20);
+    assert.equal(row.hidden, true, 'sem exigir token não há token para trocar');
+    tokenSw.checked = true;
+    fire(h, tokenSw, 'change');
+    await settle(20);
+    assert.equal(row.hidden, false);
+  } finally { await h.cleanup(); }
+});
+
+test('MCP: com o token desligado desde o início a linha "Novo token" já nasce escondida', async () => {
+  const h = await mountMcpSettings({ status: { ok: true, data: { ...MCP_ON.data, requireToken: false } } });
+  try {
+    assert.equal(h.document.getElementById('aiMcpRegenRow').hidden, true);
+  } finally { await h.cleanup(); }
+});
+
+test('MCP: "Gerar novo token" pede confirmação; recusar não troca nada, aceitar troca e avisa', async () => {
+  const h = await mountMcpSettings();
+  try {
+    const btn = h.document.getElementById('aiMcpRegenBtn');
+    const status = h.document.getElementById('aiMcpStatus');
+    h.window.bdsModal.confirm = async (msg) => { h.dialogs.confirms.push(String(msg)); return false; };
+    fire(h, btn, 'click');
+    await settle(20);
+    assert.equal(h.dialogs.confirms.length, 1);
+    assert.match(h.dialogs.confirms[0], /novo token/i);
+    assert.equal((h.bds.calls.aiMcpRegenerateToken || []).length, 0, 'recusou: o token continua o mesmo');
+    assert.equal(status.textContent, '');
+
+    h.window.bdsModal.confirm = async (msg) => { h.dialogs.confirms.push(String(msg)); return true; };
+    fire(h, btn, 'click');
+    await settle(20);
+    assert.equal(h.bds.calls.aiMcpRegenerateToken.length, 1);
+    assert.match(status.textContent, /Novo token gerado/);
+    assert.equal(btn.disabled, false);
   } finally { await h.cleanup(); }
 });
 

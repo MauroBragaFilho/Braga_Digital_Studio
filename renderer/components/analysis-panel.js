@@ -4,7 +4,8 @@
  * LM Studio, Ollama, OpenAI ou outro compatível) na ORDEM DE PRIORIDADE: se o primeiro falhar, o próximo continua a
  * mesma conversa. Cada provedor é uma linha compacta (alça, nome, estado e interruptor); clicar abre a chave, o modelo
  * e o teste. Reordena arrastando ou pelas setas (que aparecem ao passar o mouse ou com o foco). A chave só é gravada
- * (criptografada no computador) e nunca volta para a tela: aqui só aparece "Chave guardada". As seções Áudio, Imagem e
+ * (criptografada no computador) e nunca volta para a tela: o campo fica sempre à vista e, com chave guardada, mostra
+ * "Chave guardada, cole outra para trocar" (campo vazio não muda nada). As seções Áudio, Imagem e
  * Vídeo vêm de ai-audio-section.js e ai-media-sections.js. A configuração do chat é a mesma do assistente
  * (window.bds.ai*). Textos entram sempre por textContent.
  *
@@ -21,7 +22,6 @@ let config = null;
 let root = null;
 let statusLine = null;                 // { text, kind } da linha geral (adicionar, ordem, fallback)
 let cardStatus = new Map();            // id do provedor -> { text, kind } da linha do cartão
-let keyEdit = new Set();               // provedores com o campo "trocar chave" aberto
 let expanded = new Set();              // provedores com os detalhes abertos
 let confirmRemove = null;              // id do provedor cuja remoção está esperando confirmação
 let modelLists = new Map();            // id -> ids de modelos listados pelo próprio provedor
@@ -75,6 +75,7 @@ function whereItGoes(p) {
 
 function keyHint(p) {
   if (!config.encryptionAvailable) return 'A criptografia do sistema não está disponível: não é possível guardar a chave com segurança.';
+  if (p.hasKey) return 'Chave guardada e criptografada neste computador; nunca é exibida de novo. Deixe o campo vazio para mantê-la.';
   return `${p.keyRequired ? 'Obrigatória. ' : 'Opcional. '}Fica criptografada neste computador e nunca é exibida de novo.`;
 }
 
@@ -229,6 +230,21 @@ function move(index, delta) {
   save({ order: ids }, { focus: delta < 0 ? `${sel('up')}||${sel('down')}` : `${sel('down')}||${sel('up')}` });
 }
 
+/** A chave que o usuário digita num cartão sobrevive a um redesenho (só passa pelo DOM, não é guardada); depois de enviada ao main o campo é limpo. */
+function typedKeys() {
+  const out = new Map();
+  if (!root) return out;
+  for (const li of root.querySelectorAll('.ana-prov')) {
+    const el = li.querySelector('.ana-key');
+    if (el && el.value) out.set(li.dataset.id, el.value);
+  }
+  return out;
+}
+function forgetTypedKey(id) {
+  const el = root && root.querySelector(`.ana-prov[data-id="${id}"] .ana-key`);
+  if (el) el.value = '';
+}
+
 function readCard(p) {
   const card = root.querySelector(`.ana-prov[data-id="${p.id}"]`);
   const val = (sel) => { const el = card.querySelector(sel); return el ? el.value : undefined; };
@@ -249,7 +265,7 @@ async function saveAndTest(p, btn) {
     const patch = readCard(p);
     if (!String(patch.model || '').trim()) throw new Error('Informe o modelo (o botão de atualizar lista os modelos do servidor).');
     config = await call(window.bds?.aiSaveConfig, { provider: patch });
-    keyEdit.delete(p.id);
+    forgetTypedKey(p.id);
     setCardStatus(p.id, 'Testando a conexão…');
     const res = await call(window.bds?.aiTestConnection, p.id);
     cardStatus.set(p.id, { text: res.message, kind: 'ok' });
@@ -268,7 +284,7 @@ async function listModels(p, btn) {
   try {
     setCardStatus(p.id, 'Buscando modelos…');
     config = await call(window.bds?.aiSaveConfig, { provider: readCard(p) });
-    keyEdit.delete(p.id);
+    forgetTypedKey(p.id);
     let ids;
     let text;
     if (p.preset === 'embedded') {
@@ -297,6 +313,13 @@ async function listModels(p, btn) {
   }
 }
 
+/** Apaga a chave guardada do provedor depois de confirmar (o foco vai para o campo da chave, já que o botão some). */
+async function removeKey(p) {
+  const ok = await window.bdsModal.confirm(`Remover a chave guardada de ${p.label}?\n\nO provedor só volta a funcionar depois que você colar uma chave de novo.`);
+  if (!ok) return;
+  save({ provider: { id: p.id, clearApiKey: true } }, { quiet: true, focus: `.ana-prov[data-id="${p.id}"] .ana-key` });
+}
+
 const readCardModel = (id) => { const el = root.querySelector(`.ana-prov[data-id="${id}"] .ana-model`); return el ? el.value.trim() : ''; };
 
 // ------------------------------------------------------------------ linhas dos provedores
@@ -322,8 +345,9 @@ function buildCard(p, index) {
       icon(open ? 'expand_less' : 'expand_more')
     ]),
     h('div', { class: 'ana-prov-tools' }, [
-      h('button', { class: 'mod-icon-btn ana-up', type: 'button', title: 'Subir', 'aria-label': `Subir ${p.label}`, disabled: index === 0, onclick: () => move(index, -1) }, [icon('arrow_upward')]),
-      h('button', { class: 'mod-icon-btn ana-down', type: 'button', title: 'Descer', 'aria-label': `Descer ${p.label}`, disabled: index === total - 1, onclick: () => move(index, 1) }, [icon('arrow_downward')]),
+      // com um provedor só não há o que reordenar: as setas nem são desenhadas
+      total > 1 ? h('button', { class: 'mod-icon-btn ana-up', type: 'button', title: 'Subir', 'aria-label': `Subir ${p.label}`, disabled: index === 0, onclick: () => move(index, -1) }, [icon('arrow_upward')]) : null,
+      total > 1 ? h('button', { class: 'mod-icon-btn ana-down', type: 'button', title: 'Descer', 'aria-label': `Descer ${p.label}`, disabled: index === total - 1, onclick: () => move(index, 1) }, [icon('arrow_downward')]) : null,
       h('input', { type: 'checkbox', class: 'st-switch ana-enabled', checked: p.enabled, 'aria-label': `Ativar ${p.label}`, onchange: (e) => save({ provider: { id: p.id, enabled: e.target.checked } }, { quiet: true, focus: `.ana-prov[data-id="${p.id}"] .ana-enabled` }) })
     ])
   ]);
@@ -334,23 +358,13 @@ function buildCard(p, index) {
     info.push(h('p', { class: 'ana-note', role: 'note' }, [icon('info'), h('span', { text: warning })]));
   }
 
-  // Chave: só "Chave guardada" (nunca o valor). Trocar abre o campo; remover fica em Avançado.
-  let keyBlock;
-  if (p.hasKey && !keyEdit.has(p.id)) {
-    keyBlock = h('div', { class: 'mod-field' }, [
-      h('span', { class: 'mod-field-label', text: 'Chave de API' }),
-      h('div', { class: 'ana-keyrow' }, [
-        h('span', { class: 'ana-keysaved' }, [icon('lock'), 'Chave guardada']),
-        h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-key-change', type: 'button', 'aria-label': `Trocar a chave de ${p.label}`, onclick: () => { keyEdit.add(p.id); focusAfter = `.ana-prov[data-id="${p.id}"] .ana-key`; render(); } }, 'Trocar')
-      ])
-    ]);
-  } else {
-    keyBlock = h('div', { class: 'mod-field' }, [
-      h('label', { class: 'mod-field-label', for: `anaKey-${p.id}`, text: 'Chave de API' }),
-      h('input', { id: `anaKey-${p.id}`, class: 'mod-input ana-key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'Cole a chave aqui', disabled: !config.encryptionAvailable }),
-      h('span', { class: 'mod-hint', text: keyHint(p) })
-    ]);
-  }
+  // Chave: o campo fica sempre à vista e nunca mostra o valor. Com chave guardada o texto de apoio diz que colar outra troca;
+  // vazio não muda nada. Remover a chave guardada fica em Avançado.
+  const keyBlock = h('div', { class: 'mod-field' }, [
+    h('label', { class: 'mod-field-label', for: `anaKey-${p.id}`, text: 'Chave de API' }),
+    h('input', { id: `anaKey-${p.id}`, class: 'mod-input ana-key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: p.hasKey ? 'Chave guardada, cole outra para trocar' : 'Cole a chave aqui', disabled: !config.encryptionAvailable }),
+    h('span', { class: 'mod-hint', text: keyHint(p) })
+  ]);
 
   const modelBlock = h('div', { class: 'mod-field' }, [
     h('label', { class: 'mod-field-label', for: `anaModel-${p.id}`, text: 'Modelo' }),
@@ -377,7 +391,7 @@ function buildCard(p, index) {
         h('span', { class: 'mod-hint', text: 'Mudar de servidor apaga a chave guardada deste provedor.' })
       ]),
       consent && !consentPending ? consent : null,
-      p.hasKey ? h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-self-start ana-key-remove', type: 'button', 'aria-label': `Remover a chave de ${p.label}`, onclick: () => save({ provider: { id: p.id, clearApiKey: true } }, { quiet: true }) }, 'Remover a chave guardada') : null,
+      p.hasKey ? h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-self-start ana-key-remove', type: 'button', 'aria-label': `Remover a chave de ${p.label}`, onclick: () => removeKey(p) }, 'Remover a chave guardada') : null,
       confirmRemove === p.id
         ? h('div', { class: 'ana-confirm', role: 'alertdialog', 'aria-label': `Remover ${p.label}` }, [
           h('span', { text: `Remover ${p.label}? A chave guardada dele também será apagada.` }),
@@ -394,7 +408,7 @@ function buildCard(p, index) {
   const detail = h('div', { class: 'ana-detail', id: detailId, hidden: !open }, [
     ...info, keyBlock, modelBlock, consentPending ? consent : null,
     h('div', { class: 'mod-actions' }, [
-      h('button', { class: 'mod-btn mod-btn-primary ana-save', type: 'button', onclick: (e) => saveAndTest(p, e.currentTarget) }, [icon('wifi_tethering'), 'Salvar e testar'])
+      h('button', { class: 'mod-btn mod-btn-primary ana-save', type: 'button', 'aria-label': `Salvar e testar ${p.label}`, onclick: (e) => saveAndTest(p, e.currentTarget) }, [icon('wifi_tethering'), 'Salvar e testar'])
     ]),
     h('div', { class: `ana-status${st && st.kind ? ` ana-${st.kind}` : ''}`, 'data-status': p.id, role: 'status', text: st ? st.text : '' }),
     advanced
@@ -642,6 +656,7 @@ function render() {
   // A chave que o usuário está digitando em "Adicionar provedor" sobrevive a um redesenho (só passa pelo DOM, não é guardada)
   const typing = root.querySelector('.ana-add-key');
   const typedKey = typing ? typing.value : '';
+  const typedCards = typedKeys();
 
   const head = h('div', { class: 'mod-head' }, [
     h('div', { class: 'mod-head-icon' }, [icon('auto_awesome')]),
@@ -691,6 +706,10 @@ function render() {
 
   clear(host).append(head, body);
   if (typedKey) { const again = root.querySelector('.ana-add-key'); if (again && !again.disabled) again.value = typedKey; }
+  for (const [id, value] of typedCards) {
+    const again = root.querySelector(`.ana-prov[data-id="${id}"] .ana-key`);
+    if (again && !again.disabled) again.value = value;
+  }
   paintStatus();
   // As outras seções têm dados próprios: desenhadas depois, sem atrasar a lista de chat
   try { mountAudioSection($('anaAudioHost')); } catch (_) { /* a seção de áudio nunca derruba o card */ }
@@ -711,7 +730,6 @@ export async function mountAnalysisPanel(container) {
   root.append(h('div', { class: 'mod-screen mod-embedded' }, [h('section', { id: 'anaHost', class: 'mod-card ana-card', 'aria-label': 'Provedores' })]));
   statusLine = null;
   cardStatus = new Map();
-  keyEdit = new Set();
   expanded = new Set();
   modelLists = new Map();
   confirmRemove = null;
@@ -751,7 +769,6 @@ export function unmountAnalysisPanel() {
   config = null;
   statusLine = null;
   cardStatus = new Map();
-  keyEdit = new Set();
   expanded = new Set();
   modelLists = new Map();
   confirmRemove = null;

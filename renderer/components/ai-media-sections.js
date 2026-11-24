@@ -8,6 +8,8 @@
  * Textos entram sempre por textContent.
  */
 
+import { localShortcut } from './ai-local-shortcut.js';
+
 const TTL_MS = 15000;
 let cache = null; // { at, promise }
 
@@ -41,8 +43,6 @@ function localState() {
   cache = { at: Date.now(), promise };
   return promise;
 }
-
-const openLocal = () => window.dispatchEvent(new CustomEvent('bds:ai-open-sub', { detail: 'local' }));
 
 const row = (iconName, title, hint, action) => h('div', { class: 'med-row' }, [
   h('span', { class: 'med-icon' }, [icon(iconName)]),
@@ -104,7 +104,7 @@ export async function renderMediaSections({ image = null, video = null } = {}) {
   const d = describeImage(state);
   clear(image).append(row(
     d.ok ? 'image' : 'hide_image', d.title, d.hint,
-    d.action ? h('button', { class: 'mod-btn mod-btn-secondary mod-btn-sm', type: 'button', onclick: openLocal }, [icon('tune'), 'Abrir']) : null
+    d.action ? localShortcut() : null
   ));
   image.append(...withImage.map((p) => h('p', { class: 'mod-hint med-catalog', text: `Também entendem imagens: ${models(p.count)} em ${p.label} (uso em breve).` })));
 }

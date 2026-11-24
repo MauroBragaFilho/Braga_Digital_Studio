@@ -45,13 +45,9 @@ const GROUPS = {
     ['Neste computador', ['Modelo local (sem internet)']],
     ['Agentes externos', ['Conectar agentes (MCP)']]
   ],
-  settingsUpdatesView: [
-    ['Componentes', ['Componentes do BDS']],
-    ['Aplicativo', ['Aplicativo (BDS)']]
-  ],
   settingsSystemView: [
     ['Sobre e armazenamento', ['Sobre', 'Armazenamento']],
-    ['Erros e suporte', ['Relatórios de erros', 'Diagnóstico e suporte']],
+    ['Erros e suporte', ['Relatórios de erros e suporte']], // fundidos num cartão só (menu "⋯" com apagar e exportar logs)
     ['Zona de perigo', ['Zona de perigo']]
   ],
   settingsAboutView: [
@@ -59,7 +55,8 @@ const GROUPS = {
     ['Licenças', ['Licenças de código aberto']]
   ]
 };
-const NO_SUBMENU = ['settingsModulesView', 'settingsLutsView'];
+// Atualizações: o subpainel "Aplicativo" foi fundido ao dos componentes (um cartão só, sem submenu)
+const NO_SUBMENU = ['settingsModulesView', 'settingsLutsView', 'settingsUpdatesView'];
 
 const cardTitle = (card) => {
   const h = card.querySelector('.st-card-title');
@@ -92,7 +89,7 @@ test('cada seção com submenu tem os itens e os cartões do agrupamento aprovad
   }
 });
 
-test('Módulos e LUTs não têm submenu e mantêm um cartão só', () => {
+test('Módulos, LUTs e Atualizações não têm submenu e mantêm um cartão só', () => {
   for (const id of NO_SUBMENU) {
     const view = staticDoc.getElementById(id);
     assert.ok(view, id);
@@ -264,9 +261,9 @@ test('pedido de fora (bdsSubRequest) vale uma vez, só para a seção pedida, e 
     assert.equal(s.active('settingsSystemView'), 'about');
     // pedido com lixo é descartado sem erro
     ss.setItem('bdsSubRequest', '{não é json');
-    s.openTab('settingsUpdatesView');
+    s.openTab('settingsNotificationsView');
     assert.equal(ss.getItem('bdsSubRequest'), null);
-    assert.equal(s.active('settingsUpdatesView'), 'components');
+    assert.equal(s.active('settingsNotificationsView'), 'alerts');
   } finally { await s.h.cleanup(); }
 });
 
@@ -421,8 +418,7 @@ test('campo inválido num subpainel escondido: salvar revela o subpainel (e a ab
     assert.ok(limit.closest('[data-sub-panel="converter"]'));
     limit.value = '999';
     s.fire(limit, 'input');
-    s.d.getElementById('saveSettingsButton').disabled = false;
-    s.d.getElementById('saveSettingsButton').click();
+    s.d.getElementById('settingsSaveBarSave').click();
     await settle(30);
     assert.equal(limit.getAttribute('aria-invalid'), 'true');
     assert.equal(isHidden(s.d.getElementById(media)), false, 'a aba foi aberta');
@@ -444,7 +440,7 @@ test('campos de painéis escondidos continuam valendo: a barra de alterações e
     sw.checked = !sw.checked;
     s.fire(sw, 'change');
     assert.equal(isHidden(bar), false, 'a barra de alterações aparece');
-    s.d.getElementById('saveSettingsButton').click();
+    s.d.getElementById('settingsSaveBarSave').click();
     await settle(30);
     const sent = s.h.bds.calls.saveSettings?.at(-1)?.[0];
     assert.ok(sent, 'salvou');

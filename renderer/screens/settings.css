@@ -138,6 +138,22 @@
   gap: 8px;
 }
 
+/* Campo de caminho: o campo continua editável (dá para colar o caminho) e o ícone de escolher fica dentro dele.
+   O campo cede a área do ícone com padding à direita. No campo somente leitura (imagem de LUTs) o clique também escolhe. */
+.st-path-field { position: relative; display: flex; flex: 1; min-width: 0; }
+.st-path-field .settings-input { width: 100%; padding-right: 44px; text-overflow: ellipsis; }
+.st-path-field .settings-input[readonly] { cursor: pointer; }
+.st-path-pick {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+  background: transparent; color: var(--muted); border: 0; border-radius: var(--radius-pill); cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.st-path-pick .material-symbols-rounded { font-size: 20px; }
+.st-path-pick:hover { color: var(--accent-text); background: var(--card-2); }
+.st-path-pick:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.settings-folder-controls:has(> .st-path-field) { align-items: center; }
+
 .settings-input {
   flex: 1;
   height: 40px;
@@ -347,12 +363,20 @@
 .btn-delete-custom-source {
   background: transparent;
   border: none;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   padding: 4px;
   display: inline-flex;
   align-items: center;
-  transition: color var(--dur-base) var(--ease);
+  /* Visíveis e discretos em repouso (nunca opacidade 0: a lixeira é destrutiva); o hover e o foco reforçam */
+  opacity: 0.7;
+  transition: color var(--dur-base) var(--ease), opacity var(--dur-fast) var(--ease);
 }
+.settings-custom-source-item:hover .btn-edit-custom-source,
+.settings-custom-source-item:hover .btn-delete-custom-source,
+.btn-edit-custom-source:hover, .btn-delete-custom-source:hover,
+.btn-edit-custom-source:focus-visible, .btn-delete-custom-source:focus-visible { opacity: 1; }
+.btn-edit-custom-source:focus-visible, .btn-delete-custom-source:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 .btn-edit-custom-source {
   color: var(--accent-text);
@@ -464,15 +488,67 @@
   border: 1px solid var(--line);
 }
 
-.settings-app-update-progress {
+/* Duas linhas de estado (aplicativo e componentes) */
+.settings-update-lines {
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: var(--card-2);
+}
+
+.settings-update-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.settings-update-line dt {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.settings-update-line dd {
+  margin: 0;
+  color: var(--text);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* Notas da versão (só quando há atualização do aplicativo) */
+.settings-update-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--card);
+  padding: 14px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
+}
+
+.settings-update-notes-title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-update-notes-text {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.settings-update-notes-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .settings-update-progress-bar {
@@ -516,6 +592,12 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Ocupado (verificando ou atualizando): aria-disabled em vez de disabled, para o foco não se perder */
+.settings-update-actions-bar button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* --- SISTEMA --- */
@@ -619,6 +701,12 @@
   color: var(--text);
 }
 
+/* Cadastro ou envio em andamento: o X, o Esc e o clique fora não fecham a janela */
+.settings-modal-close[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .settings-modal-desc {
   font-size: var(--fs-body);
   color: var(--muted);
@@ -658,31 +746,6 @@
   padding-top: 4px;
 }
 
-.settings-crash-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 280px;
-  overflow-y: auto;
-  padding: 2px;
-}
-
-.settings-crash-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
-  padding: 16px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius-sm);
-}
-
-.settings-crash-empty .material-symbols-rounded {
-  font-size: 18px;
-}
-
 .settings-textarea {
   width: 100%;
   min-height: 120px;
@@ -705,29 +768,6 @@
 }
 
 /* --- CACHE --- */
-.settings-cache-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--card-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-}
-.settings-cache-item-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.settings-cache-item-info strong {
-  font-size: 12px;
-  color: var(--text);
-}
-.settings-cache-item-info span {
-  font-size: 11px;
-  color: var(--muted);
-}
 .settings-cache-clear-btn {
   flex-shrink: 0;
   padding: 6px 10px;
@@ -752,7 +792,7 @@
 }
 
 /* Detalhes de interface: rolagem fina, foco, campos e itens */
-.settings-content, .settings-crash-list, .settings-folder-list, .settings-modal {
+.settings-content, .settings-folder-list, .settings-modal {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent;
 }
@@ -778,7 +818,6 @@
 }
 .settings-custom-source-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-system-item strong,
-.settings-cache-item-info span,
 .settings-cache-bar strong,
 .settings-update-progress-info { font-variant-numeric: tabular-nums; }
 
@@ -905,7 +944,8 @@
 .st-accent-radio:focus-visible { outline: var(--focus-ring); outline-offset: 6px; }
 
 .st-lut-preview { display: flex; align-items: center; gap: 16px; padding-top: 6px; }
-.st-lut-thumb { width: 160px; height: 90px; flex-shrink: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--card-2); }
+.st-lut-thumb { width: 160px; height: 90px; flex-shrink: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--card-2); cursor: pointer; }
+.st-lut-thumb:hover { border-color: var(--accent); }
 .st-lut-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* Botão de aviso (substitui o estilo inline antigo) */
@@ -985,6 +1025,14 @@
 .st-order-move:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 .st-order-move:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .st-order-move:disabled { opacity: 0.3; cursor: not-allowed; }
+/* Setas e alça de arrastar só aparecem com o mouse na linha ou com o foco dentro dela. Usa opacidade (nunca display nem
+   visibility) para as setas continuarem focáveis pelo teclado. Em tela de toque (sem hover) ficam sempre visíveis. */
+@media (hover: hover) {
+  .st-order-item:not(.is-fixed) .st-order-move, .st-order-item:not(.is-fixed) .st-order-grip { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+  .st-order-item:hover .st-order-move, .st-order-item:focus-within .st-order-move,
+  .st-order-item:hover .st-order-grip, .st-order-item:focus-within .st-order-grip { opacity: 1; }
+  .st-order-item:hover .st-order-move:disabled, .st-order-item:focus-within .st-order-move:disabled { opacity: 0.3; }
+}
 .st-order-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 
 /* ----- Cartões lado a lado: preenchem a linha em telas largas e empilham em telas estreitas ----- */
@@ -1021,10 +1069,13 @@
 .st-license summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .st-license summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .st-license-meta { font-size: 12px; color: var(--muted); }
-.st-license-body { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+.st-license-body { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .st-license-body .st-card-desc { flex-basis: 100%; margin: 0; }
 .st-license-text { flex-basis: 100%; margin: 4px 0 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; padding: 10px; border-radius: var(--radius-sm); background: var(--card-2); }
-@media (max-width: 760px) { .st-license-body .settings-btn-outline { flex: 1 1 100%; } }
+/* Página do projeto e código-fonte: links de texto (abrem no navegador padrão pelo script) */
+.st-license-link { font-size: 12px; font-weight: 600; color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; border-radius: var(--radius-sm); }
+.st-license-link:hover { text-decoration-thickness: 2px; }
+.st-license-link:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* --- Navegação agrupada, ajustes avançados, validação e padrões --- */
 .st-nav-group { margin: 10px 12px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
@@ -1039,11 +1090,13 @@
 .st-advanced > summary:hover { color: var(--text); }
 .st-advanced > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.st-reset-field { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 12px; font-weight: 600; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; white-space: nowrap; }
-.st-reset-field .material-symbols-rounded { font-size: 16px; }
-.st-reset-field:hover { color: var(--text); border-color: var(--accent); }
-.st-reset-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.st-reset-field.hidden { display: none; }
+/* "Restaurar padrão": botão-ícone que só aparece quando o valor difere do padrão (o texto fica só para leitor de tela) */
+.st-reset-icon { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-pill); cursor: pointer; }
+.st-reset-icon .material-symbols-rounded { font-size: 18px; }
+.st-reset-icon:hover { color: var(--text); border-color: var(--accent); }
+.st-reset-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-reset-icon.hidden { display: none; }
+.st-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .st-field-error { flex-basis: 100%; width: 100%; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--danger-fg); }
 .settings-input[aria-invalid="true"], .settings-select[aria-invalid="true"] { border-color: var(--danger-fg); box-shadow: 0 0 0 1px var(--danger-fg); }
@@ -1060,7 +1113,6 @@
 .settings-btn-accent, .settings-cache-bar strong { color: var(--accent-text); }
 .settings-system-item span { color: var(--muted); }
 .st-nav-group, .st-advanced > summary { color: var(--muted); }
-.settings-cache-item-info span { color: var(--muted); }
 @media (min-width: 901px) { .st-savebar { margin-left: 260px; } }
 #modalSettingsLeave .settings-modal { width: 560px; } #modalSettingsLeave .settings-modal-footer { flex-wrap: wrap; } #modalSettingsLeave .settings-modal-footer button { white-space: nowrap; }
 
@@ -1137,7 +1189,7 @@
 .st-order-item { background: var(--card-2); }
 
 /* Botões em pílula. Primário: preto no claro e branco no escuro; secundário: contorno de 2px */
-.settings-btn-primary, .settings-btn-outline, .settings-btn-accent, .settings-btn-danger, .settings-btn-icon, .st-reset-field {
+.settings-btn-primary, .settings-btn-outline, .settings-btn-accent, .settings-btn-danger, .settings-btn-icon {
   border-radius: var(--radius-pill);
 }
 .settings-btn-primary {
@@ -1154,7 +1206,7 @@
 .settings-btn-danger { background: var(--danger-bg); border-color: transparent; padding: 9px 18px; font-size: 13px; }
 .settings-btn-icon { background: var(--card-2); border-color: transparent; color: var(--accent-text); }
 .settings-btn-primary:focus-visible, .settings-btn-outline:focus-visible, .settings-btn-accent:focus-visible,
-.settings-btn-danger:focus-visible, .settings-btn-icon:focus-visible, .st-reset-field:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.settings-btn-danger:focus-visible, .settings-btn-icon:focus-visible, .st-reset-icon:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* Interruptor: ligado no acento */
 .st-switch { border-color: transparent; background: color-mix(in srgb, var(--text) 22%, transparent); }
@@ -1174,8 +1226,6 @@
 
 /* Botão "Restaurar padrão" no fim dos cartões de pastas */
 .st-restore-row { display: flex; justify-content: flex-end; margin-top: 12px; }
-.st-restore-row .settings-btn-outline { display: inline-flex; align-items: center; gap: 6px; }
-.st-restore-row .material-symbols-rounded { font-size: 18px; }
 
 /* Cartão MCP: itens recolhidos até o servidor ligar (o atributo hidden perde para display:flex) */
 #settingsMcpCard [hidden] { display: none !important; }
@@ -1183,3 +1233,28 @@
 /* Cartão do modelo local: barra de progresso e itens recolhidos (o atributo hidden perde para display:flex) */
 #settingsLocalLlmCard [hidden] { display: none !important; }
 .st-progress { width: 100%; height: 8px; accent-color: var(--accent-text); }
+
+/* Cartão com menu "⋯" no canto (Relatórios de erros e suporte): título à esquerda, botão-ícone à direita */
+.st-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.st-card-head .st-card-title { min-width: 0; }
+.st-icon-btn { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-pill); cursor: pointer; }
+.st-icon-btn .material-symbols-rounded { font-size: 20px; }
+.st-icon-btn:hover, .st-icon-btn[aria-expanded="true"] { color: var(--text); border-color: var(--accent); }
+.st-icon-btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.st-menu-wrap { position: relative; flex-shrink: 0; }
+.st-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 260px; padding: 6px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--shadow); }
+.st-menu.hidden { display: none; }
+.st-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; background: none; border: 0; border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-body); font-size: var(--fs-body); text-align: left; cursor: pointer; }
+.st-menu-item.hidden { display: none; }
+.st-menu-item .material-symbols-rounded { font-size: 18px; color: var(--muted); }
+.st-menu-item:hover, .st-menu-item:focus-visible { background: var(--card-2); outline: none; }
+.st-menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.st-menu-item-warn, .st-menu-item-warn .material-symbols-rounded { color: var(--danger-fg); }
+
+/* Lista por tipo de arquivo do armazenamento (dentro de "Detalhes por tipo de arquivo") e resultado de uma ação, que fica na tela */
+.st-cache-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 25%, transparent) transparent; }
+.st-cache-list .st-row { padding: 10px 0; }
+.st-cache-list .st-row-hint { font-variant-numeric: tabular-nums; }
+.st-result { margin: 4px 0 0; }
+.st-result:empty { display: none; }
+.st-result-path { user-select: text; overflow-wrap: anywhere; }
