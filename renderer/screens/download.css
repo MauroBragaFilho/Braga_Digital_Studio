@@ -66,7 +66,7 @@
   border: 2px solid transparent;
   border-radius: var(--radius-pill);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
@@ -177,15 +177,15 @@
   color: var(--muted);
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+
 }
 .metric-value {
   margin-top: 6px;
   color: var(--text);
   font-family: var(--font-title);
   font-size: 26px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -331,7 +331,7 @@
   font-size: var(--fs-label);
   font-variant-numeric: tabular-nums;
 }
-.download-card-progress-info .dl-row-pct { color: var(--text); font-weight: 700; }
+.download-card-progress-info .dl-row-pct { color: var(--text); font-weight: 600; }
 .download-card-progress-info .speed-info { margin-left: auto; font-family: ui-monospace, Consolas, monospace; }
 .download-card.status-downloading .download-card-progress-track { height: 8px; }
 .download-card.status-downloading .download-card-progress-fill { background: var(--accent); }
@@ -429,7 +429,7 @@
   align-items: center;
   background: rgba(0, 0, 0, 0.6); /* exceção: véu escuro do modal, igual nos dois temas */
   backdrop-filter: blur(4px);
-  animation: bds-fade-in 0.2s ease-out;
+  animation: bds-fade-in var(--dur-base) var(--ease);
 }
 .multiple-links-modal {
   display: flex;
@@ -445,7 +445,7 @@
 }
 .multiple-links-header { display: flex; align-items: center; gap: 12px; padding: 24px 24px 8px; }
 .multiple-links-header .material-symbols-rounded { color: var(--accent-text); font-size: 24px; }
-.multiple-links-header h3 { margin: 0; color: var(--text); font-family: var(--font-title); font-size: var(--fs-section); font-weight: 700; letter-spacing: -0.01em; }
+.multiple-links-header h3 { margin: 0; color: var(--text); font-family: var(--font-title); font-size: var(--fs-section); font-weight: 600; letter-spacing: -0.01em; }
 .multiple-links-body { display: flex; flex-direction: column; gap: 12px; padding: 8px 24px 16px; overflow-y: auto; }
 .multiple-links-hint { margin: 0; color: var(--muted); font-size: var(--fs-body); line-height: 1.5; }
 .multiple-links-hint strong { color: var(--text); }
@@ -486,7 +486,7 @@
   border-radius: var(--radius-pill);
   font-family: inherit;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease);
 }

@@ -8,7 +8,7 @@
   inset: 0;
   z-index: 99998;
   background: rgba(0, 0, 0, 0.62); /* exceção: cortina do pop-up, escurece o fundo nos 2 temas */
-  animation: bds-fade-in 0.18s ease-out;
+  animation: bds-fade-in var(--dur-base) var(--ease);
 }
 .preview-backdrop.hidden { display: none; }
 
@@ -19,7 +19,7 @@
   border-radius: var(--radius-lg);
   border: 1px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
-  animation: bds-pop-in 0.18s ease-out;
+  animation: bds-pop-in var(--dur-base) var(--ease);
 }
 
 
@@ -47,7 +47,7 @@
   transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 .photo-video-play .material-symbols-rounded { font-size: 54px; }
-.photo-video-play:hover { background: var(--accent-solid); color: var(--on-accent); transform: translate(-50%, -50%) scale(1.08); }
+.photo-video-play:hover { background: var(--accent-solid); color: var(--on-accent); transform: translate(-50%, -50%); }
 .photo-video-play.hidden { display: none; }
 
 /* Em vídeo, ferramentas de foto (zoom, giro, grade...) ficam ocultas; o filmstrip permanece */

@@ -81,12 +81,12 @@ test('contraste AA: texto, secundário, botão primário, estados e danger nos d
   }
 });
 
-test('tokens do guia: fundos, superfícies, botão em pílula preto/branco e raios', () => {
-  assert.equal(tok(DARK, 'bg'), '#000000');
-  assert.equal(tok(DARK, 'card'), '#1c1c1c');
-  assert.equal(tok(DARK, 'card-2'), '#262626');
-  assert.equal(tok(DARK, 'text'), '#ffffff');
-  assert.equal(tok(DARK, 'btn-bg'), '#ffffff');
+test('tokens do guia: fundos grafite, superfícies, botão em pílula preto/branco e raios', () => {
+  assert.equal(tok(DARK, 'bg'), '#0e0e0f');
+  assert.equal(tok(DARK, 'card'), '#19191b');
+  assert.equal(tok(DARK, 'card-2'), '#232326');
+  assert.equal(tok(DARK, 'text'), '#f2f2f3');
+  assert.equal(tok(DARK, 'btn-bg'), '#f2f2f3');
   assert.equal(tok(DARK, 'btn-fg'), '#000000');
   assert.equal(tok(LIGHT, 'bg'), '#f4f4f4');
   assert.equal(tok(LIGHT, 'card'), '#ffffff');

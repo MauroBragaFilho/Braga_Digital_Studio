@@ -38,13 +38,13 @@
 .mod-head-text { flex: 1; min-width: 240px; }
 .mod-head-text p { margin: 4px 0 0; font-size: var(--fs-body); line-height: 1.5; color: var(--muted); }
 .mod-head-text p.mod-head-lead { margin: 0; font-size: var(--fs-body); font-weight: 600; color: var(--text); }
-.mod-state { font-size: var(--fs-label); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 6px 12px; border-radius: var(--radius-pill); white-space: nowrap; }
+.mod-state { font-size: var(--fs-label); font-weight: 600; letter-spacing: 0; padding: 6px 12px; border-radius: var(--radius-pill); white-space: nowrap; }
 .mod-state-ok { color: var(--status-ok); background: color-mix(in srgb, var(--status-ok) 14%, transparent); }
 .mod-state-warn { color: var(--status-warn); background: color-mix(in srgb, var(--status-warn) 14%, transparent); }
 .mod-state-off { color: var(--muted); background: color-mix(in srgb, var(--text) 8%, transparent); }
 
 .mod-section { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
-.mod-section-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-body); font-weight: 700; }
+.mod-section-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-body); font-weight: 600; }
 .mod-section-title .material-symbols-rounded { font-size: 20px; color: var(--accent-text); }
 .mod-section p { margin: 0; font-size: var(--fs-body); line-height: 1.55; }
 .mod-hint { font-size: var(--fs-label) !important; color: var(--muted); }
@@ -60,7 +60,7 @@
 /* ----- Botões: pílulas ----- */
 .mod-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 20px;
-  border-radius: var(--radius-pill); border: 2px solid transparent; font: inherit; font-size: var(--fs-body); font-weight: 700;
+  border-radius: var(--radius-pill); border: 2px solid transparent; font: inherit; font-size: var(--fs-body); font-weight: 600;
   cursor: pointer; white-space: nowrap; transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
 }
 .mod-btn .material-symbols-rounded { font-size: 20px; }
@@ -82,7 +82,7 @@
 .mod-icon-danger:hover:not(:disabled) { color: var(--danger-fg); background: var(--danger-bg); }
 .mod-icon-danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.mod-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 4px 10px; border-radius: var(--radius-pill); }
+.mod-badge { font-size: 11px; font-weight: 600; letter-spacing: 0; padding: 4px 10px; border-radius: var(--radius-pill); }
 .mod-badge-ok { color: var(--status-ok); background: color-mix(in srgb, var(--status-ok) 14%, transparent); }
 
 /* ----- Campos ----- */
@@ -103,7 +103,7 @@
 .ana-row { display: flex; gap: 8px; }
 .ana-row .mod-input { flex: 1; min-width: 0; }
 .ana-self-start { align-self: flex-start; }
-.ana-adv > summary { cursor: pointer; font-size: var(--fs-label); font-weight: 700; color: var(--muted); padding: 4px 0; }
+.ana-adv > summary { cursor: pointer; font-size: var(--fs-label); font-weight: 600; color: var(--muted); padding: 4px 0; }
 .ana-adv > summary:hover { color: var(--text); }
 .ana-adv > summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .ana-adv[open] > summary { margin-bottom: 12px; }
@@ -152,14 +152,14 @@
 /* ----- Tabela de modelos (Configurações > Transcrição) ----- */
 .mod-table-wrap { overflow-x: auto; container-type: inline-size; }
 .mod-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; font-size: var(--fs-body); }
-.mod-table thead th { text-align: left; font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); padding: 0 16px 2px; white-space: nowrap; }
+.mod-table thead th { text-align: left; font-size: var(--fs-label); font-weight: 600; letter-spacing: 0; color: var(--muted); padding: 0 16px 2px; white-space: nowrap; }
 .mod-trow > * { padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: middle; }
 .mod-trow > :first-child { border-left: 1px solid var(--line); border-radius: var(--radius-md) 0 0 var(--radius-md); text-align: left; }
 .mod-trow > :last-child { border-right: 1px solid var(--line); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
 .mod-trow.installed > * { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .mod-trow.active > * { border-color: var(--accent); background: var(--accent-light); }
 .mod-tcell-name { font-weight: 400; min-width: 180px; text-transform: none; letter-spacing: 0; }
-.mod-tcell-name strong { display: block; font-size: var(--fs-body); text-transform: uppercase; letter-spacing: 0.04em; }
+.mod-tcell-name strong { display: block; font-size: var(--fs-body); letter-spacing: 0; }
 .mod-tcell-name .mod-muted { display: block; font-size: var(--fs-label); margin-top: 2px; }
 .mod-tcell-stars, .mod-tcell-size { white-space: nowrap; }
 .mod-tcell-size { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -185,7 +185,7 @@
 .mod-dialog { max-width: 440px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--card); color: var(--text); padding: 24px; box-shadow: 0 8px 24px var(--shadow); }
 /* exceção: véu sobre a janela inteira, independente de tema */
 .mod-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
-.mod-dialog h4 { margin: 0 0 12px; font-family: var(--font-title); font-size: var(--fs-section); font-weight: 700; line-height: 1.3; }
+.mod-dialog h4 { margin: 0 0 12px; font-family: var(--font-title); font-size: var(--fs-section); font-weight: 600; line-height: 1.3; }
 .mod-dialog p { margin: 0 0 12px; font-size: var(--fs-body); line-height: 1.55; }
 .mod-dialog-terms { display: flex; gap: 8px; align-items: flex-start; padding: 12px 16px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--status-warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--status-warn) 40%, transparent); }
 .mod-dialog-terms .material-symbols-rounded { font-size: 20px; color: var(--status-warn); flex-shrink: 0; }

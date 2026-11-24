@@ -66,13 +66,13 @@
   color: var(--muted);
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+
 }
 .stat-value {
   font-family: var(--font-title);
   font-size: 40px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.02em;
   color: var(--text);
@@ -290,8 +290,8 @@
   border-bottom: 1px solid var(--line);
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+
 }
 .jobs-table th.col-actions { text-align: right; }
 .jobs-table td {

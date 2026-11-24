@@ -767,7 +767,7 @@ function renderConverterTable() {
       : '—';
 
     const thumbHtml = isAudio 
-      ? `<div class="converter-thumb-audio">ÁUDIO</div>`
+      ? `<div class="converter-thumb-audio">Áudio</div>`
       : `<div class="converter-thumb-video">
           ${safeThumb ? `<img src="${safeThumb}" class="converter-thumb-img" loading="lazy" decoding="async" alt="" />` : ''}
           <span class="material-symbols-rounded converter-thumb-fallback">movie</span>

@@ -567,7 +567,7 @@ function showValidationDiff() {
     if (thumbnailAction === 'replace') desc = '<span class="diff-warn">Substituir arte de capa</span>';
     
     diffList.innerHTML += `<div class="diff-entry">
-      <span class="diff-title diff-title-cover">MINIATURA</span><br>
+      <span class="diff-title diff-title-cover">Miniatura</span><br>
       ${desc}
     </div>`;
   }
@@ -588,7 +588,7 @@ function showValidationDiff() {
   if (chapChanged) {
     changesFound = true;
     diffList.innerHTML += `<div class="diff-entry">
-      <span class="diff-title diff-title-chap">CAPÍTULOS</span><br>
+      <span class="diff-title diff-title-chap">Capítulos</span><br>
       Foram detectadas modificações estruturais nos capítulos.
     </div>`;
   }

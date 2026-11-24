@@ -229,7 +229,7 @@ function renderSilenceTable() {
     const isAudio = item.isAudio || ['MP3', 'WAV', 'M4A', 'AAC', 'FLAC', 'OGG'].includes(ext);
 
     const thumbHtml = isAudio
-      ? `<div class="sil-thumb sil-thumb-audio">ÁUDIO</div>`
+      ? `<div class="sil-thumb sil-thumb-audio">Áudio</div>`
       : `<div class="sil-thumb">
           ${item.thumbnail ? `<img src="${escapeAttr(item.thumbnail)}" alt="" />` : ''}
           <span class="material-symbols-rounded" aria-hidden="true">movie</span>

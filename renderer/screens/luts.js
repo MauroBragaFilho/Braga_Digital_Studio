@@ -692,7 +692,7 @@ async function loadLuts({ silent = false } = {}) {
         const box = document.createElement('div');
         box.className = 'luts-error';
         box.setAttribute('role', 'alert');
-        box.innerHTML = '<span class="luts-error-text"></span><button type="button" class="lut-btn-outline" data-action="retry">TENTAR NOVAMENTE</button>';
+        box.innerHTML = '<span class="luts-error-text"></span><button type="button" class="lut-btn-outline" data-action="retry">Tentar novamente</button>';
         box.querySelector('.luts-error-text').textContent = `Erro ao carregar as LUTs: ${errMsg(err)}`;
         domRefs.lutsGrid.appendChild(box);
         domRefs.emptyState?.classList.add('hidden');

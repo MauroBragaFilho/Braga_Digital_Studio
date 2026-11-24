@@ -84,7 +84,7 @@
   margin: 0;
   font-family: var(--font-title);
   font-size: var(--fs-section);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text);
 }
@@ -135,7 +135,7 @@
 /* --- PAINÉIS DAS ABAS --- */
 .meta-panel {
   display: none;
-  animation: bds-fade-in 0.2s ease-in-out;
+  animation: bds-fade-in var(--dur-base) var(--ease);
 }
 
 .meta-panel.active { display: block; }
@@ -153,10 +153,10 @@
   background: var(--card);
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   color: var(--muted);
   margin-bottom: var(--space-3);
-  text-transform: uppercase;
+
 }
 
 .meta-tags-form {
@@ -232,9 +232,9 @@
 .info-item label {
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   color: var(--muted);
-  text-transform: uppercase;
+
 }
 
 .info-item span {
@@ -329,8 +329,8 @@
   color: var(--muted);
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+
 }
 
 .meta-chapters-table tbody tr:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
@@ -417,7 +417,7 @@
   position: absolute;
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--muted);
 }
 
@@ -443,7 +443,7 @@
 
 .metadata-summary-value {
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -462,7 +462,7 @@
   align-items: center;
   gap: 6px;
   color: var(--accent-text);
-  font-weight: 700;
+  font-weight: 600;
   font-size: var(--fs-label);
   margin-bottom: 6px;
 }
@@ -594,7 +594,7 @@
   margin: 0;
   font-family: var(--font-title);
   font-size: var(--fs-section);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .metadata-diff-modal-desc {
@@ -696,7 +696,7 @@
 
 /* --- DIFERENÇAS (montado pelo JS) --- */
 .diff-entry { margin-bottom: var(--space-3); border-bottom: 1px solid var(--line); padding-bottom: var(--space-1); }
-.diff-title { font-weight: 700; }
+.diff-title { font-weight: 600; }
 .diff-title-tag { color: var(--accent-text); }
 .diff-title-stream { color: var(--status-info); }
 .diff-title-cover { color: var(--status-warn); }

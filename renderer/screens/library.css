@@ -38,7 +38,7 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--muted);
-  text-transform: uppercase;
+
   letter-spacing: 1px;
   margin: 0;
 }
@@ -184,7 +184,7 @@
   border: none;
   border-radius: var(--radius-pill);
   padding: 9px 18px;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -290,7 +290,7 @@
   background: var(--accent-solid);
   color: var(--on-accent);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   z-index: 2;
@@ -413,7 +413,7 @@
 
 .lib-card-thumb.audio-placeholder span {
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
   opacity: 0.35;
   letter-spacing: 2px;
@@ -643,7 +643,7 @@
 }
 
 .inspector-play-btn:hover {
-  transform: translate(-50%, -50%) scale(1.1);
+  transform: translate(-50%, -50%);
   background: rgba(0, 0, 0, 0.8);
 }
 
@@ -893,7 +893,7 @@
 .lib-modal-title {
   font-family: var(--font-title);
   font-size: var(--fs-section);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   margin: 0;
   display: flex;
@@ -1029,7 +1029,7 @@
   padding: 10px 22px;
   border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1080,7 +1080,7 @@
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent;
 }
-.filters-title { letter-spacing: 0.02em; }
+.filters-title { letter-spacing: 0; }
 .filters-clear-btn, .lib-view-btn, .sort-select, .sort-order-btn, .topbar-icon-btn, .btn-add-source, .bulk-btn,
 .lib-filter-row, .inspector-close-btn, .inspector-play-btn, .inspector-copy-btn, .inspector-add-tag,
 .lib-btn-cancel, .lib-btn-confirm, .lib-modal-close-btn, .lib-form-icon-btn {
@@ -1114,7 +1114,7 @@
 .lib-date-header {
   font-family: var(--font-title);
   font-size: var(--fs-body);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: none;
   letter-spacing: -0.005em;
   color: var(--text);
@@ -1134,10 +1134,10 @@
 
 .lib-filter-row { border-radius: 6px; }
 .lib-filter-row:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
-.filter-group-title { letter-spacing: 0.05em; }
+.filter-group-title { letter-spacing: 0; }
 
 .inspector-thumbnail { border-radius: var(--radius-md) var(--radius-md) 0 0; overflow: hidden; }
-.inspector-label { text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
+.inspector-label { font-size: 10px; letter-spacing: 0; }
 .inspector-path-text { overflow-wrap: anywhere; }
 .inspector-tag-chip { border-radius: 999px; }
 .inspector-edit-input:focus-visible, .inspector-tag-input:focus-visible {
@@ -1205,8 +1205,8 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .lib-vhead > div { padding: 0 16px; }

@@ -85,7 +85,7 @@
   color: var(--btn-fg);
   font-family: var(--font-body);
   font-size: var(--fs-body);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background var(--dur-base) var(--ease);
 }
@@ -141,7 +141,7 @@
   margin: 0;
   font-family: var(--font-title);
   font-size: var(--fs-section);
-  font-weight: 700;
+  font-weight: 600;
 }
 .bds-upl-queue-title .material-symbols-rounded { color: var(--accent-text); font-size: 22px; }
 
@@ -165,7 +165,7 @@
   color: var(--btn-fg);
   font-family: var(--font-body);
   font-size: var(--fs-label);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
 }
@@ -205,7 +205,7 @@
   color: var(--accent-text);
   font-family: var(--font-body);
   font-size: var(--fs-label);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 .bds-upl-link:hover { text-decoration: underline; }
@@ -271,7 +271,7 @@
   gap: 2px;
 }
 .bds-upl-item-title {
-  font-weight: 700;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -392,7 +392,7 @@ textarea.bds-upl-input { resize: vertical; min-height: 64px; }
   background: var(--btn-bg);
   color: var(--btn-fg);
   font-size: var(--fs-label);
-  font-weight: 700;
+  font-weight: 600;
   text-align: center;
 }
 .bds-upl-expand-count.hidden { display: none; }
@@ -413,7 +413,7 @@ textarea.bds-upl-input { resize: vertical; min-height: 64px; }
   cursor: pointer;
   list-style: none;
   font-size: var(--fs-label);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
 }
 .bds-upl-defaults-summary::-webkit-details-marker { display: none; }
