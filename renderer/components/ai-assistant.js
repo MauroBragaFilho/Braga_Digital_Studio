@@ -21,6 +21,8 @@
 import { friendlyError } from '../utils/friendlyError.js';
 import { currentContext, AI_SCREENS } from '../utils/assistantContext.js';
 
+/** Nome da assistente (o mesmo de src/services/ai/persona.js). */
+const NAME = 'Yui';
 const STORE_KEY = 'bds.aiFab.pos';
 const FAB_SIZE = 52;
 const EDGE = 8;               // folga mínima até a borda da janela
@@ -228,8 +230,8 @@ function showEmpty() {
   const examples = el('ul', 'aia-examples');
   examples.setAttribute('aria-label', 'Exemplos de pedidos');
   EMPTY_EXAMPLES.forEach((text) => examples.append(el('li', '', `“${text}”`)));
-  empty.append(icon('forum'), el('strong', '', 'Como posso ajudar?'),
-    el('span', '', 'Pergunte sobre suas mídias e projetos ou peça uma tarefa. Antes de mudar algo, o app sempre pede a sua confirmação. Por exemplo:'),
+  empty.append(icon('forum'), el('strong', '', `Oi, eu sou a ${NAME}. Como posso ajudar?`),
+    el('span', '', 'Sou a assistente de IA do app, focada em audiovisual. Pergunte sobre suas mídias e projetos ou peça uma tarefa. Antes de mudar algo, o app sempre pede a sua confirmação. Por exemplo:'),
     examples);
   list.append(empty);
 }
@@ -436,12 +438,12 @@ function failPending(err, code) {
   if (GUIDES[code]) {
     // Primeiro uso sem servidor, servidor que não responde ou aviso de privacidade: mensagem curta + um botão
     showGuide(code, typeof err === 'string' ? err : (err && err.message) || '', info ? info.userText : '');
-    notifyFinished(GUIDES[code].text || 'O assistente precisa da sua escolha.', 'error');
+    notifyFinished(GUIDES[code].text || `A ${NAME} precisa da sua escolha.`, 'error');
     setBusy(false);
     refreshProvider(); // o cabeçalho volta a mostrar quem responderia agora (ou some, se nenhum)
     return;
   }
-  const friendly = friendlyError(err, code === 'AI_DISABLED' ? 'O assistente está desligado.' : 'Tente novamente.');
+  const friendly = friendlyError(err, code === 'AI_DISABLED' ? `A ${NAME} está desligada.` : 'Tente novamente.');
   const message = code === 'AI_DISABLED' || /^Não foi possível/i.test(friendly) ? friendly : `Não foi possível responder. ${friendly}`;
   addMessage('assistant', message, 'aia-msg-error');
   announce(message);
@@ -484,8 +486,8 @@ function onDone(payload) {
   else if (payload.finishReason === 'length') finalText = `${text}\n\n(resposta cortada pelo limite de tamanho; aumente-o nas configurações da IA)`;
   renderRichText(pending.bubble, finalText);
   list.scrollTop = list.scrollHeight;
-  announce('O assistente respondeu.');
-  notifyFinished('O assistente terminou de responder.');
+  announce(`A ${NAME} respondeu.`);
+  notifyFinished(`A ${NAME} terminou de responder.`);
   setBusy(false);
   if (isOpen) input.focus();
 }
@@ -501,7 +503,7 @@ async function send() {
   const text = input.value.trim();
   if (!text) return;
   if (typeof bds().aiChatStart !== 'function') {
-    addMessage('assistant', 'O assistente não está disponível nesta versão do app.', 'aia-msg-error');
+    addMessage('assistant', `A ${NAME} não está disponível nesta versão do app.`, 'aia-msg-error');
     return;
   }
   input.value = '';
@@ -509,11 +511,11 @@ async function send() {
   const answer = addMessage('assistant', 'Pensando…', 'aia-msg-pending');
   pending = { userRow: user.row, bubble: answer.bubble, text: '', userText: text };
   setBusy(true);
-  announce('O assistente está respondendo.');
+  announce(`A ${NAME} está respondendo.`);
   try {
     // A cada mensagem vai o contexto da tela (tela, ids selecionados, projeto): o main revalida e trata como dado
     const r = await bds().aiChatStart(text, currentContext());
-    if (!r || !r.ok) throw Object.assign(new Error(r?.error || 'O assistente não respondeu.'), { code: r?.code });
+    if (!r || !r.ok) throw Object.assign(new Error(r?.error || `A ${NAME} não respondeu.`), { code: r?.code });
     if (busy && pending) activeId = activeId || r.data.id;
   } catch (err) {
     if (busy && pending) failPending(err, err && err.code);
@@ -528,7 +530,7 @@ function stop() {
 async function clearChat() {
   const hasMessages = list.querySelector('.aia-msg');
   if (hasMessages && window.bdsModal && typeof window.bdsModal.confirm === 'function') {
-    const ok = await window.bdsModal.confirm('Apagar toda a conversa com o assistente? Isso também apaga o histórico guardado neste computador.');
+    const ok = await window.bdsModal.confirm(`Apagar toda a conversa com a ${NAME}? Isso também apaga o histórico guardado neste computador.`);
     if (!ok) return;
   }
   try {
@@ -671,22 +673,22 @@ function build() {
   fab = el('button', 'aia-fab');
   fab.id = 'aiAssistantFab';
   fab.type = 'button';
-  fab.setAttribute('aria-label', 'Assistente de IA');
+  fab.setAttribute('aria-label', `${NAME}, assistente de IA`);
   fab.setAttribute('aria-haspopup', 'dialog');
   fab.setAttribute('aria-expanded', 'false');
   fab.setAttribute('aria-controls', 'aiAssistantPanel');
-  fab.title = 'Assistente de IA (Ctrl + J; arraste para mover; Alt + setas também move)';
-  fab.append(icon('smart_toy'));
+  fab.title = `${NAME}, assistente de IA (Ctrl + J; arraste para mover; Alt + setas também move)`;
+  fab.append(icon('chat_bubble'));
 
   panel = el('section', 'aia-panel');
   panel.id = 'aiAssistantPanel';
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'false');
-  panel.setAttribute('aria-label', 'Assistente');
+  panel.setAttribute('aria-label', NAME);
   panel.setAttribute('hidden', '');
 
   const head = el('header', 'aia-head');
-  head.append(el('h2', 'aia-title', 'Assistente'));
+  head.append(el('h2', 'aia-title', NAME));
   providerEl = el('span', 'aia-provider');
   providerEl.hidden = true;
   clearBtn = el('button', 'aia-icon-btn');
@@ -696,7 +698,7 @@ function build() {
   clearBtn.append(icon('delete_sweep'));
   closeBtn = el('button', 'aia-icon-btn');
   closeBtn.type = 'button';
-  closeBtn.setAttribute('aria-label', 'Fechar assistente');
+  closeBtn.setAttribute('aria-label', `Fechar a ${NAME}`);
   closeBtn.title = 'Fechar (Esc)';
   closeBtn.append(icon('close'));
   head.append(providerEl, clearBtn, closeBtn);
@@ -717,7 +719,7 @@ function build() {
   input.rows = 2;
   input.maxLength = 20000;
   input.placeholder = 'Escreva sua mensagem…';
-  input.setAttribute('aria-label', 'Mensagem para o assistente');
+  input.setAttribute('aria-label', `Mensagem para a ${NAME}`);
   sendBtn = el('button', 'aia-send');
   sendBtn.type = 'submit';
   sendBtn.setAttribute('aria-label', 'Enviar');

@@ -28,6 +28,7 @@ const { actionTools } = require('./actionTools');
 const { mediaActionTools } = require('./mediaActionTools');
 const { libraryActionTools } = require('./libraryActionTools');
 const { selectToolNames } = require('./toolSelect');
+const { ASSISTANT_NAME } = require('../persona');
 const { ASSISTANT_ALLOWED_IN_PACKAGED_APP, isAssistantBuildAllowed } = require('../releaseGate');
 
 /** Lista fixa de ferramentas: leitura, interface (open_screen) e ações com confirmação. */
@@ -102,13 +103,14 @@ class ToolBox {
   constructor({
     getDb, library, projects, getModuleManager = () => null, confirm, log = null, onProjectsChanged = null,
     services = {}, settings = null, getEnabledModules = () => ({}), paths = {}, exporters = {}, chooseSavePath = null,
-    navigate = null, notifyMediaChanged = null
+    navigate = null, notifyMediaChanged = null, getAutoConfirm = null
   }) {
     this.deps = {
       getDb, library, projects, getModuleManager, onProjectsChanged,
       services, settings, getEnabledModules, paths, exporters, chooseSavePath, navigate, notifyMediaChanged
     };
     this.confirm = confirm;
+    this.getAutoConfirm = typeof getAutoConfirm === 'function' ? getAutoConfirm : () => false;
     this.log = log || { info() {}, warn() {} };
   }
 
@@ -118,6 +120,18 @@ class ToolBox {
    */
   definitions(hints = null) {
     return toolDefinitions(hints ? selectToolNames(hints) : null, this._enabledModules());
+  }
+
+  /**
+   * Definições das ferramentas `names` NA ORDEM dada (nomes desconhecidos e de módulos desligados ficam de fora). O
+   * assistente usa isto com o modelo local do app: a lista só cresce e cada ferramenta nova entra no fim, para o
+   * começo do prompt (que o servidor guarda em cache) não mudar a cada pergunta.
+   * @param {string[]} names
+   */
+  definitionsInOrder(names) {
+    const enabled = this._enabledModules();
+    const byName = new Map(toolDefinitions(null, enabled).map((d) => [d.function.name, d]));
+    return (Array.isArray(names) ? names : []).map((n) => byName.get(n)).filter(Boolean);
   }
 
   /** Módulos ligados agora ({} se o app não informa). */
@@ -160,14 +174,17 @@ class ToolBox {
       const prep = await tool.prepare(args, ctx);
       if (signal && signal.aborted) throw cancelled();
       let confirmed = false;
-      if (autoConfirm === true && external) { // opção explícita do usuário para agentes MCP: a validação (prepare) já rodou
+      // Opção explícita do usuário (MCP: `autoConfirm`; chat da Yui: "Executar sem pedir confirmação"): a validação (prepare) já rodou
+      let skipConfirm = external ? autoConfirm === true : false;
+      if (!external) { try { skipConfirm = this.getAutoConfirm() === true; } catch (_) { skipConfirm = false; } }
+      if (skipConfirm) {
         this.log.info(`[${source}] ação SEM confirmação (opção do usuário): ${tool.name} (${prep.auditSummary || 'sem detalhes'})`);
         confirmed = true;
       } else try {
         // Corrida com o cancelamento: parar o chat encerra o fluxo na hora (o modal ou o diálogo nativo fecha pelo mesmo sinal)
-        confirmed = (await abortable(this.confirm({ title: external ? 'Confirmar ação pedida por um agente de IA' : 'Confirmar ação do assistente', message: external ? `Um agente de IA externo (MCP) quer fazer isto:
+        confirmed = (await abortable(this.confirm({ title: external ? 'Confirmar ação pedida por um agente de IA' : `Confirmar ação da ${ASSISTANT_NAME}`, message: external ? `Um agente de IA externo (MCP) quer fazer isto:
 
-${prep.message}` : prep.message, detail: prep.detail, signal }), signal)) === true;
+${prep.message}` : String(prep.message || '').replace(/^O assistente /, `A ${ASSISTANT_NAME} `), detail: prep.detail, signal }), signal)) === true;
       } catch (err) {
         if (err && err.code === 'CANCELLED') throw err;
         confirmed = false;

@@ -13,6 +13,15 @@
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+/i;
 const MAX_IDS = 5;
+const ARRIVAL_TRIES = 15;        // "baixa e transcreve": quantas vezes olha a Biblioteca à espera do arquivo baixado
+const ARRIVAL_WAIT_MS = 1000;
+
+/** Espera `ms`, mas acorda na hora se o pedido for cancelado. */
+const sleep = (ms, signal) => new Promise((resolve) => {
+  if (signal && signal.aborted) { resolve(); return; }
+  const t = setTimeout(resolve, ms);
+  if (signal) signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+});
 
 /** Minúsculas e sem acentos, para as regras. */
 const fold = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -26,6 +35,8 @@ const RE = {
   downloadsWord: /\b(downloads?|baixand\w*|fila)\b/,
   selection: /\b(selecionad\w*|disso|desse|deste|nisso|dele|dela|isto|isso|esse|essa|este|esta|aquele|aquela|estes|esses)\b/,
   audio: /\b(mp3|audio|musica|som)\b/,
+  recent: /\b(ultim[oa]s?|mais recentes?|recem|acab(ou|ei|amos) de|acabad[oa] de|agora (ha )?pouco)\b/,
+  fromDownload: /\b(baix\w*|download\w*)\b/,
   mp4: /\b(mp4|video)\b/
 };
 
@@ -49,8 +60,10 @@ function matchCommand(text) {
     const rest = f.replace(fold(url[0]), ' ').replace(/[\s.,;:!?()[\]-]+/g, ' ').trim();
     const onlyLink = rest === '';
     const talksDownload = RE.download.test(rest);
-    if (!onlyLink && !talksDownload) return null;
-    const audio = RE.audio.test(rest);
+    const transcribing = wantsTranscription(rest);
+    if (!onlyLink && !talksDownload && !transcribing) return null;
+    // Só transcrever: o áudio basta (MP3 ocupa bem menos que o vídeo). Vídeo só se o usuário pedir ("em mp4", "o vídeo")
+    const audio = RE.audio.test(rest) || (transcribing && !RE.mp4.test(rest));
     let quality = 'melhor';
     if (audio) {
       const k = /\b(320|192|128)\s?k/.exec(rest);
@@ -59,7 +72,7 @@ function matchCommand(text) {
       const q = /\b(1080|720|480)\s?p?\b/.exec(rest);
       if (q) quality = `${q[1]}p`;
     }
-    return { intent: 'download', url: url[0].replace(/[.,;:!?)]+$/, ''), format: audio ? 'audio' : 'video', quality, usesSelection: false, alsoTranscribe: wantsTranscription(rest) };
+    return { intent: 'download', url: url[0].replace(/[.,;:!?)]+$/, ''), format: audio ? 'audio' : 'video', quality, usesSelection: false, alsoTranscribe: transcribing };
   }
 
   // 2) Status dos downloads
@@ -95,6 +108,14 @@ function target(f, verbRe) {
   const after = m ? f.slice(m.index + m[0].length) : f;
   // Palavras de ligação só saem das PONTAS ("o", "para"...): no meio fazem parte do nome ("fim da rua")
   const STOP = new Set(['para', 'pra', 'em', 'a', 'o', 'os', 'as', 'um', 'uma', 'de', 'do', 'da', 'dos', 'das', 'no', 'na', 'nos', 'nas', 'arquivo', 'midia', 'video', 'videos', 'audio', 'silencio', 'por', 'favor', 'pf', 'pfv', 'aqui', 'ai', 'agora', 'tudo', 'tira', 'tirar', 'remove', 'remover', 'corta', 'cortar', 'ao', 'ate', 'com', 'e', 'mp3', 'mp4']);
+  // "o último vídeo", "o áudio que acabou de baixar": referência relativa, resolvida pela Biblioteca (não é nome de arquivo)
+  if (RE.recent.test(after) && !RE.selection.test(after.replace(RE.recent, ' '))) {
+    // O tipo vem da parte ANTES de "para/em" ("converte o último vídeo para mp3": o vídeo é a origem, mp3 o destino)
+    const src = after.split(/\b(?:para|pra|em)\b/)[0];
+    const kind = RE.audio.test(src) ? 'audio' : (/\b(?:video|videos|mp4)\b/.test(src) ? 'video' : null);
+    const by = /\b(?:gravad\w*|filmad\w*)\b/.test(src) && !RE.fromDownload.test(src) ? 'gravacao' : 'importacao';
+    return { usesSelection: false, query: '', recent: { kind, by, downloaded: RE.fromDownload.test(src) } };
+  }
   const hadSelection = RE.selection.test(after);
   const tokens = after
     .replace(new RegExp(RE.selection.source, 'g'), ' ')
@@ -146,22 +167,43 @@ async function runCommand({ text, context, toolbox, signal = null, onStatus = ()
   }
 
   if (cmd.intent === 'download') {
+    const kind = cmd.format === 'audio' ? 'audio' : 'video';
+    const recentDownloads = async () => {
+      const r = await exec('library_search', { ordenar: 'importacao', baixadas: true, tipo: kind, limite: 5 });
+      return r && Array.isArray(r.midias) ? r.midias : [];
+    };
+    const knownIds = cmd.alsoTranscribe ? new Set((await recentDownloads()).map((m) => m.id)) : null;
     const r = await exec('add_download', { url: cmd.url, formato: cmd.format, qualidade: cmd.quality });
     const done = describeResult(r, `Pronto, baixei ${cmd.format === 'audio' ? 'o áudio (MP3)' : 'o vídeo (MP4)'}.`);
-    return cmd.alsoTranscribe && r && !r.erro && !/não fiz nada/.test(done)
-      ? `${done} Para transcrever, peça "transcreve" e o nome do vídeo quando ele aparecer na Biblioteca.`
-      : done;
+    if (!cmd.alsoTranscribe || !r || r.erro || r.situacao !== 'concluído') return done;
+    // "baixa e transcreve": espera o arquivo entrar na Biblioteca (a importação é logo depois do download) e transcreve
+    let item = null;
+    for (let i = 0; i < ARRIVAL_TRIES && !item; i++) {
+      item = (await recentDownloads()).find((m) => !knownIds.has(m.id)) || null;
+      if (!item) await sleep(ARRIVAL_WAIT_MS, signal);
+    }
+    if (!item) return `${done} Ele ainda não apareceu na Biblioteca; quando aparecer, peça "transcreve o que acabei de baixar".`;
+    const t = await exec('transcribe_media', { ids: [item.id] });
+    return `${done} ${describeResult(t, `Transcrevi ${kind === 'audio' ? 'o áudio' : 'o vídeo'}. Peça "lê a transcrição" para ver o texto.`)}`;
   }
 
   // Comandos sobre mídias: descobre os ids
   let ids = [];
-  if (cmd.usesSelection) {
+  if (cmd.recent) {
+    const r = await exec('library_search', {
+      ordenar: cmd.recent.by, limite: 6, ...(cmd.recent.downloaded ? { baixadas: true } : {}),
+      ...(cmd.recent.kind ? { tipo: cmd.recent.kind } : {})
+    });
+    const item = r && Array.isArray(r.midias) ? r.midias.find((m) => m.tipo === 'video' || m.tipo === 'audio') : null;
+    if (!item) return null; // sem resultado claro: a IA assume, com todas as ferramentas
+    ids = [item.id];
+  } else if (cmd.usesSelection) {
     ids = (context && context.selectedIds ? context.selectedIds : []).slice(0, MAX_IDS);
     if (!ids.length) return 'Selecione a mídia na Biblioteca ou me diga o nome do arquivo.';
   } else {
     const r = await exec('library_search', { texto: cmd.query, limite: 6 });
     const items = r && Array.isArray(r.midias) ? r.midias.filter((m) => m.tipo === 'video' || m.tipo === 'audio') : [];
-    if (!items.length) return `Não achei nenhuma mídia com "${cmd.query}" na Biblioteca.`;
+    if (!items.length) return null; // não é nome de arquivo: a IA entende o pedido (e pode tentar outra busca)
     if (items.length > 1) {
       const exact = items.filter((m) => fold(m.nome).includes(cmd.query));
       if (exact.length !== 1) return `Achei ${items.length} mídias parecidas: ${items.slice(0, 4).map((m) => `"${m.nome}"`).join(', ')}${items.length > 4 ? '…' : ''}. Diga o nome completo ou selecione uma na Biblioteca.`;

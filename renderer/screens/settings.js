@@ -1474,6 +1474,7 @@ function setupSettingsExtras() {
  */
 async function setupAssistantCard() {
   const sw = document.getElementById('aiAssistantEnabledInput');
+  const autoSw = document.getElementById('aiAssistantAutoConfirmInput');
   const text = document.getElementById('aiAssistantInstructionsInput');
   const saveBtn = document.getElementById('aiAssistantInstructionsSave');
   const status = document.getElementById('aiAssistantStatus');
@@ -1481,23 +1482,37 @@ async function setupAssistantCard() {
   const say = (msg) => { if (status) status.textContent = msg || ''; };
   const save = async (patch) => {
     const r = await window.bds.aiSaveConfig(patch);
-    if (!r || !r.ok) throw new Error(r?.error || 'O assistente não respondeu.');
+    if (!r || !r.ok) throw new Error(r?.error || 'A Yui não respondeu.');
     return r.data;
   };
   try {
     const r = await window.bds.aiGetConfig();
     if (r && r.ok) {
       sw.checked = r.data.assistantEnabled !== false;
+      if (autoSw) autoSw.checked = r.data.autoConfirm !== false;
       if (text) text.value = r.data.customInstructions || '';
     }
   } catch (_) { /* mantém os padrões da tela */ }
 
+  autoSw?.addEventListener('change', async () => {
+    const want = autoSw.checked;
+    autoSw.disabled = true;
+    try {
+      await save({ autoConfirm: want });
+      say(want ? 'A Yui executa os pedidos direto.' : 'A Yui vai pedir confirmação a cada ação.');
+    } catch (err) {
+      autoSw.checked = !want;
+      say(`Não foi possível alterar. ${friendlyError(err, 'Tente novamente.')}`);
+    } finally {
+      autoSw.disabled = false;
+    }
+  });
   sw.addEventListener('change', async () => {
     const want = sw.checked;
     sw.disabled = true;
     try {
       await save({ assistantEnabled: want });
-      say(want ? 'Assistente ativado.' : 'Assistente desativado.');
+      say(want ? 'Yui ativada.' : 'Yui desativada.');
       window.dispatchEvent(new CustomEvent('bds:ai-assistant-changed'));
     } catch (err) {
       sw.checked = !want;

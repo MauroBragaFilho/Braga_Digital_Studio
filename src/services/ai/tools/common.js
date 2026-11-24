@@ -34,6 +34,8 @@ function summarizeMedia(row) {
   if (row.project_name) out.projeto = safeText(row.project_name, 80);
   const date = String(row.recorded_at || row.imported_at || '').slice(0, 10);
   if (date) out.data = date;
+  const added = String(row.imported_at || '').replace('T', ' ').slice(0, 16);
+  if (added) out.entrou_na_biblioteca = added;
   return out;
 }
 

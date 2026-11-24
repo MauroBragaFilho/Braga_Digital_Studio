@@ -598,7 +598,7 @@
 
         <div class="st-card" id="settingsAssistantCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">smart_toy</span> Assistente de IA</h4>
-          <p class="st-card-desc">Um botão flutuante com um chat, em todas as telas (atalho Ctrl + J). Consulta suas mídias e projetos e, só com a sua confirmação, baixa links, converte, remove silêncios, transcreve, etiqueta e monta projetos. Usa os provedores configurados acima (o que ele consulta é enviado ao servidor que responder); o modelo precisa aceitar ferramentas.</p>
+          <p class="st-card-desc">A Yui, assistente de IA focada em audiovisual: um botão flutuante com um chat, em todas as telas (atalho Ctrl + J). Consulta suas mídias e projetos e baixa links, converte, remove silêncios, transcreve, etiqueta e monta projetos. Em conversas longas, resume sozinha as mensagens mais antigas para não perder o fio. Usa os provedores configurados acima (o que ela consulta é enviado ao servidor que responder); o modelo precisa aceitar ferramentas.</p>
 
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
@@ -606,6 +606,14 @@
               <span class="st-row-hint">Desligado, o botão some e o assistente não funciona.</span>
             </div>
             <input type="checkbox" id="aiAssistantEnabledInput" class="st-switch" />
+          </label>
+
+          <label class="st-row-label-wrap st-row st-row-toggle">
+            <div class="st-row-text">
+              <span class="st-row-label">Executar sem pedir confirmação</span>
+              <span class="st-row-hint">O que você pede no chat é feito direto. Desligado, cada ação abre uma janela para você confirmar.</span>
+            </div>
+            <input type="checkbox" id="aiAssistantAutoConfirmInput" class="st-switch" />
           </label>
 
           <details class="st-advanced">

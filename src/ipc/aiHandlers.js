@@ -101,6 +101,7 @@ function registerAiHandlers(paths, deps = {}) {
       projects: deps.projectService,
       getModuleManager: deps.getModuleManager || (() => null),
       confirm: deps.confirm || mainConfirm,
+      getAutoConfirm: () => ai.isAutoConfirm(),
       log: deps.log || lazyLog,
       // Serviços que as telas já usam: as ferramentas só os REAPROVEITAM (sem canal novo para o renderer)
       services: { downloads: deps.downloadService, converter: deps.converterService, silence: deps.silenceService, devices: deps.deviceDiscovery },

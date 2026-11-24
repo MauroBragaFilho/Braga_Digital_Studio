@@ -288,7 +288,7 @@ test('chat: o nome do provedor em uso aparece em texto pequeno no cabeçalho e o
     const el = q(h, '.aia-head .aia-provider');
     assert.equal(el.textContent, 'Groq');
     assert.equal(el.hidden, false);
-    assert.deepEqual(qa(h, '#aiAssistantPanel button').map((b) => b.getAttribute('aria-label')), ['Limpar conversa', 'Fechar assistente', 'Enviar']);
+    assert.deepEqual(qa(h, '#aiAssistantPanel button').map((b) => b.getAttribute('aria-label')), ['Limpar conversa', 'Fechar a Yui', 'Enviar']);
   } finally { h.mod.unmountAssistant(); await h.cleanup(); }
 });
 

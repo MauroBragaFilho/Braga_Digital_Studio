@@ -63,7 +63,8 @@ test('mídia: usa a seleção, acha por nome, pede esclarecimento quando é amb�
   await runCommand({ text: 'transcreve o fim da rua', context: null, toolbox: tb });
   assert.deepEqual(tb.calls.at(-1), { name: 'transcribe_media', args: { ids: [7] } });
   assert.match(await runCommand({ text: 'transcreve aula', context: null, toolbox: tb }), /2 mídias parecidas/);
-  assert.match(await runCommand({ text: 'transcreve nada existe', context: null, toolbox: tb }), /Não achei/);
+  // nome que não existe: não é beco sem saída, a IA assume (null)
+  assert.equal(await runCommand({ text: 'transcreve nada existe', context: null, toolbox: tb }), null);
   const conv = fakeToolbox({ convert_media: () => ({ situacao: 'concluído' }) });
   await runCommand({ text: 'converte isso para mp3 192k', context: { selectedIds: [9] }, toolbox: conv });
   assert.deepEqual(conv.calls[0], { name: 'convert_media', args: { ids: [9], formato: 'mp3', predefinicao: '192k' } });
@@ -90,4 +91,47 @@ test('o chat resolve o comando sozinho (sem chamar a IA) e guarda no histórico'
   assert.match(events.find(([c]) => c === 'ai:chatDone')[1].text, /baixei o vídeo/);
   assert.equal(chat.getHistory().length, 2);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('"o último / o que acabei de baixar" é referência à Biblioteca, não nome de arquivo', () => {
+  const m = (t) => matchCommand(t);
+  assert.deepEqual(m('pode transcrever o áudio que acabou de baixar').recent, { kind: 'audio', by: 'importacao', downloaded: true });
+  assert.deepEqual(m('transcreve o último vídeo baixado').recent, { kind: 'video', by: 'importacao', downloaded: true });
+  assert.deepEqual(m('converte o último vídeo para mp3').recent, { kind: 'video', by: 'importacao', downloaded: false });
+  assert.equal(m('tira o silêncio do último vídeo gravado').recent.by, 'gravacao');
+  assert.equal(m('transcreve o fim da rua').recent, undefined, 'nome comum continua sendo nome');
+});
+
+test('último baixado: busca por ordem de importação nas baixadas e age sobre o id achado', async () => {
+  const tb = fakeToolbox({
+    library_search: () => ({ midias: [{ id: 41, nome: 'Entrevista.mp3', tipo: 'audio' }, { id: 40, nome: 'Outro.mp3', tipo: 'audio' }] }),
+    transcribe_media: () => ({ situacao: 'concluído' })
+  });
+  await runCommand({ text: 'pode transcrever o áudio que acabou de baixar', context: null, toolbox: tb });
+  assert.deepEqual(tb.calls[0], { name: 'library_search', args: { ordenar: 'importacao', limite: 6, baixadas: true, tipo: 'audio' } });
+  assert.deepEqual(tb.calls.at(-1), { name: 'transcribe_media', args: { ids: [41] } });
+  const vazio = fakeToolbox({ library_search: () => ({ midias: [] }) });
+  assert.equal(await runCommand({ text: 'transcreve o último vídeo baixado', context: null, toolbox: vazio }), null, 'sem resultado: a IA assume');
+});
+
+test('baixa e transcreve: espera o arquivo entrar na Biblioteca e transcreve o novo', async () => {
+  let polls = 0;
+  const tb = fakeToolbox({
+    add_download: () => ({ situacao: 'concluído' }),
+    library_search: () => ({ midias: ++polls < 3 ? [{ id: 10, nome: 'Antigo.mp3', tipo: 'audio' }] : [{ id: 11, nome: 'Novo.mp3', tipo: 'audio' }, { id: 10, nome: 'Antigo.mp3', tipo: 'audio' }] }),
+    transcribe_media: () => ({ situacao: 'concluído' })
+  });
+  const out = await runCommand({ text: 'pode baixar o audio e transcrever ele? https://youtu.be/x', context: null, toolbox: tb });
+  assert.deepEqual(tb.calls.at(-1), { name: 'transcribe_media', args: { ids: [11] } });
+  assert.match(out, /baixei o áudio/);
+  assert.match(out, /Transcrevi o áudio/);
+});
+
+test('link só para transcrever baixa em MP3; vídeo só se o usuário pedir', () => {
+  const m = (t) => matchCommand(t);
+  assert.deepEqual([m('transcreve https://youtu.be/x').format, m('transcreve https://youtu.be/x').alsoTranscribe], ['audio', true]);
+  assert.equal(m('baixa e transcreve https://a.com/b').format, 'audio');
+  assert.equal(m('transcreve o vídeo https://a.com/b em mp4').format, 'video');
+  assert.equal(m('baixa https://a.com/b').format, 'video', 'só baixar continua em vídeo');
+  assert.equal(m('https://a.com/b o que é isso?'), null);
 });

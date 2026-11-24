@@ -87,7 +87,7 @@ body:has(dialog[open]) .aia-root {
   border-bottom: 1px solid var(--line);
   background: var(--card);
 }
-.aia-title { flex: 1; margin: 0; font-family: var(--font-title); font-size: var(--fs-body); font-weight: 700; }
+.aia-title { flex: 1; margin: 0; font-family: var(--font-title); font-size: var(--fs-body); font-weight: 600; }
 .aia-provider { max-width: 40%; margin-right: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aia-provider[hidden] { display: none; }
 /* O nome do modelo/provedor fica fora do cabeçalho (o app segue controlando o elemento: acessibilidade e testes). */
@@ -189,14 +189,14 @@ body:has(dialog[open]) .aia-root {
   border-bottom-right-radius: 4px;  /* e a do usuário, à direita */
   white-space: pre-wrap;
 }
-.aia-msg-pending .aia-bubble { color: var(--muted); font-style: italic; animation: aia-pulse 1.4s ease-in-out infinite; }
+.aia-msg-pending .aia-bubble { color: var(--muted); animation: aia-pulse 1.4s ease-in-out infinite; }
 @keyframes aia-pulse { 50% { opacity: 0.55; } }
 .aia-msg[hidden] { display: none; }
 .aia-msg-status { padding: 0 4px; }
-.aia-status { font-size: var(--fs-label); color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.aia-status { font-size: var(--fs-label); color: var(--muted); overflow-wrap: anywhere; }
 .aia-msg-note .aia-bubble { background: transparent; border-style: dashed; color: var(--muted); font-size: var(--fs-label); }
 /* Troca de provedor: só uma linha pequena e discreta, sem moldura */
-.aia-msg-fallback .aia-bubble { border-color: transparent; padding-top: 0; padding-bottom: 0; font-size: 11px; font-style: italic; }
+.aia-msg-fallback .aia-bubble { border-color: transparent; padding-top: 0; padding-bottom: 0; font-size: 11px; }
 /* Primeiro uso / aviso de privacidade: mensagem de verdade (texto legível) com UM botão dentro dela */
 .aia-msg-guide .aia-bubble { border-style: solid; color: var(--text); font-size: var(--fs-body); }
 .aia-action-btn {
@@ -230,7 +230,7 @@ body:has(dialog[open]) .aia-root {
 .aia-bubble .aia-list { margin: 0; padding-left: 20px; }
 .aia-bubble .aia-list li + li { margin-top: 3px; }
 .aia-bubble .aia-list li::marker { color: var(--accent-text); }
-.aia-bubble strong { font-weight: 700; }
+.aia-bubble strong { font-weight: 600; }
 .aia-bubble em { font-style: italic; }
 .aia-bubble code {
   font-family: Consolas, 'Courier New', monospace;

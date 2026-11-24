@@ -21,7 +21,7 @@ const idSpec = (what) => ({ type: 'integer', minimum: 1, maximum: 2147483647, de
 const library_search = {
   name: 'library_search',
   kind: 'read',
-  description: 'Busca mídias na Biblioteca do app (por texto no nome/notas/tags, tipo, favoritos ou projeto). Devolve uma lista curta com id, nome, tipo, duração, resolução, projeto e data. Use os ids devolvidos nas outras ferramentas.',
+  description: 'Busca mídias na Biblioteca do app (por texto no nome/notas/tags, tipo, favoritos ou projeto). Devolve uma lista curta com id, nome, tipo, duração, resolução, projeto, data e quando entrou na Biblioteca. Para "o último vídeo/áudio baixado" ou "o que acabei de baixar": ordenar="importacao", baixadas=true e o tipo, SEM texto (nunca use "último" ou "baixado" como texto de busca). Use os ids devolvidos nas outras ferramentas.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -29,6 +29,8 @@ const library_search = {
       texto: { type: 'string', maxLength: 100, description: 'Texto a procurar (nome do arquivo, notas, tags, projeto). Vazio = tudo.' },
       tipo: { type: 'string', enum: ['video', 'audio', 'foto'], description: 'Filtra por tipo de mídia.' },
       favoritos: { type: 'boolean', description: 'true = só favoritos.' },
+      ordenar: { type: 'string', enum: ['gravacao', 'importacao', 'tamanho'], description: 'gravacao = pela data de gravação (padrão); importacao = pelo que entrou na Biblioteca mais recentemente (use para "o último", "o mais recente", "acabei de baixar"); tamanho = os maiores primeiro.' },
+      baixadas: { type: 'boolean', description: 'true = só o que foi baixado pelo app (tela Downloads).' },
       projetoId: idSpec('do projeto'),
       limite: { type: 'integer', minimum: 1, maximum: MAX_SEARCH, default: 10, description: `Quantos resultados (1 a ${MAX_SEARCH}).` }
     }
@@ -39,6 +41,9 @@ const library_search = {
       query: args.texto || '',
       types: args.tipo ? [TYPE_TO_DB[args.tipo]] : [],
       favorites: args.favoritos === true,
+      origins: args.baixadas === true ? ['DOWNLOADER'] : [],
+      sort: args.ordenar === 'importacao' ? 'imported_at' : (args.ordenar === 'tamanho' ? 'filesize' : 'recorded_at'),
+      order: 'DESC',
       projects: args.projetoId ? [args.projetoId] : [],
       limit: args.limite || 10,
       offset: 0

@@ -80,7 +80,7 @@ test('estado vazio: 3 exemplos curtos de pedidos em texto simples (nada clicáve
     assert.match(items[1], /Converta o que está selecionado/);
     assert.match(items[2], /O que tem neste projeto\?/);
     assert.equal(qa(h, '.aia-empty button, .aia-empty a, .aia-empty input').length, 0, 'exemplos são texto, não botões');
-    assert.deepEqual(qa(h, '#aiAssistantPanel button').map((b) => b.getAttribute('aria-label')), ['Limpar conversa', 'Fechar assistente', 'Enviar']);
+    assert.deepEqual(qa(h, '#aiAssistantPanel button').map((b) => b.getAttribute('aria-label')), ['Limpar conversa', 'Fechar a Yui', 'Enviar']);
     assert.deepEqual(h.mod.EMPTY_EXAMPLES.length, 3);
     // vira uma conversa: o estado vazio sai
     input(h).value = 'oi';

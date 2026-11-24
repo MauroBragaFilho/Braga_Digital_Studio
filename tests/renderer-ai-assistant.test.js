@@ -133,10 +133,10 @@ test('o painel mostra SOMENTE o chat: título, limpar, fechar, mensagens, campo 
     assert.equal(p.getAttribute('role'), 'dialog');
     assert.equal(p.getAttribute('aria-modal'), 'false');
     assert.ok(p.getAttribute('aria-label'));
-    assert.equal(p.querySelector('h2').textContent, 'Assistente');
+    assert.equal(p.querySelector('h2').textContent, 'Yui');
 
     const buttons = [...p.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    assert.deepEqual(buttons, ['Limpar conversa', 'Fechar assistente', 'Enviar']);
+    assert.deepEqual(buttons, ['Limpar conversa', 'Fechar a Yui', 'Enviar']);
     assert.equal(p.querySelectorAll('textarea').length, 1);
     assert.equal(p.querySelectorAll('input, select, details, a, datalist').length, 0, 'nada de configuração no painel');
     assert.doesNotMatch(p.textContent, /servidor|chave|modelo|endere[cç]o|token/i);
@@ -163,7 +163,7 @@ test('abrir/fechar: clique alterna, Esc fecha e devolve o foco ao botão, o X ta
 
     click(h, fab(h));
     focus.length = 0;
-    click(h, q(h, 'button[aria-label="Fechar assistente"]'));
+    click(h, q(h, 'button[aria-label="Fechar a Yui"]'));
     assert.equal(isOpen(h), false);
     assert.equal(focus.at(-1), 'fab');
 
@@ -506,7 +506,7 @@ test('Configurações: o interruptor "Ativar assistente" grava na configuração
     await settle(20);
     assert.deepEqual(h.bds.calls.aiSaveConfig.at(-1), [{ assistantEnabled: false }]);
     assert.equal(notified, 1);
-    assert.match(h.document.getElementById('aiAssistantStatus').textContent, /desativado/);
+    assert.match(h.document.getElementById('aiAssistantStatus').textContent, /desativada/);
 
     text.value = 'responda em uma frase';
     fire(h, h.document.getElementById('aiAssistantInstructionsSave'), 'click');
@@ -603,7 +603,7 @@ test('painel continua só com chat durante ações: sem cartões, botões de con
     h.bds.emit('onAiChatStatus', { id: 'c1', text: 'Aguardando sua confirmação…', kind: 'confirm' });
     const p = panel(h);
     const buttons = [...p.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    assert.deepEqual(buttons, ['Limpar conversa', 'Fechar assistente', 'Parar resposta']);
+    assert.deepEqual(buttons, ['Limpar conversa', 'Fechar a Yui', 'Parar resposta']);
     assert.equal(p.querySelectorAll('input, select, details, a').length, 0);
     // o renderer não tem nenhum canal para acionar ferramentas ou confirmar: só fala o texto e cancela
     const src = fs.readFileSync(path.join(ROOT, 'renderer', 'components', 'ai-assistant.js'), 'utf8');

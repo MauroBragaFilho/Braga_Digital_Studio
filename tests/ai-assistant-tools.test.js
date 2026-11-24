@@ -203,7 +203,7 @@ test('library_search: lista enxuta, sem caminhos, só prontos, filtros e limite'
   assert.equal(all.total_encontrado, 3);
   assert.deepEqual(all.midias.map((m) => m.nome).sort(), ['aula 1 - introducao.mp4', 'aula 2 - direito.mp4', 'aula 3 - penal.mp4']);
   const m1 = all.midias.find((m) => m.id === M.aula1);
-  assert.deepEqual(Object.keys(m1).sort(), ['data', 'duracao_s', 'id', 'nome', 'resolucao', 'tipo']);
+  assert.deepEqual(Object.keys(m1).sort(), ['data', 'duracao_s', 'entrou_na_biblioteca', 'id', 'nome', 'resolucao', 'tipo']);
   assert.equal(m1.tipo, 'video');
   assert.equal(m1.resolucao, '1920x1080');
   assert.equal(m1.duracao_s, 3600.4);
@@ -310,6 +310,22 @@ test('transcribe_media: confirmação mostra nomes exatos, contagem e modelo; co
   assert.deepEqual(statuses.filter(([k]) => k === 'confirm').length, 1);
   assert.ok(statuses.some(([, t]) => t === 'Transcrevendo… 40%'), 'progresso aparece como status');
   assert.ok(h.logs.some(([, m]) => /CONFIRMADA.*transcribe_media/.test(m)));
+});
+
+test('opção "executar sem pedir confirmação": a ação roda direto (validação continua) e fica no registro', async () => {
+  const logs = [];
+  let asked = 0;
+  const box = new ToolBox({
+    getDb: () => dbm.get(), library: LQS, projects, getModuleManager: () => new FakeManager(),
+    confirm: async () => { asked++; return false; }, getAutoConfirm: () => true,
+    log: { info: (m) => logs.push(m), warn() {} }
+  });
+  const r = await run(box, 'transcribe_media', { ids: [M.aula1] });
+  assert.equal(asked, 0, 'não abre confirmação');
+  assert.equal(r.transcritas, 2 - 1, 'transcreveu');
+  assert.ok(logs.some((m) => /SEM confirmação.*transcribe_media/.test(m)));
+  const bad = await run(box, 'transcribe_media', { ids: [999999] });
+  assert.match(bad.erro, /não existe/, 'a validação (prepare) continua valendo');
 });
 
 test('transcribe_media: RECUSAR (false, texto, erro, fechar) não transcreve nada e devolve "usuário recusou"', async () => {
@@ -838,7 +854,7 @@ test('fiação: app empacotado (simulado) liberado; o laço usa o diálogo injet
   const asked = [];
   const open = setupHandlers({ confirm: async (req) => { asked.push(req); return true; } });
   try {
-    await open.call('ai:saveConfig', { baseUrl: server.url, model: 'm' });
+    await open.call('ai:saveConfig', { baseUrl: server.url, model: 'm', autoConfirm: false }); // com a opção ligada (padrão) nem abre diálogo
     const before = projectCount();
     const r = await open.call('ai:chatStart', { text: 'crie o projeto Pelo handler' });
     assert.equal(r.ok, true);
