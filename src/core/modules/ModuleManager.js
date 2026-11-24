@@ -31,8 +31,9 @@ const { extractZip, extractTarball, walkFiles } = require('./ZipExtractor');
 const { WhisperCppSource, HuggingFaceSource, engineFiles, unavailableReason, CUDA_LICENSE_LINKS } = require('./sources');
 const { WHISPER_MODELS, DEFAULT_MODEL_ID, REFERENCE_NOTE, getModel } = require('./WhisperCatalog');
 const { WhisperCppRunner } = require('./WhisperCppRunner');
-const { GroqTranscriber } = require('../transcription/GroqTranscriber');
+const { GroqTranscriber, OpenAITranscriber } = require('../transcription/GroqTranscriber');
 const { ElevenLabsTranscriber } = require('../transcription/ElevenLabsTranscriber');
+const { ENGINE_IDS } = require('../transcription/order');
 
 const MODULE_API_VERSION = 2;
 
@@ -260,6 +261,9 @@ class ModuleManager extends EventEmitter {
   }
 
   /** Recusa, em português, quando o projeto oficial não publica o pacote para este sistema. */
+  /** O motor deste computador tem fonte oficial neste sistema? (mesma regra do _requireSource, sem lançar) */
+  _sourceOk() { try { this._requireSource('cpu'); return true; } catch (_) { return false; } }
+
   _requireSource(kind) {
     if (!this._hasSource(kind)) throw new ModuleError(unavailableReason(kind, this._platform, this._arch), 'PLATFORM');
   }
@@ -495,7 +499,7 @@ class ModuleManager extends EventEmitter {
       ffmpegBaseArgs: this.config.ffmpegBaseArgs || [],
       fetchImpl: this.config.fetchImpl || undefined
     };
-    for (const [id, Engine] of [['groq', GroqTranscriber], ['elevenlabs', ElevenLabsTranscriber]]) {
+    for (const [id, Engine] of [['groq', GroqTranscriber], ['openai', OpenAITranscriber], ['elevenlabs', ElevenLabsTranscriber]]) {
       if (this.cloudConfig.readKey(id)) out[id] = new Engine(deps);
     }
     return out;
@@ -508,15 +512,21 @@ class ModuleManager extends EventEmitter {
    */
   async transcribe(options) {
     const custom = Boolean(this.config.cliCommand);
-    const engine = ['groq', 'elevenlabs'].includes(options.engine) ? options.engine : 'local';
+    const engine = ENGINE_IDS.includes(options.engine) ? options.engine : 'local';
     const clouds = this._buildClouds();
     let modelId = this._activeModelId();
-    if (engine === 'local') {
+    const chain = Array.isArray(options.chain) ? options.chain.filter((id) => ENGINE_IDS.includes(id)) : [];
+    if (chain.length) {
+      // Modo Automático: basta um motor da lista estar pronto (o runner pula os que não estão)
+      const localOk = chain.includes('local') && Boolean(modelId) && (custom || ((this._engineInstalled() || this._cudaInstalled()) && this._sourceOk()));
+      const cloudOk = chain.some((id) => id !== 'local' && clouds[id]);
+      if (!localOk && !cloudOk) throw new ModuleError('Nenhum motor de transcrição está pronto. Veja Configurações → Inteligência Artificial.', 'NO_ENGINE');
+    } else if (engine === 'local') {
       if (!custom) this._requireSource('cpu');
       if (!custom && !this._engineInstalled() && !this._cudaInstalled()) throw new ModuleError('Instale o motor de transcrição primeiro.', 'NO_ENGINE');
       if (!modelId) throw new ModuleError('Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
     } else if (!clouds[engine]) {
-      throw new ModuleError('Falta a chave de API do serviço de transcrição. Informe-a em Configurações → Transcrição.', 'NO_KEY');
+      throw new ModuleError('Falta a chave de API do serviço de transcrição. Informe-a em Configurações → Inteligência Artificial.', 'NO_KEY');
     }
     modelId = modelId || '';
 

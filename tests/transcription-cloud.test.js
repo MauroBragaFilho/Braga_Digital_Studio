@@ -47,7 +47,7 @@ function configWith(dir, keys = {}) {
 test('CloudConfig: guarda a chave criptografada, nunca a devolve e valida o formato', () => {
   const dir = tmpDir();
   const config = configWith(dir);
-  assert.deepEqual(config.getPublic().providers.map((p) => [p.id, p.hasKey]), [['groq', false], ['elevenlabs', false]]);
+  assert.deepEqual(config.getPublic().providers.map((p) => [p.id, p.hasKey]), [['groq', false], ['openai', false], ['elevenlabs', false]]);
 
   const pub = config.set({ provider: 'groq', apiKey: GROQ_KEY, model: 'whisper-large-v3' });
   assert.equal(pub.providers.find((p) => p.id === 'groq').hasKey, true);

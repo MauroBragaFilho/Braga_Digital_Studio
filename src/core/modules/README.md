@@ -3,7 +3,7 @@
 Recursos que o usuário instala **só se quiser** (hoje: Whisper, para legendas e transcrição).
 O BDS funciona normalmente sem nenhum deles. Código em `src/core/modules/`, IPC em
 `src/ipc/moduleHandlers.js`, painel de instalação em `renderer/components/modules-panel.js`
-(Configurações → Transcrição) e tela de uso em `renderer/screens/transcription.*`.
+(Configurações → Inteligência Artificial) e tela de uso em `renderer/screens/transcription.*`.
 
 ## Como funciona o motor de transcrição
 
@@ -180,19 +180,28 @@ A pesquisa do topo e o contador de mídias dependem da Biblioteca. As abas ficam
   e evento `modules:changed`. Desligar um módulo com tarefa em andamento a cancela (transcrição, silêncios,
   metadados). O main é a fonte da verdade; `renderer/app.js` aplica o resultado.
 
-## Transcrição na nuvem (Groq e ElevenLabs) e fallback
+## Transcrição na nuvem (Groq, OpenAI e ElevenLabs), ordem e modo Automático
 
 Além do motor local (whisper.cpp), a transcrição pode ser feita por um serviço de nuvem, escolhido no botão de status da tela
-de transcrição. É opcional, desligado por padrão e **separado do assistente de IA**: as chaves ficam em
-`config/transcricao-nuvem.json`, criptografadas (Electron `safeStorage`), uma por serviço, e nunca voltam para a interface
-(`modules:cloudGet` devolve só `hasKey`). Os endereços são fixos (`api.groq.com`, `api.elevenlabs.io`).
+de transcrição. É opcional e desligado por padrão. As chaves ficam em `config/transcricao-nuvem.json`, criptografadas (Electron
+`safeStorage`), uma por serviço, e nunca voltam para a interface (`modules:cloudGet` devolve só `hasKey` e `keySource`). Os
+endereços são fixos (`api.groq.com`, `api.openai.com`, `api.elevenlabs.io`). **Chave compartilhada:** sem chave própria, o
+serviço usa a do provedor de CHAT ligado que fala com exatamente o mesmo endereço (`AIService.keyForHost`; nunca para outro
+endereço, nem com o aviso de servidor externo pendente); `keySource` diz `own` ou `chat`.
+
+**Ordem e modo Automático** (Configurações → Inteligência Artificial → Provedores → Áudio): `transcriptionOrder` (todos os
+motores, na ordem escolhida) e `transcriptionFallback` (os ligados), tratados em `src/core/transcription/order.js`. A tela de
+Transcrição tem a opção **Automático** (`engine: 'auto'`): `modules:transcribe` monta `chain = autoEngines(settings)` e o
+runner tenta cada motor pronto, nessa ordem. De fábrica só o local está ligado: o Automático nunca envia áudio sem o usuário
+ligar um serviço (e confirmar na primeira vez).
 
 - `src/core/transcription/CloudConfig.js`: chaves, modelo de cada serviço e teste da chave (`modules:cloudGet/Set/Test`).
 - `CloudBase.js`: preparo do áudio (AAC mono via ffmpeg), envio com novas tentativas (429/5xx/rede) e mensagens de erro.
-- `GroqTranscriber.js`: blocos de ~10 min (limite de tamanho do Groq), tempo por palavra e por trecho.
+- `GroqTranscriber.js`: `Groq` e `OpenAI` (mesma API `/audio/transcriptions`): blocos de ~10 min, tempo por palavra e por trecho.
 - `ElevenLabsTranscriber.js`: um envio só (Scribe, `/v1/speech-to-text`); os trechos são montados a partir das palavras.
-- `WhisperCppRunner.run({ engine, fallback })`: tenta o motor escolhido e, se ele falhar por causa do serviço (rede, limite,
-  chave, créditos), os da lista `transcriptionFallback` (Configurações → Transcrição), nesta ordem. O formato de saída é o do
+- `WhisperCppRunner.run({ engine, fallback, chain })`: com `chain` (modo Automático), tenta os motores prontos nessa ordem; sem ela,
+  o motor escolhido e, se ele falhar por causa do serviço (rede, limite, chave, créditos), os da lista `transcriptionFallback`
+  na ordem escolhida. O formato de saída é o do
   whisper.cpp, então legendas, texto, corte de silêncio e tempos não mudam.
 - **Privacidade:** com o motor local escolhido não há fallback para a nuvem (o áudio nunca sai do computador sem o usuário pedir).
   Ao escolher um serviço de nuvem pela primeira vez, a tela confirma que o áudio será enviado a ele.

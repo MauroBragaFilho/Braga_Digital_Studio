@@ -11,7 +11,7 @@
  * servidor de IA configurado em Configurações → Inteligência Artificial e gera um <nome>.analise.md. A fase de
  * análise fica dentro do modo "running" (phase = 'analyze') e uma falha nela nunca apaga a transcrição.
  *
- * A instalação do módulo (motor, modelos, GPU) fica em Configurações → Transcrição; aqui só se usa
+ * A instalação do módulo (motor, modelos, GPU) fica em Configurações → Inteligência Artificial; aqui só se usa
  * o que já está instalado. A lógica pesada roda no processo principal (src/core/modules); esta tela
  * pede ações via window.bds.modules* e mostra o andamento. Textos entram sempre por textContent.
  */
@@ -39,6 +39,7 @@ let bound = false;
 let dragDepth = 0;
 const rowEls = new Map();  // id -> elementos da linha, para atualizar sem recriar a lista
 
+let autoSettings = null;   // configurações do usuário (ordem e motores ligados do modo Automático)
 let aiConfig = null;       // resposta de aiGetConfig (sem a chave de API)
 let cloud = null;          // resposta de modulesCloudGet: serviços de nuvem e se têm chave (nunca a chave)
 let phase = 'transcribe';  // 'transcribe' | 'analyze' (dentro do modo running)
@@ -160,12 +161,13 @@ function showMenu(anchor, entries) {
 }
 function hideMenu() { $('trMenu')?.classList.add('hidden'); }
 
-/** Leva para uma aba das Configurações (padrão: Transcrição, onde se instala o motor; a da IA é settingsAiView). */
-function goToTranscriptionSettings(tabId = 'settingsTranscriptionView') {
+/** Leva para Configurações → Inteligência Artificial, já no subpainel pedido: 'local' (motor e modelos deste computador) ou 'providers' (serviços e chaves). */
+function goToTranscriptionSettings(sub = 'local') {
+  try { sessionStorage.setItem('bdsAiSubRequest', sub); } catch (_) { /* sem armazenamento */ }
   document.querySelector('.sidebar .tab-button[data-view="settings"]')?.click();
   let tries = 0;
   const timer = setInterval(() => {
-    const tab = document.querySelector(`.settings-tab[data-tab="${tabId}"]`);
+    const tab = document.querySelector('.settings-tab[data-tab="settingsAiView"]');
     if (tab || ++tries > 30) { clearInterval(timer); tab?.click(); }
   }, 100);
 }
@@ -188,16 +190,39 @@ async function refreshStatus() {
   updatePanel();
 }
 
-/** Serviços de transcrição na nuvem (Configurações → Transcrição): quais têm chave. Um erro aqui nunca atrapalha o motor local. */
+/** Serviços de transcrição na nuvem (Configurações → Inteligência Artificial): quais têm chave. Um erro aqui nunca atrapalha o motor local. */
 async function refreshCloud() {
   try { cloud = await call(window.bds?.modulesCloudGet); } catch (_) { cloud = null; }
+  try { autoSettings = (await window.bds?.getSettings?.()) || null; } catch (_) { autoSettings = null; }
   // Serviço que perdeu a chave (ou sumiu): volta para o motor deste computador
-  if (opts.engine !== 'local' && !cloudProvider()) { opts.engine = 'local'; savePrefs(); }
+  if (opts.engine !== 'local' && opts.engine !== 'auto' && !cloudProvider()) { opts.engine = 'local'; savePrefs(); }
+}
+
+const isAuto = () => opts.engine === 'auto';
+const NAMES = { local: 'Neste computador' };
+const engineLabel = (id) => NAMES[id] || (cloud && (cloud.providers.find((p) => p.id === id) || {}).label) || id;
+
+/** Motores do modo Automático, na ordem das Configurações (só os ligados; sem nenhum, só este computador). */
+function autoChain() {
+  const s = autoSettings || {};
+  const known = ['local', ...(cloud ? cloud.providers.map((p) => p.id) : [])];
+  const saved = Array.isArray(s.transcriptionOrder) ? s.transcriptionOrder.filter((id) => known.includes(id)) : [];
+  const order = [...new Set([...saved, ...known])];
+  const on = Array.isArray(s.transcriptionFallback) ? s.transcriptionFallback : ['local'];
+  const list = order.filter((id) => on.includes(id));
+  return list.length ? list : ['local'];
+}
+
+/** O motor `id` está pronto agora? (local: instalado e com modelo; nuvem: com chave) */
+function engineReady(id) {
+  if (id === 'local') return Boolean(status && status.whisper && status.whisper.ready);
+  const p = cloud && cloud.providers.find((x) => x.id === id);
+  return Boolean(p && p.hasKey);
 }
 
 /** O serviço de nuvem escolhido (com chave), ou null quando o motor é o local ou o serviço não está pronto. */
 function cloudProvider() {
-  if (opts.engine === 'local' || !cloud) return null;
+  if (opts.engine === 'local' || isAuto() || !cloud) return null;
   const p = cloud.providers.find((x) => x.id === opts.engine);
   return p && p.hasKey ? p : null;
 }
@@ -222,7 +247,7 @@ function renderAiStatus() {
     box.classList.add('warn');
     box.append(icon('warning'), h('span', {}, [
       aiConfig && aiConfig.model ? 'Falta a chave de API. ' : 'Falta configurar o servidor de IA. ',
-      h('button', { type: 'button', onclick: () => goToTranscriptionSettings('settingsAiView') }, 'Configurar IA')
+      h('button', { type: 'button', onclick: () => goToTranscriptionSettings('providers') }, 'Configurar IA')
     ]));
   } else if (aiConfig.isLocal) {
     box.append(icon('lock'), h('span', { text: `Servidor local (${aiConfig.model}): o texto não sai do computador.` }));
@@ -237,11 +262,13 @@ function renderAiStatus() {
 /** Por que ainda não dá para iniciar (texto curto abaixo do botão), ou '' se está tudo certo. */
 function blockedReason() {
   if (!status) return 'Verificando o módulo…';
-  if (opts.engine === 'local') {
+  if (isAuto()) {
+    if (!autoChain().some(engineReady)) return 'Nenhum motor está pronto. Veja Configurações → Inteligência Artificial.';
+  } else if (opts.engine === 'local') {
     if (!status.platformSupported) return 'Disponível apenas no Windows.';
-    if (!status.whisper.engine.installed) return 'Instale o módulo em Configurações → Transcrição.';
-    if (!status.whisper.activeModelId) return 'Baixe um modelo em Configurações → Transcrição.';
-  } else if (!cloudProvider()) return 'Informe a chave do serviço em Configurações → Transcrição.';
+    if (!status.whisper.engine.installed) return 'Instale o módulo em Configurações → Inteligência Artificial.';
+    if (!status.whisper.activeModelId) return 'Baixe um modelo em Configurações → Inteligência Artificial.';
+  } else if (!cloudProvider()) return 'Informe a chave do serviço em Configurações → Inteligência Artificial.';
   if (!opts.srt && !opts.md && !opts.txt) return 'Marque ao menos um formato.';
   if (opts.analyze && !aiReady()) return 'Configure a IA em Configurações → Inteligência Artificial, ou desligue a análise.';
   if (opts.outMode === 'dir' && !opts.outDir) return 'Escolha a pasta de destino.';
@@ -253,6 +280,12 @@ const SLOW_ON_CPU = new Set(['medium', 'large-v3-turbo', 'large-v3']);
 
 /** Dica (não impede de iniciar) sob o botão: modelo pesado sem a aceleração NVIDIA. */
 function softHint() {
+  if (isAuto()) {
+    const chain = autoChain();
+    return chain.some((id) => id !== 'local')
+      ? `Automático: tenta ${chain.map(engineLabel).join(', depois ')}. O áudio pode ser enviado a um serviço de nuvem.`
+      : 'Automático: só este computador está ligado. O áudio não sai dele.';
+  }
   const cp = cloudProvider();
   if (cp) return `O áudio será enviado ao ${cp.label}. A cobrança é do seu plano nele.`;
   const w = status && status.whisper;
@@ -268,6 +301,18 @@ function renderEngine() {
   const text = $('trEngineText');
   const sub = $('trSub');
   const cp = cloudProvider();
+  if (isAuto()) {
+    const chain = autoChain();
+    const ok = chain.some(engineReady);
+    dot.className = `tr-dot ${ok ? 'ok' : 'warn'}`;
+    text.textContent = `Automático · ${chain.map(engineLabel).join(' → ')}`;
+    if (sub) {
+      sub.textContent = chain.some((id) => id !== 'local')
+        ? 'Segue a ordem das Configurações: o primeiro motor pronto transcreve e, se ele falhar, o próximo continua. Legendas geradas aqui.'
+        : 'Legendas e transcrições feitas no seu computador. O áudio não é enviado para a internet.';
+    }
+    return;
+  }
   if (sub) {
     sub.textContent = cp
       ? `O áudio é enviado ao ${cp.label} para transcrever; as legendas são geradas aqui. Se ele falhar, o app tenta o próximo serviço marcado em Configurações.`
@@ -302,6 +347,13 @@ function renderDeviceControl() {
 function openModelMenu(anchor) {
   const entries = [];
   entries.push({
+    icon: isAuto() ? 'radio_button_checked' : 'radio_button_unchecked',
+    label: 'Automático',
+    sub: `Segue a ordem das Configurações: ${autoChain().map(engineLabel).join(', depois ')}`,
+    selected: isAuto(),
+    run: () => selectEngine('auto')
+  });
+  entries.push({
     icon: opts.engine === 'local' ? 'radio_button_checked' : 'radio_button_unchecked',
     label: 'Neste computador',
     sub: 'O áudio não sai do computador',
@@ -314,11 +366,11 @@ function openModelMenu(anchor) {
       label: `Nuvem · ${p.label}`,
       sub: p.hasKey ? 'O áudio é enviado ao serviço' : 'Falta a chave — configurar',
       selected: opts.engine === p.id,
-      run: () => (p.hasKey ? selectEngine(p.id) : goToTranscriptionSettings())
+      run: () => (p.hasKey ? selectEngine(p.id) : goToTranscriptionSettings('providers'))
     });
   }
   entries.push({ separator: true });
-  if (opts.engine === 'local') {
+  if (opts.engine === 'local' || isAuto()) {
     if (!status || !status.whisper.engine.installed) {
       entries.push({ icon: 'download', label: 'Instalar o motor deste computador…', run: () => goToTranscriptionSettings() });
     } else {
@@ -334,10 +386,10 @@ function openModelMenu(anchor) {
       }
       if (!installed.length) entries.push({ icon: 'info', label: 'Nenhum modelo instalado', disabled: true, run: () => {} });
       entries.push({ separator: true });
-      entries.push({ icon: 'tune', label: 'Gerenciar modelos…', sub: 'Baixar ou remover em Configurações', run: goToTranscriptionSettings });
+      entries.push({ icon: 'tune', label: 'Gerenciar modelos…', sub: 'Baixar ou remover em Configurações', run: () => goToTranscriptionSettings('local') });
     }
   } else {
-    entries.push({ icon: 'tune', label: 'Chaves e fallback…', sub: 'Configurações → Transcrição', run: goToTranscriptionSettings });
+    entries.push({ icon: 'tune', label: 'Serviços e ordem…', sub: 'Configurações → Inteligência Artificial', run: () => goToTranscriptionSettings('providers') });
   }
   showMenu(anchor, entries);
 }
@@ -345,7 +397,20 @@ function openModelMenu(anchor) {
 /** Troca o motor. Na primeira vez em que um serviço de nuvem é escolhido, confirma que o áudio vai sair do computador. */
 async function selectEngine(id) {
   if (running() || id === opts.engine) return;
-  if (id !== 'local') {
+  if (id === 'auto') {
+    const clouds = autoChain().filter((x) => x !== 'local');
+    if (clouds.length) {
+      const key = `bds.transcription.autoOk.${clouds.join('+')}`;
+      let accepted = false;
+      try { accepted = localStorage.getItem(key) === '1'; } catch (_) { /* sem armazenamento */ }
+      if (!accepted) {
+        const names = clouds.map(engineLabel).join(' e ');
+        const ok = await window.bdsModal.confirm(`No modo Automático, o áudio dos arquivos que você transcrever pode ser enviado ao ${names} pela internet, conforme a ordem das Configurações. A cobrança (se houver) é do seu plano nele. Usar o modo Automático?`);
+        if (!ok) return;
+        try { localStorage.setItem(key, '1'); } catch (_) { /* sem armazenamento */ }
+      }
+    }
+  } else if (id !== 'local') {
     const label = (cloud && cloud.providers.find((p) => p.id === id) || {}).label || 'o serviço';
     const key = `bds.transcription.cloudOk.${id}`;
     let accepted = false;

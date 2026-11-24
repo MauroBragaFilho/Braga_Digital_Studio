@@ -206,7 +206,7 @@ const transcription_status = {
       aceleracao_por_placa_de_video: Boolean(w.cuda && w.cuda.installed),
       transcricao_em_andamento: Boolean(busy && busy.kind === 'transcribe'),
       outra_operacao_em_andamento: Boolean(busy && busy.kind !== 'transcribe'),
-      observacao: w.ready ? undefined : 'Para transcrever é preciso instalar o recurso e escolher um modelo em Configurações → Transcrição. O assistente não instala nada sozinho.'
+      observacao: w.ready ? undefined : 'Para transcrever é preciso instalar o recurso e escolher um modelo em Configurações → Inteligência Artificial. O assistente não instala nada sozinho.'
     };
   }
 };

@@ -140,9 +140,86 @@ test('modelos: o botão de atualizar lista os modelos do próprio provedor', asy
   card.querySelector('.ana-key').value = 'sk-groq-segredo-111';
   click(t.h, card.querySelector('.ana-refresh'));
   await settle(60);
-  const opts = [...t.host.querySelectorAll('.ana-prov datalist option')].map((o) => o.getAttribute('value'));
+  fire(t.h, cards(t.host)[0].querySelector('.ana-model'), 'focus');
+  const opts = [...t.host.querySelectorAll('.ana-prov .ana-combo-opt')].map((o) => o.getAttribute('data-model'));
   assert.deepEqual(opts, ['modelo-a', 'modelo-b']);
   assert.match(t.host.querySelector('[data-status]').textContent, /2 modelo\(s\)/);
+  await stop(t);
+});
+
+/** Painel com um provedor que já tem chave e a lista de modelos carregada. */
+async function withModels() {
+  const t = await mountPanel();
+  await add(t.h, t.host, 'groq');
+  const card = cards(t.host)[0];
+  card.querySelector('.ana-key').value = 'sk-groq-segredo-111';
+  click(t.h, card.querySelector('.ana-refresh'));
+  await settle(60);
+  return t;
+}
+const optionsOf = (host) => [...host.querySelectorAll('.ana-prov .ana-combo-opt')].map((o) => o.getAttribute('data-model'));
+const modelInput = (host) => cards(host)[0].querySelector('.ana-model');
+
+test('campo Modelo: ao clicar mostra TODOS os modelos, mesmo com um nome já escrito', async () => {
+  const t = await withModels();
+  const input = modelInput(t.host);
+  input.value = 'modelo-a';
+  fire(t.h, input, 'focus');
+  assert.deepEqual(optionsOf(t.host), ['modelo-a', 'modelo-b'], 'não precisa apagar o texto para ver os outros');
+  assert.equal(t.host.querySelector('.ana-combo-opt.selected').getAttribute('data-model'), 'modelo-a', 'o atual aparece marcado');
+  assert.equal(input.getAttribute('aria-expanded'), 'true');
+  await stop(t);
+});
+
+test('campo Modelo: digitar filtra pelo que CONTÉM o texto; sem combinação o texto digitado continua valendo', async () => {
+  const t = await withModels();
+  const input = modelInput(t.host);
+  fire(t.h, input, 'focus');
+  input.value = '-b';
+  fire(t.h, input, 'input');
+  assert.deepEqual(optionsOf(t.host), ['modelo-b'], 'filtra por trecho no meio do nome, não só pelo começo');
+  input.value = 'MODELO';
+  fire(t.h, input, 'input');
+  assert.deepEqual(optionsOf(t.host), ['modelo-a', 'modelo-b'], 'sem diferenciar maiúsculas');
+  input.value = 'meu-modelo-novo';
+  fire(t.h, input, 'input');
+  assert.deepEqual(optionsOf(t.host), []);
+  assert.match(t.host.querySelector('.ana-combo-empty').textContent, /texto digitado vale como está/);
+  assert.equal(input.value, 'meu-modelo-novo', 'o texto não é apagado nem trocado');
+  await stop(t);
+});
+
+test('campo Modelo: escolher na lista preenche o campo e fecha; Esc fecha; setas e Enter escolhem', async () => {
+  const t = await withModels();
+  const input = modelInput(t.host);
+  fire(t.h, input, 'focus');
+  const opt = t.host.querySelector('.ana-combo-opt[data-model="modelo-b"]');
+  fire(t.h, opt, 'mousedown');
+  assert.equal(input.value, 'modelo-b');
+  assert.equal(t.host.querySelector('.ana-combo-list').hidden, true);
+
+  fire(t.h, input, 'focus');
+  fire(t.h, input, 'keydown', { key: 'Escape' });
+  assert.equal(t.host.querySelector('.ana-combo-list').hidden, true);
+
+  fire(t.h, input, 'focus');
+  fire(t.h, input, 'keydown', { key: 'ArrowDown' });
+  fire(t.h, input, 'keydown', { key: 'Enter' });
+  assert.equal(input.value, 'modelo-a');
+  await stop(t);
+});
+
+test('campo Modelo: sem lista carregada busca sozinho ao focar (chave guardada) e mostra os modelos', async () => {
+  const t = await mountPanel();
+  await add(t.h, t.host, 'groq');
+  cards(t.host)[0].querySelector('.ana-key').value = 'sk-groq-segredo-111';
+  click(t.h, cards(t.host)[0].querySelector('.ana-save'));
+  await settle(60);
+  const before = t.fetched.length;
+  fire(t.h, modelInput(t.host), 'focus');
+  await settle(60);
+  assert.ok(t.fetched.length > before, 'consultou a lista de modelos do servidor');
+  assert.deepEqual(optionsOf(t.host), ['modelo-a', 'modelo-b']);
   await stop(t);
 });
 

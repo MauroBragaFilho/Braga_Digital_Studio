@@ -116,7 +116,7 @@
 .ana-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .ana-prov { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg); min-width: 0; }
 .ana-prov-off { opacity: 0.75; }
-.ana-prov-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ana-prov-head, .aud-row-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .ana-prov-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .ana-prov-title strong { font-size: var(--fs-body); overflow-wrap: anywhere; }
 .ana-prov-tools { display: flex; align-items: center; gap: 4px; }
@@ -145,6 +145,51 @@
 .ana-preset:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .ana-warn { color: var(--status-warn); }
 .ana-empty { margin: 0; }
+
+/* Provedores: seções (Chat, Áudio, Imagem, Vídeo) e linhas compactas */
+.ana-sec { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.ana-sec + .ana-sec { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 8px; }
+.ana-sec-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0; font-size: var(--fs-section); font-weight: 600; }
+.ana-sec-hint { font-size: var(--fs-label); font-weight: 400; color: var(--muted); }
+.ana-prov, .aud-row { padding: 0; gap: 0; }
+.aud-list { margin-top: 0; }
+.aud-row { list-style: none; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg); min-width: 0; }
+.aud-row-off { opacity: 0.75; }
+.aud-status { min-height: 16px; font-size: var(--fs-label); color: var(--muted); }
+.aud-status:empty { display: none; }
+.aud-ok { color: var(--status-ok); }
+.aud-error { color: var(--danger-fg); }
+.aud-keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aud-keysaved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); }
+.aud-keysaved .material-symbols-rounded { font-size: 18px; color: var(--status-ok); }
+.aud-self-start { align-self: flex-start; }
+.aud-note { margin: 0; }
+.med-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg); }
+.med-icon { display: inline-flex; color: var(--muted); flex-shrink: 0; }
+.med-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.med-text .mod-hint { margin: 0; }
+.med-off .med-row { opacity: 0.7; }
+.ana-prov-head, .aud-row-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 48px; flex-wrap: nowrap; justify-content: flex-start; }
+.ana-grip { display: inline-flex; color: var(--muted); cursor: grab; flex-shrink: 0; }
+.ana-grip .material-symbols-rounded { font-size: 20px; }
+.ana-toggle { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 4px; background: transparent; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
+.ana-toggle:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.ana-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ana-toggle > .material-symbols-rounded { color: var(--muted); font-size: 20px; flex-shrink: 0; }
+.ana-prov-tools .mod-icon-btn { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.ana-prov:hover .ana-prov-tools .mod-icon-btn, .ana-prov:focus-within .ana-prov-tools .mod-icon-btn,
+.aud-row:hover .ana-prov-tools .mod-icon-btn, .aud-row:focus-within .ana-prov-tools .mod-icon-btn { opacity: 1; }
+.ana-detail { display: flex; flex-direction: column; gap: 12px; padding: 4px 16px 16px 44px; }
+.ana-detail[hidden] { display: none; }
+.ana-dragging { opacity: 0.5; }
+.ana-combo { position: relative; flex: 1; min-width: 0; }
+.ana-combo .mod-input { width: 100%; box-sizing: border-box; }
+.ana-combo-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; max-height: 240px; overflow-y: auto; background: var(--card-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.ana-combo-list[hidden] { display: none; }
+.ana-combo-opt { padding: 8px 12px; border-radius: var(--radius-sm); font-size: var(--fs-body); cursor: pointer; overflow-wrap: anywhere; }
+.ana-combo-opt:hover, .ana-combo-opt.active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.ana-combo-opt.selected { color: var(--accent-text); font-weight: 600; }
+.ana-combo-empty { padding: 8px 12px; font-size: var(--fs-label); color: var(--muted); }
 
 /* ----- Painel embutido nas Configurações ----- */
 .mod-embedded { height: auto; overflow: visible; padding-right: 0; }

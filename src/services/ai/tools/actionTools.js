@@ -38,7 +38,7 @@ const transcribe_media = {
     const w = (status && status.whisper) || {};
     if (status && status.busy) throw new ToolError('Já há outra operação em andamento no app. Tente de novo quando terminar.', 'BUSY');
     if (!w.ready) {
-      throw new ToolError('O recurso de transcrição não está pronto (instale-o e escolha um modelo em Configurações → Transcrição). Nada foi feito; o assistente não instala nada sozinho.', 'NO_ENGINE');
+      throw new ToolError('O recurso de transcrição não está pronto (instale-o e escolha um modelo em Inteligência Artificial). Nada foi feito; o assistente não instala nada.', 'NO_ENGINE');
     }
     const active = (w.models || []).find((m) => m.active);
     const names = items.map((i) => safeText(i.row.filename, 80));

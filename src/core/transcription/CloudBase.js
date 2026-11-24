@@ -62,7 +62,7 @@ class CloudBase {
   /** A chave, ou o erro que manda o usuário informá-la. */
   _requireKey() {
     const key = this.config.readKey(this.provider);
-    if (!key) throw new RunnerError(`Falta a chave de API do ${this.providerLabel}. Informe-a em Configurações → Transcrição.`, 'NO_KEY');
+    if (!key) throw new RunnerError(`Falta a chave de API do ${this.providerLabel}. Informe-a em Configurações → Inteligência Artificial.`, 'NO_KEY');
     return key;
   }
 
@@ -108,7 +108,7 @@ class CloudBase {
       const status = body && body.detail && typeof body.detail === 'object' ? String(body.detail.status || '') : '';
 
       if (status === 'quota_exceeded') throw new RunnerError(`Os créditos do ${who} acabaram. Confira o plano na sua conta.`, 'CLOUD_QUOTA');
-      if (res.status === 401 || res.status === 403) throw new RunnerError(`O ${who} recusou a chave de API. Confira a chave em Configurações → Transcrição.`, 'CLOUD_AUTH');
+      if (res.status === 401 || res.status === 403) throw new RunnerError(`O ${who} recusou a chave de API. Confira a chave em Configurações → Inteligência Artificial.`, 'CLOUD_AUTH');
       if (res.status === 413) throw new RunnerError(`O áudio é grande demais para o ${who}.`, 'CLOUD_TOO_LARGE');
       if (res.status === 429) {
         const wait = Number(res.headers && res.headers.get && res.headers.get('retry-after'));

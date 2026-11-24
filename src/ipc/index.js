@@ -92,6 +92,8 @@ function registerIpcHandlers(ctx) {
     getFfmpegPath: () => ffmpegTool.resolve({ mustExist: false }),
     settingsManager,
     isDev: !app.isPackaged,
+    // A transcrição na nuvem reaproveita a chave do provedor de chat do mesmo endereço (ex.: o Groq do assistente)
+    getAiKeyForHost: (host) => (aiApi && typeof aiApi.keyForHost === 'function' ? aiApi.keyForHost(host) : ''),
     tasks: {
       silence: () => services.silenceService,
       // Serviços de módulos criados sob demanda: só há o que cancelar se já existirem

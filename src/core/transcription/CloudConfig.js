@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * CloudConfig — configuração da transcrição na nuvem (Groq e ElevenLabs). Fica SEPARADA do assistente de IA: arquivo
+ * CloudConfig — configuração da transcrição na nuvem (Groq, OpenAI e ElevenLabs). Fica SEPARADA do assistente de IA: arquivo
  * próprio (config/transcricao-nuvem.json) e uma chave por provedor, guardada CRIPTOGRAFADA (Electron safeStorage).
  * A chave nunca volta para a interface: só `hasKey`. Os endereços dos provedores são fixos (não há campo de URL, então
  * a chave não vai para outro servidor).
@@ -20,6 +20,16 @@ const PROVIDERS = Object.freeze({
       { id: 'whisper-large-v3', label: 'Completo', hint: 'Mais preciso' }
     ]),
     keyPattern: /^[A-Za-z0-9_-]{20,200}$/,
+    authHeaders: (key) => ({ Authorization: `Bearer ${key}` }),
+    testPath: '/models'
+  }),
+  openai: Object.freeze({
+    id: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    // Só este modelo devolve o tempo de cada palavra, que as legendas precisam
+    models: Object.freeze([{ id: 'whisper-1', label: 'Padrão', hint: 'Com tempo por palavra' }]),
+    keyPattern: /^sk-[A-Za-z0-9_-]{20,250}$/,
     authHeaders: (key) => ({ Authorization: `Bearer ${key}` }),
     testPath: '/models'
   }),
@@ -46,11 +56,16 @@ function providerOf(id) {
 }
 
 class CloudConfig {
-  /** @param {{configDir:string, safeStorage?:object, fetchImpl?:Function}} opts */
-  constructor({ configDir, safeStorage = null, fetchImpl = globalThis.fetch }) {
+  /**
+   * @param {{configDir:string, safeStorage?:object, fetchImpl?:Function, sharedKey?:(host:string)=>string}} opts
+   *   sharedKey: chave do provedor de CHAT que fala com o MESMO endereço (ex.: o Groq do assistente). Só vale quando o
+   *   serviço não tem chave própria; nunca é usada com outro endereço.
+   */
+  constructor({ configDir, safeStorage = null, fetchImpl = globalThis.fetch, sharedKey = null }) {
     this.filePath = path.join(configDir, 'transcricao-nuvem.json');
     this.safeStorage = safeStorage;
     this.fetch = fetchImpl;
+    this.sharedKey = typeof sharedKey === 'function' ? sharedKey : null;
   }
 
   _load() {
@@ -79,12 +94,25 @@ class CloudConfig {
     try { return !!(this.safeStorage && this.safeStorage.isEncryptionAvailable()); } catch (_) { return false; }
   }
 
-  /** Chave descriptografada: só para uso no processo principal. '' quando não há chave (ou não dá para ler). */
-  readKey(provider) {
-    providerOf(provider);
+  /** Chave PRÓPRIA do serviço, descriptografada. '' quando não há (ou não dá para ler). */
+  _readOwn(provider) {
     const { apiKeyEnc } = this._load()[provider];
     if (!apiKeyEnc || !this._encryptionAvailable()) return '';
     try { return this.safeStorage.decryptString(Buffer.from(apiKeyEnc, 'base64')); } catch (_) { return ''; }
+  }
+
+  /** Chave do provedor de chat do mesmo endereço, se houver. '' caso contrário. */
+  _readShared(provider) {
+    if (!this.sharedKey) return '';
+    let host = '';
+    try { host = new URL(PROVIDERS[provider].baseUrl).host; } catch (_) { return ''; }
+    try { return String(this.sharedKey(host) || ''); } catch (_) { return ''; }
+  }
+
+  /** Chave descriptografada: só para uso no processo principal. A própria vale primeiro; sem ela, a do chat do mesmo endereço. */
+  readKey(provider) {
+    providerOf(provider);
+    return this._readOwn(provider) || this._readShared(provider);
   }
 
   getModel(provider) { providerOf(provider); return this._load()[provider].model; }
@@ -97,7 +125,8 @@ class CloudConfig {
       providers: PROVIDER_IDS.map((id) => ({
         id,
         label: PROVIDERS[id].label,
-        hasKey: Boolean(saved[id].apiKeyEnc) && this.readKey(id) !== '',
+        hasKey: this.readKey(id) !== '',
+        keySource: this._readOwn(id) ? 'own' : (this._readShared(id) ? 'chat' : null),
         model: saved[id].model,
         models: PROVIDERS[id].models.map((m) => ({ ...m }))
       }))

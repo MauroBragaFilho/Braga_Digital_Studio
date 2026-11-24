@@ -38,6 +38,7 @@ const { buildSrt, buildMarkdown, buildText, DEFAULT_MAX_CHARS } = require('../tr
 const { writeUnique } = require('../transcription/writeUnique');
 const { detectSpeechRanges, buildTrimmedWav, remapResult, sanitizeSilenceOptions } = require('../transcription/silenceTrim');
 const { getModel } = require('./WhisperCatalog');
+const { ENGINE_IDS } = require('../transcription/order');
 
 const SUPPORTED_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4a', '.wav', '.mp3', '.flac', '.ogg']);
 const CLI_NAME = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
@@ -95,10 +96,12 @@ function normalizeOptions(options = {}) {
     outDir = String(options.outDir);
     if (!path.isAbsolute(outDir)) throw new RunnerError('A pasta de saída deve ser um caminho completo.', 'BAD_PATH');
   }
-  const ENGINES = ['local', 'groq', 'elevenlabs'];
+  const ENGINES = ENGINE_IDS;
   const engine = ENGINES.includes(options.engine) ? options.engine : 'local';
   const fallback = Array.isArray(options.fallback) ? options.fallback.filter((id) => ENGINES.includes(id) && id !== engine) : [];
-  return { files, srt, md, maxWords, lines, language, outDir, engine, fallback, forceCpu: options.forceCpu === true, skipSilence: options.skipSilence !== false, silence: sanitizeSilenceOptions(options.silence) };
+  // Modo Automático: lista de motores na ordem de tentativa (sem ela, vale `engine` + `fallback`, como sempre)
+  const chain = Array.isArray(options.chain) ? [...new Set(options.chain.filter((id) => ENGINES.includes(id)))] : [];
+  return { files, srt, md, maxWords, lines, language, outDir, engine, fallback, chain: chain.length ? chain : null, forceCpu: options.forceCpu === true, skipSilence: options.skipSilence !== false, silence: sanitizeSilenceOptions(options.silence) };
 }
 
 /** O erro veio do serviço (rede, limite, chave, créditos…) e outro motor pode resolver? Cancelamento e arquivo ruim, não. */
@@ -215,15 +218,19 @@ class WhisperCppRunner {
     const engines = this._engines();
     const localReady = Boolean(modelFile) && fs.existsSync(modelFile) && (Boolean(this.cliCommand) || Boolean(engines.cuda) || Boolean(engines.cpu));
     // Ordem de tentativa: o motor escolhido e, se ele for de nuvem, os de fallback que estão prontos.
-    const chain = [opts.engine, ...(opts.engine === 'local' ? [] : opts.fallback)]
+    const ready = (id) => (id === 'local' ? localReady : Boolean(this.clouds[id]));
+    const chain = (opts.chain || [opts.engine, ...(opts.engine === 'local' ? [] : opts.fallback)])
       .filter((id, i, all) => all.indexOf(id) === i)
-      .filter((id) => (id === 'local' ? localReady : Boolean(this.clouds[id])));
-    if (!chain.length || chain[0] !== opts.engine) {
+      .filter(ready);
+    if (opts.chain && !chain.length) {
+      throw new RunnerError('Nenhum motor de transcrição está pronto. Veja Configurações → Inteligência Artificial.', 'NO_ENGINE');
+    }
+    if (!opts.chain && (!chain.length || chain[0] !== opts.engine)) {
       if (opts.engine === 'local') {
         if (!modelFile || !fs.existsSync(modelFile)) throw new RunnerError('Nenhum modelo instalado. Baixe e escolha um modelo antes de transcrever.', 'NO_MODEL');
         throw new RunnerError('O motor de transcrição não está instalado.', 'NO_ENGINE');
       }
-      throw new RunnerError('A transcrição na nuvem não está disponível. Informe a chave em Configurações → Transcrição.', 'NO_KEY');
+      throw new RunnerError('A transcrição na nuvem não está disponível. Informe a chave em Configurações → Inteligência Artificial.', 'NO_KEY');
     }
     if (!this.ffmpegPath && !this.ffmpegBaseArgs.length) throw new RunnerError('O componente de mídia não foi encontrado. Ele é necessário para ler vídeos e áudios; instale-o em Configurações > Módulos.', 'NO_FFMPEG');
     if (opts.outDir) fs.mkdirSync(opts.outDir, { recursive: true });

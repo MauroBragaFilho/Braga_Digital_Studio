@@ -1,17 +1,22 @@
 /**
- * Painel "Provedores de IA" da seção Configurações → Inteligência Artificial. Lista os servidores de IA usados pela
- * análise de transcrições e pelo assistente (Groq, Qwen, LM Studio, Ollama, OpenAI ou outro compatível), na ORDEM DE
- * PRIORIDADE: se o primeiro falhar, o próximo continua a mesma conversa (interruptor de fallback). Cada provedor tem
- * a SUA chave de API, que só é gravada (criptografada no computador) e nunca volta para a tela: aqui só aparece
- * "Chave guardada". É opcional: sem provedores, a transcrição funciona normalmente. A configuração é a mesma do
- * assistente (window.bds.ai*). Textos entram sempre por textContent.
+ * Card "Provedores" de Configurações → Inteligência Artificial. Reúne tudo da nuvem em quatro seções: Chat, Áudio,
+ * Imagem e Vídeo. A seção Chat lista os servidores de IA do assistente e da análise de transcrições (Groq, Qwen,
+ * LM Studio, Ollama, OpenAI ou outro compatível) na ORDEM DE PRIORIDADE: se o primeiro falhar, o próximo continua a
+ * mesma conversa. Cada provedor é uma linha compacta (alça, nome, estado e interruptor); clicar abre a chave, o modelo
+ * e o teste. Reordena arrastando ou pelas setas (que aparecem ao passar o mouse ou com o foco). A chave só é gravada
+ * (criptografada no computador) e nunca volta para a tela: aqui só aparece "Chave guardada". As seções Áudio, Imagem e
+ * Vídeo vêm de ai-audio-section.js e ai-media-sections.js. A configuração do chat é a mesma do assistente
+ * (window.bds.ai*). Textos entram sempre por textContent.
  */
+import { mountAudioSection, unmountAudioSection } from './ai-audio-section.js';
+import { renderMediaSections } from './ai-media-sections.js';
 
 let config = null;
 let root = null;
 let statusLine = null;                 // { text, kind } da linha geral (adicionar, ordem, fallback)
 let cardStatus = new Map();            // id do provedor -> { text, kind } da linha do cartão
 let keyEdit = new Set();               // provedores com o campo "trocar chave" aberto
+let expanded = new Set();              // provedores com os detalhes abertos
 let confirmRemove = null;              // id do provedor cuja remoção está esperando confirmação
 let modelLists = new Map();            // id -> ids de modelos listados pelo próprio provedor
 let focusAfter = null;                 // seletor do elemento que recebe o foco depois de redesenhar
@@ -102,15 +107,22 @@ async function save(patch, { focus = null, quiet = false } = {}) {
 
 // ------------------------------------------------------------------ ações
 
+/** Depois de criar um provedor, abre os detalhes do último da lista (é o novo) para colar a chave. */
+function expandNewest() {
+  const last = config.providers[config.providers.length - 1];
+  if (last) expanded.add(last.id);
+}
+
 async function addProvider(presetId) {
   const preset = config.presets.find((p) => p.id === presetId);
   if (presetId === 'custom') {
     // Personalizado precisa de endereço: pede no próprio cartão novo (campo em "Avançado" aberto)
     return save({ addProvider: { preset: 'custom', baseUrl: 'http://localhost:8080/v1' } }, { focus: '.ana-prov:last-child .ana-model' }).then((ok) => {
-      if (ok) setStatus('Ajuste o endereço do servidor em Avançado e informe o modelo.', 'ok');
+      if (ok) { expandNewest(); render(); setStatus('Ajuste o endereço do servidor em Avançado e informe o modelo.', 'ok'); }
     });
   }
   const ok = await save({ addProvider: { preset: presetId } }, { focus: '.ana-prov:last-child input[type="password"], .ana-prov:last-child .ana-model' });
+  if (ok) { expandNewest(); render(); }
   if (ok && preset) setStatus(preset.warning ? preset.warning : `${preset.label} adicionado. Informe a chave e clique em Salvar e testar.`, preset.warning ? 'warn' : 'ok');
 }
 
@@ -180,26 +192,32 @@ async function listModels(p, btn) {
 
 const readCardModel = (id) => { const el = root.querySelector(`.ana-prov[data-id="${id}"] .ana-model`); return el ? el.value.trim() : ''; };
 
-// ------------------------------------------------------------------ cartões
+// ------------------------------------------------------------------ linhas dos provedores
 
 function buildCard(p, index) {
   const total = config.providers.length;
   const titleId = `anaTitle-${p.id}`;
-  const list = modelLists.get(p.id) || [];
+  const detailId = `anaDetail-${p.id}`;
   const st = cardStatus.get(p.id);
+  const open = expanded.has(p.id) || confirmRemove === p.id;
 
+  // Linha fechada: alça, nome + estado (abre os detalhes), setas (só com mouse/foco) e interruptor
   const head = h('div', { class: 'ana-prov-head' }, [
-    h('div', { class: 'ana-prov-title' }, [
-      h('strong', { id: titleId, text: p.label }),
-      h('span', { class: `mod-badge ana-state ana-state-${STATE_CLASS[p.state] || 'off'}`, text: stateText(p) })
+    h('span', { class: 'ana-grip', title: 'Arraste para mudar a ordem', 'aria-hidden': 'true' }, [icon('drag_indicator')]),
+    h('button', {
+      class: 'ana-toggle', type: 'button', 'aria-expanded': open ? 'true' : 'false', 'aria-controls': detailId,
+      onclick: () => { if (expanded.has(p.id)) expanded.delete(p.id); else expanded.add(p.id); render(); }
+    }, [
+      h('span', { class: 'ana-prov-title' }, [
+        h('strong', { id: titleId, text: p.label }),
+        h('span', { class: `mod-badge ana-state ana-state-${STATE_CLASS[p.state] || 'off'}`, text: stateText(p) })
+      ]),
+      icon(open ? 'expand_less' : 'expand_more')
     ]),
     h('div', { class: 'ana-prov-tools' }, [
-      h('label', { class: 'ana-switch' }, [
-        h('input', { type: 'checkbox', class: 'st-switch ana-enabled', checked: p.enabled, 'aria-label': `Ativar ${p.label}`, onchange: (e) => save({ provider: { id: p.id, enabled: e.target.checked } }, { focus: `.ana-prov[data-id="${p.id}"] .ana-enabled` }) }),
-        h('span', { text: 'Ativar' })
-      ]),
       h('button', { class: 'mod-icon-btn ana-up', type: 'button', title: 'Subir', 'aria-label': `Subir ${p.label}`, disabled: index === 0, onclick: () => move(index, -1) }, [icon('arrow_upward')]),
-      h('button', { class: 'mod-icon-btn ana-down', type: 'button', title: 'Descer', 'aria-label': `Descer ${p.label}`, disabled: index === total - 1, onclick: () => move(index, 1) }, [icon('arrow_downward')])
+      h('button', { class: 'mod-icon-btn ana-down', type: 'button', title: 'Descer', 'aria-label': `Descer ${p.label}`, disabled: index === total - 1, onclick: () => move(index, 1) }, [icon('arrow_downward')]),
+      h('input', { type: 'checkbox', class: 'st-switch ana-enabled', checked: p.enabled, 'aria-label': `Ativar ${p.label}`, onchange: (e) => save({ provider: { id: p.id, enabled: e.target.checked } }, { quiet: true, focus: `.ana-prov[data-id="${p.id}"] .ana-enabled` }) })
     ])
   ]);
 
@@ -209,15 +227,14 @@ function buildCard(p, index) {
     info.push(h('p', { class: 'ana-note', role: 'note' }, [icon('info'), h('span', { text: warning })]));
   }
 
-  // Chave: só "Chave guardada" (nunca o valor). Trocar abre o campo; Remover apaga.
+  // Chave: só "Chave guardada" (nunca o valor). Trocar abre o campo; remover fica em Avançado.
   let keyBlock;
   if (p.hasKey && !keyEdit.has(p.id)) {
     keyBlock = h('div', { class: 'mod-field' }, [
       h('span', { class: 'mod-field-label', text: 'Chave de API' }),
       h('div', { class: 'ana-keyrow' }, [
         h('span', { class: 'ana-keysaved' }, [icon('lock'), 'Chave guardada']),
-        h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-key-change', type: 'button', 'aria-label': `Trocar a chave de ${p.label}`, onclick: () => { keyEdit.add(p.id); focusAfter = `.ana-prov[data-id="${p.id}"] .ana-key`; render(); } }, 'Trocar'),
-        h('button', { class: 'mod-btn mod-btn-danger mod-btn-sm ana-key-remove', type: 'button', 'aria-label': `Remover a chave de ${p.label}`, onclick: () => save({ provider: { id: p.id, clearApiKey: true } }, { quiet: true }) }, 'Remover')
+        h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-key-change', type: 'button', 'aria-label': `Trocar a chave de ${p.label}`, onclick: () => { keyEdit.add(p.id); focusAfter = `.ana-prov[data-id="${p.id}"] .ana-key`; render(); } }, 'Trocar')
       ])
     ]);
   } else {
@@ -231,16 +248,17 @@ function buildCard(p, index) {
   const modelBlock = h('div', { class: 'mod-field' }, [
     h('label', { class: 'mod-field-label', for: `anaModel-${p.id}`, text: 'Modelo' }),
     h('div', { class: 'ana-row' }, [
-      h('input', { id: `anaModel-${p.id}`, class: 'mod-input ana-model', type: 'text', list: `anaModels-${p.id}`, spellcheck: 'false', autocomplete: 'off', value: p.model || '', placeholder: p.suggestedModel || 'nome do modelo' }),
+      buildModelCombo(p),
       h('button', { class: 'mod-btn mod-btn-secondary ana-refresh', type: 'button', title: 'Buscar os modelos deste servidor', 'aria-label': `Buscar os modelos de ${p.label}`, onclick: (e) => listModels(p, e.currentTarget) }, [icon('refresh')])
-    ]),
-    h('datalist', { id: `anaModels-${p.id}` }, list.map((id) => h('option', { value: id })))
+    ])
   ]);
 
+  // Aviso de servidor externo: à vista enquanto pendente; depois de aceito, fica em Avançado (dá para revogar)
   const consent = p.isLocal ? null : h('label', { class: 'ana-consent' }, [
     h('input', { type: 'checkbox', class: 'st-switch ana-accept', checked: !p.needsRemoteConsent, onchange: (e) => save({ provider: { id: p.id, acceptRemote: e.target.checked } }, { quiet: true, focus: `.ana-prov[data-id="${p.id}"] .ana-accept` }) }),
     h('span', { text: 'Entendo que o texto enviado à IA vai para este servidor externo.' })
   ]);
+  const consentPending = Boolean(consent) && p.needsRemoteConsent;
 
   const advanced = h('details', { class: 'ana-adv' }, [
     h('summary', { text: 'Avançado' }),
@@ -251,11 +269,13 @@ function buildCard(p, index) {
         h('input', { class: 'mod-input ana-url', type: 'text', spellcheck: 'false', value: p.baseUrl }),
         h('span', { class: 'mod-hint', text: 'Mudar de servidor apaga a chave guardada deste provedor.' })
       ]),
+      consent && !consentPending ? consent : null,
+      p.hasKey ? h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-self-start ana-key-remove', type: 'button', 'aria-label': `Remover a chave de ${p.label}`, onclick: () => save({ provider: { id: p.id, clearApiKey: true } }, { quiet: true }) }, 'Remover a chave guardada') : null,
       confirmRemove === p.id
         ? h('div', { class: 'ana-confirm', role: 'alertdialog', 'aria-label': `Remover ${p.label}` }, [
           h('span', { text: `Remover ${p.label}? A chave guardada dele também será apagada.` }),
           h('div', { class: 'mod-actions' }, [
-            h('button', { class: 'mod-btn mod-btn-danger mod-btn-sm ana-remove-yes', type: 'button', onclick: () => { confirmRemove = null; cardStatus.delete(p.id); modelLists.delete(p.id); save({ removeProvider: p.id }); } }, 'Remover'),
+            h('button', { class: 'mod-btn mod-btn-danger mod-btn-sm ana-remove-yes', type: 'button', onclick: () => { confirmRemove = null; expanded.delete(p.id); cardStatus.delete(p.id); modelLists.delete(p.id); save({ removeProvider: p.id }); } }, 'Remover'),
             h('button', { class: 'mod-btn mod-btn-ghost mod-btn-sm ana-remove-no', type: 'button', onclick: () => { confirmRemove = null; focusAfter = `.ana-prov[data-id="${p.id}"] .ana-remove`; render(); } }, 'Cancelar')
           ])
         ])
@@ -264,14 +284,91 @@ function buildCard(p, index) {
   ]);
   if (confirmRemove === p.id) advanced.open = true;
 
-  return h('li', { class: `ana-prov${p.enabled ? '' : ' ana-prov-off'}`, 'data-id': p.id, role: 'group', 'aria-labelledby': titleId }, [
-    head, ...info, keyBlock, modelBlock, consent,
+  const detail = h('div', { class: 'ana-detail', id: detailId, hidden: !open }, [
+    ...info, keyBlock, modelBlock, consentPending ? consent : null,
     h('div', { class: 'mod-actions' }, [
       h('button', { class: 'mod-btn mod-btn-primary ana-save', type: 'button', onclick: (e) => saveAndTest(p, e.currentTarget) }, [icon('wifi_tethering'), 'Salvar e testar'])
     ]),
     h('div', { class: `ana-status${st && st.kind ? ` ana-${st.kind}` : ''}`, 'data-status': p.id, role: 'status', text: st ? st.text : '' }),
     advanced
   ]);
+
+  return h('li', { class: `ana-prov${p.enabled ? '' : ' ana-prov-off'}${open ? ' ana-prov-open' : ''}`, 'data-id': p.id, role: 'group', 'aria-labelledby': titleId }, [head, detail]);
+}
+
+/**
+ * Campo "Modelo": digita à vontade e, ao clicar, mostra TODOS os modelos do servidor (a lista nativa do navegador só
+ * mostrava os que combinam com o texto, e era preciso apagá-lo para ver o resto). Ao digitar, a lista filtra pelo que
+ * CONTÉM o texto. Setas navegam, Enter escolhe, Esc fecha. Se a lista ainda não foi buscada e há chave guardada (ou o
+ * servidor não pede chave), busca sozinha ao focar.
+ */
+function buildModelCombo(p) {
+  const listId = `anaModels-${p.id}`;
+  const input = h('input', {
+    id: `anaModel-${p.id}`, class: 'mod-input ana-model', type: 'text', role: 'combobox', 'aria-autocomplete': 'list', 'aria-expanded': 'false', 'aria-controls': listId,
+    spellcheck: 'false', autocomplete: 'off', value: p.model || '', placeholder: p.suggestedModel || 'nome do modelo'
+  });
+  const box = h('ul', { id: listId, class: 'ana-combo-list', role: 'listbox', hidden: true, 'aria-label': `Modelos de ${p.label}` });
+  let shown = [];
+  let active = -1;
+  let filtering = false;   // só filtra depois que o usuário digita; ao abrir mostra tudo
+  let loading = false;
+  const all = () => modelLists.get(p.id) || [];
+
+  const paint = () => {
+    const q = filtering ? input.value.trim().toLowerCase() : '';
+    shown = all().filter((id) => !q || id.toLowerCase().includes(q));
+    clear(box);
+    if (!shown.length) {
+      let text = 'Clique em atualizar para listar os modelos.';
+      if (loading) text = 'Buscando modelos…';
+      else if (all().length) text = 'Nenhum modelo com esse nome. O texto digitado vale como está.';
+      box.append(h('li', { class: 'ana-combo-empty', role: 'presentation', text }));
+      return;
+    }
+    const current = input.value.trim();
+    shown.forEach((id, i) => box.append(h('li', {
+      role: 'option', class: `ana-combo-opt${id === current ? ' selected' : ''}${i === active ? ' active' : ''}`, 'data-model': id, 'aria-selected': id === current ? 'true' : 'false', text: id,
+      onmousedown: (e) => { e.preventDefault(); pick(id); } // mousedown: escolhe antes de o campo perder o foco
+    })));
+  };
+  const open = () => { box.hidden = false; input.setAttribute('aria-expanded', 'true'); paint(); };
+  const close = () => { box.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1; filtering = false; };
+  const pick = (id) => { input.value = id; close(); };
+
+  const ensureLoaded = () => {
+    if (all().length || loading || !(p.hasKey || !p.keyRequired)) return;
+    loading = true;
+    if (!box.hidden) paint();
+    call(window.bds?.aiListModels, p.id)
+      .then((models) => { modelLists.set(p.id, (models || []).map((m) => m.id)); })
+      .catch(() => { /* sem lista: o texto digitado continua valendo e o botão de atualizar mostra o motivo */ })
+      .finally(() => { loading = false; if (!box.hidden) paint(); });
+  };
+
+  input.addEventListener('focus', () => { filtering = false; open(); ensureLoaded(); });
+  input.addEventListener('click', () => { if (box.hidden) { filtering = false; open(); } });
+  input.addEventListener('input', () => { filtering = true; active = -1; if (box.hidden) open(); else paint(); });
+  input.addEventListener('blur', close);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (box.hidden) { open(); return; }
+      if (!shown.length) return;
+      active = (active + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length;
+      paint();
+      const el = box.querySelector('.ana-combo-opt.active');
+      if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && !box.hidden && active >= 0 && shown[active]) {
+      e.preventDefault();
+      pick(shown[active]);
+    } else if (e.key === 'Escape' && !box.hidden) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  });
+  return h('div', { class: 'ana-combo' }, [input, box]);
 }
 
 function buildAdd() {
@@ -283,7 +380,47 @@ function buildAdd() {
   ]);
 }
 
-// ------------------------------------------------------------------ cartão geral
+/** Arrastar pela alça muda a ordem; a ordem nova é gravada ao soltar. */
+function bindDrag(list) {
+  let dragging = null;
+  let before = '';
+  const ids = () => [...list.querySelectorAll('.ana-prov')].map((li) => li.dataset.id);
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('.ana-prov');
+    if (li) li.draggable = Boolean(e.target.closest('.ana-grip'));
+  });
+  list.addEventListener('dragstart', (e) => {
+    const li = e.target.closest && e.target.closest('.ana-prov');
+    if (!li || !li.draggable) { e.preventDefault(); return; }
+    dragging = li;
+    before = ids().join(',');
+    li.classList.add('ana-dragging');
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', li.dataset.id); }
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const over = e.target.closest('.ana-prov');
+    if (!over || over === dragging) return;
+    const rect = over.getBoundingClientRect();
+    list.insertBefore(dragging, e.clientY > rect.top + rect.height / 2 ? over.nextElementSibling : over);
+  });
+  list.addEventListener('dragend', () => {
+    if (!dragging) return;
+    dragging.classList.remove('ana-dragging');
+    dragging.draggable = false;
+    const next = ids();
+    dragging = null;
+    if (next.join(',') !== before) save({ order: next }, { quiet: true });
+  });
+}
+
+// ------------------------------------------------------------------ card geral
+
+const section = (title, hint, children) => h('section', { class: 'ana-sec', 'aria-label': title }, [
+  h('h4', { class: 'ana-sec-title' }, [title, hint ? h('span', { class: 'ana-sec-hint', text: hint }) : null]),
+  ...children
+]);
 
 function render() {
   if (!root || !config) return;
@@ -293,31 +430,32 @@ function render() {
   const head = h('div', { class: 'mod-head' }, [
     h('div', { class: 'mod-head-icon' }, [icon('auto_awesome')]),
     h('div', { class: 'mod-head-text' }, [
-      h('h3', { text: 'Provedores de IA' }),
-      h('p', { text: 'Opcional. Usados para resumir transcrições (em um arquivo .analise.md) e pelo assistente. A ordem da lista é a prioridade: o primeiro responde e, se falhar, o próximo continua.' })
+      h('h3', { text: 'Provedores' }),
+      h('p', { text: 'Serviços de IA que o app usa. A ordem de cada lista é a ordem de tentativa. As chaves ficam criptografadas neste computador.' })
     ]),
     h('span', { class: `mod-state mod-state-${config.ready ? 'ok' : 'off'}`, text: config.ready ? 'Pronta' : 'Não configurada' })
   ]);
 
-  const body = h('div', { class: 'mod-section' });
+  // Chat
+  const chat = [];
   if (has) {
-    body.append(h('ul', { class: 'ana-list', 'aria-label': 'Provedores de IA, em ordem de prioridade' }, config.providers.map(buildCard)));
+    const list = h('ul', { class: 'ana-list', 'aria-label': 'Provedores de chat, em ordem de prioridade' }, config.providers.map(buildCard));
+    bindDrag(list);
+    chat.push(list);
   } else {
-    body.append(h('p', { class: 'mod-muted ana-empty', text: 'Nenhum provedor ainda. Adicione um para usar o assistente e a análise de transcrições.' }));
+    chat.push(h('p', { class: 'mod-muted ana-empty', text: 'Nenhum provedor ainda. Adicione um para usar o assistente e a análise de transcrições.' }));
   }
-  body.append(buildAdd());
-
+  chat.push(buildAdd());
   if (config.providers.length > 1) {
-    body.append(h('label', { class: 'ana-fallback' }, [
+    chat.push(h('label', { class: 'ana-fallback' }, [
       h('input', { type: 'checkbox', class: 'st-switch ana-fallback-input', id: 'anaFallback', checked: config.fallbackEnabled, onchange: (e) => save({ fallbackEnabled: e.target.checked }, { quiet: true, focus: '#anaFallback' }) }),
       h('span', { class: 'ana-fallback-text' }, [
         h('strong', { text: 'Usar o próximo provedor se este falhar (mantém a conversa)' }),
-        h('span', { class: 'mod-hint', text: 'Se um servidor ficar fora do ar, atingir o limite de uso ou recusar a chave, a conversa continua no próximo da lista.' })
+        h('span', { class: 'mod-hint', text: 'Servidor fora do ar, limite de uso ou chave recusada: a conversa continua no próximo da lista.' })
       ])
     ]));
   }
-
-  body.append(h('details', { class: 'ana-adv' }, [
+  chat.push(h('details', { class: 'ana-adv' }, [
     h('summary', { text: 'Avançado' }),
     h('label', { class: 'mod-field' }, [
       h('span', { class: 'mod-field-label', text: 'Tamanho máximo de cada resposta (tokens)' }),
@@ -325,10 +463,20 @@ function render() {
       h('span', { class: 'mod-hint', text: 'Se a análise vier cortada no meio, aumente este valor.' })
     ])
   ]));
-  body.append(h('div', { id: 'anaStatus', class: 'ana-status', role: 'status' }));
+  chat.push(h('div', { id: 'anaStatus', class: 'ana-status', role: 'status' }));
+
+  const body = h('div', { class: 'mod-section' }, [
+    section('Chat', 'Assistente e análise de transcrições', chat),
+    section('Áudio', 'Transcrição de áudio e vídeo', [h('div', { id: 'anaAudioHost' })]),
+    section('Imagem', 'Entender fotos', [h('div', { id: 'anaImageHost' })]),
+    section('Vídeo', null, [h('div', { id: 'anaVideoHost' })])
+  ]);
 
   clear(host).append(head, body);
   paintStatus();
+  // As outras seções têm dados próprios: desenhadas depois, sem atrasar a lista de chat
+  try { mountAudioSection($('anaAudioHost')); } catch (_) { /* a seção de áudio nunca derruba o card */ }
+  try { renderMediaSections({ image: $('anaImageHost'), video: $('anaVideoHost') }); } catch (_) { /* idem */ }
   if (focusAfter) {
     // vários seletores separados por "||": foca o primeiro que existe e não está desabilitado
     const target = String(focusAfter).split('||').map((sel) => root.querySelector(sel)).find((el) => el && !el.disabled);
@@ -339,14 +487,15 @@ function render() {
 
 // ------------------------------------------------------------------ ciclo de vida
 
-/** Monta o cartão dentro de `container` (Configurações → Inteligência Artificial) e carrega a configuração. */
+/** Monta o card dentro de `container` (Configurações → Inteligência Artificial → Provedores) e carrega a configuração. */
 export async function mountAnalysisPanel(container) {
   root = container;
   clear(root);
-  root.append(h('div', { class: 'mod-screen mod-embedded' }, [h('section', { id: 'anaHost', class: 'mod-card ana-card', 'aria-label': 'Provedores de IA' })]));
+  root.append(h('div', { class: 'mod-screen mod-embedded' }, [h('section', { id: 'anaHost', class: 'mod-card ana-card', 'aria-label': 'Provedores' })]));
   statusLine = null;
   cardStatus = new Map();
   keyEdit = new Set();
+  expanded = new Set();
   modelLists = new Map();
   confirmRemove = null;
   focusAfter = null;
@@ -366,12 +515,14 @@ export async function reloadAnalysisPanel() {
 
 /** Solta o conteúdo ao sair das Configurações. */
 export function unmountAnalysisPanel() {
+  try { unmountAudioSection(); } catch (_) { /* nada a soltar */ }
   if (root) clear(root);
   root = null;
   config = null;
   statusLine = null;
   cardStatus = new Map();
   keyEdit = new Set();
+  expanded = new Set();
   modelLists = new Map();
   confirmRemove = null;
   focusAfter = null;

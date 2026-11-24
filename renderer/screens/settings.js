@@ -8,6 +8,7 @@ export function initScreen() {
   console.log('[SETTINGS] Inicializando tela...');
   renderSettings();
   setupTabs();
+  setupAiSubnav();
   bindEvents();
   setupCustomSourceModal();
   setupErrorReportingUI();
@@ -79,13 +80,10 @@ function setupTabs() {
       tab.setAttribute('aria-current', 'page');
       const targetView = document.getElementById(targetId);
       if (targetView) targetView.classList.remove('hidden');
-      // O painel do módulo de transcrição só existe enquanto a aba está aberta
       if (targetId === 'settingsModulesView') loadModulesList();
-      if (targetId === 'settingsTranscriptionView') mountTranscriptionPanel();
-      else unmountTranscriptionPanel();
-      // O servidor de IA (seção Inteligência Artificial) também só é montado com a aba aberta
-      if (targetId === 'settingsAiView') mountAiPanel();
-      else unmountAiPanel();
+      // Os painéis da seção Inteligência Artificial (provedores e transcrição neste computador) só existem com a aba aberta
+      if (targetId === 'settingsAiView') { applyPendingAiSub(); mountAiPanel(); mountTranscriptionPanel(); }
+      else { unmountAiPanel(); unmountTranscriptionPanel(); }
       if (targetId === 'settingsAboutView') loadLicensesPage();
       // Recarrega a lista de crash reports ao abrir a aba Sistema
       if (targetId === 'settingsSystemView') {
@@ -95,6 +93,55 @@ function setupTabs() {
       }
     });
   });
+}
+
+/* ==========================================================================
+   INTELIGÊNCIA ARTIFICIAL: submenu (Assistente, Provedores, Neste computador, Agentes externos)
+   ========================================================================== */
+const AI_SUBS = ['assistant', 'providers', 'local', 'agents'];
+const AI_SUB_KEY = 'bdsAiSub';
+const AI_SUB_REQUEST_KEY = 'bdsAiSubRequest';
+
+/** Mostra um subpainel da IA (os outros ficam escondidos) e lembra a escolha. */
+function showAiSub(sub, { remember = true } = {}) {
+  if (!AI_SUBS.includes(sub)) sub = 'providers';
+  document.querySelectorAll('.st-subtab').forEach((b) => {
+    const on = b.dataset.aiSub === sub;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-ai-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.aiPanel !== sub));
+  if (remember) { try { localStorage.setItem(AI_SUB_KEY, sub); } catch (_) { /* sem armazenamento */ } }
+}
+
+/** Outra tela pediu uma parte da IA (ex.: "Gerenciar modelos" da Transcrição): vale uma vez, ao abrir a aba. */
+function applyPendingAiSub() {
+  let sub = '';
+  try { sub = sessionStorage.getItem(AI_SUB_REQUEST_KEY) || ''; sessionStorage.removeItem(AI_SUB_REQUEST_KEY); } catch (_) { /* sem armazenamento */ }
+  if (!sub) { try { sub = localStorage.getItem(AI_SUB_KEY) || ''; } catch (_) { /* sem armazenamento */ } }
+  showAiSub(AI_SUBS.includes(sub) ? sub : 'providers', { remember: false });
+}
+
+function setupAiSubnav() {
+  const nav = document.querySelector('.st-subnav');
+  if (!nav) return;
+  nav.addEventListener('click', (e) => {
+    const btn = e.target.closest('.st-subtab');
+    if (btn) showAiSub(btn.dataset.aiSub);
+  });
+  // Setas esquerda/direita entre os itens (padrão de abas)
+  nav.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const tabs = [...nav.querySelectorAll('.st-subtab:not(.hidden)')];
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    next.focus();
+    showAiSub(next.dataset.aiSub);
+    e.preventDefault();
+  });
+  window.addEventListener('bds:ai-open-sub', (e) => showAiSub(e.detail));
+  applyPendingAiSub();
 }
 
 /* ==========================================================================
@@ -167,7 +214,10 @@ async function offerEngineInstall(m) {
   const engine = m.engine || '';
   if (!engine.startsWith('tool:')) {
     const go = await window.bdsModal.confirm(`O módulo "${m.title}" precisa de um componente que ainda não está instalado. Abrir a instalação agora?`);
-    if (go) document.querySelector('.settings-tab[data-tab="settingsTranscriptionView"]')?.click();
+    if (go) {
+      try { sessionStorage.setItem(AI_SUB_REQUEST_KEY, 'local'); } catch (_) { /* sem armazenamento */ }
+      document.querySelector('.settings-tab[data-tab="settingsAiView"]')?.click();
+    }
     return;
   }
   const go = await window.bdsModal.confirm(`O módulo "${m.title}" precisa baixar um componente para recuperar vídeos danificados (download da fonte oficial). Baixar agora?`);
@@ -200,6 +250,8 @@ function applyModuleDependentUi(list) {
   tab?.classList.toggle('st-devhidden', !showAi);
   document.getElementById('settingsAiView')?.classList.toggle('st-devhidden', !showAi);
   document.getElementById('settingsAssistantCard')?.classList.toggle('hidden', !on('ai'));
+  document.querySelector('.st-subtab[data-ai-sub="assistant"]')?.classList.toggle('hidden', !on('ai'));
+  if (!on('ai') && document.querySelector('.st-subtab[data-ai-sub="assistant"].active')) showAiSub('providers', { remember: false });
   if (!showAi && tab?.classList.contains('active')) {
     document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
   }
@@ -243,7 +295,6 @@ async function mountTranscriptionPanel() {
   try {
     modulesPanel = modulesPanel || await import('../components/modules-panel.js');
     await modulesPanel.mountModulesPanel(host);
-    mountCloudCard();
   } catch (err) {
     console.error('[SETTINGS] Falha ao carregar o painel de transcrição:', err);
     host.textContent = 'Não foi possível carregar o painel de transcrição.';
@@ -260,78 +311,6 @@ async function mountAiPanel() {
   } catch (err) {
     console.error('[SETTINGS] Falha ao carregar o painel do servidor de IA:', err);
     aiHost.textContent = 'Não foi possível carregar a configuração da IA.';
-  }
-}
-
-/* Transcrição na nuvem: uma linha por serviço (chave, modelo, testar, remover). A chave só vai para o processo
-   principal e fica criptografada; aqui nunca volta. */
-async function mountCloudCard() {
-  const host = document.getElementById('settingsCloudProviders');
-  if (!host) return;
-  let data = null;
-  try { const r = await window.bds.modulesCloudGet(); data = r && r.ok ? r.data : null; } catch (_) { data = null; }
-  host.textContent = '';
-  if (!data) { host.textContent = 'Não foi possível carregar os serviços de nuvem.'; return; }
-  const el = (tag, props = {}, kids = []) => {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(props)) {
-      if (k === 'text') n.textContent = v;
-      else if (k === 'class') n.className = v;
-      else n.setAttribute(k, v);
-    }
-    for (const c of [].concat(kids)) if (c) n.append(c);
-    return n;
-  };
-  const run = async (fn) => {
-    try {
-      const r = await fn();
-      if (r && r.ok === false) { window.bdsModal.alert(friendlyError(r)); return null; }
-      return r;
-    } catch (e) { window.bdsModal.alert(friendlyError(e)); return null; }
-  };
-  if (!data.encryptionAvailable) {
-    host.append(el('p', { class: 'st-card-desc', text: 'O armazenamento seguro do sistema não está disponível neste computador, então as chaves não podem ser guardadas.' }));
-  }
-  for (const p of data.providers) {
-    const input = el('input', {
-      type: 'password', class: 'settings-input', autocomplete: 'off', spellcheck: 'false',
-      'aria-label': `Chave do ${p.label}`, placeholder: p.hasKey ? 'Chave guardada (cole outra para trocar)' : 'Cole a chave de API'
-    });
-    const select = p.models.length > 1 ? el('select', { class: 'settings-input', 'aria-label': `Modelo do ${p.label}` }, p.models.map((m) => {
-      const o = el('option', { value: m.id, text: `${m.label} — ${m.hint}` });
-      if (m.id === p.model) o.selected = true;
-      return o;
-    })) : null;
-    const save = el('button', { type: 'button', class: 'settings-btn-primary', text: 'Salvar' });
-    const test = el('button', { type: 'button', class: 'settings-btn-outline', text: 'Testar' });
-    const clear = el('button', { type: 'button', class: 'settings-btn-outline', text: 'Remover chave' });
-    test.disabled = !p.hasKey;
-    clear.disabled = !p.hasKey;
-    save.addEventListener('click', async () => {
-      const patch = { provider: p.id };
-      if (input.value.trim()) patch.apiKey = input.value.trim();
-      if (select) patch.model = select.value;
-      const r = await run(() => window.bds.modulesCloudSet(patch));
-      if (r) { input.value = ''; mountCloudCard(); }
-    });
-    test.addEventListener('click', async () => {
-      test.disabled = true;
-      const r = await run(() => window.bds.modulesCloudTest(p.id));
-      test.disabled = false;
-      if (r) window.bdsModal.alert(r.data && r.data.limited ? `A chave do ${p.label} é válida (com permissões restritas).` : `A chave do ${p.label} está funcionando.`);
-    });
-    clear.addEventListener('click', async () => {
-      if (!(await window.bdsModal.confirm(`Remover a chave do ${p.label} deste computador?`))) return;
-      const r = await run(() => window.bds.modulesCloudSet({ provider: p.id, clearApiKey: true }));
-      if (r) mountCloudCard();
-    });
-    host.append(el('div', { class: 'st-row' }, [
-      el('div', { class: 'st-row-text' }, [
-        el('span', { class: 'st-row-label', text: p.label }),
-        el('span', { class: 'st-row-hint', text: p.hasKey ? 'Chave guardada neste computador.' : 'Sem chave: este serviço não aparece na tela de transcrição.' })
-      ]),
-      el('div', { class: 'st-row-control' }, [input, select, save, test, clear])
-    ]));
   }
 }
 
@@ -382,10 +361,6 @@ function renderSettings() {
   setChk('notifyDeadlinesInput', s.notifyDeadlines !== false);
 
   // Pausa entre downloads da lista
-  const fallbackList = Array.isArray(s.transcriptionFallback) ? s.transcriptionFallback : ['local'];
-  setChk('trFallbackGroq', fallbackList.includes('groq'));
-  setChk('trFallbackElevenlabs', fallbackList.includes('elevenlabs'));
-  setChk('trFallbackLocal', fallbackList.includes('local'));
   setVal('downloadVideoCodecSelect', ['h264', 'h265', 'av1'].includes(s.downloadVideoCodec) ? s.downloadVideoCodec : 'auto');
   setChk('downloadPauseEnabledInput', s.downloadPauseEnabled !== false);
   setChk('useYoutubeAccountInput', s.useYoutubeAccount === true);
@@ -818,8 +793,6 @@ async function saveSettings() {
       notifyCopy: document.getElementById('notifyCopyInput')?.checked,
       notifySilence: document.getElementById('notifySilenceInput')?.checked,
       downloadVideoCodec: document.getElementById('downloadVideoCodecSelect')?.value || 'auto',
-      transcriptionFallback: [['groq', 'trFallbackGroq'], ['elevenlabs', 'trFallbackElevenlabs'], ['local', 'trFallbackLocal']]
-        .filter(([, id]) => document.getElementById(id)?.checked).map(([engine]) => engine),
       downloadPauseEnabled: document.getElementById('downloadPauseEnabledInput')?.checked !== false,
       useYoutubeAccount: document.getElementById('useYoutubeAccountInput')?.checked === true,
       playlistFolders: document.getElementById('playlistFoldersInput')?.checked !== false,
@@ -1917,7 +1890,7 @@ function applySettingsSearch(raw) {
     searchMounted = true;
     const shown = (id) => !document.getElementById(id)?.classList.contains('hidden');
     if (shown('settingsModulesView')) loadModulesList();
-    if (shown('settingsTranscriptionView')) mountTranscriptionPanel();
+    if (shown('settingsAiView')) { mountAiPanel(); mountTranscriptionPanel(); }
     if (shown('settingsAboutView')) loadLicensesPage();
   }
 

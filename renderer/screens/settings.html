@@ -37,9 +37,6 @@
         <button class="settings-tab" data-tab="settingsModulesView" type="button">
           <span class="material-symbols-rounded" aria-hidden="true">extension</span> Módulos
         </button>
-        <button class="settings-tab" data-tab="settingsTranscriptionView" type="button">
-          <span class="material-symbols-rounded" aria-hidden="true">subtitles</span> Transcrição
-        </button>
         <button class="settings-tab" data-tab="settingsLutsView" data-module="luts" type="button">
           <span class="material-symbols-rounded" aria-hidden="true">gradient</span> LUTs
         </button>
@@ -589,15 +586,20 @@
       </section>
 
       <!-- ================= INTELIGÊNCIA ARTIFICIAL ================= -->
-      <section id="settingsAiView" class="settings-view st-devhidden hidden">
+      <section id="settingsAiView" class="settings-view st-devhidden hidden" data-search-keywords="inteligência artificial ia transcrição legenda áudio modelo qualidade aceleração placa de vídeo nvidia instalar recurso nuvem groq elevenlabs chave api fallback serviço online provedores assistente yui mcp agentes">
         <h3 class="settings-section-title">Inteligência Artificial</h3>
 
-        <p class="st-card-desc">Servidores de IA usados pela análise de transcrições e pelo assistente: Groq, Qwen, OpenAI ou servidores compatíveis (Ollama, LM Studio…). Cada um tem a sua chave, guardada criptografada neste computador. A ordem da lista é a prioridade.</p>
-        <div id="settingsAnalysisPanel"></div>
+        <div class="st-subnav" role="tablist" aria-label="Seções da Inteligência Artificial">
+          <button type="button" class="st-subtab active" role="tab" data-ai-sub="assistant" aria-selected="true">Assistente</button>
+          <button type="button" class="st-subtab" role="tab" data-ai-sub="providers" aria-selected="false">Provedores</button>
+          <button type="button" class="st-subtab" role="tab" data-ai-sub="local" aria-selected="false">Neste computador</button>
+          <button type="button" class="st-subtab" role="tab" data-ai-sub="agents" aria-selected="false">Agentes externos</button>
+        </div>
 
+        <div class="st-subpanel" role="tabpanel" data-ai-panel="assistant">
         <div class="st-card" id="settingsAssistantCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">smart_toy</span> Assistente de IA</h4>
-          <p class="st-card-desc">A Yui, assistente de IA focada em audiovisual: um botão flutuante com um chat, em todas as telas (atalho Ctrl + J). Consulta suas mídias e projetos e baixa links, converte, remove silêncios, transcreve, etiqueta e monta projetos. Em conversas longas, resume sozinha as mensagens mais antigas para não perder o fio. Usa os provedores configurados acima (o que ela consulta é enviado ao servidor que responder); o modelo precisa aceitar ferramentas.</p>
+          <p class="st-card-desc">A Yui: chat em todas as telas (Ctrl + J). Consulta suas mídias e projetos e executa o que você pedir.</p>
 
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
@@ -628,10 +630,17 @@
           </details>
           <span id="aiAssistantStatus" class="st-row-hint" role="status" aria-live="polite"></span>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" data-ai-panel="providers">
+          <div id="settingsAnalysisPanel"></div>
+        </div>
+
+        <div class="st-subpanel hidden" role="tabpanel" data-ai-panel="local">
+          <div id="settingsTranscriptionPanel"></div>
         <div class="st-card" id="settingsLocalLlmCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">memory</span> Modelo local (sem internet)</h4>
-          <p class="st-card-desc">Um modelo de IA que roda neste computador, sem chave nem internet. Serve de reserva quando os outros servidores caem e para pedidos simples (os comandos mais comuns, como baixar um link, o assistente já entende sozinho). Os modelos que enxergam imagens também ajudam a organizar fotos; o tamanho que cabe depende da memória da sua placa de vídeo, e a lista abaixo diz qual é o recomendado. O servidor e o modelo vêm das fontes oficiais, com conferência de integridade, e ocupam cerca de <span id="aiLocalLlmSize">0,5 GB</span>.</p>
+          <p class="st-card-desc">Roda neste computador, sem chave nem internet. Os que entendem imagens também organizam fotos. Ocupa cerca de <span id="aiLocalLlmSize">0,5 GB</span>.</p>
 
           <label class="st-row st-row-stack" id="aiLocalLlmModelRow" hidden>
             <span class="st-row-label">Modelo</span>
@@ -660,10 +669,12 @@
           </details>
           <span id="aiLocalLlmStatus" class="st-row-hint" role="status" aria-live="polite"></span>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" data-ai-panel="agents">
         <div class="st-card" id="settingsMcpCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">hub</span> Conectar agentes (MCP)</h4>
-          <p class="st-card-desc">Deixa agentes de IA, como o Antigravity, a Alice e a Liz, usarem as mesmas ferramentas do assistente: consultar a biblioteca e os projetos e, só com a sua confirmação aqui no app, baixar, converter, transcrever e montar projetos. Funciona só neste computador e exige um token.</p>
+          <p class="st-card-desc">Deixa o Antigravity, o Claude e o ChatGPT usarem as ferramentas do app. Só neste computador e com token.</p>
 
           <label class="st-row st-row-toggle">
             <div class="st-row-text">
@@ -678,7 +689,7 @@
             <div class="settings-folder-controls">
               <select id="aiMcpKindSelect" class="settings-select">
                 <option value="antigravity">Antigravity</option>
-                <option value="http">Alice, Liz e outros (HTTP)</option>
+                <option value="http">Claude, ChatGPT e outros (HTTP)</option>
                 <option value="stdio">Agentes só por comando (precisa do Node)</option>
               </select>
               <button id="aiMcpCopyBtn" class="settings-btn-accent" type="button">Copiar</button>
@@ -712,9 +723,9 @@
           </details>
           <span id="aiMcpStatus" class="st-row-hint" role="status" aria-live="polite"></span>
         </div>
+        </div>
       </section>
 
-      <!-- ================= LUTS ================= -->
       <section id="settingsLutsView" class="settings-view hidden" data-module="luts">
         <h3 class="settings-section-title">LUTs</h3>
 
@@ -741,37 +752,6 @@
       </section>
 
       <!-- ================= TRANSCRIÇÃO ================= -->
-      <section id="settingsTranscriptionView" class="settings-view hidden" data-search-keywords="transcrição legenda áudio modelo qualidade aceleração placa de vídeo NVIDIA instalar recurso">
-        <h3 class="settings-section-title">Transcrição</h3>
-        <div id="settingsTranscriptionPanel"></div>
-
-        <div class="st-card" id="settingsCloudCard" data-search-keywords="nuvem groq elevenlabs chave api transcrição fallback serviço online">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">cloud</span> Transcrição na nuvem</h4>
-          <p class="st-card-desc">Opcional. Em vez de usar este computador, o áudio é enviado ao serviço escolhido na tela de transcrição, que devolve o texto com os tempos. Cada serviço tem a sua chave e cobra do seu próprio plano (veja limites e preços no site deles). As chaves ficam criptografadas neste computador e são independentes do assistente de IA.</p>
-          <div id="settingsCloudProviders"></div>
-
-          <div class="st-row">
-            <div class="st-row-text">
-              <span class="st-row-label">Se o serviço escolhido falhar</span>
-              <span class="st-row-hint">Sem internet, limite de uso, chave recusada ou créditos acabando: o app tenta os marcados abaixo, nesta ordem. Só vale quando você escolhe um serviço de nuvem; com o motor deste computador, nada é enviado para fora.</span>
-            </div>
-          </div>
-          <label class="st-row st-row-toggle st-row-sub">
-            <div class="st-row-text"><span class="st-row-label">Groq</span><span class="st-row-hint">O áudio seria enviado ao Groq (precisa da chave dele).</span></div>
-            <input type="checkbox" id="trFallbackGroq" class="st-switch" />
-          </label>
-          <label class="st-row st-row-toggle st-row-sub">
-            <div class="st-row-text"><span class="st-row-label">ElevenLabs</span><span class="st-row-hint">O áudio seria enviado à ElevenLabs (precisa da chave dela).</span></div>
-            <input type="checkbox" id="trFallbackElevenlabs" class="st-switch" />
-          </label>
-          <label class="st-row st-row-toggle st-row-sub">
-            <div class="st-row-text"><span class="st-row-label">Neste computador</span><span class="st-row-hint">Usa o modelo instalado em Transcrição. Nada sai do computador.</span></div>
-            <input type="checkbox" id="trFallbackLocal" class="st-switch" checked />
-          </label>
-        </div>
-      </section>
-
-      <!-- ================= ATUALIZAÇÕES ================= -->
       <section id="settingsUpdatesView" class="settings-view hidden">
         <h3 class="settings-section-title">Atualizações</h3>
 

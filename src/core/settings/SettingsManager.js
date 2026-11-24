@@ -7,6 +7,7 @@ const logger = require('../../services/logService');
 const { DEVELOPER_EMAIL } = require('../../config/appInfo');
 const { sanitizeEnabledModules, CORE_SCREEN_MODULE_IDS } = require('../modules/ModuleRegistry');
 const { DEFAULT_ACCENT, normalizeAccentColor } = require('./accentPalette');
+const { completeOrder, sanitizeEngines } = require('../transcription/order');
 
 /** Chaves de segredo guardadas no disco criptografadas (safeStorage) em "<chave>Enc" (base64). Hoje nenhuma: o mecanismo fica pronto para uso futuro. */
 const SECRET_SETTING_KEYS = [];
@@ -77,7 +78,10 @@ class SettingsManager {
       uploadDefaultVisibility: 'private',
       // Codec do vídeo baixado: 'auto' (melhor MP4) | 'h264' | 'h265' | 'av1'
       downloadVideoCodec: 'auto',
-      // Transcrição na nuvem: se o serviço escolhido na tela falhar, tenta estes (nesta ordem). 'local' = o motor deste computador.
+      // Transcrição: ordem dos motores (Configurações → Inteligência Artificial → Provedores → Áudio) e quais estão ligados.
+      // Os ligados valem no modo Automático e como reserva se o motor escolhido falhar. 'local' = o motor deste computador.
+      // De fábrica só o local está ligado: o áudio não sai do computador sem o usuário ligar um serviço de nuvem.
+      transcriptionOrder: completeOrder([]),
       transcriptionFallback: ['local'],
       useYoutubeAccount: false,
       theme: 'dark',
@@ -404,10 +408,8 @@ class SettingsManager {
     }
     oneOf('uploadDefaultVisibility', ['private', 'unlisted', 'public']);
     bool('rememberWindowBounds');
-    if ('transcriptionFallback' in out) {
-      const list = Array.isArray(out.transcriptionFallback) ? out.transcriptionFallback : [];
-      out.transcriptionFallback = ['groq', 'elevenlabs', 'local'].filter((id) => list.includes(id));
-    }
+    if ('transcriptionOrder' in out) out.transcriptionOrder = completeOrder(out.transcriptionOrder);
+    if ('transcriptionFallback' in out) out.transcriptionFallback = sanitizeEngines(out.transcriptionFallback);
 
     // Ordem do menu lateral: só ids de tela válidos (a Home é fixa e não entra), sem repetição.
     if ('sidebarOrder' in out) {

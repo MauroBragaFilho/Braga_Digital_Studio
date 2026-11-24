@@ -361,6 +361,7 @@ function notifyFinished(message, type = 'info') {
 /** Abre Configurações → Inteligência Artificial (a única navegação que o próprio painel faz). */
 export function openAiSettings() {
   closePanel({ restoreFocus: false });
+  try { sessionStorage.setItem('bdsAiSubRequest', 'providers'); } catch (_) { /* sem armazenamento */ }
   document.querySelector('.sidebar .tab-button[data-view="settings"]')?.click();
   let tries = 0;
   const timer = window.setInterval(() => {

@@ -12,6 +12,7 @@ const { appPaths } = require('../infrastructure/filesystem/AppPaths');
 const moduleConfig = require('../config/modules.config.json');
 const { sanitizeSilenceOptions } = require('../core/transcription/silenceTrim');
 const { CloudConfig } = require('../core/transcription/CloudConfig');
+const { ENGINE_IDS, autoEngines, enabledInOrder } = require('../core/transcription/order');
 const registry = require('../core/modules/ModuleRegistry');
 const { dependencyManager } = require('../infrastructure/external-tools/DependencyManager');
 
@@ -26,13 +27,14 @@ const { dependencyManager } = require('../infrastructure/external-tools/Dependen
  * @param {{load:Function,save:Function}} [deps.settingsManager]  habilita modules:list/setEnabled.
  * @param {boolean} [deps.isDev]  build de desenvolvimento (módulos devOnly só existem aqui).
  * @param {Record<string,()=>({running:boolean,cancel:()=>any})>} [deps.tasks]  tarefas de outros módulos (silence, metadata).
+ * @param {(host:string)=>string} [deps.getAiKeyForHost]  chave do provedor de chat do MESMO endereço (a transcrição na nuvem reaproveita).
  */
-module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, settingsManager = null, isDev = false, tasks = {} } = {}) {
+module.exports = function registerModuleHandlers(paths, { getFfmpegPath = null, settingsManager = null, isDev = false, tasks = {}, getAiKeyForHost = null } = {}) {
   const dataDir = (paths && paths.dataDir) || appPaths.dataDir;
   const tempDir = (paths && paths.tempDir) || appPaths.tempDir;
 
   // Transcrição na nuvem (Groq/ElevenLabs): chaves próprias, separadas do assistente de IA, criptografadas no disco
-  const cloudConfig = new CloudConfig({ configDir: (paths && paths.configDir) || appPaths.configDir, safeStorage });
+  const cloudConfig = new CloudConfig({ configDir: (paths && paths.configDir) || appPaths.configDir, safeStorage, sharedKey: getAiKeyForHost });
 
   const manager = lazyService(() => {
     const { ModuleManager } = require('../core/modules/ModuleManager');
@@ -113,9 +115,11 @@ Arquivo: ${zipPath}`,
     const o = options || {};
     const saved = settingsManager && settingsManager.load ? settingsManager.load() : {};
     return manager.transcribe({
-      engine: ['groq', 'elevenlabs'].includes(o.engine) ? o.engine : 'local',
-      // Para onde tentar de novo se o serviço escolhido falhar (Configurações → Transcrição). Com motor local, não vale.
-      fallback: Array.isArray(saved.transcriptionFallback) ? saved.transcriptionFallback : [],
+      // 'auto' = segue a ordem das Configurações (Provedores → Áudio); senão, o motor escolhido na tela
+      engine: ENGINE_IDS.includes(o.engine) ? o.engine : 'local',
+      chain: o.engine === 'auto' ? autoEngines(saved) : undefined,
+      // Para onde tentar de novo se o serviço escolhido falhar (Configurações → Inteligência Artificial), na ordem escolhida. Com motor local, não vale.
+      fallback: enabledInOrder(saved),
       files: Array.isArray(o.files) ? o.files : [],
       srt: o.srt !== false,
       md: o.md === true,

@@ -9,7 +9,7 @@
  * desenvolvimento e fica desligado fora dele), defaultEnabled (false em todos, EXCETO o Assistente de IA, que
  * vem ligado: instalação nova começa com os recursos pesados desligados; quem já usava o app é migrado pelo
  * SettingsManager), hasEngine, engine ('whisper' =
- * painel do motor em Configurações → Transcrição; 'tool:<ferramenta>' = componente baixado sob demanda
+ * painel do motor em Configurações → Inteligência Artificial; 'tool:<ferramenta>' = componente baixado sob demanda
  * pelo DependencyManager), order.
  *
  * SLOT 'extra': reservado para futuros módulos. Para criar um, acrescente uma definição abaixo

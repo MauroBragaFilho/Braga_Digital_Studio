@@ -1,10 +1,11 @@
 'use strict';
 
 /**
- * GroqTranscriber — transcrição na nuvem pelo Groq (API compatível com a da OpenAI, `/audio/transcriptions`).
+ * GroqTranscriber e OpenAITranscriber — transcrição na nuvem pela API `/audio/transcriptions` (o Groq usa a mesma da
+ * OpenAI, então as duas classes dividem o código).
  *
- * O Groq limita o tamanho de cada arquivo, então o áudio é cortado em blocos de ~10 minutos; cada bloco é enviado em
- * ordem e os resultados são juntados com os tempos corrigidos. Pede tempo por palavra e por trecho (verbose_json).
+ * Os serviços limitam o tamanho de cada arquivo, então o áudio é cortado em blocos de ~10 minutos; cada bloco é enviado
+ * em ordem e os resultados são juntados com os tempos corrigidos. Pede tempo por palavra e por trecho (verbose_json).
  */
 
 const fs = require('node:fs');
@@ -17,9 +18,9 @@ const CHUNK_SECONDS = 600;
 const MAX_UPLOAD_BYTES = 24 * 1024 * 1024; // abaixo do limite de 25 MB do plano gratuito do Groq
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
-class GroqTranscriber extends CloudBase {
-  constructor(cfg) {
-    super({ ...cfg, provider: 'groq' });
+class OpenAiCompatTranscriber extends CloudBase {
+  constructor(cfg, provider) {
+    super({ ...cfg, provider });
     this.chunkSeconds = cfg.chunkSeconds || CHUNK_SECONDS;
   }
 
@@ -29,7 +30,8 @@ class GroqTranscriber extends CloudBase {
    */
   async transcribe({ wav, seconds, work, language, signal = null, onProgress = () => {}, onEvent = () => {} }) {
     const key = this._requireKey();
-    const model = this.config.getModel('groq');
+    const model = this.config.getModel(this.provider);
+    const to = `${this.providerLabel === 'OpenAI' ? 'à' : 'ao'} ${this.providerLabel}`;
 
     const count = Math.max(1, Math.ceil(seconds / this.chunkSeconds));
     const segments = [];
@@ -40,13 +42,13 @@ class GroqTranscriber extends CloudBase {
       const start = i * this.chunkSeconds;
       const length = Math.min(this.chunkSeconds, seconds - start);
       if (length <= 0.05) break;
-      onEvent({ type: 'status', text: count > 1 ? `Enviando o trecho ${i + 1} de ${count} ao Groq` : 'Enviando o áudio ao Groq' });
-      const file = path.join(work, `groq_${i}.m4a`);
+      onEvent({ type: 'status', text: count > 1 ? `Enviando o trecho ${i + 1} de ${count} ${to}` : `Enviando o áudio ${to}` });
+      const file = path.join(work, `${this.provider}_${i}.m4a`);
       await this.slice(wav, start, length, file, signal);
       let buffer;
       try { buffer = fs.readFileSync(file); } catch (_) { throw new RunnerError('Não foi possível preparar o áudio para envio.', 'DECODE'); }
       fs.rmSync(file, { force: true });
-      if (buffer.length > MAX_UPLOAD_BYTES) throw new RunnerError('O trecho de áudio é grande demais para o Groq.', 'CLOUD_TOO_LARGE');
+      if (buffer.length > MAX_UPLOAD_BYTES) throw new RunnerError(`O trecho de áudio é grande demais para o ${this.providerLabel}.`, 'CLOUD_TOO_LARGE');
 
       const json = await this._send({
         path: '/audio/transcriptions', key, signal, timeoutMs: REQUEST_TIMEOUT_MS, onEvent,
@@ -87,4 +89,12 @@ class GroqTranscriber extends CloudBase {
   }
 }
 
-module.exports = { GroqTranscriber, CHUNK_SECONDS, MAX_UPLOAD_BYTES };
+class GroqTranscriber extends OpenAiCompatTranscriber {
+  constructor(cfg) { super(cfg, 'groq'); }
+}
+
+class OpenAITranscriber extends OpenAiCompatTranscriber {
+  constructor(cfg) { super(cfg, 'openai'); }
+}
+
+module.exports = { GroqTranscriber, OpenAITranscriber, CHUNK_SECONDS, MAX_UPLOAD_BYTES };

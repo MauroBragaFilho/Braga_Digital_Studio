@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Servidor MCP (Model Context Protocol) do Braga Digital Studio: deixa agentes de IA externos (Antigravity, Alice,
- * Liz, Claude…) usarem as MESMAS ferramentas do assistente integrado, pelo mesmo ToolBox.
+ * Servidor MCP (Model Context Protocol) do Braga Digital Studio: deixa agentes de IA externos (Antigravity, Claude,
+ * ChatGPT…) usarem as MESMAS ferramentas do assistente integrado, pelo mesmo ToolBox.
  *
  * Transporte: HTTP "Streamable" (JSON-RPC 2.0 em POST /mcp, resposta em JSON). Sem dependências: o protocolo usado
  * (initialize, ping, tools/list, tools/call) é pequeno. Agentes que só falam stdio usam a ponte (bridge.js).

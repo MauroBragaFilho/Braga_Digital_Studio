@@ -242,6 +242,25 @@ class AIService {
     catch (_) { return false; }
   }
 
+  /**
+   * Chave do provedor de chat LIGADO que fala com exatamente este endereço (host), na ordem de prioridade. A transcrição
+   * na nuvem reaproveita a chave do Groq do assistente sem pedir de novo. '' se não houver, se o aviso de servidor
+   * externo ainda estiver pendente ou se o endereço for outro: a chave nunca vai para um endereço que não é o dela.
+   */
+  keyForHost(host) {
+    const want = String(host || '').toLowerCase();
+    if (!want) return '';
+    const c = this._load();
+    for (const id of c.order) {
+      const p = c.providers.find((x) => x.id === id);
+      if (!p || !p.enabled || !p.apiKeyEnc || this._consentPending(p)) continue;
+      let h = '';
+      try { h = new URL(p.baseUrl).host.toLowerCase(); } catch (_) { continue; }
+      if (h === want) return this._readKey(p);
+    }
+    return '';
+  }
+
   /** Chave de UM provedor (descriptografada só aqui, no main). */
   _readKey(provider) {
     const enc = provider && provider.apiKeyEnc;
