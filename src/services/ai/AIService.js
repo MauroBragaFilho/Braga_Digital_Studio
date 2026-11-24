@@ -20,8 +20,13 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const OpenAIProvider = require('./providers/OpenAIProvider');
+const AnthropicProvider = require('./providers/AnthropicProvider');
 const presets = require('./providers/presets');
+const keyPolicy = require('./providers/keyPolicy');
+const { discoverModels, DiscoveryError, ANTHROPIC_BASE } = require('./providers/discovery');
+const { countCaps, pickChatDefault, normalizeCatalog, isValidModelId, MAX_MODELS } = require('./modelKinds');
 const tasks = require('./tasks');
 const budget = require('./contextBudget');
 
@@ -30,6 +35,8 @@ const MAX_MESSAGE_CHARS = 20000;
 const MAX_CONVERSATION = 120;   // teto absoluto de mensagens (histórico + chamadas e resultados de ferramentas do turno)
 
 const MAX_PROVIDERS = 12;
+const DRAFT_TTL_MS = 10 * 60 * 1000;   // rascunho da descoberta (guarda a chave só em memória): expira em 10 minutos
+const MAX_DRAFTS = 3;                  // no máximo 3 rascunhos ao mesmo tempo (o mais antigo é descartado)
 const STANDBY_DEFAULT_S = 60;       // 5xx, servidor fora do ar, tempo esgotado e 429 sem Retry-After
 const STANDBY_RETRY_AFTER_MAX_S = 300;
 const STANDBY_REFUSED_S = 300;      // chave recusada (401/403) ou modelo inexistente (404): só muda se o usuário corrigir
@@ -88,25 +95,11 @@ const DEFAULT_CONFIG = {
 const LEGACY_DEFAULTS = { baseUrl: OpenAIProvider.defaultBaseUrl, model: 'gpt-4o-mini' };
 
 /**
- * Servidor "local" para o aviso de privacidade: a própria máquina (localhost, 127.x, ::1) ou a rede local
- * (10.x, 172.16-31.x, 192.168.x, 169.254.x, fe80::, nomes .local/.lan/.home.arpa e nomes sem ponto, como "meupc").
- * Para esses o texto não sai da rede do usuário; para o resto (nuvem) o chat mostra o aviso antes da 1ª mensagem.
+ * Servidor "local" para o aviso de privacidade: a regra é a de keyPolicy.isPrivateHost (única fonte; ancorada, então nomes como
+ * "127.exemplo.com" são servidores externos): própria máquina ou rede local. Para esses o texto não sai da rede do usuário;
+ * para o resto (nuvem) o chat mostra o aviso antes da 1ª mensagem.
  */
-function isLocalOrLanHost(hostname) {
-  const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
-  if (!h) return false;
-  if (h === 'localhost' || h.endsWith('.localhost') || h === '::1') return true;
-  if (/^127\./.test(h)) return true;
-  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const a = Number(v4[1]);
-    const b = Number(v4[2]);
-    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
-  }
-  if (h.includes(':')) return /^(fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)/.test(h); // link-local e ULA do IPv6
-  if (!h.includes('.')) return true; // nome de máquina da rede local
-  return /\.(local|lan|home\.arpa|internal)$/.test(h);
-}
+const isLocalOrLanHost = keyPolicy.isPrivateHost;
 
 /** Origem (protocolo + host + porta) de uma URL; '' se inválida. */
 function _originOf(url) {
@@ -150,6 +143,17 @@ function switchLine(label, before) {
 
 function cancelledError() { return Object.assign(new Error('Cancelado.'), { code: 'CANCELLED' }); }
 
+/** Modelo do catálogo como o renderer o enxerga: só id, capacidades e origem da classificação. */
+const publicModels = (list) => (Array.isArray(list) ? list : []).map((m) => ({ id: m.id, caps: [...m.caps], source: m.source }));
+
+/** Cópia profunda de um provedor (inclui o catálogo): a configuração em edição nunca compartilha objetos com a que está valendo. */
+const cloneProvider = (p) => ({ ...p, models: (Array.isArray(p.models) ? p.models : []).map((m) => ({ ...m, caps: [...m.caps] })) });
+
+const MSG_COMMIT_INVALID = 'Dados inválidos para adicionar o provedor.';
+const MSG_KEY_FORMAT = 'Chave de API com formato inválido.';
+const MSG_NO_ENCRYPTION = 'A criptografia do sistema não está disponível; a chave não pode ser guardada com segurança.';
+const MSG_NO_PROVIDER = 'Provedor não encontrado.';
+
 class AIService {
   /**
    * @param {{configDir:string, safeStorage?:object, fetchImpl?:Function, now?:()=>number}} opts
@@ -165,6 +169,8 @@ class AIService {
     this._config = null;
     this._standby = new Map();   // id do provedor -> { until, reason } (disjuntor; só em memória)
     this._noTools = new Set();   // provedor+modelo que recusaram ferramentas
+    this._drafts = new Map();    // rascunhos da descoberta de modelos: id -> { key, baseUrl, models... } (só em memória, nunca em disco)
+    this._discovering = null;    // AbortController da descoberta em andamento (só uma por vez: a nova aborta a anterior)
   }
 
   // ------------------------------------------------------------------ config
@@ -208,7 +214,10 @@ class AIService {
         baseUrl,
         apiKeyEnc: typeof raw.apiKeyEnc === 'string' ? raw.apiKeyEnc : '',
         model: String(raw.model || '').trim().slice(0, 120),
-        enabled: raw.enabled !== false
+        enabled: raw.enabled !== false,
+        // Catálogo achado pela descoberta de modelos (aditivo: um ai.json antigo, sem estes campos, continua valendo)
+        models: normalizeCatalog(raw.models),
+        discoveredAt: typeof raw.discoveredAt === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]{8,16}Z$/.test(raw.discoveredAt) ? raw.discoveredAt : ''
       });
     };
 
@@ -315,9 +324,13 @@ class AIService {
     return { state: 'active', standbySeconds: 0 };
   }
 
+  /** Formato derivado do endereço (nunca guardado): 'anthropic' só no host exato api.anthropic.com com https; o resto é compatível com OpenAI. */
+  _formatOf(p) { return AnthropicProvider.isAnthropicBase(p.baseUrl) ? 'anthropic' : 'openai'; }
+
   _providerView(p) {
     const preset = presets.byId(p.preset) || presets.byId('custom');
     const st = this._stateOf(p);
+    const catalog = Array.isArray(p.models) ? p.models : [];
     return {
       id: p.id,
       preset: p.preset,
@@ -334,7 +347,11 @@ class AIService {
       suggestedModel: preset.model,
       state: st.state,
       standbySeconds: st.standbySeconds,
-      standbyReason: st.standbyReason || ''
+      standbyReason: st.standbyReason || '',
+      format: this._formatOf(p),
+      models: publicModels(catalog),
+      modelCounts: countCaps(catalog),
+      discoveredAt: p.discoveredAt || ''
     };
   }
 
@@ -365,6 +382,7 @@ class AIService {
       serverHost: this.serverHost(),
       needsRemoteConsent: this.needsRemoteConsent(),
       presets: presets.publicList(),
+      shortcuts: presets.shortcuts(),
       tasks: tasks.list()
     };
   }
@@ -386,10 +404,11 @@ class AIService {
    */
   saveConfig(patch = {}) {
     const current = this._load();
-    const c = { ...current, providers: current.providers.map((p) => ({ ...p })), order: [...current.order], remoteAccepted: [...current.remoteAccepted] };
+    const c = this._cloneConfig(current);
     const str = (v, max) => String(v ?? '').trim().slice(0, max);
     const touched = new Set();
     let addedId = '';
+    let committedDraft = '';
 
     if (patch.maxTokens !== undefined) {
       const n = Math.round(Number(patch.maxTokens));
@@ -413,10 +432,16 @@ class AIService {
       while (c.providers.some((p) => p.id === id)) id += 'x';
       let label = str(a.label, 40) || preset.label;
       while (c.providers.some((p) => p.label === label)) label = `${label.slice(0, 36)} ${c.providers.length + 1}`;
-      c.providers.push({ id, preset: preset.id, label, baseUrl, apiKeyEnc: '', model: str(a.model, 120) || preset.model, enabled: true });
+      c.providers.push({ id, preset: preset.id, label, baseUrl, apiKeyEnc: '', model: str(a.model, 120) || preset.model, enabled: true, models: [], discoveredAt: '' });
       c.order.push(id);
       addedId = id;
       touched.add(id);
+    }
+    if (patch.commitDiscovery !== undefined) {
+      const made = this._commitDiscovery(c, patch.commitDiscovery);
+      addedId = made.id;
+      committedDraft = made.draftId;
+      touched.add(made.id);
     }
     if (patch.removeProvider !== undefined) {
       const id = String(patch.removeProvider);
@@ -446,7 +471,7 @@ class AIService {
       if (!target && (legacy.baseUrl !== undefined || legacy.model !== undefined || legacy.apiKey !== undefined)) {
         const baseUrl = OpenAIProvider.normalizeBaseUrl(legacy.baseUrl !== undefined ? legacy.baseUrl : LEGACY_DEFAULTS.baseUrl);
         const preset = presets.detectPreset(baseUrl);
-        target = { id: `p-${preset}`, preset, label: presets.byId(preset).label, baseUrl, apiKeyEnc: '', model: LEGACY_DEFAULTS.model, enabled: true };
+        target = { id: `p-${preset}`, preset, label: presets.byId(preset).label, baseUrl, apiKeyEnc: '', model: LEGACY_DEFAULTS.model, enabled: true, models: [], discoveredAt: '' };
         if (c.providers.some((p) => p.id === target.id)) target.id += `-${c.providers.length + 1}`;
         c.providers.push(target);
         c.order.push(target.id);
@@ -466,19 +491,38 @@ class AIService {
     c.providers.sort((a, b) => c.order.indexOf(a.id) - c.order.indexOf(b.id));
     c.order = c.providers.map((p) => p.id);
 
+    this._swapConfig(c);
+    if (committedDraft) this._dropDraft(committedDraft); // só depois de gravar: se algo falhou, o rascunho continua valendo para tentar de novo
+    touched.forEach((id) => this._standby.delete(id)); // o usuário mexeu no provedor: tenta de novo
+    if (patch.baseUrl !== undefined || patch.model !== undefined || patch.provider !== undefined || patch.addProvider !== undefined || patch.commitDiscovery !== undefined) this._noTools.clear();
+    const out = this.getPublicConfig();
+    if (addedId) out.addedId = addedId;
+    return out;
+  }
+
+  /** Cópia PROFUNDA da configuração (provedores com o catálogo de modelos): serve de rascunho de edição e de ponto de retorno. */
+  _cloneConfig(current) {
+    return { ...current, providers: current.providers.map(cloneProvider), order: [...current.order], remoteAccepted: [...current.remoteAccepted] };
+  }
+
+  /** Grava `c` e só então passa a valer. Se a gravação falhar, o cache em memória volta ao que era (nunca diverge do disco). */
+  _swapConfig(c) {
     const previous = this._config;
     this._config = c;
     try {
       this._persist();
     } catch (err) {
-      this._config = previous; // falha ao gravar: não deixa o cache divergir do disco
+      this._config = previous;
       throw err;
     }
-    touched.forEach((id) => this._standby.delete(id)); // o usuário mexeu no provedor: tenta de novo
-    if (patch.baseUrl !== undefined || patch.model !== undefined || patch.provider !== undefined || patch.addProvider !== undefined) this._noTools.clear();
-    const out = this.getPublicConfig();
-    if (addedId) out.addedId = addedId;
-    return out;
+  }
+
+  /** Criptografa uma chave de API (mesmas regras de formato de sempre). Só no main. */
+  _encryptKey(raw) {
+    if (!this._encryptionAvailable()) throw new Error(MSG_NO_ENCRYPTION);
+    const key = String(raw).trim();
+    if (key.length < 8 || key.length > 300 || /\s/.test(key)) throw new Error(MSG_KEY_FORMAT);
+    return this.safeStorage.encryptString(key).toString('base64');
   }
 
   /** Principal de uma configuração em edição (mesma regra de _head, sobre `c`). */
@@ -494,7 +538,11 @@ class AIService {
     const str = (v, max) => String(v ?? '').trim().slice(0, max);
     if (pp.baseUrl !== undefined) {
       const next = OpenAIProvider.normalizeBaseUrl(pp.baseUrl);
-      if (_originOf(next) !== _originOf(target.baseUrl)) target.apiKeyEnc = '';
+      if (_originOf(next) !== _originOf(target.baseUrl)) {
+        target.apiKeyEnc = '';
+        target.models = [];       // o catálogo descrevia o servidor antigo
+        target.discoveredAt = '';
+      }
       const oldDefault = (presets.byId(target.preset) || {}).label;
       target.baseUrl = next;
       const detected = presets.detectPreset(next);
@@ -521,21 +569,239 @@ class AIService {
     }
 
     if (pp.clearApiKey) target.apiKeyEnc = '';
-    if (typeof pp.apiKey === 'string' && pp.apiKey.trim()) {
-      if (!this._encryptionAvailable()) {
-        throw new Error('A criptografia do sistema não está disponível; a chave não pode ser guardada com segurança.');
-      }
-      const key = pp.apiKey.trim();
-      if (key.length < 8 || key.length > 300 || /\s/.test(key)) throw new Error('Chave de API com formato inválido.');
-      target.apiKeyEnc = this.safeStorage.encryptString(key).toString('base64');
+    if (typeof pp.apiKey === 'string' && pp.apiKey.trim()) target.apiKeyEnc = this._encryptKey(pp.apiKey);
+  }
+
+  // ------------------------------------------------- descoberta de modelos (Adicionar provedor)
+
+  /**
+   * Descoberta de modelos: lista o que o servidor oferece (GET /models, sem enviar conteúdo do usuário) e classifica cada modelo.
+   * Entrada { baseUrl?, apiKey?, providerId?, discard? }:
+   *   discard (id do rascunho)  apaga o rascunho (zera a chave) e devolve true;
+   *   providerId                provedor que JÁ existe (nunca o interno): usa o endereço e a chave GRAVADOS e só MESCLA o catálogo
+   *                             (models/discoveredAt); não mexe em modelo escolhido, ligado/desligado, nome, chave nem ordem;
+   *   baseUrl + apiKey          provedor novo: cria um RASCUNHO só em memória (a chave NUNCA volta ao renderer) que o patch
+   *                             `commitDiscovery` do saveConfig transforma em provedor.
+   * Erros: sempre com mensagem FIXA em português (DiscoveryError ou as frases abaixo); nunca texto do servidor nem a chave.
+   * Lista vazia ou resposta que não se reconhece NÃO são erro de rede: o rascunho nasce vazio e `canForce` deixa o usuário
+   * adicionar mesmo assim, digitando o modelo (a chave continua no main).
+   */
+  async discoverProvider(input = {}) {
+    const o = input && typeof input === 'object' ? input : {};
+    const filled = (v) => v !== undefined && v !== null && v !== '';
+    if (filled(o.discard)) {
+      if (typeof o.discard === 'string') this._dropDraft(o.discard);
+      return true;
     }
+    if (filled(o.providerId)) return this._discoverExisting(String(o.providerId));
+    return this._discoverNew(o);
+  }
+
+  /** Chave digitada: aparada e conferida ANTES de qualquer envio (mesmas regras de quando for guardada). '' = sem chave. */
+  _draftKey(apiKey) {
+    if (apiKey === undefined || apiKey === null || apiKey === '') return '';
+    if (typeof apiKey !== 'string') throw Object.assign(new Error(MSG_KEY_FORMAT), { code: 'BAD_KEY' });
+    const key = apiKey.trim();
+    if (!key) return '';
+    if (key.length < 8 || key.length > 300 || /\s/.test(key)) throw Object.assign(new Error(MSG_KEY_FORMAT), { code: 'BAD_KEY' });
+    if (!this._encryptionAvailable()) throw Object.assign(new Error(MSG_NO_ENCRYPTION), { code: 'NO_ENCRYPTION' });
+    return key;
+  }
+
+  /** Começa uma descoberta: a que estava em andamento é abortada (só uma por vez). */
+  _beginDiscovery() {
+    if (this._discovering) this._discovering.abort();
+    const controller = new AbortController();
+    this._discovering = controller;
+    return controller;
+  }
+
+  _endDiscovery(controller) { if (this._discovering === controller) this._discovering = null; }
+
+  /** Uma consulta. Todo erro sai como DiscoveryError (mensagem fixa); abortada por outra busca ou pelo encerramento = CANCELLED. */
+  async _discover(baseUrl, key, controller) {
+    let found;
+    try {
+      found = await discoverModels({ baseUrl, apiKey: key, fetchImpl: this._fetch || undefined, signal: controller.signal });
+    } catch (err) {
+      throw err instanceof DiscoveryError ? err : new DiscoveryError('NETWORK');
+    }
+    if (controller.signal.aborted) throw new DiscoveryError('CANCELLED');
+    return found;
+  }
+
+  async _discoverNew({ baseUrl, apiKey } = {}) {
+    let normalized;
+    try { normalized = keyPolicy.normalizeUserUrl(baseUrl); }
+    catch (_) { throw new DiscoveryError('BAD_URL'); }
+    if (presets.detectPreset(normalized) === 'embedded') {
+      throw Object.assign(new Error('Este endereço é o do modelo local do app, que já é gerenciado por ele.'), { code: 'RESERVED' });
+    }
+    const key = this._draftKey(apiKey);
+    const controller = this._beginDiscovery();
+    try {
+      let found;
+      try {
+        found = await this._discover(normalized, key, controller);
+      } catch (err) {
+        if ((err.code !== 'EMPTY' && err.code !== 'BAD_RESPONSE') || controller.signal.aborted) throw err;
+        // Nada utilizável na resposta: rascunho VAZIO (a chave fica no main) para o "adicionar mesmo assim"
+        const url = new URL(normalized);
+        const anthropic = AnthropicProvider.isAnthropicBase(normalized);
+        const draft = this._storeDraft({
+          baseUrl: anthropic ? ANTHROPIC_BASE : normalized, key, format: anthropic ? 'anthropic' : 'openai', models: [],
+          host: url.hostname, isLocal: keyPolicy.isPrivateHost(url.hostname)
+        });
+        return { ...this._draftView(draft), error: { code: err.code, message: err.message }, canForce: true };
+      }
+      const draft = this._storeDraft({ baseUrl: found.baseUrl, key, format: found.format, models: found.models, host: found.host, isLocal: found.isLocal });
+      return this._draftView(draft);
+    } finally {
+      this._endDiscovery(controller);
+    }
+  }
+
+  /** Resultado PÚBLICO de um rascunho: nunca a chave. */
+  _draftView(draft) {
+    const preset = presets.byId(presets.detectPreset(draft.baseUrl)) || presets.byId('custom');
+    return {
+      draftId: draft.id,
+      format: draft.format,
+      label: this._suggestLabel(draft.baseUrl, draft.host),
+      host: draft.host,
+      isLocal: draft.isLocal,
+      models: publicModels(draft.models),
+      counts: countCaps(draft.models),
+      defaultChat: pickChatDefault(draft.models, { suggested: preset.model }),
+      // Mesma regra do chat: servidor fora da máquina e da rede local, sem o aviso daquele endereço aceito
+      needsConsent: !isLocalOrLanHost(draft.host) && !this._load().remoteAccepted.includes(_originOf(draft.baseUrl))
+    };
+  }
+
+  /** Nome sugerido: o do atalho conhecido (Groq, OpenAI...) ou o endereço do servidor. */
+  _suggestLabel(baseUrl, host) {
+    const id = presets.detectPreset(baseUrl);
+    return id !== 'custom' ? presets.byId(id).label : String(host || 'Servidor de IA').slice(0, 40);
+  }
+
+  async _discoverExisting(providerId) {
+    const p = this._find(providerId);
+    if (!p) throw Object.assign(new Error(MSG_NO_PROVIDER), { code: 'NO_PROVIDER' });
+    if (p.preset === 'embedded' || p.id === 'embedded') {
+      throw Object.assign(new Error('O modelo local do app não tem uma lista de modelos para buscar.'), { code: 'INTERNAL_PROVIDER' });
+    }
+    const baseUrl = p.baseUrl;
+    const key = this._readKey(p); // chave GRAVADA: só no main, só para o endereço dela
+    const controller = this._beginDiscovery();
+    try {
+      const found = await this._discover(baseUrl, key, controller);
+      const now = this._find(providerId);
+      if (!now) throw Object.assign(new Error(MSG_NO_PROVIDER), { code: 'NO_PROVIDER' });
+      if (now.baseUrl !== baseUrl) throw Object.assign(new Error('O endereço do provedor mudou durante a busca. Busque de novo.'), { code: 'CHANGED' });
+      const known = new Set(now.models.map((m) => m.id));
+      const added = found.models.filter((m) => !known.has(m.id)).length;
+      // Os modelos que sumiram saem do catálogo, menos o escolhido para conversa (o card continua mostrando o que está em uso)
+      const kept = now.models.filter((m) => m.id === now.model && !found.models.some((f) => f.id === m.id));
+      const merged = normalizeCatalog([...found.models.slice(0, MAX_MODELS - kept.length), ...kept]);
+      const c = this._cloneConfig(this._load());
+      const target = c.providers.find((x) => x.id === providerId);
+      target.models = merged;
+      target.discoveredAt = new Date(this._now()).toISOString();
+      this._swapConfig(c);
+      return { providerId, format: found.format, models: publicModels(merged), counts: countCaps(merged), added };
+    } finally {
+      this._endDiscovery(controller);
+    }
+  }
+
+  // Rascunhos: guardam a chave SÓ em memória (Map). Expiram em 10 min, no máximo 3 (o mais antigo sai) e somem no encerramento.
+
+  _storeDraft(fields) {
+    this._sweepDrafts();
+    while (this._drafts.size >= MAX_DRAFTS) this._dropDraft(this._drafts.keys().next().value); // o Map guarda a ordem de criação
+    const id = crypto.randomUUID();
+    const draft = { id, ...fields, createdAt: this._now(), expiresAt: this._now() + DRAFT_TTL_MS, timer: null };
+    draft.timer = setTimeout(() => this._dropDraft(id), DRAFT_TTL_MS);
+    if (draft.timer && typeof draft.timer.unref === 'function') draft.timer.unref();
+    this._drafts.set(id, draft);
+    return draft;
+  }
+
+  /** Apaga o rascunho e zera a chave (a referência some; o texto que sobra na memória não é mais alcançável por este objeto). */
+  _dropDraft(id) {
+    const d = this._drafts.get(id);
+    if (!d) return false;
+    clearTimeout(d.timer);
+    d.key = '';
+    d.models = [];
+    this._drafts.delete(id);
+    return true;
+  }
+
+  /** O rascunho, se existe e não expirou (o expirado é apagado na hora). */
+  _liveDraft(id) {
+    const d = typeof id === 'string' ? this._drafts.get(id) : undefined;
+    if (!d) return null;
+    if (d.expiresAt <= this._now()) { this._dropDraft(id); return null; }
+    return d;
+  }
+
+  _sweepDrafts() { for (const id of [...this._drafts.keys()]) this._liveDraft(id); }
+
+  /**
+   * Transforma um rascunho em provedor, DENTRO da cópia `c` do saveConfig (então qualquer erro depois dele desfaz tudo).
+   * Valida no main: rascunho vivo, modelo de conversa (na lista com a capacidade "chat", ou texto digitado quando o rascunho
+   * está vazio), endereço e chave conforme a política de chaves. O provedor remoto nasce com o aviso de servidor externo
+   * PENDENTE: o commit nunca o aceita. @returns {{id:string, draftId:string}}
+   */
+  _commitDiscovery(c, raw) {
+    const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
+    if (!o || typeof o.draftId !== 'string' || !o.draftId || o.draftId.length > 100 || typeof o.chat !== 'string') throw new Error(MSG_COMMIT_INVALID);
+    if (o.providerId !== undefined) throw new Error(MSG_COMMIT_INVALID);   // provedor que já existe: só pelo canal de descoberta (mescla o catálogo)
+    if (o.label !== undefined && o.label !== null && typeof o.label !== 'string') throw new Error(MSG_COMMIT_INVALID);
+    const draft = this._liveDraft(o.draftId);
+    if (!draft) throw new Error('A busca expirou. Procure os modelos de novo.');
+    const chat = o.chat.trim();
+    if (!isValidModelId(chat)) throw new Error('Escolha o modelo de conversa.');
+    if (draft.models.length && !draft.models.some((m) => m.id === chat && m.caps.includes('chat'))) {
+      throw new Error('Esse modelo não está entre os modelos de conversa encontrados.');
+    }
+    if (c.providers.length >= MAX_PROVIDERS) throw new Error(`Há provedores demais (máximo ${MAX_PROVIDERS}).`);
+
+    const baseUrl = OpenAIProvider.normalizeBaseUrl(draft.baseUrl);
+    keyPolicy.assertKeyAllowed(new URL(baseUrl), draft.key); // chave por http:// só no loopback (mensagem fixa)
+    const preset = presets.detectPreset(baseUrl);
+    if (preset === 'embedded') throw new Error('Este endereço é o do modelo local do app, que já é gerenciado por ele.');
+    const apiKeyEnc = draft.key ? this._encryptKey(draft.key) : '';
+
+    let id = `${preset}-${this._now().toString(36).slice(-4)}${c.providers.length}`;
+    while (c.providers.some((p) => p.id === id)) id += 'x';
+    const base = String(o.label ?? '').trim().slice(0, 40) || this._suggestLabel(baseUrl, draft.host);
+    let label = base;
+    for (let n = 2; c.providers.some((p) => p.label === label); n++) label = `${base.slice(0, 36)} ${n}`;
+
+    c.providers.push({
+      id, preset, label, baseUrl, apiKeyEnc, model: chat, enabled: true,
+      models: draft.models.map((m) => ({ ...m, caps: [...m.caps] })),
+      discoveredAt: new Date(this._now()).toISOString()
+    });
+    c.order.push(id);
+    return { id, draftId: draft.id };
+  }
+
+  /** Encerramento: aborta a busca em andamento e apaga todos os rascunhos (e as chaves que eles seguravam). */
+  dispose() {
+    if (this._discovering) { this._discovering.abort(); this._discovering = null; }
+    for (const id of [...this._drafts.keys()]) this._dropDraft(id);
   }
 
   // --------------------------------------------------------------- provedores
 
   _providerFor(p) {
     const id = p.id;
-    return new OpenAIProvider({
+    // Protocolo derivado do endereço: Anthropic só no host exato api.anthropic.com (https); os demais falam o formato da OpenAI.
+    const Provider = AnthropicProvider.isAnthropicBase(p.baseUrl) ? AnthropicProvider : OpenAIProvider;
+    return new Provider({
       getBaseUrl: () => (this._find(id) || p).baseUrl,
       getApiKey: () => this._readKey(this._find(id) || p),   // SÓ a chave deste provedor, só para o endereço dele
       fetchImpl: this._fetch
@@ -578,7 +844,7 @@ class AIService {
   async testConnection(providerId) {
     const p = this._targetFor(providerId);
     await this._prepare(p);
-    const result = await this._providerFor(p).testConnection();
+    const result = await this._providerFor(p).testConnection({ model: p.model });
     this._standby.delete(p.id);
     return { ...result, providerId: p.id, label: p.label };
   }
@@ -593,25 +859,23 @@ class AIService {
 
   /**
    * Plano de tentativa, na ordem de prioridade: só provedores ligados, com chave (quando o preset exige), com modelo e
-   * com o aviso de servidor remoto já aceito (`exemptHead`: o primeiro provedor dispensa o aceite; usado só pela
-   * análise de transcrição, que sempre foi feita no servidor escolhido pelo usuário). NUNCA entra na cadeia um servidor
-   * remoto sem aviso aceito, nem em fallback.
+   * com o aviso de servidor remoto já aceito. NUNCA entra na cadeia um servidor remoto sem aviso aceito, nem em fallback,
+   * nem na análise de transcrição: o texto das transcrições também só vai a um servidor externo depois do aceite.
+   * (Antes, `exemptHead` dispensava o aceite do primeiro provedor na análise; com o "Adicionar provedor" pela descoberta,
+   * quem adiciona um provedor só para áudio passaria a mandar texto a ele sem aviso. A dispensa foi retirada.)
    * Provedores "em espera" (falharam há pouco) ficam de fora enquanto houver outro; se TODOS estiverem em espera,
    * tenta-os mesmo assim (não há alternativa). Com o fallback desligado só o primeiro provedor ligado é usado.
    * @returns {{attempts:object[], skipped:{id:string,label:string,reason:string}[]}}
    */
-  _plan({ exemptHead = false } = {}) {
+  _plan() {
     const c = this._load();
     const skipped = [];
     const eligible = [];
-    let head = true;
     for (const p of c.providers) {
       if (!p.enabled) continue;
-      const first = head;
-      head = false;
       let reason = '';
       if (this._keyRequired(p) && !p.apiKeyEnc) reason = 'nokey';
-      else if (this._consentPending(p) && !(exemptHead && first)) reason = 'consent';
+      else if (this._consentPending(p)) reason = 'consent';
       else if (!p.model) reason = 'nomodel';
       if (reason) skipped.push({ id: p.id, label: p.label, reason });
       else eligible.push(p);
@@ -663,8 +927,8 @@ class AIService {
    * MESMA conversa (quem chama já montou a lista de mensagens, que é reenviada sem alteração). Cancelamento e erro do
    * pedido (400...) sobem na hora. `onProvider({type:'use'|'noTools', ...})` avisa qual provedor está em uso.
    */
-  async _runChain(run, { signal = null, onProvider = () => {}, exemptHead = false } = {}) {
-    const plan = this._plan({ exemptHead });
+  async _runChain(run, { signal = null, onProvider = () => {} } = {}) {
+    const plan = this._plan();
     if (!plan.attempts.length) throw this._noProviderError(plan);
     const failures = [];
     for (const p of plan.attempts) {
@@ -692,7 +956,8 @@ class AIService {
     if (plan.skipped.length && plan.skipped.every((s) => s.reason === 'nomodel')) {
       return new Error('Nenhum modelo definido. Informe um modelo nas configurações da IA.');
     }
-    return Object.assign(new Error(`Não há servidor de IA disponível: ${this._describe(plan.skipped)}. Confira as configurações da IA.`), { code: 'AI_ALL_FAILED' });
+    const consent = plan.skipped.some((s) => s.reason === 'consent') ? ' Aceite o aviso de servidor externo nos detalhes do provedor.' : '';
+    return Object.assign(new Error(`Não há servidor de IA disponível: ${this._describe(plan.skipped)}. Confira as configurações da IA.${consent}`), { code: 'AI_ALL_FAILED' });
   }
 
   _describe(list) { return list.map((e) => `${e.label} (${e.standby ? 'em espera: ' : ''}${REASON_TEXT[e.reason] || 'indisponível'})`).join('; '); }
@@ -823,7 +1088,7 @@ class AIService {
         signal,
         sampling
       });
-    }, { signal, onProvider, exemptHead: true });
+    }, { signal, onProvider });
     return { ...result, model: provider.model, provider: { id: provider.id, label: provider.label } };
   }
 

@@ -143,11 +143,21 @@
 .ana-preset { background: var(--card-2); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 6px 16px; min-height: 32px; font: inherit; font-size: var(--fs-label); font-weight: 600; cursor: pointer; }
 .ana-preset:hover { border-color: var(--accent); }
 .ana-preset:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ana-preset[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-text); }
+.ana-preset:disabled { opacity: 0.6; cursor: default; }
+.ana-add[open] > summary { margin-bottom: 12px; }
+.ana-add-form, .ana-disc { display: flex; flex-direction: column; gap: 12px; max-width: 540px; }
+.ana-add-form .ana-presets { margin: 0; }
+.ana-add-note, .ana-disc p { margin: 0; }
+.ana-found { font-size: var(--fs-body); font-weight: 600; overflow-wrap: anywhere; }
+.ana-disc-summary { font-size: var(--fs-body); color: var(--text); }
+.ana-disc-where { color: var(--muted); }
 .ana-warn { color: var(--status-warn); }
 .ana-empty { margin: 0; }
 
 /* Provedores: seções (Chat, Áudio, Imagem, Vídeo) e linhas compactas */
 .ana-sec { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.ana-sec[hidden] { display: none; }
 .ana-sec + .ana-sec { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 8px; }
 .ana-sec-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0; font-size: var(--fs-section); font-weight: 600; }
 .ana-sec-hint { font-size: var(--fs-label); font-weight: 400; color: var(--muted); }
@@ -169,6 +179,10 @@
 .med-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .med-text .mod-hint { margin: 0; }
 .med-off .med-row { opacity: 0.7; }
+.med-catalog { margin: 0; padding-left: 4px; }
+.aud-catalog { display: flex; flex-direction: column; gap: 8px; }
+.aud-found { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-body); }
+.aud-found strong { font-weight: 600; }
 .ana-prov-head, .aud-row-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 48px; flex-wrap: nowrap; justify-content: flex-start; }
 .ana-grip { display: inline-flex; color: var(--muted); cursor: grab; flex-shrink: 0; }
 .ana-grip .material-symbols-rounded { font-size: 20px; }

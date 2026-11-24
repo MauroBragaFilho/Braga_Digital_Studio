@@ -2,7 +2,8 @@
  * Seções "Imagem" e "Vídeo" do card Provedores (Configurações → Inteligência Artificial → Provedores).
  *   Imagem: hoje só existe o modelo local do app que entende imagens (usado para organizar fotos ao copiar de
  *           dispositivos). A linha é só de leitura: mostra o que está disponível agora, ou como conseguir um.
- *   Vídeo:  ainda não há nada no app; a linha diz isso.
+ *           Abaixo, por provedor, quantos modelos do catálogo também entendem imagens (ainda sem uso).
+ *   Vídeo:  o app ainda não usa vídeo; a seção só existe se algum catálogo de provedor tiver modelos de vídeo.
  * Quando houver mais de uma opção, elas entram aqui como as linhas ordenáveis de Chat e Áudio.
  * Textos entram sempre por textContent.
  */
@@ -64,21 +65,48 @@ export function describeImage(st) {
   return { ok: false, title: 'Nenhum disponível', hint: 'Instale em "Neste computador" um modelo local que entende imagens.', action: true };
 }
 
+/** Catálogo de modelos por provedor, vindo de aiGetConfig: [{ label, count }] dos que têm o tipo pedido (cap 'image' | 'video'). */
+async function catalogWith(cap) {
+  try {
+    const res = await window.bds?.aiGetConfig?.();
+    const list = res && res.ok && res.data && Array.isArray(res.data.providers) ? res.data.providers : [];
+    return list
+      .map((p) => ({ label: String(p.label || ''), count: p.modelCounts ? Number(p.modelCounts[cap]) || 0 : 0 }))
+      .filter((p) => p.count > 0);
+  } catch (_) { return []; }
+}
+
+const models = (n) => `${n} ${n === 1 ? 'modelo' : 'modelos'}`;
+
 /**
+ * Imagem: a linha do modelo local e, por provedor, quantos modelos do catálogo também entendem imagens (só informação).
+ * Vídeo: a seção INTEIRA (o contêiner .ana-sec) só aparece se algum catálogo tiver vídeo; é uma lista só de leitura.
  * @param {{ image: HTMLElement|null, video: HTMLElement|null }} hosts
  */
 export async function renderMediaSections({ image = null, video = null } = {}) {
+  if (image) clear(image).append(row('image', 'Verificando…', ''));
+  const [withVideo, withImage, state] = await Promise.all([
+    video ? catalogWith('video') : [],
+    image ? catalogWith('image') : [],
+    image ? localState() : null
+  ]);
   if (video) {
-    clear(video).append(row('movie', 'Ainda não disponível', 'Nada no app entende vídeo por enquanto. Quando houver, aparece aqui.'));
-    video.classList.add('med-off');
+    const wrapper = video.closest ? video.closest('.ana-sec') : null;
+    if (wrapper) wrapper.hidden = withVideo.length === 0;
+    clear(video);
+    if (withVideo.length) {
+      video.append(row('movie', 'O app ainda não usa vídeo.', 'Modelos de vídeo encontrados nos seus provedores (só informação).'));
+      video.append(...withVideo.map((p) => h('p', { class: 'mod-hint med-catalog', text: `${p.label}: ${models(p.count)} de vídeo.` })));
+      video.classList.add('med-off');
+    }
   }
   if (!image) return;
-  clear(image).append(row('image', 'Verificando…', ''));
-  const d = describeImage(await localState());
+  const d = describeImage(state);
   clear(image).append(row(
     d.ok ? 'image' : 'hide_image', d.title, d.hint,
     d.action ? h('button', { class: 'mod-btn mod-btn-secondary mod-btn-sm', type: 'button', onclick: openLocal }, [icon('tune'), 'Abrir']) : null
   ));
+  image.append(...withImage.map((p) => h('p', { class: 'mod-hint med-catalog', text: `Também entendem imagens: ${models(p.count)} em ${p.label} (uso em breve).` })));
 }
 
 /** Esquece o estado guardado (use depois de instalar ou trocar o modelo local). */

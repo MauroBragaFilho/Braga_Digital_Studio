@@ -7,6 +7,12 @@
  * (criptografada no computador) e nunca volta para a tela: aqui só aparece "Chave guardada". As seções Áudio, Imagem e
  * Vídeo vêm de ai-audio-section.js e ai-media-sections.js. A configuração do chat é a mesma do assistente
  * (window.bds.ai*). Textos entram sempre por textContent.
+ *
+ * "Adicionar provedor" é um fluxo só: endereço + chave (ou um atalho que só preenche o endereço) -> "Procurar modelos"
+ * (aiDiscoverProvider lista e classifica os modelos do servidor; nenhum conteúdo do usuário é enviado) -> resumo curto e
+ * escolha do modelo de Conversa -> "Adicionar" (aiSaveConfig { commitDiscovery }). A chave digitada vai uma vez ao main,
+ * que a segura num rascunho em memória; o campo é limpo assim que o pedido sai e o renderer nunca a guarda. As mensagens
+ * de erro vêm do main (texto fixo do app), nunca do servidor.
  */
 import { mountAudioSection, unmountAudioSection } from './ai-audio-section.js';
 import { renderMediaSections } from './ai-media-sections.js';
@@ -20,6 +26,13 @@ let expanded = new Set();              // provedores com os detalhes abertos
 let confirmRemove = null;              // id do provedor cuja remoção está esperando confirmação
 let modelLists = new Map();            // id -> ids de modelos listados pelo próprio provedor
 let focusAfter = null;                 // seletor do elemento que recebe o foco depois de redesenhar
+let addUrl = '';                       // endereço digitado em "Adicionar provedor" (a chave NÃO é guardada aqui)
+let addShortcut = null;                // atalho tocado (id), só para saber se a chave é obrigatória
+let addOpen = false;                   // bloco "Adicionar provedor" aberto pelo usuário
+let addError = '';                     // erro da busca (texto fixo vindo do main)
+let keyCleared = false;                // a chave foi enviada e apagada do campo: o texto de ajuda manda colar de novo
+let discovery = null;                  // null | { busy } | { res, busy, error, chosen }: busca em andamento / resultado (chosen = escolha do usuário)
+let addSeq = 0;                        // ignora respostas de buscas canceladas
 
 const $ = (id) => (root ? root.querySelector(`#${id}`) : null);
 
@@ -107,23 +120,102 @@ async function save(patch, { focus = null, quiet = false } = {}) {
 
 // ------------------------------------------------------------------ ações
 
-/** Depois de criar um provedor, abre os detalhes do último da lista (é o novo) para colar a chave. */
-function expandNewest() {
-  const last = config.providers[config.providers.length - 1];
-  if (last) expanded.add(last.id);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/** Apaga o rascunho no main (zera a chave que ele segurava). Falha silenciosa: o rascunho expira sozinho em 10 minutos. */
+async function discardDraft(draftId) {
+  try { await call(window.bds?.aiDiscoverProvider, { discard: draftId }); } catch (_) { /* expira sozinho */ }
 }
 
-async function addProvider(presetId) {
-  const preset = config.presets.find((p) => p.id === presetId);
-  if (presetId === 'custom') {
-    // Personalizado precisa de endereço: pede no próprio cartão novo (campo em "Avançado" aberto)
-    return save({ addProvider: { preset: 'custom', baseUrl: 'http://localhost:8080/v1' } }, { focus: '.ana-prov:last-child .ana-model' }).then((ok) => {
-      if (ok) { expandNewest(); render(); setStatus('Ajuste o endereço do servidor em Avançado e informe o modelo.', 'ok'); }
-    });
+/** Foca o primeiro seletor (separados por "||") que existe e não está desabilitado. */
+function focusFirst(selectors) {
+  const target = String(selectors).split('||').map((sel) => root && root.querySelector(sel)).find((el) => el && !el.disabled);
+  if (target && typeof target.focus === 'function') target.focus();
+}
+
+/** Redesenha só o bloco "Adicionar provedor" (o resto do card não muda durante a busca). `focus`: onde o foco cai depois (teclado e leitor de tela). */
+function paintAdd(focus = null) {
+  const old = root && root.querySelector('.ana-add');
+  if (old && old.parentNode && config) old.parentNode.replaceChild(buildAdd(), old);
+  if (focus) focusFirst(focus);
+}
+
+function showAddError(text) {
+  addError = text || '';
+  const el = root && root.querySelector('.ana-add-error');
+  if (el) el.textContent = addError;
+}
+
+async function searchModels(urlEl, keyEl) {
+  if (discovery && discovery.busy) return;
+  const baseUrl = urlEl.value.trim();
+  const apiKey = keyEl.value.trim();
+  const shortcut = addShortcut ? (config.shortcuts || []).find((s) => s.id === addShortcut) : null;
+  if (!baseUrl) { showAddError('Informe o endereço do servidor.'); return; }
+  if (shortcut && shortcut.keyRequired && !apiKey) { showAddError('Cole a chave de API deste serviço.'); return; }
+  keyEl.value = '';   // o renderer não guarda a chave: ela já sai agora e o campo é limpo
+  keyCleared = false;
+  addUrl = baseUrl;
+  addOpen = true;
+  addError = '';
+  const seq = ++addSeq;
+  discovery = { busy: true };
+  paintAdd('.ana-add-cancel');   // o foco não se perde: fica no Cancelar, que continua habilitado durante a busca
+  const input = apiKey ? { baseUrl, apiKey } : { baseUrl };
+  try {
+    const res = await call(window.bds?.aiDiscoverProvider, input);
+    if (seq !== addSeq || !root) { if (res && res.draftId) discardDraft(res.draftId); return; }
+    discovery = { res, busy: false, error: res.error && res.error.message ? res.error.message : '', chosen: '' };
+    paintAdd('.ana-disc-chat||.ana-disc-force');
+  } catch (err) {
+    if (seq !== addSeq || !root) return;
+    discovery = null;
+    addError = err.message;
+    keyCleared = Boolean(apiKey);   // a chave já saiu do campo: o texto de ajuda avisa que é preciso colar de novo
+    paintAdd('.ana-add-key||.ana-discover');
   }
-  const ok = await save({ addProvider: { preset: presetId } }, { focus: '.ana-prov:last-child input[type="password"], .ana-prov:last-child .ana-model' });
-  if (ok) { expandNewest(); render(); }
-  if (ok && preset) setStatus(preset.warning ? preset.warning : `${preset.label} adicionado. Informe a chave e clique em Salvar e testar.`, preset.warning ? 'warn' : 'ok');
+}
+
+async function cancelDiscovery() {
+  const draftId = discovery && discovery.res ? discovery.res.draftId : null;
+  addSeq++;   // uma resposta que ainda esteja a caminho é descartada (e o rascunho dela apagado) quando chegar
+  discovery = null;
+  addError = '';
+  keyCleared = false;
+  paintAdd('.ana-add-url');
+  if (draftId) await discardDraft(draftId);
+}
+
+async function commitDiscovery(chat) {
+  const d = discovery;
+  if (!d || !d.res || d.busy) return;
+  discovery = { res: d.res, busy: true, error: '', chosen: d.chosen };
+  paintAdd();
+  try {
+    config = await call(window.bds?.aiSaveConfig, { commitDiscovery: { draftId: d.res.draftId, chat } });
+    const id = config.addedId;
+    const made = id ? config.providers.find((p) => p.id === id) : null;
+    discovery = null;
+    addOpen = false;
+    addUrl = '';
+    addShortcut = null;
+    addError = '';
+    if (id) {
+      expanded.add(id);
+      focusAfter = `.ana-prov[data-id="${id}"] .ana-accept||.ana-prov[data-id="${id}"] .ana-key||.ana-prov[data-id="${id}"] .ana-model`;
+    }
+    statusLine = null;
+    render();
+    notifyChanged();
+    if (made) {
+      if (made.needsRemoteConsent) setStatus(`${made.label} adicionado. Para usá-lo, aceite o aviso de servidor externo nos detalhes.`, 'warn');
+      else if (made.keyRequired && !made.hasKey) setStatus(`${made.label} adicionado. Informe a chave nos detalhes.`, 'warn');
+      else setStatus(`${made.label} adicionado.`, 'ok');
+    }
+  } catch (err) {
+    discovery = { res: d.res, busy: false, error: err.message, chosen: d.chosen };
+    paintAdd('.ana-disc-add');
+  }
 }
 
 function move(index, delta) {
@@ -177,10 +269,25 @@ async function listModels(p, btn) {
     setCardStatus(p.id, 'Buscando modelos…');
     config = await call(window.bds?.aiSaveConfig, { provider: readCard(p) });
     keyEdit.delete(p.id);
-    const models = await call(window.bds?.aiListModels, p.id);
-    modelLists.set(p.id, models.map((m) => m.id));
-    const wanted = models.length === 1 && !(readCardModel(p.id)) ? models[0].id : null;
-    cardStatus.set(p.id, { text: models.length ? `${models.length} modelo(s) disponível(is): clique no campo Modelo para escolher.` : 'O servidor não listou nenhum modelo.', kind: models.length ? 'ok' : 'error' });
+    let ids;
+    let text;
+    if (p.preset === 'embedded') {
+      // o modelo local do app não tem catálogo para descobrir: continua a lista simples
+      const models = await call(window.bds?.aiListModels, p.id);
+      ids = models.map((m) => m.id);
+      text = ids.length ? `${ids.length} modelo(s) disponível(is): clique no campo Modelo para escolher.` : 'O servidor não listou nenhum modelo.';
+    } else {
+      const res = await call(window.bds?.aiDiscoverProvider, { providerId: p.id });
+      ids = (res.models || []).filter((m) => m.caps.includes('chat')).map((m) => m.id);
+      const fresh = Number(res.added) || 0;
+      text = ids.length
+        ? `${plural(ids.length, 'modelo', 'modelos')} (${plural(fresh, 'novo', 'novos')}). Clique no campo Modelo para escolher.`
+        : 'O servidor não listou nenhum modelo de conversa.';
+      try { config = await call(window.bds?.aiGetConfig); } catch (_) { /* mantém: o catálogo aparece na próxima leitura */ }
+    }
+    modelLists.set(p.id, ids);
+    const wanted = ids.length === 1 && !(readCardModel(p.id)) ? ids[0] : null;
+    cardStatus.set(p.id, { text, kind: ids.length ? 'ok' : 'error' });
     render();
     if (wanted) { const field = root.querySelector(`.ana-prov[data-id="${p.id}"] .ana-model`); if (field) field.value = wanted; }
   } catch (err) {
@@ -313,7 +420,7 @@ function buildModelCombo(p) {
   let active = -1;
   let filtering = false;   // só filtra depois que o usuário digita; ao abrir mostra tudo
   let loading = false;
-  const all = () => modelLists.get(p.id) || [];
+  const all = () => modelLists.get(p.id) || chatIds(p);   // lista buscada; antes dela, o catálogo guardado
 
   const paint = () => {
     const q = filtering ? input.value.trim().toLowerCase() : '';
@@ -337,7 +444,7 @@ function buildModelCombo(p) {
   const pick = (id) => { input.value = id; close(); };
 
   const ensureLoaded = () => {
-    if (all().length || loading || !(p.hasKey || !p.keyRequired)) return;
+    if (all().length || loading || !(p.hasKey || !p.keyRequired)) return;   // com catálogo guardado não precisa buscar
     loading = true;
     if (!box.hidden) paint();
     call(window.bds?.aiListModels, p.id)
@@ -371,13 +478,119 @@ function buildModelCombo(p) {
   return h('div', { class: 'ana-combo' }, [input, box]);
 }
 
-function buildAdd() {
-  return h('details', { class: 'ana-add' }, [
-    h('summary', { class: 'mod-btn mod-btn-secondary ana-add-btn' }, [icon('add'), 'Adicionar provedor']),
-    h('ul', { class: 'ana-presets', 'aria-label': 'Tipos de provedor' }, config.presets.map((p) => h('li', {}, [
-      h('button', { class: 'ana-preset', type: 'button', 'data-preset': p.id, onclick: (e) => { e.currentTarget.closest('details').open = false; addProvider(p.id); } }, p.label)
-    ])))
+/** Ids dos modelos do catálogo de um provedor que servem para conversa. */
+const chatIds = (p) => (Array.isArray(p.models) ? p.models : []).filter((m) => Array.isArray(m.caps) && m.caps.includes('chat')).map((m) => m.id);
+
+function buildAddForm() {
+  const shortcuts = Array.isArray(config.shortcuts) ? config.shortcuts : [];
+  const busy = Boolean(discovery && discovery.busy);
+  const hintEl = h('span', { class: 'mod-hint ana-add-keyhint' });
+  const urlEl = h('input', {
+    id: 'anaAddUrl', class: 'mod-input ana-add-url', type: 'text', spellcheck: 'false', autocomplete: 'off', placeholder: 'https://api.exemplo.com/v1', value: addUrl, disabled: busy,
+    oninput: (e) => { addUrl = e.target.value; addShortcut = null; paintChips(); paintHint(); }
+  });
+  const keyEl = h('input', {
+    id: 'anaAddKey', class: 'mod-input ana-add-key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'Cole a chave aqui', disabled: busy || !config.encryptionAvailable,
+    oninput: () => { if (keyCleared) { keyCleared = false; paintHint(); } }
+  });
+  const chips = shortcuts.map((s) => h('button', {
+    class: 'ana-preset', type: 'button', 'data-preset': s.id, disabled: busy,
+    onclick: () => { addShortcut = s.id; addUrl = s.baseUrl; urlEl.value = s.baseUrl; showAddError(''); paintChips(); paintHint(); }
+  }, s.label));
+  function paintChips() { chips.forEach((b) => b.setAttribute('aria-pressed', b.getAttribute('data-preset') === addShortcut ? 'true' : 'false')); }
+  function paintHint() {
+    const s = addShortcut ? shortcuts.find((x) => x.id === addShortcut) : null;
+    let text = 'Deixe em branco se o servidor não pedir chave.';
+    if (!config.encryptionAvailable) text = 'A criptografia do sistema não está disponível: só dá para adicionar servidores sem chave.';
+    else if (s) text = s.keyRequired ? 'Obrigatória para este serviço.' : 'Opcional neste servidor.';
+    if (keyCleared && config.encryptionAvailable) text = 'A chave não fica na tela: cole-a de novo para tentar outra vez.';
+    hintEl.textContent = text;
+  }
+  paintChips();
+  paintHint();
+  const submit = () => searchModels(urlEl, keyEl);
+  const onEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  urlEl.addEventListener('keydown', onEnter);
+  keyEl.addEventListener('keydown', onEnter);
+  return h('div', { class: 'ana-add-form', 'aria-busy': busy ? 'true' : null }, [
+    shortcuts.length ? h('ul', { class: 'ana-presets', 'aria-label': 'Atalhos de endereço' }, chips.map((b) => h('li', {}, [b]))) : null,
+    h('div', { class: 'mod-field' }, [h('label', { class: 'mod-field-label', for: 'anaAddUrl', text: 'Endereço' }), urlEl]),
+    h('div', { class: 'mod-field' }, [h('label', { class: 'mod-field-label', for: 'anaAddKey', text: 'Chave de API' }), keyEl, hintEl]),
+    h('p', { class: 'mod-hint ana-add-note', text: 'A chave é enviada só a este endereço, para listar os modelos.' }),
+    h('div', { class: 'mod-actions' }, [
+      h('button', { class: 'mod-btn mod-btn-primary ana-discover', type: 'button', disabled: busy, onclick: submit }, [icon('search'), busy ? 'Procurando…' : 'Procurar modelos']),
+      busy ? h('button', { class: 'mod-btn mod-btn-ghost ana-add-cancel', type: 'button', onclick: cancelDiscovery }, 'Cancelar') : null
+    ]),
+    h('div', { class: 'ana-status ana-error ana-add-error', role: 'alert', text: addError })
   ]);
+}
+
+/** Passo 2: o que foi encontrado, o seletor de Conversa e Adicionar/Cancelar. Tudo por textContent. */
+function buildDiscoveryResult() {
+  const d = discovery;
+  const r = d.res;
+  const forced = r.canForce === true;
+  const models = Array.isArray(r.models) ? r.models : [];
+  const chat = models.filter((m) => m.caps.includes('chat'));
+  const c = r.counts || {};
+  const parts = [`${plural(c.chat || 0, 'modelo', 'modelos')} de conversa`, `${c.audio || 0} de áudio`, `${c.image || 0} de imagem`];
+  if (c.video) parts.push(`${c.video} de vídeo`);
+
+  // Com a lista vazia ou ilegível o app não reconheceu formato nenhum: não afirma "compatível com OpenAI"
+  const els = [h('p', { class: 'ana-found', text: forced ? `Servidor: ${r.label}` : `Encontrado: ${r.label} · ${r.format === 'anthropic' ? 'Anthropic' : 'compatível com OpenAI'}` })];
+  let selectEl = null;
+  let forceEl = null;
+  if (forced) {
+    forceEl = h('input', {
+      id: 'anaDiscForce', class: 'mod-input ana-disc-force', type: 'text', spellcheck: 'false', autocomplete: 'off', placeholder: 'nome do modelo', maxlength: '120', disabled: d.busy, value: d.chosen || '',
+      oninput: (e) => { d.chosen = e.target.value; },
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } }
+    });
+    els.push(
+      h('div', { class: 'ana-status ana-error ana-disc-error', role: 'alert', text: d.error || (r.error && r.error.message) || '' }),
+      h('div', { class: 'mod-field' }, [h('label', { class: 'mod-field-label', for: 'anaDiscForce', text: 'Modelo de conversa' }), forceEl])
+    );
+  } else {
+    els.push(h('p', { class: 'ana-disc-summary', text: parts.join(', ') }));
+    if (chat.length) {
+      // a escolha do usuário sobrevive a um redesenho do card; sem escolha, vale o padrão sugerido
+      const pick = chat.some((m) => m.id === d.chosen) ? d.chosen : r.defaultChat;
+      selectEl = h('select', { id: 'anaDiscChat', class: 'mod-input ana-disc-chat', disabled: d.busy, onchange: (e) => { d.chosen = e.target.value; } }, chat.map((m) => {
+        const o = h('option', { value: m.id, text: m.source === 'nome' ? `${m.id} · provável` : m.id });
+        if (m.id === pick) o.selected = true;
+        return o;
+      }));
+      if (!chat.some((m) => m.id === pick) && selectEl.firstChild) selectEl.firstChild.selected = true;
+      els.push(h('div', { class: 'mod-field' }, [h('label', { class: 'mod-field-label', for: 'anaDiscChat', text: 'Conversa' }), selectEl]));
+    } else {
+      els.push(h('p', { class: 'mod-muted ana-disc-none', text: 'Nenhum modelo de conversa foi encontrado neste servidor.' }));
+    }
+    if (d.error) els.push(h('div', { class: 'ana-status ana-error ana-disc-error', role: 'alert', text: d.error }));
+  }
+  if (!r.isLocal) els.push(h('p', { class: 'mod-hint ana-disc-where', text: 'As conversas e as análises de texto vão para este serviço.' }));
+
+  const canAdd = forced || chat.length > 0;
+  function doAdd() {
+    if (d.busy) return;
+    const value = forced ? forceEl.value.trim() : (selectEl ? selectEl.value : '');
+    if (!value) { const e = root.querySelector('.ana-disc-error'); if (e) e.textContent = 'Informe o modelo de conversa.'; return; }
+    commitDiscovery(value);
+  }
+  els.push(h('div', { class: 'mod-actions' }, [
+    canAdd ? h('button', { class: 'mod-btn mod-btn-primary ana-disc-add', type: 'button', disabled: d.busy, onclick: doAdd }, forced ? 'Adicionar mesmo assim' : 'Adicionar') : null,
+    h('button', { class: 'mod-btn mod-btn-ghost ana-disc-cancel', type: 'button', disabled: d.busy, onclick: cancelDiscovery }, 'Cancelar')
+  ]));
+  return h('div', { class: 'ana-disc' }, els);
+}
+
+function buildAdd() {
+  const has = config.providers.length > 0;
+  const details = h('details', { class: 'ana-add', open: !has || addOpen || discovery !== null }, [
+    h('summary', { class: 'mod-btn mod-btn-secondary ana-add-btn' }, [icon('add'), 'Adicionar provedor']),
+    discovery && discovery.res ? buildDiscoveryResult() : buildAddForm()
+  ]);
+  details.addEventListener('toggle', () => { if (has && !discovery) addOpen = details.open; });
+  return details;
 }
 
 /** Arrastar pela alça muda a ordem; a ordem nova é gravada ao soltar. */
@@ -426,6 +639,9 @@ function render() {
   if (!root || !config) return;
   const host = $('anaHost');
   const has = config.providers.length > 0;
+  // A chave que o usuário está digitando em "Adicionar provedor" sobrevive a um redesenho (só passa pelo DOM, não é guardada)
+  const typing = root.querySelector('.ana-add-key');
+  const typedKey = typing ? typing.value : '';
 
   const head = h('div', { class: 'mod-head' }, [
     h('div', { class: 'mod-head-icon' }, [icon('auto_awesome')]),
@@ -469,19 +685,20 @@ function render() {
     section('Chat', 'Assistente e análise de transcrições', chat),
     section('Áudio', 'Transcrição de áudio e vídeo', [h('div', { id: 'anaAudioHost' })]),
     section('Imagem', 'Entender fotos', [h('div', { id: 'anaImageHost' })]),
-    section('Vídeo', null, [h('div', { id: 'anaVideoHost' })])
+    // Vídeo só aparece quando algum provedor tem modelos de vídeo no catálogo (o app ainda não usa vídeo)
+    config.providers.some((p) => p.modelCounts && p.modelCounts.video > 0) ? section('Vídeo', null, [h('div', { id: 'anaVideoHost' })]) : null
   ]);
 
   clear(host).append(head, body);
+  if (typedKey) { const again = root.querySelector('.ana-add-key'); if (again && !again.disabled) again.value = typedKey; }
   paintStatus();
   // As outras seções têm dados próprios: desenhadas depois, sem atrasar a lista de chat
   try { mountAudioSection($('anaAudioHost')); } catch (_) { /* a seção de áudio nunca derruba o card */ }
   try { renderMediaSections({ image: $('anaImageHost'), video: $('anaVideoHost') }); } catch (_) { /* idem */ }
   if (focusAfter) {
-    // vários seletores separados por "||": foca o primeiro que existe e não está desabilitado
-    const target = String(focusAfter).split('||').map((sel) => root.querySelector(sel)).find((el) => el && !el.disabled);
+    const sel = focusAfter;
     focusAfter = null;
-    if (target && typeof target.focus === 'function') target.focus();
+    focusFirst(sel);   // vários seletores separados por "||": o primeiro que existe e não está desabilitado
   }
 }
 
@@ -499,6 +716,7 @@ export async function mountAnalysisPanel(container) {
   modelLists = new Map();
   confirmRemove = null;
   focusAfter = null;
+  resetAddState();
   try {
     config = await call(window.bds?.aiGetConfig);
     render();
@@ -513,9 +731,21 @@ export async function reloadAnalysisPanel() {
   try { config = await call(window.bds?.aiGetConfig); render(); } catch (_) { /* mantém o que já está na tela */ }
 }
 
+function resetAddState() {
+  addUrl = '';
+  addShortcut = null;
+  addOpen = false;
+  addError = '';
+  keyCleared = false;
+  discovery = null;
+  addSeq++;
+}
+
 /** Solta o conteúdo ao sair das Configurações. */
 export function unmountAnalysisPanel() {
   try { unmountAudioSection(); } catch (_) { /* nada a soltar */ }
+  const pending = discovery && discovery.res ? discovery.res.draftId : null;
+  if (pending) discardDraft(pending);   // o rascunho com a chave não fica esperando no main
   if (root) clear(root);
   root = null;
   config = null;
@@ -526,4 +756,5 @@ export function unmountAnalysisPanel() {
   modelLists = new Map();
   confirmRemove = null;
   focusAfter = null;
+  resetAddState();
 }

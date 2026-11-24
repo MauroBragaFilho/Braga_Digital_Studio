@@ -213,6 +213,7 @@ const api = {
   aiSaveConfig: (patch) => ipcRenderer.invoke('ai:saveConfig', patch),
   aiTestConnection: (providerId) => ipcRenderer.invoke('ai:testConnection', providerId),
   aiListModels: (providerId) => ipcRenderer.invoke('ai:listModels', providerId),
+  aiDiscoverProvider: (input) => ipcRenderer.invoke('ai:discoverProvider', input),
   aiChatStart: (text, context) => ipcRenderer.invoke('ai:chatStart', { text, context }),
   aiChatCancel: (id) => ipcRenderer.invoke('ai:chatCancel', id),
   aiHistoryGet: () => ipcRenderer.invoke('ai:historyGet'),

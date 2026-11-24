@@ -122,6 +122,24 @@ está visível antes de navegar). Por isso um canal novo do tipo "executar ferra
 `tests/ai-assistant-tools.test.js` e `tests/ai-assistant-integration.test.js` falham se aparecer qualquer canal `ai:*` com "tool" ou
 "confirm" no nome. (Etiquetas e favoritos aplicados pelo assistente avisam a Biblioteca pelo evento que já existia, `bds:media-updated`.)
 
+**`ai:discoverProvider` e o "Adicionar provedor":** o card Provedores acha os modelos de um servidor a partir do endereço e da chave.
+Entrada `{ baseUrl?, apiKey?, providerId?, discard? }` (um canal só; nada de "executar" ou "confirmar" no nome).
+- Sem `providerId`: o main lista os modelos (`GET /models`, nenhum conteúdo do usuário é enviado; formato compatível com OpenAI, ou o
+  nativo da Anthropic só no host exato `api.anthropic.com`), classifica cada um em chat, áudio, imagem ou vídeo e guarda um RASCUNHO
+  só em memória `{ id, baseUrl, key, format, models, host, createdAt }`: vale 10 minutos, no máximo 3 (o mais antigo é descartado e
+  zerado), uma descoberta por vez (a nova aborta a anterior) e some no encerramento. A resposta traz `draftId`, `format`, `label`,
+  `host`, `isLocal`, `models`, `counts`, `defaultChat` e `needsConsent`, NUNCA a chave. Lista vazia ou resposta ilegível ainda cria o
+  rascunho (vazio) e devolve `error` (texto fixo) e `canForce: true`; erro de rede, chave recusada ou endereço ruim não criam rascunho.
+- Com `providerId`: usa o endereço e a chave JÁ gravados e mescla só `models` e `discoveredAt` do provedor (nunca o modelo escolhido, o
+  rótulo, a chave, o interruptor nem a ordem). O provedor interno `embedded` é recusado.
+- `{ discard: draftId }` apaga o rascunho (zera a chave).
+O rascunho vira provedor por `ai:saveConfig({ commitDiscovery: { draftId, chat, label? } })`: o main valida o rascunho e o modelo de
+conversa (precisa estar no catálogo com a capacidade `chat`, ou ser o texto digitado quando o rascunho está vazio), cria o provedor com
+a chave criptografada vinda do rascunho e o servidor externo nasce com o aviso PENDENTE (o commit nunca o aceita). A chave só vai ao
+endereço do próprio provedor (`http://` com chave só em localhost), sem seguir redirecionamentos, e as mensagens de erro são textos
+fixos nossos, nunca o do servidor. Formato aditivo do `ai.json`: cada provedor ganha `models` (`[{ id, caps, source, timing? }]`, até
+200) e `discoveredAt`; arquivos antigos sem esses campos continuam valendo.
+
 ## Remetente confiável (detalhes)
 
 `senderProblem(event)` exige: `event.senderFrame` presente, **sem `parent`** (frame principal), `event.sender.getType()`

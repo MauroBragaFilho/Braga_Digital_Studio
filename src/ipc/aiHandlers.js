@@ -69,7 +69,7 @@ function registerAiHandlers(paths, deps = {}) {
       config: deps.localLlmConfig || {}
     });
   });
-  const ai = new AIService({ configDir, safeStorage: deps.safeStorage || electron.safeStorage, embedded: localLlm });
+  const ai = new AIService({ configDir, safeStorage: deps.safeStorage || electron.safeStorage, embedded: localLlm, fetchImpl: deps.fetchImpl });
 
   const broadcast = deps.broadcast || ((channel, payload) => {
     for (const win of (electron.BrowserWindow ? electron.BrowserWindow.getAllWindows() : [])) {
@@ -172,11 +172,15 @@ function registerAiHandlers(paths, deps = {}) {
     const result = ai.saveConfig(patch || {});
     if (patch && patch.assistantEnabled === false && isCreated(chat)) chat.cancel(); // desligou: para a resposta em andamento
     // servidor/modelo/provedor novo: tenta ferramentas de novo
-    if (patch && ['baseUrl', 'model', 'provider', 'addProvider', 'removeProvider', 'order'].some((k) => patch[k] !== undefined) && isCreated(chat)) chat.forgetToolSupport();
+    if (patch && ['baseUrl', 'model', 'provider', 'addProvider', 'removeProvider', 'order', 'commitDiscovery'].some((k) => patch[k] !== undefined) && isCreated(chat)) chat.forgetToolSupport();
     return result;
   });
   handle('ai:testConnection', (_, providerId) => ai.testConnection(providerId));
   handle('ai:listModels', (_, providerId) => ai.listModels(providerId));
+  // "Adicionar provedor": lista e classifica os modelos do servidor (GET /models; nenhum conteúdo do usuário sai). Provedor novo: devolve um
+  // rascunho (draftId) que o saveConfig { commitDiscovery } transforma em provedor; a chave fica só no main e NUNCA volta. Com providerId, só
+  // atualiza o catálogo do provedor existente; com discard, apaga o rascunho. Mensagens de erro: texto fixo do app (nunca o do servidor).
+  handle('ai:discoverProvider', (_, input) => ai.discoverProvider(input || {}));
   // ai:chat (resposta inteira), ai:listTasks e ai:runTask foram removidos: o assistente usa o streaming abaixo e
   // o runTask aceitava caminhos arbitrários fora da trava de análise única.
 
@@ -240,7 +244,7 @@ function registerAiHandlers(paths, deps = {}) {
     for (const p of embeddedProviders()) ai.saveConfig({ removeProvider: p.id });
     return llmState();
   });
-  if (electron.app && typeof electron.app.once === 'function') electron.app.once('before-quit', () => { if (isCreated(localLlm)) localLlm.stop(); });
+  if (electron.app && typeof electron.app.once === 'function') electron.app.once('before-quit', () => { ai.dispose(); if (isCreated(localLlm)) localLlm.stop(); });
 
   // --- Análise de transcrição: uma por vez (o modelo local é um só); cancelável ---
   // Decisão: não dá para restringir a "pastas conhecidas" sem quebrar o uso (a transcrição vai para a pasta que o

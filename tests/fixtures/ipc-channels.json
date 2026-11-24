@@ -4,6 +4,7 @@
     "ai:cancelAnalysis",
     "ai:chatCancel",
     "ai:chatStart",
+    "ai:discoverProvider",
     "ai:getConfig",
     "ai:historyClear",
     "ai:historyGet",

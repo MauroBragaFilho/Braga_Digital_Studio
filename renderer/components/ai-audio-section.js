@@ -16,6 +16,7 @@ let localStatus = null;      // modulesGetStatus().whisper
 let expanded = new Set();
 let keyEdit = new Set();
 let rowStatus = new Map();   // id -> { text, kind }
+let found = [];              // catálogo de modelos de áudio por provedor de chat: [{ label, host, count }] (só informação)
 
 function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
@@ -62,14 +63,41 @@ async function persist() {
   await window.bds.saveSettings({ transcriptionOrder: [...order], transcriptionFallback: order.filter((id) => enabled.has(id)) });
 }
 
+/** Provedores de chat que têm modelos de áudio no catálogo guardado (vem de aiGetConfig; só texto, sem seletor). */
+function catalogOf(ai) {
+  const list = ai && Array.isArray(ai.providers) ? ai.providers : [];
+  const out = [];
+  for (const p of list) {
+    const count = p && p.modelCounts ? Number(p.modelCounts.audio) || 0 : 0;
+    if (count <= 0) continue;
+    let host = '';
+    try { host = new URL(String(p.baseUrl)).hostname.toLowerCase(); } catch (_) { host = ''; }
+    // o motor só reaproveita a chave do provedor quando ele está ligado e sem o aviso de servidor externo pendente
+    out.push({ label: String(p.label || ''), host, count, shared: p.enabled !== false && !p.needsRemoteConsent });
+  }
+  return out;
+}
+
+const SERVICE_BY_HOST = { 'api.groq.com': 'Groq', 'api.openai.com': 'OpenAI' };
+
+function buildFound(f) {
+  const service = SERVICE_BY_HOST[f.host];
+  return h('div', { class: 'aud-found' }, [
+    h('strong', { text: `Modelos de áudio encontrados em ${f.label}: ${f.count}.` }),
+    h('span', { class: 'mod-hint', text: !service ? 'Ainda não há motor de transcrição para este endereço.' : (f.shared ? `Ligue o ${service} acima: ele usa a chave deste provedor.` : `Ative o ${service} em Chat e aceite o aviso de servidor externo: o motor usa a chave dele.`) })
+  ]);
+}
+
 async function load() {
   const get = async (fn, ...a) => { try { return await call(fn, ...a); } catch (_) { return null; } };
-  const [c, s, st] = await Promise.all([
+  const [c, s, st, ai] = await Promise.all([
     get(window.bds?.modulesCloudGet),
     (async () => { try { return await window.bds?.getSettings?.(); } catch (_) { return null; } })(),
-    get(window.bds?.modulesGetStatus)
+    get(window.bds?.modulesGetStatus),
+    get(window.bds?.aiGetConfig)
   ]);
   cloud = c;
+  found = catalogOf(ai);
   localStatus = st && st.whisper ? st.whisper : null;
   const known = ['local', ...(cloud ? cloud.providers.map((p) => p.id) : [])];
   const saved = s && Array.isArray(s.transcriptionOrder) ? s.transcriptionOrder.filter((id) => known.includes(id)) : [];
@@ -297,6 +325,7 @@ function render() {
     list,
     h('p', { class: 'mod-hint aud-note', text: 'Vale para o modo Automático da tela de Transcrição: o primeiro ligado e pronto transcreve; se falhar por causa do serviço, o próximo continua. De fábrica só este computador está ligado.' })
   );
+  if (found.length) host.append(h('div', { class: 'aud-catalog' }, found.map(buildFound)));
 }
 
 // ------------------------------------------------------------------ ciclo de vida
@@ -314,6 +343,7 @@ export function unmountAudioSection() {
   host = null;
   cloud = null;
   localStatus = null;
+  found = [];
   order = [];
   enabled = new Set();
   expanded = new Set();

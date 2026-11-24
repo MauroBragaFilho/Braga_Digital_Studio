@@ -835,7 +835,7 @@ function setupHandlers({ isDev = true, enabledModules = { ai: true, projects: tr
 test('fiação: não existe canal IPC para executar ferramenta nem confirmar — o renderer só envia texto', () => {
   const h = setupHandlers();
   const aiChannels = [...h.handlers.keys()].filter((k) => k.startsWith('ai:')).sort();
-  assert.deepEqual(aiChannels, ['ai:analyzeTranscript', 'ai:cancelAnalysis', 'ai:chatCancel', 'ai:chatStart', 'ai:getConfig', 'ai:historyClear', 'ai:historyGet', 'ai:listModels', 'ai:localLlmCancel', 'ai:localLlmInstall', 'ai:localLlmRemove', 'ai:localLlmSetModel', 'ai:localLlmStatus', 'ai:mcpCopyConfig', 'ai:mcpRegenerateToken', 'ai:mcpSetEnabled', 'ai:mcpSetOptions', 'ai:mcpStatus', 'ai:saveConfig', 'ai:testConnection']);
+  assert.deepEqual(aiChannels, ['ai:analyzeTranscript', 'ai:cancelAnalysis', 'ai:chatCancel', 'ai:chatStart', 'ai:discoverProvider', 'ai:getConfig', 'ai:historyClear', 'ai:historyGet', 'ai:listModels', 'ai:localLlmCancel', 'ai:localLlmInstall', 'ai:localLlmRemove', 'ai:localLlmSetModel', 'ai:localLlmStatus', 'ai:mcpCopyConfig', 'ai:mcpRegenerateToken', 'ai:mcpSetEnabled', 'ai:mcpSetOptions', 'ai:mcpStatus', 'ai:saveConfig', 'ai:testConnection']);
   assert.ok(![...h.handlers.keys()].some((k) => /tool|confirm/i.test(k)));
 });
 

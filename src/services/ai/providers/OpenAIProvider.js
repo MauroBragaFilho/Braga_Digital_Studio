@@ -12,7 +12,9 @@
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const OPENAI_HOST = 'api.openai.com';
 
-const isLocalHost = (hostname) => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname) || hostname.endsWith('.localhost');
+const keyPolicy = require('./keyPolicy');
+
+const isLocalHost = keyPolicy.isLoopbackHost;
 
 /** Normaliza a URL base: http(s), sem credenciais, sem barra final; caminho vazio vira /v1. */
 function normalizeBaseUrl(raw) {
@@ -106,9 +108,7 @@ class OpenAIProvider {
     const key = this._getApiKey();
     const headers = { 'content-type': 'application/json' };
     if (key) {
-      if (url.protocol === 'http:' && !isLocalHost(url.hostname)) {
-        throw Object.assign(new Error('Por segurança, a chave de API não é enviada por http:// a servidores remotos. Use https://.'), { code: 'KEY_INSECURE' });
-      }
+      keyPolicy.assertKeyAllowed(url, key); // única fonte da regra: http:// com chave só em loopback
       headers.authorization = `Bearer ${key}`;
     } else if (url.hostname === OPENAI_HOST) {
       throw Object.assign(new Error('Chave de API da OpenAI não configurada.'), { code: 'AI_NOT_CONFIGURED' });

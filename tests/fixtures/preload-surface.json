@@ -359,6 +359,34 @@
       "returns": "promise"
     }
   },
+  "aiDiscoverProvider": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:discoverProvider",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "ai:discoverProvider",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "aiGetConfig": {
     "type": "function",
     "length": 0,

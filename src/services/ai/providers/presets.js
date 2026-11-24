@@ -29,8 +29,14 @@ const PRESETS = Object.freeze([
   { id: 'ollama', label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1', model: '', keyRequired: false, unverified: false, hosts: [] },
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', keyRequired: true, unverified: false, hosts: ['api.openai.com'] },
   { id: 'embedded', label: 'Modelo local do app', baseUrl: `http://127.0.0.1:${EMBEDDED_PORT}/v1`, model: 'qwen2.5-0.5b-instruct', keyRequired: false, unverified: false, hosts: [], internal: true },
+  // Anthropic: só nasce pela descoberta de modelos (atalho "Adicionar provedor"); não entra no menu antigo (publicList).
+  // O modelo sugerido fica vazio: o catálogo da própria Anthropic traz os modelos atuais.
+  { id: 'anthropic', label: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', model: '', keyRequired: true, unverified: false, hosts: ['api.anthropic.com'], discoveryOnly: true },
   { id: 'custom', label: 'Personalizado', baseUrl: '', model: '', keyRequired: false, unverified: false, hosts: [] }
 ]);
+
+/** Atalhos do "Adicionar provedor" (só preenchem o endereço), na ordem em que aparecem. */
+const SHORTCUT_IDS = Object.freeze(['groq', 'qwencloud', 'openai', 'anthropic', 'lmstudio', 'ollama']);
 
 const byId = (id) => PRESETS.find((p) => p.id === id) || null;
 
@@ -51,10 +57,15 @@ function detectPreset(baseUrl) {
 
 /** Versão para a interface (sem campos internos). */
 function publicList() {
-  return PRESETS.filter((p) => !p.internal).map((p) => ({
+  return PRESETS.filter((p) => !p.internal && !p.discoveryOnly).map((p) => ({
     id: p.id, label: p.label, baseUrl: p.baseUrl, model: p.model,
     keyRequired: p.keyRequired, unverified: p.unverified, warning: p.warning || ''
   }));
 }
 
-module.exports = { PRESETS, EMBEDDED_PORT, EMBEDDED_CONTEXT, byId, detectPreset, publicList };
+/** Atalhos de endereço do "Adicionar provedor": { id, label, baseUrl, keyRequired }. Só preenchem o campo; não criam nada. */
+function shortcuts() {
+  return SHORTCUT_IDS.map((id) => byId(id)).filter(Boolean).map((p) => ({ id: p.id, label: p.label, baseUrl: p.baseUrl, keyRequired: p.keyRequired }));
+}
+
+module.exports = { PRESETS, EMBEDDED_PORT, EMBEDDED_CONTEXT, byId, detectPreset, publicList, shortcuts };

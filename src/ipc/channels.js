@@ -369,6 +369,17 @@ define('ai', 'wrap', {
   'ai:saveConfig': { args: [OBJ('patch', {}, { optional: true, label: 'Configuração', maxKeys: 100 })], returns: 'Configuração pública', api: ['aiSaveConfig'] },
   'ai:testConnection': { args: [STR('providerId', 100, { optional: true, label: 'Provedor' })], returns: 'Resultado do teste (do provedor indicado ou do principal)', api: ['aiTestConnection'] },
   'ai:listModels': { args: [STR('providerId', 100, { optional: true, label: 'Provedor' })], returns: 'Modelos disponíveis (do provedor indicado ou do principal)', api: ['aiListModels'] },
+  // Adicionar provedor: { baseUrl, apiKey } descobre e classifica os modelos do servidor e devolve um RASCUNHO (draftId; a chave fica só no main e nunca volta); { providerId } atualiza o catálogo de um provedor existente (endereço e chave já gravados); { discard: draftId } apaga o rascunho. O commit é ai:saveConfig { commitDiscovery: { draftId, chat, label? } }.
+  'ai:discoverProvider': {
+    args: [OBJ('input', {
+      baseUrl: t.string({ max: 500, optional: true, allowEmpty: true, label: 'Endereço' }),
+      apiKey: t.string({ max: 400, optional: true, allowEmpty: true, label: 'Chave de API' }),
+      providerId: t.string({ max: 100, optional: true, allowEmpty: true, label: 'Provedor' }),
+      discard: t.string({ max: 100, optional: true, allowEmpty: true, label: 'Rascunho' })
+    }, { strict: true, maxKeys: 4, label: 'Busca de modelos' })],
+    returns: 'Rascunho { draftId, format, label, host, isLocal, models, counts, defaultChat, needsConsent } (com error e canForce quando a lista veio vazia); { providerId, format, models, counts, added } ao atualizar um provedor; true ao descartar',
+    api: ['aiDiscoverProvider']
+  },
   // Assistente flutuante: a resposta chega por eventos (ai:chatDelta / ai:chatDone / ai:chatError, mais ai:chatStatus: linha de status das ferramentas, e ai:navigate: abrir uma tela). Não há canal para executar ferramentas nem confirmar: isso é só do main. TRAVADOS no main
   // (AI_DISABLED com o build não liberado, o módulo ou o interruptor desligados; AI_NOT_CONFIGURED sem servidor; AI_REMOTE_CONSENT sem o aviso de privacidade aceito). O histórico mora no main.
   // `context` (opcional) = contexto da tela { screen, selectedIds (até 50 ids numéricos), projectId }: o main revalida

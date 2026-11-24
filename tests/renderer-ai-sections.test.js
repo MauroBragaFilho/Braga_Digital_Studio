@@ -19,11 +19,12 @@ const PROVIDERS = [
   { id: 'elevenlabs', label: 'ElevenLabs', hasKey: false, keySource: null, model: 'scribe_v2', models: [{ id: 'scribe_v2', label: 'Scribe v2', hint: 'ElevenLabs' }] }
 ];
 
-async function mountAudio({ settings = {}, confirm = true } = {}) {
+async function mountAudio({ settings = {}, confirm = true, ai = null } = {}) {
   const saved = [];
   const h = await mountScreen('luts', {
     init: false,
     bds: {
+      ...(ai ? { aiGetConfig: { ok: true, data: ai } } : {}),
       modulesCloudGet: { ok: true, data: { encryptionAvailable: true, providers: PROVIDERS } },
       modulesGetStatus: { ok: true, data: { whisper: { ready: true, engine: { installed: true }, models: [{ id: 'small', label: 'Small', active: true }] } } },
       getSettings: async () => ({ transcriptionOrder: ['local', 'groq', 'elevenlabs'], transcriptionFallback: ['local'], ...settings }),
@@ -98,6 +99,50 @@ test('Áudio: desligar não pergunta; chave do chat aparece como tal; a chave nu
   await t.h.cleanup();
 });
 
+const provider = (label, baseUrl, counts) => ({ id: label.toLowerCase(), label, baseUrl, models: [], modelCounts: { chat: 0, audio: 0, image: 0, video: 0, ...counts } });
+
+test('Áudio: catálogo dos provedores de chat só informa (sem seletor nem botão); Groq e OpenAI mandam ligar o motor, os demais dizem que falta motor', async () => {
+  const t = await mountAudio({ ai: { providers: [
+    provider('Groq', 'https://api.groq.com/openai/v1', { audio: 3 }),
+    provider('OpenAI', 'https://api.openai.com/v1', { audio: 1 }),
+    provider('LM Studio (local)', 'http://localhost:1234/v1', { audio: 2 }),
+    provider('Sem áudio', 'https://api.exemplo.com/v1', { chat: 4 })
+  ] } });
+  const found = [...t.host.querySelectorAll('.aud-found')].map((e) => e.textContent);
+  assert.equal(found.length, 3, 'só quem tem modelos de áudio');
+  assert.match(found[0], /Modelos de áudio encontrados em Groq: 3\./);
+  assert.match(found[0], /Ligue o Groq acima: ele usa a chave deste provedor\./);
+  assert.match(found[1], /Modelos de áudio encontrados em OpenAI: 1\./);
+  assert.match(found[1], /Ligue o OpenAI acima: ele usa a chave deste provedor\./);
+  assert.match(found[2], /Modelos de áudio encontrados em LM Studio \(local\): 2\./);
+  assert.match(found[2], /Ainda não há motor de transcrição para este endereço\./);
+  assert.equal(t.host.querySelector('.aud-catalog button, .aud-catalog select, .aud-catalog input'), null);
+  assert.equal(rows(t.host).length, 3, 'a lista de motores não muda');
+  await t.h.cleanup();
+});
+
+test('Áudio: provedor desligado ou com o aviso de servidor externo pendente não promete a chave; a dica manda ativar e aceitar', async () => {
+  const t = await mountAudio({ ai: { providers: [
+    { ...provider('Groq', 'https://api.groq.com/openai/v1', { audio: 3 }), enabled: true, needsRemoteConsent: true },
+    { ...provider('OpenAI', 'https://api.openai.com/v1', { audio: 1 }), enabled: false, needsRemoteConsent: false },
+    { ...provider('Groq 2', 'https://api.groq.com/openai/v1', { audio: 2 }), enabled: true, needsRemoteConsent: false }
+  ] } });
+  const found = [...t.host.querySelectorAll('.aud-found')].map((e) => e.textContent);
+  assert.match(found[0], /Ative o Groq em Chat e aceite o aviso de servidor externo: o motor usa a chave dele\./);
+  assert.match(found[1], /Ative o OpenAI em Chat e aceite o aviso de servidor externo/);
+  assert.match(found[2], /Ligue o Groq acima: ele usa a chave deste provedor\./);
+  await t.h.cleanup();
+});
+
+test('Áudio: sem catálogo de áudio (ou sem a leitura da IA) a seção fica como antes', async () => {
+  const none = await mountAudio({ ai: { providers: [provider('Groq', 'https://api.groq.com/openai/v1', { chat: 2 })] } });
+  assert.equal(none.host.querySelector('.aud-catalog'), null);
+  await none.h.cleanup();
+  const absent = await mountAudio();
+  assert.equal(absent.host.querySelector('.aud-catalog'), null);
+  await absent.h.cleanup();
+});
+
 test('Áudio: o texto da seção não cita nomes de motores internos', async () => {
   const t = await mountAudio();
   assert.doesNotMatch(t.host.textContent, /whisper|ffmpeg|cuda|sha-?256/i);
@@ -123,21 +168,53 @@ test('Imagem: descreve o modelo local que entende imagens, o que falta e quando 
   assert.equal(mod.describeImage(null).ok, false);
 });
 
-test('Vídeo: aparece como "Ainda não disponível"; Imagem lê o estado do modelo local', async () => {
+async function mountMedia(ai, local = { supported: true, installed: true, vision: true, modelLabel: 'Qwen3-VL 2B' }) {
   const h = await mountScreen('luts', {
     init: false,
-    bds: { aiLocalLlmStatus: { ok: true, data: { supported: true, installed: true, vision: true, modelLabel: 'Qwen3-VL 2B' } } }
+    bds: { aiLocalLlmStatus: { ok: true, data: local }, ...(ai ? { aiGetConfig: { ok: true, data: ai } } : {}) }
   });
+  const wrapper = h.document.createElement('section');
+  wrapper.className = 'ana-sec';
   const image = h.document.createElement('div');
   const video = h.document.createElement('div');
-  h.document.body.append(image, video);
+  wrapper.append(video);
+  h.document.body.append(image, wrapper);
   const mod = await import(`${url('ai-media-sections.js')}?t=${++seq}`);
   await mod.renderMediaSections({ image, video });
   await settle(10);
-  assert.match(video.textContent, /Ainda não disponível/);
-  assert.match(image.textContent, /Qwen3-VL 2B/);
-  assert.equal(image.querySelector('button'), null, 'quando está tudo certo não há botão');
-  await h.cleanup();
+  return { h, image, video, wrapper };
+}
+
+test('Imagem lê o estado do modelo local e acrescenta, por provedor, quantos modelos do catálogo entendem imagens (só informação)', async () => {
+  const t = await mountMedia({ providers: [
+    provider('Groq', 'https://api.groq.com/openai/v1', { image: 2 }),
+    provider('OpenAI', 'https://api.openai.com/v1', { image: 1 }),
+    provider('Sem imagem', 'https://api.exemplo.com/v1', { chat: 3 })
+  ] });
+  assert.match(t.image.textContent, /Qwen3-VL 2B/);
+  const lines = [...t.image.querySelectorAll('.med-catalog')].map((e) => e.textContent);
+  assert.deepEqual(lines, ['Também entendem imagens: 2 modelos em Groq (uso em breve).', 'Também entendem imagens: 1 modelo em OpenAI (uso em breve).']);
+  assert.equal(t.image.querySelector('button'), null, 'quando está tudo certo não há botão');
+  await t.h.cleanup();
+});
+
+test('Vídeo: a seção INTEIRA some sem modelos de vídeo no catálogo e aparece (só leitura) com eles', async () => {
+  const without = await mountMedia({ providers: [provider('Groq', 'https://api.groq.com/openai/v1', { chat: 2, image: 1 })] });
+  assert.equal(without.wrapper.hidden, true, 'o contêiner .ana-sec some, não só o conteúdo');
+  assert.equal(without.video.textContent, '');
+  await without.h.cleanup();
+
+  const absent = await mountMedia(null);
+  assert.equal(absent.wrapper.hidden, true, 'sem leitura da IA também some');
+  assert.match(absent.image.textContent, /Qwen3-VL 2B/, 'Imagem continua mostrando o modelo local');
+  await absent.h.cleanup();
+
+  const withVideo = await mountMedia({ providers: [provider('Provedor X', 'https://api.exemplo.com/v1', { video: 2 }), provider('Provedor Y', 'https://api.outro.com/v1', { video: 1 })] });
+  assert.equal(withVideo.wrapper.hidden, false);
+  assert.match(withVideo.video.textContent, /O app ainda não usa vídeo\./);
+  assert.deepEqual([...withVideo.video.querySelectorAll('.med-catalog')].map((e) => e.textContent), ['Provedor X: 2 modelos de vídeo.', 'Provedor Y: 1 modelo de vídeo.']);
+  assert.equal(withVideo.video.querySelector('button, select, input'), null, 'lista só de leitura');
+  await withVideo.h.cleanup();
 });
 
 // ------------------------------------------------------------------ menu único e submenu
