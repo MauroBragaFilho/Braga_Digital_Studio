@@ -8,7 +8,7 @@ export function initScreen() {
   console.log('[SETTINGS] Inicializando tela...');
   renderSettings();
   setupTabs();
-  setupAiSubnav();
+  setupSubnavs();
   bindEvents();
   setupCustomSourceModal();
   setupErrorReportingUI();
@@ -81,8 +81,10 @@ function setupTabs() {
       const targetView = document.getElementById(targetId);
       if (targetView) targetView.classList.remove('hidden');
       if (targetId === 'settingsModulesView') loadModulesList();
+      // Abas com submenu: reabre o último subpainel usado (ou o que outra tela pediu)
+      applyPendingSub(targetId);
       // Os painéis da seção Inteligência Artificial (provedores e transcrição neste computador) só existem com a aba aberta
-      if (targetId === 'settingsAiView') { applyPendingAiSub(); mountAiPanel(); mountTranscriptionPanel(); }
+      if (targetId === 'settingsAiView') { mountAiPanel(); mountTranscriptionPanel(); }
       else { unmountAiPanel(); unmountTranscriptionPanel(); }
       if (targetId === 'settingsAboutView') loadLicensesPage();
       // Recarrega a lista de crash reports ao abrir a aba Sistema
@@ -96,52 +98,156 @@ function setupTabs() {
 }
 
 /* ==========================================================================
-   INTELIGÊNCIA ARTIFICIAL: submenu (Assistente, Provedores, Neste computador, Agentes externos)
+   SUBMENUS: abas internas de cada seção (.st-subnav com .st-subtab[data-sub] e .st-subpanel[data-sub-panel])
+   Um só mecanismo para todas as seções. O último subpainel usado em cada seção fica em localStorage
+   ('bdsSub:<id da seção>'). Outra tela pode pedir um subpainel, uma vez, ao abrir a seção:
+   sessionStorage 'bdsSubRequest' = {"view":"<id da seção>","sub":"<subpainel>"} ou o evento
+   'bds:settings-open-sub' (detail {view, sub}). Ficam aceitos os nomes antigos da IA:
+   sessionStorage 'bdsAiSubRequest' (id do subpainel) e o evento 'bds:ai-open-sub' (detail = id).
    ========================================================================== */
-const AI_SUBS = ['assistant', 'providers', 'local', 'agents'];
-const AI_SUB_KEY = 'bdsAiSub';
-const AI_SUB_REQUEST_KEY = 'bdsAiSubRequest';
+const SUB_KEY_PREFIX = 'bdsSub:';
+const SUB_REQUEST_KEY = 'bdsSubRequest';
+const AI_VIEW_ID = 'settingsAiView';
+const AI_SUB_REQUEST_KEY = 'bdsAiSubRequest'; // nome antigo: só o id do subpainel da IA
+let subEventsBound = false;
 
-/** Mostra um subpainel da IA (os outros ficam escondidos) e lembra a escolha. */
-function showAiSub(sub, { remember = true } = {}) {
-  if (!AI_SUBS.includes(sub)) sub = 'providers';
-  document.querySelectorAll('.st-subtab').forEach((b) => {
-    const on = b.dataset.aiSub === sub;
+function readStoredSub(viewId) {
+  try { return localStorage.getItem(SUB_KEY_PREFIX + viewId) || ''; } catch (_) { return ''; }
+}
+
+const subTabsOf = (nav) => [...nav.querySelectorAll('.st-subtab')];
+const visibleSubTabsOf = (nav) => subTabsOf(nav).filter((b) => !b.classList.contains('hidden'));
+
+/**
+ * Mostra um subpainel da seção (os outros ficam escondidos). Um id desconhecido ou escondido cai no
+ * primeiro item visível. Devolve false se a seção não tem submenu ou nenhum item está visível.
+ */
+function showSub(viewId, subId, { remember = true } = {}) {
+  const view = document.getElementById(viewId);
+  const nav = view?.querySelector('.st-subnav');
+  if (!nav) return false;
+  const visible = visibleSubTabsOf(nav);
+  const target = visible.find((b) => b.dataset.sub === subId) || visible[0];
+  if (!target) return false;
+  const sub = target.dataset.sub;
+  subTabsOf(nav).forEach((b) => {
+    const on = b === target;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.setAttribute('tabindex', on ? '0' : '-1'); // padrão de abas: só o ativo entra na ordem do Tab; as setas trocam
   });
-  document.querySelectorAll('[data-ai-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.aiPanel !== sub));
-  if (remember) { try { localStorage.setItem(AI_SUB_KEY, sub); } catch (_) { /* sem armazenamento */ } }
+  view.querySelectorAll('[data-sub-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.subPanel !== sub));
+  if (remember) { try { localStorage.setItem(SUB_KEY_PREFIX + viewId, sub); } catch (_) { /* sem armazenamento */ } }
+  return true;
 }
 
-/** Outra tela pediu uma parte da IA (ex.: "Gerenciar modelos" da Transcrição): vale uma vez, ao abrir a aba. */
-function applyPendingAiSub() {
+/** Outra tela pediu um subpainel desta seção: vale uma vez (o pedido de outra seção fica guardado para ela). */
+function takeSubRequest(viewId) {
   let sub = '';
-  try { sub = sessionStorage.getItem(AI_SUB_REQUEST_KEY) || ''; sessionStorage.removeItem(AI_SUB_REQUEST_KEY); } catch (_) { /* sem armazenamento */ }
-  if (!sub) { try { sub = localStorage.getItem(AI_SUB_KEY) || ''; } catch (_) { /* sem armazenamento */ } }
-  showAiSub(AI_SUBS.includes(sub) ? sub : 'providers', { remember: false });
+  try {
+    const raw = sessionStorage.getItem(SUB_REQUEST_KEY);
+    if (raw) {
+      let req = null;
+      try { req = JSON.parse(raw); } catch (_) { /* pedido inválido */ }
+      if (!req || typeof req !== 'object') sessionStorage.removeItem(SUB_REQUEST_KEY);
+      else if (req.view === viewId) { sub = String(req.sub || ''); sessionStorage.removeItem(SUB_REQUEST_KEY); }
+    }
+    if (!sub && viewId === AI_VIEW_ID) {
+      sub = sessionStorage.getItem(AI_SUB_REQUEST_KEY) || '';
+      sessionStorage.removeItem(AI_SUB_REQUEST_KEY);
+    }
+  } catch (_) { /* sem armazenamento */ }
+  return sub;
 }
 
-function setupAiSubnav() {
-  const nav = document.querySelector('.st-subnav');
-  if (!nav) return;
-  nav.addEventListener('click', (e) => {
-    const btn = e.target.closest('.st-subtab');
-    if (btn) showAiSub(btn.dataset.aiSub);
+/** Ao abrir a seção: o subpainel pedido por outra tela, senão o último usado, senão o primeiro visível. */
+function applyPendingSub(viewId) {
+  if (!document.getElementById(viewId)?.querySelector('.st-subnav')) return;
+  showSub(viewId, takeSubRequest(viewId) || readStoredSub(viewId), { remember: false });
+}
+
+/** Pede um subpainel de uma seção para quando ela for aberta (usado por quem clica na aba em seguida). */
+function requestSub(viewId, sub) {
+  try { sessionStorage.setItem(SUB_REQUEST_KEY, JSON.stringify({ view: viewId, sub })); } catch (_) { /* sem armazenamento */ }
+}
+
+/** O painel tem algo para mostrar? Painéis que montam o conteúdo depois (data-lazy-host) contam como cheios. */
+function subPanelHasContent(panel) {
+  if (panel.querySelector('[data-lazy-host]')) return true;
+  return [...panel.querySelectorAll('.st-card')].some((c) => !c.classList.contains('hidden')
+    && !c.classList.contains('st-devhidden') && !c.classList.contains('st-filtered'));
+}
+
+/**
+ * Esconde o item do submenu cujo painel ficou sem cartão visível (módulo desligado) e, se o item ativo
+ * sumiu, ativa o primeiro visível. Não mexe durante a busca (a barra fica escondida e o estado é preservado).
+ */
+function refreshSubnavs() {
+  if (document.querySelector('.settings-container')?.classList.contains('st-searching')) return;
+  document.querySelectorAll('.settings-view .st-subnav').forEach((nav) => {
+    const view = nav.closest('.settings-view');
+    subTabsOf(nav).forEach((b) => {
+      const panel = view.querySelector(`[data-sub-panel="${b.dataset.sub}"]`);
+      b.classList.toggle('hidden', !panel || !subPanelHasContent(panel));
+    });
+    // Uma barra com 0 ou 1 item não ajuda ninguém: some (o painel do item restante continua à vista)
+    nav.classList.toggle('hidden', visibleSubTabsOf(nav).length < 2);
+    const active = nav.querySelector('.st-subtab.active');
+    if (!active || active.classList.contains('hidden')) showSub(view.id, '', { remember: false });
   });
-  // Setas esquerda/direita entre os itens (padrão de abas)
-  nav.addEventListener('keydown', (e) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    const tabs = [...nav.querySelectorAll('.st-subtab:not(.hidden)')];
-    const i = tabs.indexOf(document.activeElement);
-    if (i < 0) return;
-    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-    next.focus();
-    showAiSub(next.dataset.aiSub);
-    e.preventDefault();
+}
+
+/** Leva um campo à vista: abre a aba e o subpainel em que ele está (senão o usuário nunca vê o erro). */
+function revealField(el) {
+  const view = el.closest('.settings-view');
+  if (view && view.classList.contains('hidden')) document.querySelector(`.settings-tab[data-tab="${view.id}"]`)?.click();
+  const panel = el.closest('[data-sub-panel]');
+  if (view && panel && panel.classList.contains('hidden')) showSub(view.id, panel.dataset.subPanel);
+}
+
+/** Como showSub, mas ignora ids que não existem ou estão escondidos (um pedido ruim não muda nada). */
+function showSubIfVisible(viewId, subId) {
+  const nav = document.getElementById(viewId)?.querySelector('.st-subnav');
+  if (!nav || !visibleSubTabsOf(nav).some((b) => b.dataset.sub === subId)) return false;
+  return showSub(viewId, subId);
+}
+
+function setupSubnavs() {
+  document.querySelectorAll('.settings-view .st-subnav').forEach((nav) => {
+    const view = nav.closest('.settings-view');
+    if (!nav.dataset.subBound) {
+      nav.dataset.subBound = '1';
+      nav.setAttribute('aria-orientation', 'horizontal');
+      nav.addEventListener('click', (e) => {
+        const btn = e.target.closest('.st-subtab');
+        if (btn && !btn.classList.contains('hidden')) showSub(view.id, btn.dataset.sub);
+      });
+      // Setas esquerda/direita, Home e End entre os itens (padrão de abas)
+      nav.addEventListener('keydown', (e) => {
+        if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+        const tabs = visibleSubTabsOf(nav);
+        const i = tabs.indexOf(e.target.closest('.st-subtab'));
+        if (i < 0) return;
+        let next = i;
+        if (e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft') next = (i + tabs.length - 1) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else next = tabs.length - 1;
+        tabs[next].focus();
+        showSub(view.id, tabs[next].dataset.sub);
+        e.preventDefault();
+      });
+    }
+    // Estado inicial: o último usado (um pedido de outra tela só vale quando a seção é aberta)
+    showSub(view.id, readStoredSub(view.id), { remember: false });
   });
-  window.addEventListener('bds:ai-open-sub', (e) => showAiSub(e.detail));
-  applyPendingAiSub();
+  if (subEventsBound) return;
+  subEventsBound = true;
+  window.addEventListener('bds:settings-open-sub', (e) => {
+    const d = e.detail || {};
+    if (d.view && d.sub) showSubIfVisible(String(d.view), String(d.sub));
+  });
+  window.addEventListener('bds:ai-open-sub', (e) => showSubIfVisible(AI_VIEW_ID, String(e.detail || '')));
 }
 
 /* ==========================================================================
@@ -215,7 +321,7 @@ async function offerEngineInstall(m) {
   if (!engine.startsWith('tool:')) {
     const go = await window.bdsModal.confirm(`O módulo "${m.title}" precisa de um componente que ainda não está instalado. Abrir a instalação agora?`);
     if (go) {
-      try { sessionStorage.setItem(AI_SUB_REQUEST_KEY, 'local'); } catch (_) { /* sem armazenamento */ }
+      requestSub(AI_VIEW_ID, 'local');
       document.querySelector('.settings-tab[data-tab="settingsAiView"]')?.click();
     }
     return;
@@ -250,14 +356,13 @@ function applyModuleDependentUi(list) {
   tab?.classList.toggle('st-devhidden', !showAi);
   document.getElementById('settingsAiView')?.classList.toggle('st-devhidden', !showAi);
   document.getElementById('settingsAssistantCard')?.classList.toggle('hidden', !on('ai'));
-  document.querySelector('.st-subtab[data-ai-sub="assistant"]')?.classList.toggle('hidden', !on('ai'));
-  if (!on('ai') && document.querySelector('.st-subtab[data-ai-sub="assistant"].active')) showAiSub('providers', { remember: false });
   if (!showAi && tab?.classList.contains('active')) {
     document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
   }
 
   // Cartões e abas ligados a uma tela somem quando o módulo dela está desligado ([data-module="<id>"])
   document.querySelectorAll('[data-module]').forEach((el) => el.classList.toggle('st-devhidden', !on(el.dataset.module)));
+  refreshSubnavs(); // itens do submenu sem cartão visível somem (ex.: Downloads com o módulo desligado)
   const activeTab = document.querySelector('.settings-tab.active');
   if (activeTab?.classList.contains('st-devhidden')) document.querySelector('.settings-tab[data-tab="settingsGeneralView"]')?.click();
 
@@ -1269,8 +1374,7 @@ function validateAllFields() {
     if (msg && !first) first = el;
   }
   if (first) {
-    const view = first.closest('.settings-view');
-    if (view && view.classList.contains('hidden')) document.querySelector(`.settings-tab[data-tab="${view.id}"]`)?.click();
+    revealField(first);
     const adv = first.closest('details');
     if (adv) adv.open = true;
     first.focus();
@@ -1838,7 +1942,7 @@ function applySettingsSearch(raw) {
   const noResults = document.getElementById('settingsNoResults');
   const activeTabId = document.querySelector('.settings-tab.active')?.dataset.tab;
 
-  document.querySelectorAll('.st-card, .st-row').forEach(el => el.classList.remove('st-filtered'));
+  document.querySelectorAll('.st-card, .st-row, [data-sub-panel]').forEach(el => el.classList.remove('st-filtered'));
 
   if (!query) {
     container?.classList.remove('st-searching');
@@ -1846,6 +1950,7 @@ function applySettingsSearch(raw) {
     noResults?.classList.add('hidden');
     closeSearchOpenedBlocks();
     searchMounted = false;
+    refreshSubnavs(); // a busca terminou: o submenu volta como estava
     return;
   }
 
@@ -1879,6 +1984,13 @@ function applySettingsSearch(raw) {
       }
       card.classList.toggle('st-filtered', !visible);
       if (visible) hits++;
+    });
+    // Na busca todos os subpainéis aparecem: o que ficou sem cartão visível some inteiro (os que montam depois, não)
+    view.querySelectorAll('[data-sub-panel]').forEach((panel) => {
+      if (panel.querySelector('[data-lazy-host]')) return;
+      const inside = [...panel.querySelectorAll('.st-card')];
+      panel.classList.toggle('st-filtered', inside.length > 0
+        && inside.every((c) => c.classList.contains('st-filtered') || c.classList.contains('hidden') || c.classList.contains('st-devhidden')));
     });
     if (!cards.length && (kwMatch || normalizeText(view.textContent).includes(query))) hits++;
     if (!hits && kwMatch) hits++;

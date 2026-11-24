@@ -223,9 +223,11 @@ test('Configurações: a aba Transcrição não existe; IA tem submenu com 4 ite
   const html = fs.readFileSync(path.join(ROOT, 'renderer', 'screens', 'settings.html'), 'utf8');
   assert.doesNotMatch(html, /data-tab="settingsTranscriptionView"/);
   assert.doesNotMatch(html, /id="settingsTranscriptionView"/);
-  const subs = [...html.matchAll(/data-ai-sub="(\w+)"/g)].map((m) => m[1]);
+  const aiView = html.slice(html.indexOf('id="settingsAiView"'), html.indexOf('id="settingsLutsView"'));
+  const subs = [...aiView.matchAll(/data-sub="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(subs, ['assistant', 'providers', 'local', 'agents']);
-  for (const s of subs) assert.match(html, new RegExp(`data-ai-panel="${s}"`), s);
+  for (const s of subs) assert.match(aiView, new RegExp(`data-sub-panel="${s}"`), s);
+  assert.doesNotMatch(html, /data-ai-sub|data-ai-panel/, 'a IA usa o mesmo submenu genérico das outras abas');
   assert.match(html, /Claude, ChatGPT e outros \(HTTP\)/);
   assert.match(html, /<option value="antigravity">Antigravity<\/option>/);
   assert.doesNotMatch(html, /\bAlice\b|\bLiz\b/);

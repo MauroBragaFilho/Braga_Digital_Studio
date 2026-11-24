@@ -66,9 +66,16 @@
       </div>
 
       <!-- ================= GERAL ================= -->
-      <section id="settingsGeneralView" class="settings-view">
+      <section id="settingsGeneralView" class="settings-view st-has-sub">
         <h3 class="settings-section-title">Geral</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções das configurações gerais">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsGeneralView-appearance" data-sub="appearance" aria-selected="true" aria-controls="subpanel-settingsGeneralView-appearance">Aparência</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsGeneralView-startup" data-sub="startup" aria-selected="false" aria-controls="subpanel-settingsGeneralView-startup">Início e janela</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsGeneralView-menu" data-sub="menu" aria-selected="false" aria-controls="subpanel-settingsGeneralView-menu">Menu lateral</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsGeneralView-appearance" data-sub-panel="appearance" aria-labelledby="subtab-settingsGeneralView-appearance">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">palette</span> Aparência</h4>
 
@@ -110,7 +117,9 @@
             <input type="checkbox" id="reduceMotionInput" class="st-switch" />
           </label>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsGeneralView-startup" data-sub-panel="startup" aria-labelledby="subtab-settingsGeneralView-startup">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">rocket_launch</span> Inicialização e janela</h4>
 
@@ -142,7 +151,9 @@
             <input type="checkbox" id="rememberWindowBoundsInput" class="st-switch" />
           </label>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsGeneralView-menu" data-sub-panel="menu" aria-labelledby="subtab-settingsGeneralView-menu">
         <div class="st-card" id="sidebarOrderCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">swap_vert</span> Menu lateral e atalhos</h4>
           <p class="st-card-desc">Escolha a ordem das telas no menu lateral: arraste os itens ou use as setas. A Home fica sempre em primeiro. Pressione <kbd class="st-kbd">Ctrl</kbd> + <kbd class="st-kbd">1</kbd> a <kbd class="st-kbd">9</kbd> em qualquer tela para abrir a tela daquela posição.</p>
@@ -150,6 +161,7 @@
           <div class="st-order-actions">
             <button id="sidebarOrderResetButton" class="settings-btn-outline" type="button">Restaurar ordem padrão</button>
           </div>
+        </div>
         </div>
       </section>
 
@@ -164,9 +176,15 @@
       </section>
 
       <!-- ================= NOTIFICAÇÕES ================= -->
-      <section id="settingsNotificationsView" class="settings-view hidden">
+      <section id="settingsNotificationsView" class="settings-view st-has-sub hidden">
         <h3 class="settings-section-title">Notificações</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções das notificações">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsNotificationsView-alerts" data-sub="alerts" aria-selected="true" aria-controls="subpanel-settingsNotificationsView-alerts">Avisos do sistema</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsNotificationsView-deadlines" data-sub="deadlines" aria-selected="false" aria-controls="subpanel-settingsNotificationsView-deadlines">Prazos dos projetos</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsNotificationsView-alerts" data-sub-panel="alerts" aria-labelledby="subtab-settingsNotificationsView-alerts">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">notifications_active</span> Avisos do sistema</h4>
 
@@ -209,7 +227,9 @@
             </label>
           </div>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsNotificationsView-deadlines" data-sub-panel="deadlines" aria-labelledby="subtab-settingsNotificationsView-deadlines">
         <div class="st-card" data-module="projects">
           <h4 class="st-card-title"><span class="material-symbols-rounded">event_upcoming</span> Prazos dos projetos</h4>
 
@@ -246,12 +266,21 @@
             </div>
           </div>
         </div>
+        </div>
       </section>
 
       <!-- ================= MÍDIA E DESEMPENHO ================= -->
-      <section id="settingsMediaView" class="settings-view hidden">
+      <section id="settingsMediaView" class="settings-view st-has-sub hidden">
         <h3 class="settings-section-title">Mídia e Desempenho</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções de mídia e desempenho">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsMediaView-performance" data-sub="performance" aria-selected="true" aria-controls="subpanel-settingsMediaView-performance">Desempenho</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsMediaView-downloads" data-sub="downloads" aria-selected="false" aria-controls="subpanel-settingsMediaView-downloads">Downloads</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsMediaView-converter" data-sub="converter" aria-selected="false" aria-controls="subpanel-settingsMediaView-converter">Conversor</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsMediaView-upload" data-sub="upload" aria-selected="false" aria-controls="subpanel-settingsMediaView-upload">Envio para o YouTube</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsMediaView-performance" data-sub-panel="performance" aria-labelledby="subtab-settingsMediaView-performance">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">memory</span> Aceleração de hardware (GPU)</h4>
 
@@ -281,7 +310,9 @@
             </div>
           </details>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsMediaView-downloads" data-sub-panel="downloads" aria-labelledby="subtab-settingsMediaView-downloads">
         <div class="st-card" data-module="download">
           <h4 class="st-card-title"><span class="material-symbols-rounded">movie</span> Vídeo baixado</h4>
           <div class="st-row">
@@ -341,60 +372,9 @@
             </div>
           </div>
         </div>
-
-        <div class="st-card" data-module="upload" data-search-keywords="youtube envio upload fila automático publicar">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">cloud_upload</span> Envio automático para o YouTube</h4>
-          <label class="st-row st-row-toggle">
-            <div class="st-row-text">
-              <span class="st-row-label">Ligar a fila de envio na tela Envio</span>
-              <span class="st-row-hint">O BDS preenche o YouTube Studio por você, um vídeo de cada vez. Use com moderação: o YouTube pode pedir confirmações da conta e limitar envios em sequência. Para cada vídeo, você declara se ele é para crianças.</span>
-            </div>
-            <input type="checkbox" id="uploadAutoEnabledInput" class="st-switch" />
-          </label>
-          <div id="uploadAutoOptions">
-            <label class="st-row st-row-toggle st-row-sub">
-              <div class="st-row-text">
-                <span class="st-row-label">Pausar entre os envios</span>
-                <span class="st-row-hint">Espera um tempo aleatório antes de cada vídeo da fila.</span>
-              </div>
-              <input type="checkbox" id="uploadPauseEnabledInput" class="st-switch" checked />
-            </label>
-            <div id="uploadPauseRange" class="st-row st-row-sub">
-              <div class="st-row-text">
-                <span class="st-row-label">Tempo da pausa (segundos)</span>
-                <span class="st-row-hint">Sorteado entre o mínimo e o máximo. Padrão: 60 a 300 (5 minutos).</span>
-              </div>
-              <div class="st-row-control">
-                <input type="number" id="uploadPauseMinInput" class="settings-input st-input-short" min="0" max="3600" step="1" value="60" aria-label="Pausa mínima em segundos" />
-                <span aria-hidden="true">a</span>
-                <input type="number" id="uploadPauseMaxInput" class="settings-input st-input-short" min="0" max="3600" step="1" value="300" aria-label="Pausa máxima em segundos" />
-              </div>
-            </div>
-            <div class="st-row st-row-sub">
-              <div class="st-row-text">
-                <label class="st-row-label" for="uploadDailyLimitInput">Envios por dia</label>
-                <span class="st-row-hint">A fila para ao chegar neste número e continua no dia seguinte. 0 = sem limite.</span>
-              </div>
-              <div class="st-row-control">
-                <input type="number" id="uploadDailyLimitInput" class="settings-input st-input-short" min="0" max="100" step="1" value="10" aria-label="Envios por dia" />
-              </div>
-            </div>
-            <div class="st-row st-row-sub">
-              <div class="st-row-text">
-                <label class="st-row-label" for="uploadDefaultVisibilitySelect">Visibilidade inicial</label>
-                <span class="st-row-hint">Como os vídeos entram na fila. Você pode mudar vídeo a vídeo antes de enviar.</span>
-              </div>
-              <div class="st-row-control">
-                <select id="uploadDefaultVisibilitySelect" class="settings-input" aria-label="Visibilidade inicial dos vídeos">
-                  <option value="private">Privado</option>
-                  <option value="unlisted">Não listado</option>
-                  <option value="public">Público</option>
-                </select>
-              </div>
-            </div>
-          </div>
         </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsMediaView-converter" data-sub-panel="converter" aria-labelledby="subtab-settingsMediaView-converter">
         <div class="st-card" data-module="converter">
           <h4 class="st-card-title"><span class="material-symbols-rounded">sync</span> Padrões do Conversor</h4>
           <p class="st-card-desc">Valores iniciais ao abrir a tela de Conversão. Você ainda pode mudá-los a cada conversão.</p>
@@ -468,12 +448,75 @@
           </div>
           </details>
         </div>
+        </div>
+
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsMediaView-upload" data-sub-panel="upload" aria-labelledby="subtab-settingsMediaView-upload">
+        <div class="st-card" data-module="upload" data-search-keywords="youtube envio upload fila automático publicar">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">cloud_upload</span> Envio automático para o YouTube</h4>
+          <label class="st-row st-row-toggle">
+            <div class="st-row-text">
+              <span class="st-row-label">Ligar a fila de envio na tela Envio</span>
+              <span class="st-row-hint">O BDS preenche o YouTube Studio por você, um vídeo de cada vez. Use com moderação: o YouTube pode pedir confirmações da conta e limitar envios em sequência. Para cada vídeo, você declara se ele é para crianças.</span>
+            </div>
+            <input type="checkbox" id="uploadAutoEnabledInput" class="st-switch" />
+          </label>
+          <div id="uploadAutoOptions">
+            <label class="st-row st-row-toggle st-row-sub">
+              <div class="st-row-text">
+                <span class="st-row-label">Pausar entre os envios</span>
+                <span class="st-row-hint">Espera um tempo aleatório antes de cada vídeo da fila.</span>
+              </div>
+              <input type="checkbox" id="uploadPauseEnabledInput" class="st-switch" checked />
+            </label>
+            <div id="uploadPauseRange" class="st-row st-row-sub">
+              <div class="st-row-text">
+                <span class="st-row-label">Tempo da pausa (segundos)</span>
+                <span class="st-row-hint">Sorteado entre o mínimo e o máximo. Padrão: 60 a 300 (5 minutos).</span>
+              </div>
+              <div class="st-row-control">
+                <input type="number" id="uploadPauseMinInput" class="settings-input st-input-short" min="0" max="3600" step="1" value="60" aria-label="Pausa mínima em segundos" />
+                <span aria-hidden="true">a</span>
+                <input type="number" id="uploadPauseMaxInput" class="settings-input st-input-short" min="0" max="3600" step="1" value="300" aria-label="Pausa máxima em segundos" />
+              </div>
+            </div>
+            <div class="st-row st-row-sub">
+              <div class="st-row-text">
+                <label class="st-row-label" for="uploadDailyLimitInput">Envios por dia</label>
+                <span class="st-row-hint">A fila para ao chegar neste número e continua no dia seguinte. 0 = sem limite.</span>
+              </div>
+              <div class="st-row-control">
+                <input type="number" id="uploadDailyLimitInput" class="settings-input st-input-short" min="0" max="100" step="1" value="10" aria-label="Envios por dia" />
+              </div>
+            </div>
+            <div class="st-row st-row-sub">
+              <div class="st-row-text">
+                <label class="st-row-label" for="uploadDefaultVisibilitySelect">Visibilidade inicial</label>
+                <span class="st-row-hint">Como os vídeos entram na fila. Você pode mudar vídeo a vídeo antes de enviar.</span>
+              </div>
+              <div class="st-row-control">
+                <select id="uploadDefaultVisibilitySelect" class="settings-input" aria-label="Visibilidade inicial dos vídeos">
+                  <option value="private">Privado</option>
+                  <option value="unlisted">Não listado</option>
+                  <option value="public">Público</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
       </section>
 
       <!-- ================= PASTAS E BIBLIOTECAS ================= -->
-      <section id="settingsFoldersView" class="settings-view hidden">
+      <section id="settingsFoldersView" class="settings-view st-has-sub hidden">
         <h3 class="settings-section-title">Pastas e Bibliotecas</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções de pastas e bibliotecas">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsFoldersView-downloads" data-sub="downloads" aria-selected="true" aria-controls="subpanel-settingsFoldersView-downloads">Downloads e Conversor</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsFoldersView-library" data-sub="library" aria-selected="false" aria-controls="subpanel-settingsFoldersView-library">Biblioteca</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsFoldersView-upload" data-sub="upload" aria-selected="false" aria-controls="subpanel-settingsFoldersView-upload">Envio para o YouTube</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsFoldersView-downloads" data-sub-panel="downloads" aria-labelledby="subtab-settingsFoldersView-downloads">
         <div class="st-card" data-module="download">
           <h4 class="st-card-title"><span class="material-symbols-rounded">download</span> Destino dos downloads</h4>
           <div id="customFoldersGroup" class="settings-folder-list">
@@ -521,7 +564,9 @@
             </button>
           </div>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsFoldersView-library" data-sub-panel="library" aria-labelledby="subtab-settingsFoldersView-library">
         <div class="st-card" data-module="library">
           <h4 class="st-card-title"><span class="material-symbols-rounded">video_library</span> Pastas da biblioteca</h4>
           <div class="settings-folder-list">
@@ -562,6 +607,17 @@
           </div>
         </div>
 
+        <div class="st-card" data-module="library">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">create_new_folder</span> Pastas personalizadas</h4>
+          <p class="st-card-desc">Cadastre ou remova fontes de mídia personalizadas (câmeras, cartão SD, Podcast Studio, etc.).</p>
+          <button id="btnSettingsAddCustomSource" class="settings-btn-accent" type="button">
+            <span class="material-symbols-rounded">create_new_folder</span> Nova fonte
+          </button>
+          <div id="settingsCustomSourcesList" class="settings-custom-sources-list"></div>
+        </div>
+        </div>
+
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsFoldersView-upload" data-sub-panel="upload" aria-labelledby="subtab-settingsFoldersView-upload">
         <!-- Upload para YouTube: recurso ainda oculto (mantido para quando for liberado) -->
         <div class="st-card hidden">
           <h4 class="st-card-title"><span class="material-symbols-rounded">cloud_upload</span> Upload para YouTube</h4>
@@ -574,29 +630,21 @@
             </div>
           </div>
         </div>
-
-        <div class="st-card" data-module="library">
-          <h4 class="st-card-title"><span class="material-symbols-rounded">create_new_folder</span> Pastas personalizadas</h4>
-          <p class="st-card-desc">Cadastre ou remova fontes de mídia personalizadas (câmeras, cartão SD, Podcast Studio, etc.).</p>
-          <button id="btnSettingsAddCustomSource" class="settings-btn-accent" type="button">
-            <span class="material-symbols-rounded">create_new_folder</span> Nova fonte
-          </button>
-          <div id="settingsCustomSourcesList" class="settings-custom-sources-list"></div>
         </div>
       </section>
 
       <!-- ================= INTELIGÊNCIA ARTIFICIAL ================= -->
-      <section id="settingsAiView" class="settings-view st-devhidden hidden" data-search-keywords="inteligência artificial ia transcrição legenda áudio modelo qualidade aceleração placa de vídeo nvidia instalar recurso nuvem groq elevenlabs chave api fallback serviço online provedores assistente yui mcp agentes">
+      <section id="settingsAiView" class="settings-view st-has-sub st-devhidden hidden" data-search-keywords="inteligência artificial ia transcrição legenda áudio modelo qualidade aceleração placa de vídeo nvidia instalar recurso nuvem groq elevenlabs chave api fallback serviço online provedores assistente yui mcp agentes">
         <h3 class="settings-section-title">Inteligência Artificial</h3>
 
         <div class="st-subnav" role="tablist" aria-label="Seções da Inteligência Artificial">
-          <button type="button" class="st-subtab active" role="tab" data-ai-sub="assistant" aria-selected="true">Assistente</button>
-          <button type="button" class="st-subtab" role="tab" data-ai-sub="providers" aria-selected="false">Provedores</button>
-          <button type="button" class="st-subtab" role="tab" data-ai-sub="local" aria-selected="false">Neste computador</button>
-          <button type="button" class="st-subtab" role="tab" data-ai-sub="agents" aria-selected="false">Agentes externos</button>
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsAiView-assistant" data-sub="assistant" aria-controls="subpanel-settingsAiView-assistant" aria-selected="true">Assistente</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsAiView-providers" data-sub="providers" aria-controls="subpanel-settingsAiView-providers" aria-selected="false">Provedores</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsAiView-local" data-sub="local" aria-controls="subpanel-settingsAiView-local" aria-selected="false">Neste computador</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsAiView-agents" data-sub="agents" aria-controls="subpanel-settingsAiView-agents" aria-selected="false">Agentes externos</button>
         </div>
 
-        <div class="st-subpanel" role="tabpanel" data-ai-panel="assistant">
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsAiView-assistant" data-sub-panel="assistant" aria-labelledby="subtab-settingsAiView-assistant">
         <div class="st-card" id="settingsAssistantCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">smart_toy</span> Assistente de IA</h4>
           <p class="st-card-desc">A Yui: chat em todas as telas (Ctrl + J). Consulta suas mídias e projetos e executa o que você pedir.</p>
@@ -632,12 +680,12 @@
         </div>
         </div>
 
-        <div class="st-subpanel hidden" role="tabpanel" data-ai-panel="providers">
-          <div id="settingsAnalysisPanel"></div>
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsAiView-providers" data-sub-panel="providers" aria-labelledby="subtab-settingsAiView-providers">
+          <div id="settingsAnalysisPanel" data-lazy-host></div>
         </div>
 
-        <div class="st-subpanel hidden" role="tabpanel" data-ai-panel="local">
-          <div id="settingsTranscriptionPanel"></div>
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsAiView-local" data-sub-panel="local" aria-labelledby="subtab-settingsAiView-local">
+          <div id="settingsTranscriptionPanel" data-lazy-host></div>
         <div class="st-card" id="settingsLocalLlmCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">memory</span> Modelo local (sem internet)</h4>
           <p class="st-card-desc">Roda neste computador, sem chave nem internet. Os que entendem imagens também organizam fotos. Ocupa cerca de <span id="aiLocalLlmSize">0,5 GB</span>.</p>
@@ -671,7 +719,7 @@
         </div>
         </div>
 
-        <div class="st-subpanel hidden" role="tabpanel" data-ai-panel="agents">
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsAiView-agents" data-sub-panel="agents" aria-labelledby="subtab-settingsAiView-agents">
         <div class="st-card" id="settingsMcpCard">
           <h4 class="st-card-title"><span class="material-symbols-rounded">hub</span> Conectar agentes (MCP)</h4>
           <p class="st-card-desc">Deixa o Antigravity, o Claude e o ChatGPT usarem as ferramentas do app. Só neste computador e com token.</p>
@@ -752,9 +800,15 @@
       </section>
 
       <!-- ================= TRANSCRIÇÃO ================= -->
-      <section id="settingsUpdatesView" class="settings-view hidden">
+      <section id="settingsUpdatesView" class="settings-view st-has-sub hidden">
         <h3 class="settings-section-title">Atualizações</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções das atualizações">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsUpdatesView-components" data-sub="components" aria-selected="true" aria-controls="subpanel-settingsUpdatesView-components">Componentes</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsUpdatesView-app" data-sub="app" aria-selected="false" aria-controls="subpanel-settingsUpdatesView-app">Aplicativo</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsUpdatesView-components" data-sub-panel="components" aria-labelledby="subtab-settingsUpdatesView-components">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">deployed_code_update</span> Componentes do BDS</h4>
           <p class="st-card-desc">Mantenha os recursos internos do BDS atualizados para baixar, converter e analisar mídia sem erros.</p>
@@ -814,7 +868,9 @@
             </div>
           </details>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsUpdatesView-app" data-sub-panel="app" aria-labelledby="subtab-settingsUpdatesView-app">
         <!-- Atualização do Aplicativo (unificada no painel) -->
         <div class="st-card" id="appUpdateZone">
           <h4 class="st-card-title"><span class="material-symbols-rounded">system_update</span> Aplicativo (BDS)</h4>
@@ -836,12 +892,20 @@
             </div>
           </div>
         </div>
+        </div>
       </section>
 
       <!-- ================= SISTEMA ================= -->
-      <section id="settingsSystemView" class="settings-view hidden">
+      <section id="settingsSystemView" class="settings-view st-has-sub hidden">
         <h3 class="settings-section-title">Sistema</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções do sistema">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsSystemView-about" data-sub="about" aria-selected="true" aria-controls="subpanel-settingsSystemView-about">Sobre e armazenamento</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsSystemView-support" data-sub="support" aria-selected="false" aria-controls="subpanel-settingsSystemView-support">Erros e suporte</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsSystemView-danger" data-sub="danger" aria-selected="false" aria-controls="subpanel-settingsSystemView-danger">Zona de perigo</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsSystemView-about" data-sub-panel="about" aria-labelledby="subtab-settingsSystemView-about">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">info</span> Sobre</h4>
           <div class="settings-system-grid">
@@ -895,7 +959,9 @@
             </button>
           </div>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsSystemView-support" data-sub-panel="support" aria-labelledby="subtab-settingsSystemView-support">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">bug_report</span> Relatórios de erros</h4>
 
@@ -936,7 +1002,9 @@
             </button>
           </div>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsSystemView-danger" data-sub-panel="danger" aria-labelledby="subtab-settingsSystemView-danger">
         <div class="st-card st-card-danger">
           <h4 class="st-card-title"><span class="material-symbols-rounded">warning</span> Zona de perigo</h4>
           <p class="st-card-desc">
@@ -948,12 +1016,19 @@
             </button>
           </div>
         </div>
+        </div>
       </section>
 
       <!-- ================= SOBRE E LICENÇAS ================= -->
-      <section id="settingsAboutView" class="settings-view hidden">
+      <section id="settingsAboutView" class="settings-view st-has-sub hidden">
         <h3 class="settings-section-title">Sobre e licenças</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções de sobre e licenças">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsAboutView-about" data-sub="about" aria-selected="true" aria-controls="subpanel-settingsAboutView-about">Sobre</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsAboutView-licenses" data-sub="licenses" aria-selected="false" aria-controls="subpanel-settingsAboutView-licenses">Licenças</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsAboutView-about" data-sub-panel="about" aria-labelledby="subtab-settingsAboutView-about">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">info</span> Braga Digital Studio</h4>
           <div class="settings-system-grid">
@@ -961,7 +1036,9 @@
             <div class="settings-system-item"><span>Direitos autorais</span><strong>© 2026 Mauro Braga. Todos os direitos reservados.</strong></div>
           </div>
         </div>
+        </div>
 
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsAboutView-licenses" data-sub-panel="licenses" aria-labelledby="subtab-settingsAboutView-licenses">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">volunteer_activism</span> Licenças de código aberto</h4>
           <p class="st-card-desc">O BDS usa software livre de terceiros, sempre conforme as licenças de cada projeto. Os componentes que o BDS baixa quando você ativa um recurso são programas independentes, executados separadamente: a licença deles continua sendo a do projeto original. Para os componentes sob licença GPL, o código-fonte está disponível na página oficial do projeto (link em cada item).</p>
@@ -974,6 +1051,7 @@
             <input id="licensesSearch" type="search" class="settings-input" placeholder="Buscar componente ou licença…" autocomplete="off" spellcheck="false" aria-label="Buscar componente ou licença" />
             <div id="licensesList" class="st-licenses" aria-live="polite"><p class="st-card-desc">Carregando…</p></div>
           </div>
+        </div>
         </div>
       </section>
 
