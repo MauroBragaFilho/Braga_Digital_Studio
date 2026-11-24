@@ -4,27 +4,39 @@ const { execFile } = require('node:child_process');
 const { systemExe } = require('../infrastructure/hardware/systemExe');
 
 // Discos fixos do PC para o armazenamento da sidebar (P13). Antes o cálculo usava 'D:\' fixo: somava um
-// disco que podia nem existir (ou ser um pendrive) e ignorava E:, F:... Só DriveType=3 (disco local fixo):
-// leitores de cartão vazios e unidades removíveis ficam de fora (consultar leitor vazio trava segundos).
+// disco que podia nem existir (ou ser um pendrive) e ignorava E:, F:... Só DriveType=3 (disco local fixo) COM partição
+// num disco físico: leitores de cartão vazios, unidades removíveis e discos virtuais (Google Drive) ficam de fora
+// (consultar leitor vazio trava segundos).
 const TTL_MS = 5 * 60 * 1000;
 let cache = null; // { at, drives }
 
-/** Converte a saída (uma letra por linha, ex. "C:") em raízes únicas ("C:\\"). */
+const GOOGLE_DRIVE_LABEL = /google\s*drive/i;
+
+/**
+ * Converte a saída em raízes únicas ("C:\\"). Cada linha é "C:" ou, no formato atual, "C:|<partições>|<rótulo>".
+ * Só entram discos FÍSICOS: o Google Drive para computador (e discos de nuvem parecidos) aparece como disco local
+ * (DriveType 3, FAT32, tamanho = cota da conta), mas não tem partição em disco nenhum; somá-lo inflava o total.
+ * Plano B, se a consulta de partições falhar para todos: tira só os de rótulo "Google Drive".
+ */
 function parseDriveList(text) {
-  const out = [];
+  const entries = [];
   for (const line of String(text || '').split(/\r?\n/)) {
-    const m = /^\s*([A-Za-z]):\s*$/.exec(line);
-    if (m) {
-      const root = `${m[1].toUpperCase()}:\\`;
-      if (!out.includes(root)) out.push(root);
-    }
+    const m = /^\s*([A-Za-z]):(?:\|(\d+)\|(.*))?\s*$/.exec(line);
+    if (!m) continue;
+    const root = `${m[1].toUpperCase()}:\\`;
+    if (entries.some((e) => e.root === root)) continue;
+    entries.push({ root, parts: m[2] === undefined ? null : Number(m[2]), label: m[3] || '' });
   }
-  return out;
+  const physical = entries.filter((e) => e.parts === null || e.parts > 0);
+  const chosen = physical.length ? physical : entries.filter((e) => !GOOGLE_DRIVE_LABEL.test(e.label));
+  return chosen.map((e) => e.root);
 }
 
 function queryFixedDrives() {
   return new Promise((resolve) => {
-    const cmd = 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { $_.DeviceID }';
+    const cmd = 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { '
+      + '$p = @(Get-CimAssociatedInstance -InputObject $_ -Association Win32_LogicalDiskToPartition -ErrorAction SilentlyContinue).Count; '
+      + "'{0}|{1}|{2}' -f $_.DeviceID, $p, $_.VolumeName }";
     execFile(systemExe('powershell'), ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 8000, windowsHide: true },
       (err, stdout) => resolve(err ? [] : parseDriveList(stdout)));
   });

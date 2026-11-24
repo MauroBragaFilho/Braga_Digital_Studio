@@ -33,3 +33,10 @@ test('P13: lê as letras dos discos fixos', () => {
   assert.deepStrictEqual(parseDriveList('C:\r\nD:\r\n\r\ne:\nlixo\nC:\n'), ['C:\\', 'D:\\', 'E:\\']);
   assert.deepStrictEqual(parseDriveList(''), []);
 });
+
+test('armazenamento: ignora o Google Drive (sem partição física), mantém os discos reais', () => {
+  const out = ['C:|1|S.O', 'D:|1|DATA', 'G:|0|fulano@gmail.com - Goo...', 'Y:|0|outro@gmail.com - Google Drive'].join('\r\n');
+  assert.deepStrictEqual(parseDriveList(out), ['C:\\', 'D:\\']);
+  // consulta de partições falhou para todos (tudo 0): vale o rótulo
+  assert.deepStrictEqual(parseDriveList(['C:|0|S.O', 'G:|0|a@b.com - Google Drive'].join('\n')), ['C:\\']);
+});
