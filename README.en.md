@@ -146,7 +146,7 @@ The script checks that you are on `main` with everything committed and in sync, 
 
 The same workflow can be run by hand (without a tag): it takes the next free version and makes a `chore(release): vX.Y.Z [skip release]` commit on `main`. The `build-bds-release.yml` (Windows only), `build-bds-linux.yml` (Linux only, with a launch test via Xvfb) and `release-sign.yml` workflows are run manually; production signing runs inside `release-bds.yml`.
 
-For forks: the Release is published to the `RELEASES_REPO` repository and requires the `RELEASES_TOKEN` secret; signing requires `SIGNPATH_API_TOKEN` and `SIGNPATH_ORGANIZATION_ID`.
+For forks: the Release is published to the `RELEASES_REPO` repository using the repository's own token (`GITHUB_TOKEN`, no extra secret); signing requires `SIGNPATH_API_TOKEN` and `SIGNPATH_ORGANIZATION_ID`.
 
 The Release files follow a single pattern, which the built-in updater looks for:
 

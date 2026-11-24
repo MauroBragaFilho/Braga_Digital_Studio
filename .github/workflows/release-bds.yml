@@ -34,8 +34,8 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 # As RELEASES (instaladores) são publicadas no mesmo repositório público do código: é de lá que o atualizador do app
-# baixa (src/config/appUpdate.config.json). Precisa do segredo RELEASES_TOKEN (Settings -> Secrets and variables -> Actions
-# deste repositório): token com permissão de escrita em "Contents" do repositório de releases.
+# baixa (src/config/appUpdate.config.json). Como código e Releases ficam no mesmo repositório, o workflow usa o token do próprio
+# repositório (GITHUB_TOKEN, com contents: write nos jobs que publicam); não precisa de um segredo à parte.
 env:
   RELEASES_REPO: MauroBragaFilho/Braga_Digital_Studio
   # TODOS os arquivos da Release seguem um padrão só (o do ArtCraft Launcher): <stem>-<versão>-<os>-<arch>[-portable].<ext>
@@ -85,10 +85,10 @@ jobs:
       - name: Escolher a versão da Release (próxima livre a partir do package.json)
         id: get_version
         env:
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RELEASES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "$RELEASES_TOKEN" ]; then
-            echo "::error::Falta o segredo RELEASES_TOKEN (token com escrita em Contents de $RELEASES_REPO). Crie em Settings -> Secrets and variables -> Actions."
+            echo "::error::O token do repositório (GITHUB_TOKEN) não chegou ao passo. Confira Settings -> Actions -> General -> Workflow permissions."
             exit 1
           fi
           BUMPED=false
@@ -124,7 +124,7 @@ jobs:
       - name: Nomes antigos (transição)
         id: legacy
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
           newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]; }
@@ -148,10 +148,12 @@ jobs:
   create-release:
     needs: determine-version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # envia os arquivos para a Release deste repositório
     steps:
       - name: Criar a Release em rascunho
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
           if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
@@ -167,6 +169,8 @@ jobs:
   build-windows:
     needs: [determine-version, create-release]
     runs-on: windows-latest
+    permissions:
+      contents: write   # envia os arquivos para a Release deste repositório
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -335,7 +339,7 @@ jobs:
       - name: Enviar os arquivos Windows para a Release (rascunho)
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
           # Só os arquivos no padrão do nome (fica de fora o que mais o electron-builder deixar em dist/).
@@ -365,6 +369,8 @@ jobs:
   build-linux:
     needs: [determine-version, create-release]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # envia os arquivos para a Release deste repositório
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -485,7 +491,7 @@ jobs:
       # Direto para a Release em rascunho (sem artefatos do Actions); SHA256SUMS-linux.txt cobre os dois pacotes.
       - name: Enviar os pacotes Linux para a Release (rascunho)
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
           APPIMAGE="$(basename "${{ steps.find_packages.outputs.appimage_path }}")"
@@ -515,9 +521,9 @@ jobs:
     needs: [determine-version, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # push do package.json neste repositório (a Release usa o RELEASES_TOKEN, no repositório de releases)
+      contents: write   # push do package.json neste repositório (a Release usa o mesmo token do repositório)
     env:
-      GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ needs.determine-version.outputs.tag }}
     steps:
       # SHA256SUMS.txt (formato do sha256sum): é o que o ArtCraft Launcher usa para conferir os downloads quando o GitHub

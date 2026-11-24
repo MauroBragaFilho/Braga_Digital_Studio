@@ -192,8 +192,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          repository: MauroBragaFilho/Braga_Digital_Studio   # Release no repositório de releases (segredo RELEASES_TOKEN), não neste
-          token: ${{ secrets.RELEASES_TOKEN }}
+          repository: MauroBragaFilho/Braga_Digital_Studio   # Release neste mesmo repositório (token do próprio repositório)
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             dist/*.AppImage
             dist/*.AppImage.sha256

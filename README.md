@@ -146,7 +146,7 @@ O script confere se você está na `main` com tudo commitado e sincronizado, rec
 
 O mesmo workflow pode ser rodado à mão (sem tag): ele pega a próxima versão livre e faz um commit `chore(release): vX.Y.Z [skip release]` na `main`. Os workflows `build-bds-release.yml` (só Windows), `build-bds-linux.yml` (só Linux, com teste de abertura via Xvfb) e `release-sign.yml` são de execução manual; a assinatura de produção roda dentro do `release-bds.yml`.
 
-Para quem faz fork: a Release é publicada no repositório `RELEASES_REPO` e exige o segredo `RELEASES_TOKEN`; a assinatura exige `SIGNPATH_API_TOKEN` e `SIGNPATH_ORGANIZATION_ID`.
+Para quem faz fork: a Release é publicada no repositório `RELEASES_REPO` com o token do próprio repositório (`GITHUB_TOKEN`, sem segredo à parte); a assinatura exige `SIGNPATH_API_TOKEN` e `SIGNPATH_ORGANIZATION_ID`.
 
 Os arquivos da Release seguem um padrão só, que o atualizador interno procura:
 
