@@ -91,22 +91,19 @@ const HOOKS = {
     skipped() { perf.done('deadline'); }
   },
 
-  // LUTs embutidas: usadas pela tela de LUTs e pela sincronização de LUTs dos dispositivos (por isso os dois módulos)
-  luts: { start(ctx) { ensureBundledLuts(ctx); } },
+  // Coleção de LUTs: usada pela tela de LUTs e pela sincronização de LUTs dos dispositivos (por isso os dois módulos)
+  luts: { start(ctx) { sweepLutPartials(ctx); } },
   download: {
     // O yt-dlp só é exigido (e baixado) com o módulo de Downloads ligado
     start(ctx, { startup = false } = {}) { if (!startup) ensureDownloaderTool(ctx); }
   }
 };
-// Dispositivos também precisam das LUTs embutidas (sincronização de LUTs)
+// Dispositivos também precisam da coleção de LUTs (sincronização de LUTs)
 const EXTRA_STARTS = { devices: ['luts'] };
 
-function ensureBundledLuts(ctx) {
-  if (ensureBundledLuts.done || !ctx.lutManager) return;
-  ensureBundledLuts.done = true;
-  // Instalado: resources/luts-embutidas (extraResources); desenvolvimento: resources/luts-embutidas do repositório
-  const dir = ctx.appPaths.bundledLutsDir;
-  perf.time('platform:ensureBundledLuts', () => ctx.lutManager.ensureBundledLuts(dir));
+function sweepLutPartials(ctx) {
+  if (sweepLutPartials.done || !ctx.lutManager) return;
+  sweepLutPartials.done = true;
   // Temporários ".part" de uma cópia interrompida (mais velhos que 1 hora): limpeza em segundo plano, sem bloquear a abertura
   if (typeof ctx.lutManager.sweepPartials === 'function') ctx.lutManager.sweepPartials();
 }

@@ -11,7 +11,6 @@ const path = require('node:path');
 
 const LutManager = require('../src/core/luts/LutManager');
 const CubeParser = require('../src/core/luts/CubeParser');
-const logger = require('../src/services/logService');
 const { cube3d, cube1d } = require('./helpers/cube-fixtures');
 const { budget } = require('./helpers/timing');
 
@@ -140,132 +139,26 @@ test('desempenho: 365 LUTs na primeira listagem (frio) e com cache quente', (t) 
 
 // ─── resumo da coleção (luts:getInfo) ────────────────────────────────────────────────────────────
 
-function bundledWith(root, luts) {
-  const dir = path.join(root, 'bundled');
-  fs.mkdirSync(dir, { recursive: true });
-  for (const [name, tint] of Object.entries(luts)) fs.writeFileSync(path.join(dir, name), cube3d(2, { tint }));
-  return dir;
-}
-
-test('getInfo: pasta, contagem, pastas com LUTs (qualquer nível), avisos e LUTs padrão disponíveis', (t) => {
-  const { root, lutsDir, mgr } = setup(t);
+test('getInfo: pasta, contagem, pastas com LUTs (qualquer nível), avisos', (t) => {
+  const { lutsDir, mgr } = setup(t);
   put(lutsDir, 'a.cube', cube3d(2));
   put(lutsDir, 'Filmes/b.cube', cube3d(2, { tint: 0.1 }));
   put(lutsDir, 'Filmes/Noite/c.cube', cube3d(2, { tint: 0.2 }));
   put(lutsDir, 'Filmes/Noite/d.cube', cube3d(2, { tint: 0.3 }));
   put(lutsDir, 'A/B/C/D/funda.cube', cube3d(2, { tint: 0.4 })); // fundo demais: vira aviso
-  const bundled = bundledWith(root, { 'x.cube': 0.5 });
 
-  const info = mgr.getInfo(bundled);
+  const info = mgr.getInfo();
   assert.equal(info.folder, lutsDir);
   assert.equal(info.count, 4);
   assert.equal(info.groups, 2, 'Filmes e Filmes/Noite');
   assert.equal(info.problemCount, 1);
   assert.equal(info.problems.length, 1);
   assert.match(info.problems[0].reason, /funda demais/);
-  assert.equal(info.bundledAvailable, true);
-
-  assert.equal(mgr.getInfo(path.join(root, 'nao-existe')).bundledAvailable, false);
-  assert.equal(mgr.getInfo('').bundledAvailable, false);
-  assert.equal(mgr.getInfo(undefined).bundledAvailable, false);
+  assert.equal('bundledAvailable' in info, false);
 });
 
 test('getInfo: pasta de LUTs que ainda não existe é uma coleção vazia, sem aviso', (t) => {
   const { root } = setup(t);
   const mgr = new LutManager(path.join(root, 'ainda-nao'));
-  assert.deepEqual(mgr.getInfo(''), { folder: path.join(root, 'ainda-nao'), count: 0, groups: 0, problems: [], problemCount: 0, bundledAvailable: false });
-});
-
-// ─── Restaurar LUTs padrão (luts:restoreBundled) ──────────────────────────────────────────────────
-
-const markerOf = (lutsDir) => JSON.parse(fs.readFileSync(path.join(lutsDir, '.bundled-installed.json'), 'utf-8'));
-const leftovers = (dir) => fs.readdirSync(dir).filter((n) => n.endsWith('.part') || n.endsWith('.tmp'));
-
-test('restoreBundled: devolve a LUT padrão que o usuário excluiu e não toca no resto', async (t) => {
-  const { root, lutsDir, mgr } = setup(t);
-  const bundled = bundledWith(root, { 'x.cube': 0, 'y.cube': 0.2 });
-  mgr.ensureBundledLuts(bundled);
-  const mine = put(lutsDir, 'minha.cube', cube3d(2, { tint: 0.9 }));
-  fs.unlinkSync(path.join(lutsDir, 'x.cube')); // o usuário excluiu
-  mgr.ensureBundledLuts(bundled);
-  assert.ok(!fs.existsSync(path.join(lutsDir, 'x.cube')), 'a abertura do app não traz de volta');
-
-  const res = await mgr.restoreBundled(bundled);
-  assert.deepEqual(res, { restored: 1, alreadyThere: 1, failed: 0, missingSource: false });
-  assert.equal(fs.readFileSync(path.join(lutsDir, 'x.cube'), 'utf-8'), cube3d(2, { tint: 0 }), 'byte a byte');
-  assert.ok(fs.existsSync(mine));
-  assert.deepEqual(markerOf(lutsDir).sort(), ['x.cube', 'y.cube']);
-  assert.deepEqual(leftovers(lutsDir), []);
-
-  const again = await mgr.restoreBundled(bundled);
-  assert.deepEqual(again, { restored: 0, alreadyThere: 2, failed: 0, missingSource: false }, 'segunda vez: nada a fazer');
-});
-
-test('restoreBundled: não sobrescreve a LUT padrão que o usuário editou (mesmo nome, conteúdo diferente)', async (t) => {
-  const { root, lutsDir, mgr } = setup(t);
-  const bundled = bundledWith(root, { 'x.cube': 0 });
-  const edited = put(lutsDir, 'x.cube', cube3d(2, { tint: 0.7 }));
-  const before = fs.readFileSync(edited);
-  const res = await mgr.restoreBundled(bundled);
-  assert.equal(res.restored, 0);
-  assert.equal(res.alreadyThere, 1);
-  assert.deepEqual(fs.readFileSync(edited), before);
-  assert.deepEqual(fs.readdirSync(lutsDir).filter((n) => n.endsWith('.cube')), ['x.cube'], 'nenhuma cópia "(2)" nasceu');
-});
-
-test('restoreBundled: não recria a LUT cujo conteúdo já existe em subpasta (renomeada ou movida pelo usuário)', async (t) => {
-  const { root, lutsDir, mgr } = setup(t);
-  const bundled = bundledWith(root, { 'x.cube': 0, 'y.cube': 0.2 });
-  put(lutsDir, 'Meus looks/outro nome.cube', cube3d(2, { tint: 0 })); // mesmo conteúdo de x.cube
-  const res = await mgr.restoreBundled(bundled);
-  assert.deepEqual(res, { restored: 1, alreadyThere: 1, failed: 0, missingSource: false });
-  assert.ok(!fs.existsSync(path.join(lutsDir, 'x.cube')));
-  assert.ok(fs.existsSync(path.join(lutsDir, 'y.cube')));
-});
-
-test('restoreBundled: nunca apaga nada da coleção (pastas, outros arquivos e LUTs de projeto continuam)', async (t) => {
-  const { root, lutsDir, mgr } = setup(t);
-  const bundled = bundledWith(root, { 'x.cube': 0 });
-  put(lutsDir, 'Pasta/a.cube', cube3d(2, { tint: 0.3 }));
-  put(lutsDir, 'Pasta/nota.txt', 'anotação');
-  put(lutsDir, 'b.3dl', 'x');
-  const snapshot = () => fs.readdirSync(lutsDir, { recursive: true }).sort();
-  const before = snapshot();
-  await mgr.restoreBundled(bundled);
-  for (const name of before) assert.ok(snapshot().includes(name), name);
-});
-
-test('restoreBundled: origem ausente avisa no log e devolve missingSource sem criar nada; arquivo ruim não impede os outros', async (t) => {
-  const { root, lutsDir, mgr } = setup(t);
-  const warn = mock.method(logger, 'warn', () => {});
-  try {
-    assert.deepEqual(await mgr.restoreBundled(path.join(root, 'nao-existe')), { restored: 0, alreadyThere: 0, failed: 0, missingSource: true });
-    assert.deepEqual(await mgr.restoreBundled(''), { restored: 0, alreadyThere: 0, failed: 0, missingSource: true });
-    assert.ok(warn.mock.calls.some((c) => c.arguments[0] === 'LutManager:restoreBundled:origem_ausente'));
-    assert.deepEqual(fs.readdirSync(lutsDir), []);
-
-    const bundled = bundledWith(root, { 'a.cube': 0, 'b.cube': 0.2 });
-    const orig = fs.readFileSync;
-    const read = mock.method(fs, 'readFileSync', (p, ...rest) => {
-      if (String(p).endsWith(`${path.sep}a.cube`) && String(p).startsWith(bundled)) throw new Error('EBUSY simulado');
-      return orig.call(fs, p, ...rest);
-    });
-    try {
-      const res = await mgr.restoreBundled(bundled);
-      assert.deepEqual(res, { restored: 1, alreadyThere: 0, failed: 1, missingSource: false });
-    } finally { read.mock.restore(); }
-    assert.deepEqual(markerOf(lutsDir), ['b.cube'], 'o que falhou fica de fora do marcador');
-    assert.deepEqual(leftovers(lutsDir), []);
-  } finally { warn.mock.restore(); }
-});
-
-test('restoreBundled: usa a trava de escrita (outra operação em andamento recusa com mensagem em português)', async (t) => {
-  const { root, mgr } = setup(t);
-  const bundled = bundledWith(root, { 'x.cube': 0 });
-  let release;
-  const holding = mgr.withLock(() => new Promise((resolve) => { release = resolve; }));
-  await assert.rejects(() => mgr.restoreBundled(bundled), /outra operação em andamento/);
-  release();
-  await holding;
-  assert.equal((await mgr.restoreBundled(bundled)).restored, 1);
+  assert.deepEqual(mgr.getInfo(), { folder: path.join(root, 'ainda-nao'), count: 0, groups: 0, problems: [], problemCount: 0 });
 });

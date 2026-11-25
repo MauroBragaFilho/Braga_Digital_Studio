@@ -64,7 +64,7 @@ function registerIpcHandlers(ctx) {
   require('./photoPreviewHandlers')(services.photoPreviewService);
   require('./youtubeHandlers')();
   require('./projectHandlers')(projectService, premiereExporter, bdsproPackageService, paths, waveformService, audioSyncService, sequenceBuilder, projectLutService);
-  require('./lutHandlers')(lutManager, { settingsManager, appPaths });
+  require('./lutHandlers')(lutManager, { settingsManager });
   require('./projectLutHandlers')(projectLutService);
   require('./telemetryHandlers')();
   require('./licensesHandlers')();

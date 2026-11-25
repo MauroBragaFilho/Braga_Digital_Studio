@@ -88,17 +88,6 @@ class AppPaths {
     return path.join(this._writableRoot, 'data', 'LUTs');
   }
 
-  /**
-   * LUTs que acompanham o app (somente leitura). Instalado: resources/luts-embutidas (extraResources do
-   * instalador); desenvolvimento: resources/luts-embutidas na raiz do repositório.
-   */
-  get bundledLutsDir() {
-    this._assertInit();
-    return this._packaged
-      ? path.join(this._appRoot, 'luts-embutidas')
-      : path.join(this._appRoot, 'resources', 'luts-embutidas');
-  }
-
   /** Thumbnails gerados */
   get thumbnailsDir() {
     this._assertInit();
@@ -189,7 +178,7 @@ class AppPaths {
    * Permite migração incremental: os serviços continuam recebendo `paths`
    * enquanto são migrados para usar `AppPaths` diretamente.
    *
-   * @returns {{ appRoot, dataDir, configDir, databaseDir, logsDir, lutsDir, bundledLutsDir,
+   * @returns {{ appRoot, dataDir, configDir, databaseDir, logsDir, lutsDir,
    *             thumbnailsDir, waveformsDir, tempDir, coversDir }}
    */
   toPlainObject() {
@@ -200,7 +189,6 @@ class AppPaths {
       databaseDir: this.databaseDir,
       logsDir: this.logsDir,
       lutsDir: this.lutsDir,
-      bundledLutsDir: this.bundledLutsDir,
       thumbnailsDir: this.thumbnailsDir,
       waveformsDir: this.waveformsDir,
       tempDir: this.tempDir,

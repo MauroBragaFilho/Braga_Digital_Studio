@@ -25,7 +25,6 @@ const MSG_RENAME_FOLDER = 'Não foi possível renomear a pasta.';
 const MSG_DELETE_FOLDER = 'Não foi possível excluir a pasta.';
 const MSG_DELETE_MANY = 'Não foi possível excluir as LUTs.';
 const MSG_INFO = 'Não foi possível ler a pasta de LUTs.';
-const MSG_RESTORE = 'Não foi possível restaurar as LUTs padrão.';
 
 /** Envia um evento de progresso à janela que pediu a operação (ignora janela fechada). */
 function sendProgressTo(channel, event) {
@@ -45,12 +44,11 @@ function sendProgressTo(channel, event) {
 /**
  * Registra todos os handlers IPC do domínio de LUTs (.cube).
  * @param {import('../core/luts/LutManager')} lutManager
- * @param {{ settingsManager?: { load: () => object }, appPaths?: { bundledLutsDir?: string } }} [deps]
- *   settingsManager: de onde sai a imagem de referência salva; appPaths: de onde sai a pasta das LUTs embutidas
+ * @param {{ settingsManager?: { load: () => object } }} [deps]
+ *   settingsManager: de onde sai a imagem de referência salva
  */
-module.exports = function registerLutHandlers(lutManager, { settingsManager = null, appPaths = null } = {}) {
+module.exports = function registerLutHandlers(lutManager, { settingsManager = null } = {}) {
   const importer = new LutImporter(lutManager);
-  const bundledDir = () => (appPaths && typeof appPaths.bundledLutsDir === 'string' ? appPaths.bundledLutsDir : '');
 
   // { ok: true, ... } com os dados, ou { ok: false, code, reason } quando o conteúdo do .cube é inválido.
   // Erro de acesso (arquivo fora da coleção, inexistente) continua rejeitando a chamada.
@@ -104,25 +102,13 @@ module.exports = function registerLutHandlers(lutManager, { settingsManager = nu
   // { folder, items, problems }: `problems` lista o que não pôde ser lido, sem esconder as demais LUTs.
   handle('luts:list', async () => ({ folder: lutManager.lutsDir, ...lutManager.listDetailed() }));
 
-  // Resumo da coleção para as Configurações: { folder, count, groups, problems, problemCount, bundledAvailable }.
+  // Resumo da coleção para as Configurações: { folder, count, groups, problems, problemCount }.
   handle('luts:getInfo', async () => {
     try {
-      return lutManager.getInfo(bundledDir());
+      return lutManager.getInfo();
     } catch (err) {
       logger.error('IPC:luts:getInfo:error', { error: err.message });
       throw new Error(MSG_INFO);
-    }
-  });
-
-  // "Restaurar LUTs padrão": só por ação do usuário. Copia as embutidas que faltam, sem apagar nem sobrescrever nada.
-  handle('luts:restoreBundled', async () => {
-    try {
-      const res = await lutManager.restoreBundled(bundledDir());
-      if (res.missingSource) throw new LutUserError('As LUTs padrão não foram encontradas nesta instalação.');
-      return res;
-    } catch (err) {
-      logger.error('IPC:luts:restoreBundled:error', { error: err.message });
-      throw new Error(userMessage(err, MSG_RESTORE));
     }
   });
 

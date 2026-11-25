@@ -15,7 +15,7 @@ src/ipc/thumbProtocol.js    protocolo bds-thumb (miniaturas); não é ipcMain.ha
 scripts/generate-preload.js gera o preload.js a partir da tabela (npm run generate:preload / verify:preload)
 ```
 
-Em 25/11/2026 a tabela tinha 317 canais `invoke` e 80 eventos main → renderer (`EVENTS`). O domínio da tabela agrupa a documentação, não o nome do
+Em 25/11/2026 a tabela tinha 316 canais `invoke` e 80 eventos main → renderer (`EVENTS`). O domínio da tabela agrupa a documentação, não o nome do
 arquivo: por exemplo, `mediaToolsHandlers.js` registra converter, metadata, montage e silence, e `deviceListHandlers.js` registra
 devices, mtp e usb. Há 15 canais sem `api` (internos ou legados, sem exposição no preload): `updates:check`, `updates:checkLegacy`,
 `converter:listQueue`, `download:*` (`start`, `cancel`, `getQueue`, `clearQueue`, `removeJob`) e os `jobs:*`.
@@ -49,10 +49,8 @@ comum dentro da coleção). Cada item de `luts:list` traz também `kind` (`3D`, 
 8 KB do arquivo (cache por caminho, tamanho e data; a tabela nunca é interpretada para listar). `luts:parse` devolve `data` como
 `Float32Array` (R, G, B de cada linha em sequência; R varia mais rápido) e `preview` com as 100 primeiras linhas como listas `[r, g, b]`;
 `luts:getHeader` de um arquivo acima de 64 KB lê só o começo (`totalEntries` fica `null` e `partial` é `true`).
-`luts:getInfo` (Configurações) devolve `{ folder, count, groups, problems, problemCount, bundledAvailable }` e `luts:restoreBundled`
-("Restaurar LUTs padrão", só por ação do usuário) devolve `{ restored, alreadyThere, failed }`: copia só as LUTs padrão que
-faltam, dentro da trava única de escrita, sem apagar nem sobrescrever nada e sem recriar a que já existe (por nome ou por conteúdo) em
-qualquer ponto da coleção. Se a instalação não tiver as LUTs padrão, a chamada é rejeitada com uma mensagem em português.
+`luts:getInfo` (Configurações) devolve `{ folder, count, groups, problems, problemCount }`. O app não traz LUTs embutidas: a coleção
+começa vazia e só tem o que a pessoa importa.
 Outros canais da coleção: `luts:load` (conteúdo bruto do `.cube`, cortado em 2 MB: `{ rawContent, truncated, totalBytes }`),
 `luts:reveal`, `luts:rename` e `luts:delete` (manda para a Lixeira).
 

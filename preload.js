@@ -200,7 +200,6 @@ const api = {
   // --- LUTs ---
   listLuts: () => ipcRenderer.invoke('luts:list'),
   getLutsInfo: () => ipcRenderer.invoke('luts:getInfo'),
-  restoreBundledLuts: () => ipcRenderer.invoke('luts:restoreBundled'),
   openLutsFolder: (relPath) => ipcRenderer.invoke('luts:openFolder', relPath),
   scanLuts: (paths, options) => ipcRenderer.invoke('luts:scan', paths, options),
   cancelLutScan: (scanId) => ipcRenderer.invoke('luts:cancelScan', scanId),

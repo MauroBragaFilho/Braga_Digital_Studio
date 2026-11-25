@@ -8,14 +8,12 @@ const CubeParser = require('./CubeParser');
 const {
   LUT_EXT, MAX_FILE_BYTES, MAX_SEGMENTS, MAX_PATH_BUDGET, PATH_RESERVE, PHONE_MAX_PATH, COLLECTION_MAX_ENTRIES
 } = require('./lutConstants');
-const { hashFile, sha256, copyFileExclusive, indexByHash, sweepPartials } = require('./lutFileOps');
+const { sha256, copyFileExclusive, indexByHash, sweepPartials } = require('./lutFileOps');
 const { checkFileBaseName, checkFolderName, isSafeSegment, sanitizeFolderSegment } = require('./lutNames');
 const { walkTree, walkTreeSync } = require('./lutTree');
 const { LutUserError } = require('./lutErrors');
 const logger = require('../../services/logService');
 
-/** Arquivo (não-.cube) que registra quais LUTs embutidas já foram instaladas, para não recriar as que o usuário excluiu. */
-const BUNDLED_MARKER = '.bundled-installed.json';
 /** Cache persistente do conteúdo (hash) de cada LUT, por caminho relativo + tamanho + data. Começa com ponto: nunca é listado. */
 const HASH_CACHE_FILE = '.hash-cache.json';
 const HASH_CACHE_VERSION = 1;
@@ -82,167 +80,12 @@ class LutManager {
     });
   }
 
-  /** Nomes dos .cube (arquivos comuns, sem ponto no início) da pasta de origem e, se não houver nenhum, o motivo. */
-  _readBundledNames(bundledLutsDir) {
-    if (typeof bundledLutsDir !== 'string' || !bundledLutsDir) return { names: [], reason: 'caminho da pasta não informado' };
-    try {
-      const names = fs.readdirSync(bundledLutsDir, { withFileTypes: true })
-        .filter((e) => e.isFile() && !e.name.startsWith('.') && e.name.toLowerCase().endsWith(LUT_EXT))
-        .map((e) => e.name)
-        .sort();
-      return { names, reason: names.length ? null : 'pasta sem arquivos .cube' };
-    } catch (err) {
-      return { names: [], reason: err.code === 'ENOENT' ? 'pasta não existe' : `pasta ilegível (${err.code || err.message})` };
-    }
-  }
-
-  /**
-   * Copia LUTs embutidas no pacote para o diretório gravável de LUTs do usuário.
-   * - cada LUT embutida é instalada uma única vez: se o usuário a excluir, ela não volta (marcador
-   *   `.bundled-installed.json`, lista de nomes);
-   * - nunca sobrescreve: arquivo de mesmo nome já na coleção é mantido; conteúdo idêntico (SHA-256) já presente em
-   *   qualquer subpasta também não é recriado na raiz;
-   * - a cópia vai por arquivo temporário, conferida por tamanho e hash (ver lutFileOps.copyFileExclusive);
-   * - falha em um arquivo não impede os demais; o que falhou não entra no marcador e é tentado de novo na próxima vez;
-   * - origem ausente ou vazia é registrada no log (uma vez por execução) e devolvida em `missingSource`.
-   * @param {string} bundledLutsDir - Diretório de origem das LUTs embutidas
-   * @returns {{ installed: number, skipped: number, alreadyThere: number, failed: number, missingSource: boolean }}
-   *   installed: copiadas agora; skipped: já instaladas antes (marcador); alreadyThere: já existiam (mesmo nome ou
-   *   mesmo conteúdo); failed: não foi possível copiar.
-   */
-  ensureBundledLuts(bundledLutsDir) {
-    const result = { installed: 0, skipped: 0, alreadyThere: 0, failed: 0, missingSource: false };
-    const { names, reason } = this._readBundledNames(bundledLutsDir);
-    if (!names.length) {
-      result.missingSource = true;
-      if (!this._warnedMissingBundled) {
-        this._warnedMissingBundled = true;
-        logger.warn('LutManager:ensureBundledLuts:origem_ausente', { dir: bundledLutsDir, motivo: reason });
-      }
-      return result;
-    }
-
-    let done = new Set();
-    const markerPath = path.join(this.lutsDir, BUNDLED_MARKER);
-    try {
-      fs.mkdirSync(this.lutsDir, { recursive: true });
-      let previous = [];
-      try { previous = JSON.parse(fs.readFileSync(markerPath, 'utf-8')); } catch { /* primeira execução */ }
-      if (Array.isArray(previous)) done = new Set(previous.filter((n) => typeof n === 'string'));
-
-      const pending = names.filter((n) => !done.has(n));
-      result.skipped = names.length - pending.length;
-      if (!pending.length) return result;
-
-      // Índice por conteúdo só dos tamanhos que interessam (poupa ler a coleção inteira).
-      const sizes = new Set();
-      const sourceSize = new Map();
-      for (const name of pending) {
-        try { const size = fs.statSync(path.join(bundledLutsDir, name)).size; sourceSize.set(name, size); sizes.add(size); } catch { /* falha tratada no laço */ }
-      }
-      const known = indexByHash(this.lutsDir, sizes);
-
-      try {
-        for (const name of pending) {
-          try {
-            const source = path.join(bundledLutsDir, name);
-            if (fs.existsSync(path.join(this.lutsDir, name))) { result.alreadyThere++; done.add(name); continue; }
-            const hash = hashFile(source);
-            if (known.has(hash)) { result.alreadyThere++; done.add(name); continue; }
-            const copy = copyFileExclusive(source, this.lutsDir, name, { exact: true });
-            if (copy.status === 'copied') result.installed++; else result.alreadyThere++;
-            known.set(hash, name);
-            done.add(name);
-          } catch (err) {
-            result.failed++;
-            logger.warn('LutManager:ensureBundledLuts:arquivo_falhou', { name, error: err.message });
-          }
-        }
-      } finally {
-        // Marcador só com o que foi concluído (mesmo se algo interromper o laço): a LUT que falhou é tentada de novo.
-        try {
-          const temp = `${markerPath}.tmp`;
-          fs.writeFileSync(temp, JSON.stringify([...done]), 'utf-8');
-          fs.renameSync(temp, markerPath);
-        } catch (err) {
-          logger.warn('LutManager:ensureBundledLuts:marcador_nao_gravado', { error: err.message });
-        }
-      }
-    } catch (err) {
-      logger.error('LutManager:ensureBundledLuts:error', { error: err.message });
-    }
-    return result;
-  }
-
-  /**
-   * "Restaurar LUTs padrão" (ação explícita do usuário nas Configurações): copia de volta as LUTs embutidas que
-   * faltam na coleção. Nunca apaga nem sobrescreve nada: pula a LUT cujo nome já existe (mesmo que o arquivo tenha sido
-   * editado) e a LUT cujo conteúdo (SHA-256) já existe em qualquer ponto da coleção, inclusive em subpasta. Ignora o
-   * marcador de "já instaladas" (é justamente para quem excluiu uma) e o atualiza no fim. Roda dentro da trava de escrita.
-   * @param {string} bundledLutsDir - Diretório de origem das LUTs embutidas
-   * @returns {Promise<{ restored: number, alreadyThere: number, failed: number, missingSource: boolean }>}
-   */
-  restoreBundled(bundledLutsDir) {
-    return this.withLock(async () => {
-      const result = { restored: 0, alreadyThere: 0, failed: 0, missingSource: false };
-      const { names, reason } = this._readBundledNames(bundledLutsDir);
-      if (!names.length) {
-        result.missingSource = true;
-        logger.warn('LutManager:restoreBundled:origem_ausente', { dir: bundledLutsDir, motivo: reason });
-        return result;
-      }
-      fs.mkdirSync(this.lutsDir, { recursive: true });
-      const markerPath = path.join(this.lutsDir, BUNDLED_MARKER);
-      let done = new Set();
-      try {
-        const previous = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
-        if (Array.isArray(previous)) done = new Set(previous.filter((n) => typeof n === 'string'));
-      } catch { /* sem marcador */ }
-
-      const index = await this.hashIndex();
-      try {
-        for (const name of names) {
-          try {
-            const source = path.join(bundledLutsDir, name);
-            const info = fs.lstatSync(source);
-            if (!info.isFile() || info.size > MAX_FILE_BYTES) throw new Error('origem inválida');
-            const data = fs.readFileSync(source);
-            const hash = sha256(data);
-            if (fs.existsSync(path.join(this.lutsDir, name)) || index.has(hash)) { result.alreadyThere++; done.add(name); continue; }
-            const copy = copyFileExclusive(data, this.lutsDir, name, { exact: true });
-            if (copy.status === 'copied') {
-              result.restored++;
-              this.noteHash(copy.path, hash);
-              index.set(hash, [name]);
-            } else {
-              result.alreadyThere++;
-            }
-            done.add(name);
-          } catch (err) {
-            result.failed++;
-            logger.warn('LutManager:restoreBundled:arquivo_falhou', { name, error: err.message });
-          }
-        }
-      } finally {
-        try {
-          const temp = `${markerPath}.tmp`;
-          fs.writeFileSync(temp, JSON.stringify([...done]), 'utf-8');
-          fs.renameSync(temp, markerPath);
-        } catch (err) {
-          logger.warn('LutManager:restoreBundled:marcador_nao_gravado', { error: err.message });
-        }
-      }
-      return result;
-    });
-  }
-
   /**
    * Resumo da coleção para as Configurações: pasta, quantas LUTs, em quantas pastas (as que têm LUTs, qualquer nível),
-   * o que a lista não conseguiu ler e se há LUTs embutidas para restaurar.
-   * @param {string} [bundledLutsDir]
-   * @returns {{ folder: string, count: number, groups: number, problems: Array<{ name: string, reason: string }>, problemCount: number, bundledAvailable: boolean }}
+   * e o que a lista não conseguiu ler.
+   * @returns {{ folder: string, count: number, groups: number, problems: Array<{ name: string, reason: string }>, problemCount: number }}
    */
-  getInfo(bundledLutsDir) {
+  getInfo() {
     const { items, problems } = this.listDetailed();
     const folders = new Set();
     for (const item of items) if (item.folder) folders.add(item.folder);
@@ -251,8 +94,7 @@ class LutManager {
       count: items.length,
       groups: folders.size,
       problems: problems.slice(0, 20).map((p) => ({ name: p.name, reason: p.reason })),
-      problemCount: problems.length,
-      bundledAvailable: this._readBundledNames(bundledLutsDir).names.length > 0
+      problemCount: problems.length
     };
   }
 

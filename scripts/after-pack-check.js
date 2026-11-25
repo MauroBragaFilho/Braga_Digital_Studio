@@ -35,31 +35,6 @@ function trimChromiumFiles(appOutDir) {
   }
 }
 
-/** Nomes (ordenados) dos .cube de uma pasta; vazio se ela não existe. */
-function listCubes(dir) {
-  try { return fs.readdirSync(dir).filter((n) => n.toLowerCase().endsWith('.cube')).sort(); } catch (_) { return []; }
-}
-
-/**
- * As LUTs embutidas ficam fora do asar (extraResources → resources/luts-embutidas): o pacote final precisa ter
- * exatamente as .cube de resources/luts-embutidas do projeto. Sem nenhuma, o app instalado abriria sem LUTs
- * (clone limpo: as .cube só são versionadas depois de a procedência ser confirmada): aviso, e erro com BDS_RELEASE=1.
- * @returns {{ problems: string[], warnings: string[] }}
- */
-function checkBundledLutsInPackage({ resourcesDir, sourceDir, release = false }) {
-  const problems = [];
-  const warnings = [];
-  const packed = listCubes(path.join(resourcesDir, 'luts-embutidas'));
-  const source = listCubes(sourceDir);
-  if (packed.length !== source.length || packed.some((n, i) => n !== source[i])) {
-    problems.push(`LUTs embutidas diferentes do projeto: ${packed.length} no pacote, ${source.length} em resources/luts-embutidas.`);
-  }
-  if (packed.length === 0) (release ? problems : warnings).push('o pacote não leva nenhuma LUT embutida (resources/luts-embutidas sem .cube).');
-  return { problems, warnings };
-}
-
-exports.checkBundledLutsInPackage = checkBundledLutsInPackage;
-
 exports.default = async function afterPackCheck(context) {
   // licença do instalador (a partir do LICENSE da raiz): ver scripts/installer-license.js
   if (context.electronPlatformName === 'win32') {
@@ -105,14 +80,6 @@ exports.default = async function afterPackCheck(context) {
   if (!fs.existsSync(path.join(res, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'))) {
     problems.push('faltando fora do asar: node_modules/sql.js/dist/sql-wasm.wasm');
   }
-
-  const luts = checkBundledLutsInPackage({
-    resourcesDir: res,
-    sourceDir: path.join(projectDir, 'resources', 'luts-embutidas'),
-    release: process.env.BDS_RELEASE === '1'
-  });
-  problems.push(...luts.problems);
-  for (const w of luts.warnings) console.warn(`  • after-pack-check: AVISO - ${w}`);
 
   if (problems.length) {
     throw new Error(`after-pack-check: pacote inválido.\n  - ${problems.slice(0, 20).join('\n  - ')}`);

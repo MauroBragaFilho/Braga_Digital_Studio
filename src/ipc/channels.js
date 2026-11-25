@@ -348,8 +348,7 @@ define('recovery', 'throw', {
 define('luts', 'throw', {
   'luts:list': { returns: '{ folder, items, problems } (problems: o que não pôde ser lido, sem esconder as demais LUTs; cada item traz kind, lutSize e title lidos do cabeçalho curto)', api: ['listLuts'] },
   // Resumo da coleção (Configurações) e "Restaurar LUTs padrão" (só por ação do usuário; nunca apaga nem sobrescreve).
-  'luts:getInfo': { returns: '{ folder, count, groups, problems, problemCount, bundledAvailable }', api: ['getLutsInfo'] },
-  'luts:restoreBundled': { returns: '{ restored, alreadyThere, failed, missingSource } (copia só as LUTs padrão que faltam)', api: ['restoreBundledLuts'] },
+  'luts:getInfo': { returns: '{ folder, count, groups, problems, problemCount }', api: ['getLutsInfo'] },
   // Sem relPath abre a coleção; com relPath, uma subpasta dela (o main confere que é pasta comum dentro da coleção).
   'luts:openFolder': { args: [STR('relPath', 1024, { optional: true, allowEmpty: true, label: 'Pasta' })], returns: 'true (abre a pasta; falha com mensagem amigável)', api: ['openLutsFolder'] },
   // Importar de pasta: o diálogo abre no main (options.mode); com paths (arrastar-e-soltar) o main valida cada caminho.

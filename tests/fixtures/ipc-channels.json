@@ -121,7 +121,6 @@
     "luts:parse",
     "luts:rename",
     "luts:renameFolder",
-    "luts:restoreBundled",
     "luts:reveal",
     "luts:scan",
     "luts:usage",

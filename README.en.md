@@ -102,7 +102,7 @@ To turn the project into an installer that is easy to distribute to other Window
 npm run build
 ```
 
-Before packaging, `npm run build` (and every `build:*`) runs `npm run verify:package -- --release`, which also checks the 40 bundled LUTs (`resources/luts-embutidas`): **the release build is blocked while the LUTs' provenance is `a-confirmar` (to be confirmed)** in `PROCEDENCIA.json`, and the `.cube` files are not versioned (see that folder's README); without them, a clean clone cannot produce the installer. This packages the source code (the media, download and AI engines are downloaded at runtime and are not included in the installer) and produces the installer `braga-digital-studio-<version>-windows-x64.exe` in the `dist/` folder (about 90 to 100 MB). The installer is black, in Portuguese, and asks whether the install is short or full. Command-line parameters:
+This packages the source code (the media, download and AI engines are downloaded at runtime and are not included in the installer) and produces the installer `braga-digital-studio-<version>-windows-x64.exe` in the `dist/` folder (about 90 to 100 MB). The installer is black, in Portuguese, and asks whether the install is short or full. Command-line parameters:
 
 - `/S` installs without a window; in this mode the default is `/COMPONENTES=nenhuma`, meaning a silent update downloads nothing and keeps what already exists.
 - `/COMPONENTES=completa|curta|nenhuma` chooses what to download; full and short call the app with `--setup-components=full|basic`.
@@ -118,7 +118,7 @@ The installer script lives in `installer/`.
 | `npm run check` | Validates the syntax of every `.js` (ES modules in the renderer) |
 | `npm run lint` | ESLint (flat config in `eslint.config.js`) |
 | `npm test` | Unit tests (`node --test`, `tests/` folder) |
-| `npm run verify:package` | Ensures no user data goes into the package and (with `-- --release`) checks the bundled LUTs |
+| `npm run verify:package` | Ensures no user data goes into the package |
 | `npm run generate:preload` | Generates `preload.js` |
 | `npm run verify:preload` | Checks that `preload.js` matches what the generator produces |
 | `npm run generate:licenses` | Regenerates the third-party license list |

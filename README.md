@@ -102,7 +102,7 @@ Para transformar o projeto em um instalador fácil de distribuir para outros com
 npm run build
 ```
 
-Antes de empacotar, `npm run build` (e todos os `build:*`) roda `npm run verify:package -- --release`, que também confere as 40 LUTs embutidas (`resources/luts-embutidas`): **o build de release é bloqueado enquanto a procedência das LUTs estiver como `a-confirmar`** em `PROCEDENCIA.json`, e as `.cube` não são versionadas (veja o README dessa pasta); sem elas, um clone limpo não gera o instalador. Isso empacota o código-fonte (os motores de mídia, download e IA são baixados em runtime, não vão no instalador) e gera o instalador `braga-digital-studio-<versão>-windows-x64.exe` dentro da pasta `dist/` (cerca de 90 a 100 MB). O instalador é preto, em português, e pergunta se a instalação é curta ou completa. Parâmetros de linha de comando:
+Isso empacota o código-fonte (os motores de mídia, download e IA são baixados em runtime, não vão no instalador) e gera o instalador `braga-digital-studio-<versão>-windows-x64.exe` dentro da pasta `dist/` (cerca de 90 a 100 MB). O instalador é preto, em português, e pergunta se a instalação é curta ou completa. Parâmetros de linha de comando:
 
 - `/S` instala sem janela; nesse modo o padrão é `/COMPONENTES=nenhuma`, ou seja, uma atualização silenciosa não baixa nada e mantém o que já existe.
 - `/COMPONENTES=completa|curta|nenhuma` escolhe o que baixar; completa e curta chamam o app com `--setup-components=full|basic`.
@@ -118,7 +118,7 @@ O script do instalador fica em `installer/`.
 | `npm run check` | Valida a sintaxe de todos os `.js` (módulos ES no renderer) |
 | `npm run lint` | ESLint (config flat em `eslint.config.js`) |
 | `npm test` | Testes unitários (`node --test`, pasta `tests/`) |
-| `npm run verify:package` | Garante que nenhum dado do usuário entra no pacote e (com `-- --release`) confere as LUTs embutidas |
+| `npm run verify:package` | Garante que nenhum dado do usuário entra no pacote |
 | `npm run generate:preload` | Gera o `preload.js` |
 | `npm run verify:preload` | Confere se o `preload.js` está igual ao que o gerador produz |
 | `npm run generate:licenses` | Regenera a lista de licenças de terceiros |

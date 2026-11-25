@@ -1,3 +1,0 @@
-# As LUTs embutidas são conferidas por SHA-256 (resources/luts-embutidas/PROCEDENCIA.json): nenhuma conversão de
-# fim de linha (core.autocrlf) pode alterar seus bytes.
-resources/luts-embutidas/*.cube -text

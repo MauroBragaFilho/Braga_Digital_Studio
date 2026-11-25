@@ -188,8 +188,8 @@ A pesquisa do topo e o contador de mídias dependem da Biblioteca. As abas ficam
 - **Processo principal sob demanda** (`src/bootstrap/moduleRuntime.js` e `src/core/modules/lazyService.js`): os serviços
   dos módulos (downloads, conversor, miniaturas, exportadores e sequenciador de Projetos, ondas de áudio, sincronia de áudio,
   sincronização de LUTs, varredor do Envio) são criados no primeiro uso, e as tarefas de fundo (monitoramento da Biblioteca
-  e regeneração de miniaturas, descoberta de dispositivos/pareamento/câmeras Sony, lembretes de prazo dos Projetos, LUTs
-  embutidas, yt-dlp dos Downloads) só começam com o módulo ligado e começam/param ao ligar/desligar em Configurações, sem
+  e regeneração de miniaturas, descoberta de dispositivos/pareamento/câmeras Sony, lembretes de prazo dos Projetos,
+  limpeza de temporários das LUTs, yt-dlp dos Downloads) só começam com o módulo ligado e começam/param ao ligar/desligar em Configurações, sem
   reiniciar. Os handlers IPC continuam sempre registrados (o preload os expõe); o banco, a fila de importação e o histórico
   são núcleo. A sondagem de armazenamento da sidebar só enumera dispositivos MTP/USB com o módulo Dispositivos ligado.
 - Motor sob demanda: o que é pesado é o motor/binário, baixado na ativação. Ao ligar um módulo com

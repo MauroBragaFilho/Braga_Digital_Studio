@@ -9631,30 +9631,6 @@
       "returns": "promise"
     }
   },
-  "restoreBundledLuts": {
-    "type": "function",
-    "length": 0,
-    "withSentinels": {
-      "made": [
-        {
-          "op": "invoke",
-          "ch": "luts:restoreBundled",
-          "args": []
-        }
-      ],
-      "returns": "promise"
-    },
-    "noArgs": {
-      "made": [
-        {
-          "op": "invoke",
-          "ch": "luts:restoreBundled",
-          "args": []
-        }
-      ],
-      "returns": "promise"
-    }
-  },
   "revealLocalPath": {
     "type": "function",
     "length": 1,

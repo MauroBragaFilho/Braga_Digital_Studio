@@ -35,13 +35,11 @@ const { cube3d, badCubes } = require('./helpers/cube-fixtures');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bds-lut-ipc-'));
 const lutsDir = path.join(root, 'luts');
 const outsideDir = path.join(root, 'fora');
-const bundledDir = path.join(root, 'embutidas');
 fs.mkdirSync(lutsDir);
 fs.mkdirSync(outsideDir);
-fs.mkdirSync(bundledDir);
 const settings = { lutPreviewImage: '' };
 const manager = new LutManager(lutsDir);
-registerLutHandlers(manager, { settingsManager: { load: () => ({ ...settings }) }, appPaths: { bundledLutsDir: bundledDir } });
+registerLutHandlers(manager, { settingsManager: { load: () => ({ ...settings }) } });
 
 test.after(async () => {
   await manager._hashFill;
@@ -121,29 +119,9 @@ test('luts:getInfo: resumo da coleção para as Configurações (sem argumentos)
   put(lutsDir, 'a.cube');
   fs.mkdirSync(path.join(lutsDir, 'Pasta'));
   put(path.join(lutsDir, 'Pasta'), 'b.cube', cube3d(2, { tint: 0.2 }));
-  put(bundledDir, 'padrao.cube', cube3d(2, { tint: 0.5 }));
   const info = await call('luts:getInfo');
-  assert.deepEqual(info, { folder: lutsDir, count: 2, groups: 1, problems: [], problemCount: 0, bundledAvailable: true });
+  assert.deepEqual(info, { folder: lutsDir, count: 2, groups: 1, problems: [], problemCount: 0 });
   await assert.rejects(() => call('luts:getInfo', 'extra'), /demais/);
-  fs.rmSync(path.join(bundledDir, 'padrao.cube'));
-  assert.equal((await call('luts:getInfo')).bundledAvailable, false);
-});
-
-test('luts:restoreBundled: só copia o que falta (nunca apaga nem sobrescreve) e diz o que fez; sem origem a mensagem é em português', async () => {
-  reset();
-  put(bundledDir, 'p1.cube', cube3d(2, { tint: 0.5 }));
-  put(bundledDir, 'p2.cube', cube3d(2, { tint: 0.6 }));
-  const edited = put(lutsDir, 'p2.cube', cube3d(2, { tint: 0.99 }));
-  const mine = put(lutsDir, 'minha.cube', cube3d(2, { tint: 0.1 }));
-  const res = await call('luts:restoreBundled');
-  assert.deepEqual(res, { restored: 1, alreadyThere: 1, failed: 0, missingSource: false });
-  assert.ok(fs.existsSync(path.join(lutsDir, 'p1.cube')));
-  assert.equal(fs.readFileSync(edited, 'utf8'), cube3d(2, { tint: 0.99 }));
-  assert.ok(fs.existsSync(mine));
-  await assert.rejects(() => call('luts:restoreBundled', 'x'), /demais/);
-
-  for (const n of fs.readdirSync(bundledDir)) fs.rmSync(path.join(bundledDir, n));
-  await assert.rejects(() => call('luts:restoreBundled'), (err) => err.message === 'As LUTs padrão não foram encontradas nesta instalação.');
 });
 
 test('luts:parse: conteúdo inválido volta como { ok: false, code, reason }, não como erro (e a recusa é a mesma da importação)', async () => {
