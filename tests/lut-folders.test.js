@@ -100,7 +100,12 @@ test('assertFolderInside: só pasta comum que existe dentro da coleção (nunca 
   put('A/B/x.cube');
   put('arquivo.cube');
   assert.equal(mgr.assertFolderInside('A/B'), path.join(lutsDir, 'A', 'B'));
-  assert.equal(mgr.assertFolderInside('a/b'), path.join(lutsDir, 'a', 'b'), process.platform === 'win32' ? 'o Windows não diferencia maiúsculas' : 'x');
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    // sistemas de arquivos que não diferenciam maiúsculas (padrão do Windows e do macOS) acham "A/B" por "a/b"
+    assert.equal(mgr.assertFolderInside('a/b'), path.join(lutsDir, 'a', 'b'));
+  } else {
+    assert.throws(() => mgr.assertFolderInside('a/b'), /não existe mais/, 'no Linux "a/b" é outra pasta e não existe');
+  }
   assert.throws(() => mgr.assertFolderInside('nao-existe'), /não existe mais/);
   assert.throws(() => mgr.assertFolderInside('arquivo.cube'), /não está na pasta de LUTs/);
   assert.throws(() => mgr.assertFolderInside(''), (err) => err.code === 'LUT_USER');
