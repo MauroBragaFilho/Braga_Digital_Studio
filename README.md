@@ -17,13 +17,13 @@ O BDS é **gratuito**. Baixe o instalador mais recente na página de [Releases](
 Na instalação você escolhe entre:
 
 - **Instalação completa (recomendada):** instala o programa, baixa as ferramentas e o recurso de transcrição e deixa tudo pronto para usar.
-- **Instalação curta:** instala o programa e as ferramentas básicas; a transcrição pode ser instalada depois em *Configurações → Módulos*.
+- **Instalação curta:** instala o programa e as ferramentas básicas; a transcrição pode ser instalada depois: ligue o módulo em *Configurações → Módulos* e instale o motor e o modelo em *Configurações → Inteligência Artificial → Neste computador*.
 
-Enquanto o instalador não sair com assinatura digital, o Windows (SmartScreen) pode mostrar um aviso no primeiro uso: use "Mais informações → Executar assim mesmo". Cada release traz o SHA-256 do instalador e o `SHA256SUMS.txt` com o de todos os arquivos. O programa avisa em *Configurações* quando há versão nova (a verificação ao abrir o app é opcional) e só instala depois da sua confirmação. Só a versão mais recente recebe correções, em regime de melhor esforço.
+Enquanto o instalador não sair com assinatura digital, o Windows (SmartScreen) pode mostrar um aviso no primeiro uso: use "Mais informações → Executar assim mesmo". Cada release traz o SHA-256 do instalador e o `SHA256SUMS.txt` com o de todos os arquivos. O programa avisa em *Configurações* quando há versão nova (a verificação ao abrir o app é opcional) e só instala depois da sua confirmação; a instalação automática é só no Windows (no Linux ele apenas avisa e indica o pacote da release). Só a versão mais recente recebe correções, em regime de melhor esforço.
 
 ## 🚀 Principais Funcionalidades
 
-Numa instalação nova só o Assistente de IA vem ligado. Os outros recursos abaixo se ligam em *Configurações → Módulos*.
+Numa instalação nova só o Assistente de IA vem ligado (a instalação completa liga também a Transcrição). Os outros recursos abaixo se ligam em *Configurações → Módulos*.
 
 - **Gerenciamento de Dispositivos de Captura:** 
   - Reconhecimento de câmeras e celulares conectados via **MTP** (Media Transfer Protocol; só no Windows).
@@ -33,8 +33,8 @@ Numa instalação nova só o Assistente de IA vem ligado. Os outros recursos aba
   - Importação de mídias sem nunca sobrescrever arquivos existentes e ignorando pastas de sistema ocultas das câmeras, com organização das mídias depois de importar.
 
 - **Início, Biblioteca e Projetos:** 
-  - Biblioteca com janela virtual (milhares de arquivos sem travar), filtros, favoritos e preview de vídeo, áudio e foto.
-  - Projetos com pastas, sequências e sincronização por áudio, exportação para o Premiere (XML) e o formato próprio `.bdspro`, com relink de arquivos ausentes. Cada projeto tem uma área de trabalho com abas de visão geral, arquivos, áudio, dispositivos, monitor e entrega.
+  - Biblioteca com janela virtual (milhares de arquivos sem travar), filtros, favoritos e preview de vídeo, áudio e foto. Nas listas de seleção múltipla (Biblioteca, Projetos, LUTs), segurar Shift ao clicar seleciona o intervalo entre o último clique e o atual.
+  - Projetos com pastas e sincronização das câmeras por áudio, exportação para o Premiere (XML) e o formato próprio `.bdspro`, com relink de arquivos ausentes. Cada projeto tem uma área de trabalho com quatro abas: Visão geral (com as LUTs do projeto), Arquivos (inclui "Remover silêncio" nos arquivos selecionados), Sincronizar câmeras e Entrega e exportação; o monitor de origem abre numa janela.
 
 - **Download de Mídias:** 
   - Download de vídeo e áudio do YouTube e de centenas de outros sites (yt-dlp), com pausa configurável entre os itens da fila.
@@ -45,18 +45,20 @@ Numa instalação nova só o Assistente de IA vem ligado. Os outros recursos aba
 - **Transcrição e legendas (módulo opcional):** 
   - Transcrição local, no seu computador (a nuvem é opcional e só é usada se você escolher), com saída em SRT, Markdown e TXT; filtro automático de trechos sem fala; aceleração por placa NVIDIA opcional (só no Windows).
 
-- **Conversor, Remover Silêncio e Metadados:** ferramentas para converter mídia, cortar silêncios e editar tags e capas.
+- **Conversor e Metadados:** ferramentas para converter mídia e editar tags e capas. Cortar silêncios fica dentro de Projetos (aba Arquivos).
 
 - **Painel de Color Grading (LUTs):**  (EM PROGRESSO)
-  - Importação, visualização e gerenciamento de perfis de cor `.cube`, com sincronização de LUTs com dispositivos.
+  - Importação de perfis de cor `.cube` (arquivos, uma pasta inteira ou arrastar e soltar, com resumo antes de copiar), subpastas, LUTs 1D e 3D, busca, seleção múltipla e visualização; o painel lateral só aparece quando há LUT selecionada.
+  - LUTs por projeto (card na Visão geral do projeto): o `.bdspro` leva as LUTs, e o XML do Premiere sai com uma pasta de LUTs ao lado (o XML não aplica a LUT).
+  - Sincronização de LUTs com dispositivos (na tela Dispositivos).
   - Comparação "Antes e Depois" com controle deslizante, em tempo real, sobre imagens.
 
 - **Assistente de IA integrado:** 
-  - Um botão flutuante (atalho **Ctrl + J**) abre um chat que conhece a sua biblioteca, os projetos e a tela em que você está, e pode transcrever, converter, remover silêncio, baixar um link, criar projetos e exportar. **Toda ação pede a sua confirmação antes de acontecer.** Antes da primeira mensagem a um servidor que não é local, o app avisa que o conteúdo sairá do seu computador.
-  - Funciona com servidores que você escolhe: locais (o modelo próprio do app, LM Studio, Ollama) ou na internet (Groq, Qwen, OpenAI ou outro compatível), cada um com a sua chave, com troca automática para o próximo se um falhar. O modelo próprio do app baixa o `llama-server` oficial do llama.cpp e um modelo Qwen2.5-0.5B ou Qwen3-VL 2B/4B/8B (com visão), escolhido pela memória da placa de vídeo. É opcional e pode ser desligado em *Configurações*.
+  - Um botão flutuante (atalho **Ctrl + J**) abre um chat que conhece a sua biblioteca, os projetos e a tela em que você está, e pode transcrever, converter, remover silêncio, baixar um link, criar projetos e exportar (22 ferramentas). **Por padrão ele executa o que você pede no chat sem abrir uma janela de confirmação** (as validações continuam e cada ação fica no registro); em *Configurações → Inteligência Artificial → Assistente*, desligue "Executar sem pedir confirmação" para confirmar cada ação. Agentes externos (MCP) pedem confirmação por padrão. Antes da primeira mensagem a um servidor que não é local, o app avisa que o conteúdo sairá do seu computador.
+  - Funciona com servidores que você escolhe: locais (o modelo próprio do app, LM Studio, Ollama) ou na internet (Groq, Qwen, OpenAI, Anthropic ou outro compatível), cada um com a sua chave, com troca automática para o próximo se um falhar. Em *Configurações → Inteligência Artificial → Provedores*, "Adicionar provedor" descobre os modelos a partir do endereço e da chave. O modelo próprio do app baixa o `llama-server` oficial do llama.cpp e um modelo Qwen2.5-0.5B ou Qwen3-VL 2B/4B/8B (com visão), escolhido pela memória da placa de vídeo. É opcional e pode ser desligado em *Configurações*.
 
 - **Isolamento de Sessão Segura e Login Local:** 
-  - Login isolado em janelas particionadas (`persist:youtube`): a sessão das plataformas fica numa partição própria do navegador embutido, separada do restante do app. O BDS não guarda a sua senha nem envia a sessão a nenhuma nuvem do autor. Usar a sua conta nos downloads do YouTube é opcional e vem desligado (*Configurações → Mídia*). Ligado, o app cria um arquivo de texto temporário com a sessão do YouTube só enquanto baixa e o apaga ao terminar; enquanto ele existe, quem usa o seu usuário do Windows consegue lê-lo, então use um computador de confiança. O botão *Sair e apagar a sessão* encerra o login e remove a sessão guardada.
+  - Login isolado em janelas particionadas (`persist:youtube`): a sessão das plataformas fica numa partição própria do navegador embutido, separada do restante do app. O BDS não guarda a sua senha nem envia a sessão a nenhuma nuvem do autor. Usar a sua conta nos downloads do YouTube é opcional e vem desligado (*Configurações → Mídia e Desempenho → Downloads*). A aba Envio usa uma partição separada (`persist:youtube_studio`). Ligado, o app cria um arquivo de texto temporário com a sessão do YouTube só enquanto baixa e o apaga ao terminar; enquanto ele existe, quem usa o seu usuário do Windows consegue lê-lo, então use um computador de confiança. O botão *Sair e apagar a sessão* encerra o login e remove a sessão guardada.
 
 - **Design de Interface:** 
   - Visual limpo, em tema escuro ou claro, com botões em pílula, acento vermelho e outras 4 cores à escolha, fontes Montserrat e Inter e contraste de acessibilidade (WCAG AA).
@@ -90,7 +92,7 @@ O código-fonte é aberto, sob a [GPL v3](LICENSE). Certifique-se de ter o **Nod
    npm start
    ```
 
-   Atenção: em desenvolvimento o app grava `data/`, `database/`, `logs/` e `config/` na própria pasta do projeto. Para testar sem tocar nos seus dados, use `--user-data-dir` com uma pasta de teste.
+   Atenção: em desenvolvimento o app grava `data/`, `database/`, `logs/` e `config/` na própria pasta do projeto, e `--user-data-dir` não muda isso (só o perfil do navegador embutido). Para testar sem tocar nos seus dados, use um clone separado do repositório.
 
 ## 🏭 Como Compilar (Gerar o Executável .exe)
 
@@ -100,7 +102,7 @@ Para transformar o projeto em um instalador fácil de distribuir para outros com
 npm run build
 ```
 
-Isso empacota o código-fonte (os motores de mídia, download e IA são baixados em runtime, não vão no instalador) e gera o instalador `braga-digital-studio-<versão>-windows-x64.exe` dentro da pasta `dist/` (cerca de 90 a 100 MB). O instalador é preto, em português, e pergunta se a instalação é curta ou completa. Parâmetros de linha de comando:
+Antes de empacotar, `npm run build` (e todos os `build:*`) roda `npm run verify:package -- --release`, que também confere as 40 LUTs embutidas (`resources/luts-embutidas`): **o build de release é bloqueado enquanto a procedência das LUTs estiver como `a-confirmar`** em `PROCEDENCIA.json`, e as `.cube` não são versionadas (veja o README dessa pasta); sem elas, um clone limpo não gera o instalador. Isso empacota o código-fonte (os motores de mídia, download e IA são baixados em runtime, não vão no instalador) e gera o instalador `braga-digital-studio-<versão>-windows-x64.exe` dentro da pasta `dist/` (cerca de 90 a 100 MB). O instalador é preto, em português, e pergunta se a instalação é curta ou completa. Parâmetros de linha de comando:
 
 - `/S` instala sem janela; nesse modo o padrão é `/COMPONENTES=nenhuma`, ou seja, uma atualização silenciosa não baixa nada e mantém o que já existe.
 - `/COMPONENTES=completa|curta|nenhuma` escolhe o que baixar; completa e curta chamam o app com `--setup-components=full|basic`.
@@ -116,7 +118,7 @@ O script do instalador fica em `installer/`.
 | `npm run check` | Valida a sintaxe de todos os `.js` (módulos ES no renderer) |
 | `npm run lint` | ESLint (config flat em `eslint.config.js`) |
 | `npm test` | Testes unitários (`node --test`, pasta `tests/`) |
-| `npm run verify:package` | Garante que nenhum dado do usuário entra no pacote |
+| `npm run verify:package` | Garante que nenhum dado do usuário entra no pacote e (com `-- --release`) confere as LUTs embutidas |
 | `npm run generate:preload` | Gera o `preload.js` |
 | `npm run verify:preload` | Confere se o `preload.js` está igual ao que o gerador produz |
 | `npm run generate:licenses` | Regenera a lista de licenças de terceiros |
@@ -126,7 +128,7 @@ O script do instalador fica em `installer/`.
 
 Outros scripts em `scripts/`, sem atalho no npm: `after-pack-check.js` (roda depois do empacotamento), `generate-installer-images.js`, `installer-license.js` e `limpar-artefatos.js`. O `BDS_Menu.bat`, na raiz, é um menu do Windows para rodar o app, gerar o instalador ou a versão portable, publicar uma release e limpar artefatos do GitHub Actions.
 
-O workflow `.github/workflows/ci.yml` roda em todo push (qualquer branch) e PR, em Linux e Windows, com Node 24: instala o FFmpeg (sem ele os testes de mídia são pulados), roda `npm ci`, `check`, `lint` e `test`, confere a lista de licenças (`node scripts/generate-licenses.js --check`, no Windows) e, num job à parte, `npm audit --omit=dev --audit-level=high`. Os workflows de release rodam as mesmas verificações antes de compilar.
+O workflow `.github/workflows/ci.yml` roda em todo push (qualquer branch) e PR, em Linux e Windows, com Node 24: instala o FFmpeg (sem ele os testes de mídia são pulados), roda `npm ci`, `check`, `lint` e `test`, confere a lista de licenças (`node scripts/generate-licenses.js --check`, no Windows) e, num job à parte, `npm audit --omit=dev --audit-level=high`. Os workflows de release rodam `check`, `lint` e `test` (a lista de licenças e a auditoria ficam só no CI) e o `verify:package -- --release` antes de compilar.
 
 ## 🚢 Versão e Release
 
@@ -141,14 +143,14 @@ node scripts/release-tag.js --dry-run  # só mostra o que faria (--yes pula a co
 O script confere se você está na `main` com tudo commitado e sincronizado, recusa uma tag que já exista (local ou no remoto), atualiza o `package.json` e o `package-lock.json`, cria a tag anotada e a envia. O workflow **Release BDS (Windows + Linux)** (`release-bds.yml`) então:
 
 1. compila Windows e Linux, depois de passar por `check`, `lint` e `test`;
-2. assina o instalador Windows na SignPath (quando o token da SignPath está configurado; sem ele, o instalador sai sem assinar), só se o commit da tag estiver na `main` (veja a [política de assinatura](CODE_SIGNING_POLICY.md));
+2. assina o instalador Windows na SignPath só em tag e quando o token e o ID da organização da SignPath estão configurados (sem eles, o instalador sai sem assinar); uma tag cujo commit não está na `main` faz o workflow falhar, e a execução manual nunca assina (veja a [política de assinatura](CODE_SIGNING_POLICY.md));
 3. publica uma única Release, com o `SHA256SUMS.txt` e as notas: o SHA-256 do instalador e a seção **Mudanças**, com o título de cada commit desde a tag anterior. Por isso vale escrever o título do commit como uma frase que o usuário entenda.
 
 O mesmo workflow pode ser rodado à mão (sem tag): ele pega a próxima versão livre e faz um commit `chore(release): vX.Y.Z [skip release]` na `main`. Os workflows `build-bds-release.yml` (só Windows), `build-bds-linux.yml` (só Linux, com teste de abertura via Xvfb) e `release-sign.yml` são de execução manual; a assinatura de produção roda dentro do `release-bds.yml`.
 
-Para quem faz fork: a Release é publicada no repositório `RELEASES_REPO` com o token do próprio repositório (`GITHUB_TOKEN`, sem segredo à parte); a assinatura exige `SIGNPATH_API_TOKEN` e `SIGNPATH_ORGANIZATION_ID`.
+Para quem faz fork: a Release é publicada no repositório `RELEASES_REPO` com o token do próprio repositório (`GITHUB_TOKEN`, sem segredo à parte); a assinatura exige o segredo `SIGNPATH_API_TOKEN` e a variável `SIGNPATH_ORGANIZATION_ID` (opcionais: as variáveis `SIGNPATH_PROJECT_SLUG` e `SIGNPATH_SIGNING_POLICY`).
 
-Os arquivos da Release seguem um padrão só, que o atualizador interno procura:
+Os arquivos da Release seguem um padrão só, que o atualizador interno procura (nas 2 releases seguintes à 1.1.1 saem também cópias com os nomes antigos, com um `.sha256` cada uma, para a transição do atualizador):
 
 | Arquivo | O que é |
 |---|---|
@@ -163,7 +165,7 @@ Issues e pull requests são bem-vindos. Antes de abrir um PR, rode `npm run chec
 
 ## 🧩 Módulos
 
-Cada recurso do BDS é um módulo com um interruptor em *Configurações → Módulos*. Numa instalação nova só o Assistente de IA vem ligado; quem já usa o app mantém o que escolheu. Os recursos pesados, como a **Transcrição** (motor whisper.cpp, modelos e DLLs da placa NVIDIA) e o **modelo local de IA** (`llama-server` e o modelo escolhido pela memória da placa), são baixados sob demanda, com verificação de SHA-256, para `<dataDir>/modules`. Código em `src/core/modules/`, IPC em `src/ipc/moduleHandlers.js`, painel em `renderer/components/modules-panel.js`. Detalhes em [`src/core/modules/README.md`](src/core/modules/README.md).
+Cada recurso do BDS é um módulo com um interruptor em *Configurações → Módulos*. Numa instalação nova só o Assistente de IA vem ligado (a instalação completa liga também a Transcrição); quem já usa o app mantém o que escolheu. Remover silêncio não é um módulo: fica dentro de Projetos. Os recursos pesados, como a **Transcrição** (motor whisper.cpp, modelos e DLLs da placa NVIDIA) e o **modelo local de IA** (`llama-server` e o modelo escolhido pela memória da placa), são baixados sob demanda, com verificação de SHA-256, para `<dataDir>/modules`. Código em `src/core/modules/`, IPC em `src/ipc/moduleHandlers.js`, painel em `renderer/components/modules-panel.js`. Detalhes em [`src/core/modules/README.md`](src/core/modules/README.md).
 
 As telas de Recuperação e Montagem estão em desenvolvimento e não aparecem no app instalado.
 
@@ -172,8 +174,8 @@ As telas de Recuperação e Montagem estão em desenvolvimento e não aparecem n
 ```
 main.js, preload.js      Processo principal e ponte segura (IPC); o preload é gerado
 src/bootstrap/           Inicialização, serviços, desligamento e ponte com o renderer
-src/core/                Regras de negócio (mídia, biblioteca, dispositivos, módulos...)
-src/infrastructure/      Ferramentas externas, filesystem, banco de dados
+src/core/                Regras de negócio (mídia, biblioteca, dispositivos, módulos, banco de dados em database/...)
+src/infrastructure/      Ferramentas externas, filesystem, hardware, rede e telemetria
 src/ipc/                 Handlers IPC, tabela de canais e validação de entradas
 src/services/            Serviços de aplicação (downloads, conversão, assistente de IA...)
 src/setup/               Modo sem janela usado pelo instalador (--setup-components)
@@ -191,9 +193,9 @@ scripts/, tests/         Scripts de manutenção e testes automatizados
 
 Todos os dados que o programa gera (biblioteca, configurações, históricos, miniaturas) ficam no seu computador, em uma pasta local (`AppData`). O programa **não tem telemetria**, não exige conta e não envia a sua biblioteca nem os seus arquivos ao autor. Chaves de servidores de IA e os tokens de pareamento dos celulares são guardados criptografados pelo sistema (DPAPI no Windows) e nunca são exibidos de volta; se o sistema não oferecer criptografia (por exemplo, Linux sem chaveiro), a chave não é guardada.
 
-Relatórios de falha são gravados só no seu computador, sem e-mails nem chaves longas (inclusive nas últimas 30 linhas de log que eles trazem), e apagados depois de 30 dias. Nada é enviado automaticamente, a menos que você configure um endereço https ou envie um relato manual. O histórico é apagado depois de 180 dias; o do assistente guarda no máximo 40 mensagens.
+Relatórios de falha são gravados só no seu computador, sem e-mails nem chaves longas (inclusive nas últimas 30 linhas de log que eles trazem), e apagados depois de 30 dias. Nada é enviado automaticamente, a menos que você configure um endereço https ou envie um relato manual. O histórico de downloads e conversões é apagado depois de 180 dias. A conversa do assistente guarda até 80 mensagens (as mais antigas viram um resumo; ao modelo vão no máximo 40) e pode ser limpa no chat.
 
-O que acessa a internet: verificação e download de atualizações (GitHub), das ferramentas e modelos (releases públicas de cada projeto e Hugging Face), os sites de onde você pedir para baixar e, **se você escolher**, a nuvem: o servidor de IA configurado, a transcrição em nuvem (o áudio vai ao provedor escolhido, Groq ou ElevenLabs) e a análise de transcrição por IA (o texto da transcrição vai ao servidor de IA). Com qualquer um deles, o conteúdo enviado sai do seu computador; por isso o app avisa antes da primeira vez. Na rede local, o app procura câmeras Sony (SSDP) e o celular BDS (mDNS).
+O que acessa a internet: verificação e download de atualizações (GitHub), das ferramentas e modelos (releases públicas de cada projeto e Hugging Face), os sites de onde você pedir para baixar e, **se você escolher**, a nuvem: o servidor de IA configurado, a transcrição em nuvem (o áudio vai ao provedor escolhido: Groq, OpenAI ou ElevenLabs) e a análise de transcrição por IA (o texto da transcrição vai ao servidor de IA). Com qualquer um deles, o conteúdo enviado sai do seu computador; por isso o app avisa antes da primeira vez. Na rede local, o app procura câmeras Sony (SSDP) e o celular BDS (mDNS).
 
 O servidor MCP vem desligado. Ligado, escuta só em 127.0.0.1 (se a porta estiver ocupada, usa outra livre), confere o Host, recusa conexões vindas de navegador e exige um token aleatório de 256 bits, gerado ao ligar e guardado na sua pasta de usuário. "Sem token" e "ações sem confirmação" são opcionais e não podem ficar ligados ao mesmo tempo.
 

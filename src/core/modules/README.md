@@ -1,9 +1,11 @@
 # Módulos opcionais do BDS
 
-Recursos que o usuário instala **só se quiser** (hoje: Whisper, para legendas e transcrição).
-O BDS funciona normalmente sem nenhum deles. Código em `src/core/modules/`, IPC em
-`src/ipc/moduleHandlers.js`, painel de instalação em `renderer/components/modules-panel.js`
-(Configurações → Inteligência Artificial) e tela de uso em `renderer/screens/transcription.*`.
+Recursos que o usuário instala **só se quiser**. Hoje há dois componentes pesados, baixados sob demanda para
+`<dataDir>/modules`: o **Whisper** (legendas e transcrição) e o **modelo local de IA** (`llama-server` e um modelo Qwen).
+O BDS funciona normalmente sem nenhum deles. Código em `src/core/modules/` (`ModuleManager.js` para o Whisper e `LocalLlm.js`
+para o modelo local), IPC em `src/ipc/moduleHandlers.js` (Whisper) e `src/ipc/aiHandlers.js` (modelo local), painel de instalação
+do Whisper em `renderer/components/modules-panel.js` (Configurações → Inteligência Artificial → Neste computador) e tela de uso em
+`renderer/screens/transcription.*`. O modelo local tem uma seção própria mais abaixo.
 
 ## Como funciona o motor de transcrição
 
@@ -26,7 +28,8 @@ vídeo/áudio ──ffmpeg do BDS──▶ WAV 16 kHz ──whisper-cli──▶
 
 ### Configuração do `whisper-cli` (medida, não chutada)
 
-`-bs 1 -bo 1 -mc 0 -dtw <modelo> -nfa -l pt -ojf -t <metade dos núcleos lógicos>`
+`-bs 1 -bo 1 -mc 0 -dtw <modelo> -nfa -l pt -ojf -t <metade dos núcleos lógicos>` (mais `-pp` e, sem o motor de CPU
+instalado, `-ng`; `-t` fica entre 2 e 8)
 
 | Opção | Por quê |
 |---|---|
@@ -63,7 +66,8 @@ Os caminhos reais (vídeo de origem, destino das legendas) ficam com o ffmpeg e 
 
 ## Filtro de silêncio (`skipSilence`, ligado por padrão)
 
-Antes do whisper, o ffmpeg (`silencedetect`: -35 dB, silêncios de 1,5 s ou mais) marca os trechos sem fala e o
+Antes do whisper, o ffmpeg (`silencedetect`; por padrão -35 dB e silêncios de 1,5 s ou mais, ajustáveis na tela e
+validados por `sanitizeSilenceOptions`) marca os trechos sem fala e o
 BDS monta um WAV só com a fala (`src/core/transcription/silenceTrim.js`). Isso acelera a transcrição e evita
 frases inventadas em trecho mudo. Os tempos finais **não mudam**: depois do whisper, segmentos e palavras voltam
 ao tempo do arquivo original por um mapa de tempo (`remapResult`).
@@ -91,7 +95,9 @@ ao tempo do arquivo original por um mapa de tempo (`remapResult`).
 
 - **Motor e aceleração** são fixados em `sources.js` (`WHISPER_CPP_RELEASE`: tag, tamanho e SHA-256). Só o arquivo
   exato que foi testado é aceito. Nada é redistribuído pelo BDS.
-- **Modelos**: tamanho e SHA-256 vêm da API do Hugging Face na hora do download (a revisão é fixada).
+- **Modelos**: tamanho, SHA-256 e revisão vêm da API do Hugging Face na hora do download, e a revisão lida é a usada na
+  URL do arquivo. Sem o hash, a instalação é recusada (`NO_CHECKSUM`). (No modelo local de IA, ao contrário, a revisão e o
+  SHA-256 ficam fixados no código.)
 - A aceleração NVIDIA exige aceitar a licença da NVIDIA e o motor instalado (serve de reserva se a placa falhar).
   Requer driver 551 ou mais novo (CUDA 12.4). Não há versão para AMD/Intel: nelas o motor roda na CPU.
 - O download é retomável (`.part`), confere o SHA-256 e é cancelável (`FileDownloader.js`).
@@ -102,8 +108,8 @@ ao tempo do arquivo original por um mapa de tempo (`remapResult`).
 2. Copie o `sha256:` e o tamanho de cada pacote da tabela em `sources.js` (`whisper-bin-x64.zip`, `whisper-bin-win-cpu-arm64.zip`,
    `whisper-bin-ubuntu-x64.tar.gz`, `whisper-bin-ubuntu-arm64.tar.gz` e `whisper-cublas-12.4.0-bin-x64.zip`, ou a versão de CUDA nova).
    Por sistema: Windows x64/arm64 e Linux x64/arm64 têm motor (CPU); a aceleração NVIDIA só existe para Windows x64; **macOS não tem
-   pacote oficial** (a release só traz um xcframework) e aparece como "indisponível neste sistema" (`engine.available:false` +
-   `unavailableReason` em `getStatus()`). Combinação sem entrada na tabela = indisponível, nunca binário errado.
+   pacote oficial** (a release só traz um xcframework) e aparece como "indisponível neste sistema"
+   (`whisper.engine.available: false` + `whisper.engine.unavailableReason` em `getStatus()`; a CUDA tem os mesmos campos em `whisper.cuda`). Combinação sem entrada na tabela = indisponível, nunca binário errado.
 3. Troque `WHISPER_CPP_RELEASE` em `src/core/modules/sources.js` e rode a validação de precisão (os flags acima
    dependem da versão: confira `whisper-cli -h`).
 
@@ -117,8 +123,10 @@ whisper/models/<id>/model.bin   um modelo ggml por pasta
 whisper/work/                temporários de cada transcrição (apagados ao terminar)
 ```
 
-Instalar de um `.zip` local também é possível (Configurações → Motor → "Instalar de um .zip"): serve o
-`whisper-bin-x64.zip` baixado à mão, para uso sem internet.
+Instalar de um pacote local também é possível (Configurações → Inteligência Artificial → Neste computador → "Usar um
+arquivo…"): serve o `whisper-bin-x64.zip` baixado à mão, para uso sem internet. O SHA-256 do pacote é conferido contra o
+fixado em `sources.js`; se não bater, só instala depois de uma confirmação explícita ("Instalar mesmo assim"), senão o erro é
+`UNOFFICIAL_ZIP`. O código aceita também `.tar.gz`/`.tgz`, mas a janela de escolha do painel filtra só `.zip`.
 
 ## Legendas e análise por IA (código do próprio BDS)
 
@@ -128,37 +136,52 @@ Instalar de um `.zip` local também é possível (Configurações → Motor → 
   saída é **idêntica** à do Python (arquivo dourado `tests/fixtures/subtitles-golden.json`, gerado pelo próprio
   `legendar.py`).
 - **Análise com IA (opcional)** — `src/services/ai/transcriptAnalysis.js` (tarefa `analyzeTranscript`) e
-  `analyzeFile.js`. Pega o `.md` (ou `.srt`) de uma transcrição e grava `<nome>.analise.md` ao lado, com resumo,
-  principais assuntos, pontos importantes e trechos relevantes (mesmo prompt do projeto "Whisper + LM Studio").
-  Transcrição longa é dividida por tempo (~8 mil caracteres por parte), cada parte é analisada e as análises são
-  unidas em grupos até sobrar uma. Usa o servidor de IA configurado (LM Studio, Ollama, OpenAI…) em
-  Configurações → Inteligência Artificial → *Servidor de IA*; é **opcional e vem desligada** na tela de Transcrição, e a
+  `analyzeFile.js`. Pega o `.md`, `.srt`, `.vtt` ou `.txt` de uma transcrição (até 5 MB) e grava `<nome>.analise.md` ao lado, com
+  resumo, principais assuntos, pontos importantes e trechos relevantes (mesmo prompt do projeto "Whisper + LM Studio").
+  Transcrição longa é dividida por tempo (~6,5 mil caracteres por parte, ajustável de 2 mil a 15 mil), cada parte é analisada e
+  as análises são unidas em grupos até sobrar uma. Usa o provedor de chat configurado (o modelo local do app, LM Studio, Ollama,
+  OpenAI…) em Configurações → Inteligência Artificial → Provedores; é **opcional e vem desligada** na tela de Transcrição, e a
   tela avisa quando o texto sairia do computador. IPC: `ai:analyzeTranscript` / `ai:cancelAnalysis` e o evento
   `ai:analysisProgress` (uma análise por vez; cancelar derruba a requisição ao servidor).
 
 ## Adicionar outro módulo no futuro
 
-Cada módulo teria seu próprio gerenciador de estado/instalação (como `ModuleManager` para o Whisper),
-reutilizando `FileDownloader` (retomada, SHA-256, cancelamento), `ZipExtractor` e `sources`.
+Um módulo novo é, no mínimo, uma definição no `ModuleRegistry.js` (`BASE_MODULES` ou o slot `EXTRA_MODULES`). O resto é opcional:
+
+1. Definição com `id`, `title`, `description`, `screens`, `devOnly`, `defaultEnabled`, `hasEngine`, `engine` (se houver) e `order`.
+2. O `data-view` da tela no menu do `renderer/index.html`.
+3. Tarefas de fundo: entrada em `HOOKS[id]` em `src/bootstrap/moduleRuntime.js` (`start`/`stop`).
+4. Serviço criado só no primeiro uso: `lazyService` em `src/bootstrap/services.js`.
+5. Cancelar ao desligar: entrada em `tasks[id]` em `src/ipc/index.js`.
+6. Cartões das Configurações com `data-module="<id>"` em `settings.html`.
+7. Telas e ferramentas do assistente: `src/services/ai/screens.js` e `renderer/utils/assistantContext.js` (campo `module`).
+8. Testes em `tests/module-registry.test.js` e `tests/modules-migration.test.js`.
+
+Módulo novo **não** entra em `CORE_SCREEN_MODULE_IDS` (chave ausente = padrão do módulo). Se precisar baixar algo, o gerenciador
+de instalação reaproveita `FileDownloader` (retomada, SHA-256, cancelamento), `ZipExtractor` e `sources`, como fazem o
+`ModuleManager` (Whisper) e o `LocalLlm` (modelo local).
 
 ## Sistema de módulos (ligar/desligar recursos)
 
 **Todas as telas, exceto Home e Configurações, são módulos**: Downloads, Conversor, Biblioteca, Projetos (com a área de
-trabalho), Envio, Dispositivos, LUTs, Transcrição, Metadados, Remover Silêncios, mais Recuperar e Montagem (desenvolvimento)
-e o Assistente de IA (sem tela). Em Configurações → Módulos o usuário liga/desliga cada um; desligado, o recurso some do menu
+trabalho, que inclui "Remover silêncio" na aba Arquivos), Envio, Dispositivos, LUTs, Transcrição, Metadados, mais Recuperar e
+Montagem (desenvolvimento) e o Assistente de IA (sem tela): 12 módulos. Remover silêncio já foi um módulo com tela própria;
+hoje é uma função de Projetos (`renderer/screens/workspace/silence.js`) e não tem interruptor. Em Configurações → Módulos o usuário liga/desliga cada um; desligado, o recurso some do menu
 lateral, dos cartões da Home, dos atalhos (Ctrl+N), das opções de tela inicial, dos cartões das Configurações
 (`[data-module="<id>"]` em `settings.html`) e das ferramentas/telas do assistente, e qualquer navegação a ele volta para a Home.
 A pesquisa do topo e o contador de mídias dependem da Biblioteca. As abas ficam ocultas até o main informar o estado
 (fail-closed; a tela inicial espera até 3 s por isso) e, se a lista de módulos não puder ser lida, as telas principais aparecem.
 
 - `ModuleRegistry.js`: definições (`id`, `title`, `description`, `screens[]`, `devOnly`, `defaultEnabled`,
-  `hasEngine`, `order`) e funções puras `resolveEnabled(settings, { isDev })`, `isEnabled`, `moduleForScreen`,
-  `sanitizeEnabledModules`; `CORE_SCREEN_MODULE_IDS` lista os 7 módulos de tela criados em 2026-10-05.
+  `hasEngine`, `engine`, `order`) e funções puras `resolveEnabled(settings, { isDev })`, `isEnabled`, `getModule`,
+  `isKnownId`, `moduleForScreen`, `sanitizeEnabledModules` (descarta ids desconhecidos ao salvar, como o antigo `silence`);
+  `CORE_SCREEN_MODULE_IDS` lista os 7 módulos de tela criados em 2026-10-05.
   O slot `EXTRA_MODULES` (vazio) é onde entram módulos futuros; vazio, nada aparece na interface.
 - Estado em `settings.enabledModules` (`{ id: boolean }`). Chave ausente = padrão do módulo = **desligado**
   (instalação nova começa só com Home, Configurações e o Assistente de IA). Duas migrações únicas em
   `SettingsManager`, que nunca sobrescrevem uma escolha já gravada: `_migrateModules` (`modulesMigrated`) liga
-  Transcrição, Metadados e Remover Silêncios para quem tinha um `settings.json` anterior ao sistema de módulos;
+  Transcrição e Metadados para quem tinha um `settings.json` anterior ao sistema de módulos (o mesmo conjunto é aplicado quando o
+  `settings.json` está ilegível: o arquivo ruim é renomeado para `.corrupt-<data>` e o que a pessoa usava é mantido);
   `_migrateScreenModules` (`screenModulesMigrated`) liga as 7 telas principais para quem já usava o app quando elas
   viraram módulos (ninguém perde tela). Instalação nova grava as duas flags sem ligar nada.
   Módulos `devOnly` (Montagem, Recuperar) só existem em desenvolvimento. O módulo `ai` não tem tela (`screens: []`): ele controla o botão flutuante do assistente (`renderer/components/ai-assistant.js`).
@@ -172,13 +195,44 @@ A pesquisa do topo e o contador de mídias dependem da Biblioteca. As abas ficam
 - Motor sob demanda: o que é pesado é o motor/binário, baixado na ativação. Ao ligar um módulo com
   `hasEngine` e motor ausente, Configurações → Módulos pergunta antes de instalar: Transcrição abre o painel do
   motor Whisper (`engine: 'whisper'`); Recuperar (`engine: 'tool:untrunc'`) baixa o motor de recuperação via
-  `updates:updateTool`. Untrunc, Deno e spotDL são `onDemand` no `DependencyManager`: ausentes, não entram em
+  `updates:updateTool` (se a fonte não publica checksum, pede uma confirmação extra antes). Untrunc, Deno e spotDL são `onDemand` no `DependencyManager`: ausentes, não entram em
   `hasUpdates` nem em "Atualizar tudo"; instalados, continuam sendo atualizados.
-- Configurações → Inteligência Artificial (servidor de IA: endereço, modelo, chave, teste de conexão) aparece
+- Configurações → Inteligência Artificial (subabas Assistente, Provedores, Neste computador e Agentes externos) aparece
   quando Transcrição OU Assistente de IA está ligado; a tela de Transcrição só lê essa configuração.
-- IPC (`moduleHandlers.js`): `modules:list` (estado, `installed`, `available`), `modules:setEnabled(id, enabled)`
-  e evento `modules:changed`. Desligar um módulo com tarefa em andamento a cancela (transcrição, silêncios,
-  metadados). O main é a fonte da verdade; `renderer/app.js` aplica o resultado.
+- IPC (`moduleHandlers.js`): `modules:list` (id, título, descrição, telas, `devOnly`, `hasEngine`, `engine`, `enabled`,
+  `installed`, `available`) e `modules:setEnabled(id, enabled)`, que também liga/desliga as tarefas de fundo
+  (`moduleRuntime.toggle`; falha ali não desfaz o que foi salvo). O evento `modules:changed` leva o mapa `{ id: boolean }`.
+  Os demais canais `modules:*` cuidam do Whisper: `getStatus`, `installEngine`, `uninstallEngine`, `installModel`,
+  `removeModel`, `setActiveModel`, `installCuda`, `removeCuda`, `cancel`, `transcribe`, `cloudGet`, `cloudSet`, `cloudTest` e
+  `reveal`, com os eventos `modules:progress` e `modules:status`. Desligar um módulo com tarefa em andamento a cancela
+  (transcrição, downloads, conversor, metadados). O main é a fonte da verdade; `renderer/app.js` aplica o resultado.
+
+## Modelo local de IA (`LocalLlm.js`)
+
+O assistente pode usar um modelo que roda no próprio computador, sem internet depois de instalado. É o provedor `embedded`
+("Modelo local do app"): um `llama-server` do llama.cpp escutando só em `127.0.0.1` (porta `EMBEDDED_PORT`, em
+`src/services/ai/providers/presets.js`). Instalar, trocar e remover fica em Configurações → Inteligência Artificial →
+Neste computador.
+
+- **Servidor:** release oficial `ggml-org/llama.cpp` (tag `b12322`), com tamanho e SHA-256 fixados em `LocalLlm.js` para cada
+  sistema (Windows x64/arm64, Linux x64/arm64, macOS arm64/x64). O pacote com placa de vídeo (Vulkan: NVIDIA, AMD e Intel, sem
+  instalar CUDA) só existe para Windows x64.
+- **Modelos** (Qwen, Apache 2.0, repositórios oficiais `Qwen/...-GGUF` no Hugging Face, revisão e SHA-256 fixados): o
+  `qwen2.5-0.5b-instruct` (Q4_K_M, sem visão) e o Qwen3-VL 2B, 4B e 8B (Q4_K_M mais o projetor de imagem `mmproj` Q8_0, com
+  visão). O primeiro da lista é o padrão.
+- **Memória da placa (`llmMemory.js`):** lê a memória LIVRE (`nvidia-smi` nas NVIDIA; nas outras, o que o `llama-server
+  --list-devices` informa), calcula o que cada modelo pede (pesos, projetor, cache do contexto e buffers) e só coloca na placa o
+  que cabe, com folga de 8% da memória total (mínimo 512 MB); abaixo de 15% das camadas na placa, roda tudo no processador. Placas
+  integradas não contam. A lista de modelos mostra o que cabe e `recommendId` indica o maior que cabe inteiro; a escolha é da pessoa.
+- **Ciclo de vida:** o servidor liga na primeira pergunta e desliga depois de 10 minutos sem uso. Se a placa falhar ao
+  ligar, tenta de novo uma vez e cai para o processador, gravando `runtime.json`; a placa volta a ser tentada depois de 1 h,
+  6 h e 24 h (a marca vale por modelo).
+- **Pastas** (em `<dataDir>/modules/llm`): `runtime/` (CPU), `runtime-gpu/` (Vulkan), `models/<id>/<arquivo>`, `choice.json`
+  (modelo escolhido) e `runtime.json`.
+- **IPC** (`aiHandlers.js`): `ai:localLlmStatus`, `ai:localLlmInstall(modelId?)`, `ai:localLlmSetModel`, `ai:localLlmCancel`,
+  `ai:localLlmRemove` e o evento `ai:localLlmProgress`.
+- **Atualizar:** troque a tag `bNNNN` e o tamanho e o SHA-256 de cada pacote em `LocalLlm.js` (mesmo procedimento do whisper.cpp).
+- Testes: `tests/local-llm*.test.js`, `tests/llm-memory.test.js`, `tests/settings-local-llm-model.test.js`.
 
 ## Transcrição na nuvem (Groq, OpenAI e ElevenLabs), ordem e modo Automático
 

@@ -4,6 +4,10 @@ Código removido do bundle ativo do BDS por estar sem uso (não é importado/ins
 nenhuma tela), mas preservado aqui para eventual reaproveitamento futuro — não é lixo, é
 arquivo morto intencionalmente guardado.
 
+Estado da pasta: foi guardada em 31/08/2026 (versão 1.0.5) e o que está aqui é o que o Git rastreia desse dia. A pasta está no
+`.gitignore`, então arquivos NOVOS colocados aqui não sobem para o repositório. Nada daqui entra no instalador e nada é conferido
+por `npm run check` nem por `npm run lint`.
+
 ## renderer/components/timeline/
 
 - `TimelineEngine.js` — engine de cálculo de layout de timeline (réguas, marcações de tempo).
@@ -26,32 +30,31 @@ reintroduzir o vazamento de listeners globais que motivou a documentação desse
 - Versão antiga do serviço de câmeras Sony (protocolo Sony Camera Remote API via SSDP/HTTP,
   classe `SonyCameraService extends EventEmitter`, 337 linhas).
 - **Superada por** `src/core/devices/SonyCameraService.js`, que é a versão efetivamente
-  carregada pelo `bootstrap.js` (`require('./core/devices/SonyCameraService')`) e usada em
-  todos os handlers IPC de câmera Sony.
-- Nenhuma referência a este arquivo em `bootstrap.js`, `ipc/*` ou em qualquer outro módulo.
+  carregada por `src/bootstrap/moduleRuntime.js` e usada em `src/ipc/sonyHandlers.js` e
+  `src/ipc/deviceListHandlers.js`.
+- Nenhuma referência a este arquivo em `src/bootstrap/`, `src/ipc/` ou em qualquer outro módulo.
 
 ## src/services/YoutAuthService.js
 
 - Classe `AuthService` com um único método `conectarYoutube`, que dispara `yt-dlp --username
   oauth2 --simulate` contra um vídeo dummy do YouTube para capturar o código de autenticação
   OAuth2 via regex na saída do processo.
-- Nunca instanciado nem importado em nenhum lugar do projeto (`bootstrap.js`, IPC handlers,
+- Nunca instanciado nem importado em nenhum lugar do projeto (`src/bootstrap/`, IPC handlers,
   renderer). Parece um protótipo/experimento de fluxo de login OAuth2 do yt-dlp que não
   chegou a ser integrado.
 
 ## src/services/ftpService.js
 
 - Classe `FtpService` que sobe um servidor FTP local (porta 2121) usando o pacote `ftp-srv`.
-- Não é importado por nenhum módulo do backend. O pacote `ftp-srv` continua listado em
-  `package.json` apenas por causa deste arquivo — se o arquivo não for reaproveitado, a
-  dependência também pode ser removida do `package.json`/`package-lock.json`.
+- Não é importado por nenhum módulo do backend. O pacote `ftp-srv` já foi removido do
+  `package.json` e do `package-lock.json`; para reaproveitar este arquivo, instale o pacote de novo.
 
 ## src/core/integrations/bdsm/BdsmDeviceProvider.js
 
-- `BdsmDeviceProvider extends StorageProvider` — provider de dispositivos para o protocolo
-  BDSM (Wi-Fi/USB ADB), usando `BdsmClient` e `BdsmProtocol` (esses dois continuam ativos e em
+- Cópia antiga (153 linhas) de `BdsmDeviceProvider extends StorageProvider`, o provider de dispositivos para o protocolo
+  BDSM (Wi-Fi/USB ADB), que usa `BdsmClient` e `BdsmProtocol` (esses dois continuam ativos e em
   uso via `src/ipc/deviceHandlers.js`).
-- Este provider específico nunca é registrado em `DeviceManager.js`/`DeviceDiscoveryService.js`
-  nem referenciado em nenhum outro arquivo — parece a integração do lado "device provider" do
-  protocolo BDSM ter ficado pela metade (o client/protocol existem e funcionam, mas não há
-  provider plugado ao sistema de descoberta de dispositivos).
+- **Não reaproveite esta cópia:** o arquivo vivo `src/core/integrations/bdsm/BdsmDeviceProvider.js` é mais novo (por exemplo,
+  usa `stream`/`pipeline` e sanitiza o nome de arquivo vindo do celular). Ele só é referenciado por
+  `tests/bdsm-client-auth.test.js`: em produção não está plugado ao `DeviceDiscoveryService`. O client/protocol existem e
+  funcionam; o provider no sistema de descoberta ficou pela metade.
