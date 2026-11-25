@@ -4,6 +4,7 @@
  * de digitar. O indicador "Salvo" fica na barra de abas.
  */
 import { ws, $, mk, icon, setAppStatus, friendlyError, debounce, autosave, emitChange } from './state.js';
+import { bdsproLutsNote, xmlLutsNote } from '../../utils/lutNotes.js';
 
 let draft = null;
 let pending = false;
@@ -119,7 +120,7 @@ async function exportXmeml(mode) {
     const r = await window.bds.exportProjectXmeml(ws.projectId, mode === 'multicam' ? { mode, groupId } : { mode });
     if (!r) { setAppStatus('Exportação cancelada.', 'info'); return; }
     setAppStatus('XML exportado.', 'success');
-    window.bdsModal.alert(`XML exportado.\n\n${r.filePath}${mode === 'multicam' ? `\n\n${r.videoTracks} camadas de vídeo, ${r.audioTracks} trilhas de áudio, ${r.clips} clipes.` : `\n\n${r.clips} clipes nas pastas.`}\n\nNo Premiere: Arquivo → Importar e escolha este XML.`);
+    window.bdsModal.alert(`XML exportado.\n\n${r.filePath}${mode === 'multicam' ? `\n\n${r.videoTracks} camadas de vídeo, ${r.audioTracks} trilhas de áudio, ${r.clips} clipes.` : `\n\n${r.clips} clipes nas pastas.`}\n\nNo Premiere: Arquivo → Importar e escolha este XML.${xmlLutsNote(r.luts)}`);
   } catch (e) { window.bdsModal.alert(`Não foi possível exportar: ${friendlyError(e)}`); }
 }
 
@@ -130,7 +131,7 @@ async function exportBdspro() {
     if (!dest) return;
     setAppStatus('Exportando .bdspro…', 'info');
     const r = await window.bds.exportBdspro(ws.projectId, { folder: dest, name: ws.project.name });
-    if (r && r.success) { setAppStatus('Pacote .bdspro exportado.', 'success'); window.bdsModal.alert(`Pacote .bdspro exportado.\n\n${r.filePath}`); }
+    if (r && r.success) { setAppStatus('Pacote .bdspro exportado.', 'success'); window.bdsModal.alert(`Pacote .bdspro exportado.\n\n${r.filePath}${bdsproLutsNote(r.luts)}`); }
   } catch (e) { window.bdsModal.alert(`Não foi possível exportar o pacote: ${friendlyError(e)}`); }
 }
 

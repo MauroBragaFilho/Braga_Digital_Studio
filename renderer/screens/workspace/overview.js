@@ -4,6 +4,7 @@
  */
 import { ws, $, mk, icon, formatBytes, relativeWhen, debounce, autosave } from './state.js';
 import { renderDevices } from './devices.js';
+import { renderLuts } from './luts.js';
 
 let goTo = () => {};
 let addFiles = () => {};
@@ -42,7 +43,7 @@ export async function renderOverview() {
   renderSteps();
   const notes = $('wsOvNotes');
   if (notes && !notesDirty) notes.value = ws.project.description || '';
-  await Promise.all([renderDevices(), renderActivity()]);
+  await Promise.all([renderDevices(), renderLuts(), renderActivity()]);
 }
 
 // ------------------------------------------------------------------ próximos passos
@@ -107,7 +108,7 @@ function renderSteps() {
 
 // ------------------------------------------------------------------ atividade e observações
 
-const ICONS = { criado: 'add_circle', editado: 'edit', status: 'flag', midia: 'perm_media', pasta: 'folder', dispositivo: 'devices', entrega: 'local_shipping', exportado: 'ios_share', importado: 'archive', sincronizado: 'graphic_eq', transcrito: 'subtitles', duplicado: 'content_copy' };
+const ICONS = { criado: 'add_circle', editado: 'edit', status: 'flag', midia: 'perm_media', pasta: 'folder', dispositivo: 'devices', entrega: 'local_shipping', exportado: 'ios_share', importado: 'archive', sincronizado: 'graphic_eq', transcrito: 'subtitles', duplicado: 'content_copy', lut: 'gradient' };
 
 export async function renderActivity() {
   const list = $('wsActivityList');

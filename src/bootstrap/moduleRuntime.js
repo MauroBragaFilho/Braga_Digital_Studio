@@ -104,8 +104,11 @@ const EXTRA_STARTS = { devices: ['luts'] };
 function ensureBundledLuts(ctx) {
   if (ensureBundledLuts.done || !ctx.lutManager) return;
   ensureBundledLuts.done = true;
-  const dir = path.join(__dirname, '..', '..', 'data', 'LUTs');
+  // Instalado: resources/luts-embutidas (extraResources); desenvolvimento: resources/luts-embutidas do repositório
+  const dir = ctx.appPaths.bundledLutsDir;
   perf.time('platform:ensureBundledLuts', () => ctx.lutManager.ensureBundledLuts(dir));
+  // Temporários ".part" de uma cópia interrompida (mais velhos que 1 hora): limpeza em segundo plano, sem bloquear a abertura
+  if (typeof ctx.lutManager.sweepPartials === 'function') ctx.lutManager.sweepPartials();
 }
 
 function ensureDownloaderTool(ctx) {

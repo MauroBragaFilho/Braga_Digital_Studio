@@ -367,7 +367,7 @@ test('tabela: nomes expostos no preload são únicos e eventos não colidem com 
 
 test('listChannels devolve a tabela documentável (canal, domínio, args, retorno, erro)', () => {
   const rows = listChannels();
-  assert.equal(rows.length, 302);
+  assert.equal(rows.length, 317);
   const row = rows.find((r) => r.channel === 'library:moveMediaBulk');
   assert.equal(row.domain, 'library');
   assert.equal(row.error, 'throw');
@@ -422,6 +422,41 @@ test('esquemas reais: aceita as chamadas que o renderer faz hoje', () => {
   assert.deepEqual(run('library:regenerateMissingThumbnails', {}), [{}]);
   assert.deepEqual(run('modules:transcribe', { files: [file], srt: true })[0].files, [file]);
   assert.deepEqual(run('luts:import'), [undefined]);
+  // LUTs: a lista não recebe argumentos; "Abrir pasta" aceita no máximo o caminho RELATIVO de uma subpasta (o main revalida)
+  assert.deepEqual(run('luts:list'), []);
+  assert.deepEqual(run('luts:openFolder'), [undefined]);
+  assert.deepEqual(run('luts:openFolder', 'Look/Rush'), ['Look/Rush']);
+  assert.deepEqual(run('luts:openFolder', ''), ['']);
+  rejects(() => run('luts:openFolder', 'a', 'b'), /demais/);
+  // LUTs: importar de pasta (o diálogo abre no main; o renderer só informa o modo, ou os caminhos soltos na tela)
+  assert.deepEqual(run('luts:scan'), [undefined, undefined]);
+  assert.deepEqual(run('luts:scan', undefined, { mode: 'folder' }), [undefined, { mode: 'folder' }]);
+  assert.deepEqual(run('luts:scan', ['C:\\Looks', 'C:\\x.cube']), [['C:\\Looks', 'C:\\x.cube'], undefined]);
+  rejects(() => run('luts:scan', undefined, { mode: 'rede' }), /opção válida/);
+  rejects(() => run('luts:scan', new Array(201).fill('C:\\a')), /máximo de 200/);
+  assert.deepEqual(run('luts:importScanned', 'abc', [0, 2], { keepFolders: false, rootGroup: 'Pasta' }), ['abc', [0, 2], { keepFolders: false, rootGroup: 'Pasta' }]);
+  rejects(() => run('luts:importScanned', 'abc', [-1]));
+  rejects(() => run('luts:importScanned', 'abc', ['a']));
+  rejects(() => run('luts:importScanned', 'abc', new Array(5001).fill(1)), /máximo de 5000/);
+  assert.deepEqual(run('luts:cancelScan'), [undefined]);
+  assert.deepEqual(run('luts:cancelImport', 'abc'), ['abc']);
+  assert.deepEqual(run('luts:renameFolder', 'Look/Rush', 'Novo'), ['Look/Rush', 'Novo']);
+  rejects(() => run('luts:renameFolder', 'Look', ''), /obrigatório/);
+  assert.deepEqual(run('luts:deleteFolder', 'Look', true), ['Look', true]);
+  rejects(() => run('luts:deleteFolder', 'Look', 'sim'), /verdadeiro ou falso/);
+  rejects(() => run('luts:getHeader', 'lut.txt'), /LUT/);
+  rejects(() => run('luts:load', 'relativo.cube'), /LUT/);
+  rejects(() => run('luts:reveal', 'relativo.cube'), /LUT/);
+  // exclusão em lote: lista de 1 a 5000 .cube absolutos
+  const lote = [path.resolve('a.cube'), path.resolve('Looks', 'b.CUBE')];
+  assert.deepEqual(run('luts:deleteMany', lote), [lote]);
+  rejects(() => run('luts:deleteMany'), /obrigatório/);
+  rejects(() => run('luts:deleteMany', []), /ao menos 1/);
+  rejects(() => run('luts:deleteMany', 'a.cube'), /lista/);
+  rejects(() => run('luts:deleteMany', [path.resolve('a.cube'), 'relativo.cube']), /LUT/);
+  rejects(() => run('luts:deleteMany', [path.resolve('a.cube'), path.resolve('notas.txt')]), /LUT/);
+  rejects(() => run('luts:deleteMany', new Array(5001).fill(path.resolve('a.cube'))), /máximo de 5000/);
+  rejects(() => run('luts:deleteMany', lote, 'extra'), /demais/);
   assert.deepEqual(run('updates:updateTool', 'ffmpeg', { allowUnverified: true }), ['ffmpeg', { allowUnverified: true }]);
   fs.rmSync(dir, { recursive: true, force: true });
 });

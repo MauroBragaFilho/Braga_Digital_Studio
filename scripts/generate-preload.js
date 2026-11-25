@@ -109,7 +109,7 @@ const SECTION_TITLES = {
   history: 'Histórico', devices: 'Dispositivos (MTP, USB e BDSM)', sony: 'Câmeras Sony', bdsm: 'BDSM',
   recovery: 'Recuperação e logs', luts: 'LUTs', ai: 'IA (a chave de API nunca volta para o renderer)',
   modules: 'Módulos opcionais (Whisper)', library: 'Biblioteca de mídia', system: 'Sistema',
-  licenses: 'Licenças de terceiros', upload: 'Upload', photo: 'Prévia de fotos', projects: 'Projetos', events: 'Eventos (main → renderer)'
+  licenses: 'Licenças de terceiros', upload: 'Upload', photo: 'Prévia de fotos', projects: 'Projetos', projectLuts: 'LUTs de projeto', events: 'Eventos (main → renderer)'
 };
 
 function emitNode(node, depth, lines) {

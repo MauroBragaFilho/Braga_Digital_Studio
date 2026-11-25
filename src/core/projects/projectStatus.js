@@ -54,7 +54,7 @@ const DEVICE_CATEGORY_IDS = Object.freeze(DEVICE_CATEGORIES.map((c) => c.id));
 
 /** Tipos de atividade registrados no projeto (texto curto; o renderer escolhe o ícone). */
 const ACTIVITY_KINDS = Object.freeze([
-  'criado', 'editado', 'status', 'midia', 'pasta', 'dispositivo', 'entrega', 'exportado', 'importado', 'sincronizado', 'transcrito', 'duplicado'
+  'criado', 'editado', 'status', 'midia', 'pasta', 'dispositivo', 'entrega', 'exportado', 'importado', 'sincronizado', 'transcrito', 'duplicado', 'lut'
 ]);
 
 /** Limites usados pelo serviço e pelos esquemas IPC. */

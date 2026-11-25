@@ -69,7 +69,8 @@ class Bootstrap {
       appPaths: this.appPaths,
       paths: this.paths,
       settingsManager: this.settingsManager,
-      settings
+      settings,
+      lutManager: this.lutManager
     }));
 
     // [PERF] A auto-limpeza de cache e a remoção de temporários antigos saíram do init():

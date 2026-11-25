@@ -346,7 +346,36 @@ define('recovery', 'throw', {
 
 // --- LUTs --------------------------------------------------------------------------------------
 define('luts', 'throw', {
-  'luts:get': { returns: 'Lista de LUTs', api: ['getLuts'] },
+  'luts:list': { returns: '{ folder, items, problems } (problems: o que não pôde ser lido, sem esconder as demais LUTs; cada item traz kind, lutSize e title lidos do cabeçalho curto)', api: ['listLuts'] },
+  // Resumo da coleção (Configurações) e "Restaurar LUTs padrão" (só por ação do usuário; nunca apaga nem sobrescreve).
+  'luts:getInfo': { returns: '{ folder, count, groups, problems, problemCount, bundledAvailable }', api: ['getLutsInfo'] },
+  'luts:restoreBundled': { returns: '{ restored, alreadyThere, failed, missingSource } (copia só as LUTs padrão que faltam)', api: ['restoreBundledLuts'] },
+  // Sem relPath abre a coleção; com relPath, uma subpasta dela (o main confere que é pasta comum dentro da coleção).
+  'luts:openFolder': { args: [STR('relPath', 1024, { optional: true, allowEmpty: true, label: 'Pasta' })], returns: 'true (abre a pasta; falha com mensagem amigável)', api: ['openLutsFolder'] },
+  // Importar de pasta: o diálogo abre no main (options.mode); com paths (arrastar-e-soltar) o main valida cada caminho.
+  'luts:scan': {
+    args: [PATHS('paths', 200, { optional: true, label: 'Itens' }), OBJ('options', { mode: STR('mode', 10, { enum: ['folder', 'files'], optional: true, label: 'Modo' }) }, { optional: true, label: 'Opções' })],
+    returns: '{ canceled: true } ou { scanId, sourceName, hasFolders, summary, items } (nada é copiado; progresso em luts:scanProgress)',
+    api: ['scanLuts']
+  },
+  'luts:cancelScan': { args: [STR('scanId', 100, { optional: true, label: 'Busca' })], returns: 'true', api: ['cancelLutScan'] },
+  'luts:importScanned': {
+    args: [
+      STR('scanId', 100, { nonBlank: true, label: 'Busca' }),
+      t.array(t.number({ int: true, min: 0, max: 1000000 }), { name: 'keys', max: 5000, label: 'LUTs marcadas' }),
+      OBJ('options', { keepFolders: t.boolean({ optional: true }), rootGroup: STR('rootGroup', 100, { optional: true, allowEmpty: true, label: 'Nome da pasta' }) }, { optional: true, label: 'Opções' })
+    ],
+    returns: '{ imported, renamed, skippedChanged, failed, exists, canceled, groupsCreated, total, firstImported, failures } (progresso em luts:importProgress)',
+    api: ['importScannedLuts']
+  },
+  'luts:cancelImport': { args: [STR('scanId', 100, { optional: true, label: 'Busca' })], returns: 'true', api: ['cancelLutImport'] },
+  'luts:renameFolder': { args: [STR('relPath', 1024, { nonBlank: true, label: 'Pasta' }), STR('newName', 255, { nonBlank: true, label: 'Novo nome' })], returns: 'true', api: ['renameLutFolder'] },
+  'luts:deleteFolder': {
+    args: [STR('relPath', 1024, { nonBlank: true, label: 'Pasta' }), t.boolean({ name: 'dryRun', optional: true })],
+    returns: 'dryRun: { luts, others }; senão { trashed, luts, others, remaining, folderRemoved } (só as LUTs vão para a Lixeira)',
+    api: ['deleteLutFolder']
+  },
+  // Caminho simples (arquivos soltos, sem resumo), mantido por compatibilidade: a tela usa luts:scan + luts:importScanned.
   'luts:import': {
     args: [t.array(t.any('lista de caminhos soltos no app; o LutManager valida cada item e conta os inválidos'), { name: 'paths', max: 5000, optional: true, label: 'Arquivos' })],
     returns: 'false (cancelou) ou { imported, renamed, duplicates, invalid }',
@@ -355,9 +384,16 @@ define('luts', 'throw', {
   'luts:reveal': { args: [t.cube({ name: 'filePath' })], returns: 'true', api: ['revealLut'] },
   'luts:getReferenceImage': { error: 'null', args: [STR('filePath', 4096, { optional: true })], returns: 'Data URL da imagem ou null', api: ['getLutReferenceImage'] },
   'luts:delete': { args: [ABS('filePath', 'LUT')], returns: 'Resultado da exclusão (Lixeira)', api: ['deleteLut'] },
+  // Exclusão em lote: só .cube absolutos (o main confere que cada um está dentro da coleção; o que estiver fora vai para `failed`).
+  'luts:deleteMany': {
+    args: [t.array(t.cube(), { name: 'paths', min: 1, max: 5000, label: 'LUTs' })],
+    returns: '{ trashed, missing, failed: [{ path, reason }] } (tudo vai para a Lixeira, uma LUT por vez)',
+    api: ['deleteManyLuts']
+  },
   'luts:rename': { args: [ABS('oldPath', 'LUT'), STR('newName', 255, { nonBlank: true, label: 'Novo nome' })], returns: 'Resultado da renomeação', api: ['renameLut'] },
-  'luts:parse': { args: [t.cube({ name: 'filePath' })], returns: 'LUT interpretada', api: ['parseLutCube'] },
-  'luts:getHeader': { args: [t.cube({ name: 'filePath' })], returns: 'Cabeçalho do .cube', api: ['getLutHeader'] },
+  // Só LUTs da coleção (o handler confere); conteúdo inválido volta como { ok: false, code, reason }, não como erro.
+  'luts:parse': { args: [t.cube({ name: 'filePath' })], returns: '{ ok: true, ...LUT interpretada (data: Float32Array r,g,b em sequência) } ou { ok: false, code, reason }', api: ['parseLutCube'] },
+  'luts:getHeader': { args: [t.cube({ name: 'filePath' })], returns: '{ ok: true, ...cabeçalho do .cube (arquivo grande: lê só o começo, totalEntries null) } ou { ok: false, code, reason }', api: ['getLutHeader'] },
   'luts:load': { args: [t.cube({ name: 'filePath' })], returns: '{ rawContent, truncated, totalBytes }', api: ['getLutRaw'] }
 });
 
@@ -760,6 +796,29 @@ define('projects', 'throw', {
   }
 });
 
+// --- LUTs de projeto (ligam LUTs da coleção ao projeto inteiro, pelo conteúdo; projectLutHandlers.js) -------------
+const LUT_HASH = t.string({ name: 'hash', pattern: /^[0-9a-f]{64}$/, max: 64, label: 'LUT' });
+const LUT_REL_PATHS = (max) => t.array(t.string({ max: 1024 }), { name: 'relPaths', max, optional: true, label: 'LUTs' });
+const LUT_FOLDERS = t.array(t.string({ max: 1024 }), { name: 'folders', max: 50, optional: true, label: 'Pastas' });
+
+define('projectLuts', 'throw', {
+  'projects:listLuts': { args: [PROJECT_ID()], returns: 'LUTs do projeto [{ id, hash, name, title, kind, lutSize, bytes, addedAt, status: ok|changed|missing, path, relPath }]', api: ['listProjectLuts'] },
+  // Cada caminho é conferido no main (dentro da coleção, arquivo .cube comum, conteúdo lido uma vez e validado); `folders` entra com as LUTs de qualquer nível.
+  'projects:addLuts': {
+    args: [PROJECT_ID(), LUT_REL_PATHS(500), LUT_FOLDERS],
+    returns: '{ added, already, invalid: [{ name, reason }], overLimit } (o projeto aceita até 100 LUTs)',
+    api: ['addProjectLuts']
+  },
+  'projects:removeLut': { args: [PROJECT_ID(), LUT_HASH], returns: 'true se a LUT estava no projeto (a LUT da coleção não é tocada)', api: ['removeProjectLut'] },
+  'projects:revealLut': { args: [PROJECT_ID(), LUT_HASH], returns: 'true (mostra o arquivo da LUT na pasta; falha com mensagem amigável se ela saiu da coleção)', api: ['revealProjectLut'] },
+  // Quais projetos usam as LUTs indicadas, calculado sobre o CONJUNTO (cópias idênticas fora do conjunto contam em remainingCopies)
+  'luts:usage': {
+    args: [LUT_REL_PATHS(5000), LUT_FOLDERS],
+    returns: '[{ relPath, hash, projects: [{ id, name }], remainingCopies }] só das LUTs usadas em projetos',
+    api: ['lutsUsage']
+  }
+});
+
 // --- Jobs (JobManager; sem exposição no preload por enquanto) ----------------------------------
 // --- Organização dos arquivos copiados de um dispositivo (regras + sistema local opcional) ------------------
 define('organizer', 'throw', {
@@ -886,6 +945,8 @@ const EVENTS = [
   ['onBdsmProgress', 'bdsm:progress'],
   ['onBdsmLutSyncProgress', 'bdsm:lutSyncProgress'],
   ['onBdsmPairing', 'bdsm:pairing'],
+  ['onLutsScanProgress', 'luts:scanProgress'],
+  ['onLutsImportProgress', 'luts:importProgress'],
   ['youtubeUpload.onUpdated', 'upload:queue-updated'],
   ['youtubeUpload.onWait', 'upload:wait'],
   ['youtubeUpload.onAttention', 'upload:attention'],

@@ -5,7 +5,7 @@ const dbManager = require('./database');
 const { mediaTypeCaseSql } = require('../media/MediaTypes');
 
 // [FASE 3.2] Controle de versao do schema com tabela de metadados.
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 function getAppliedMigrations(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -254,6 +254,31 @@ const MIGRATIONS = [
         version: 17,
         up: (db) => {
             addColumn(db, 'media', 'cloud', 'INTEGER DEFAULT 0');
+        }
+    },
+    {
+        // LUTs de projeto (tabela nova, só aditiva; versões antigas do app a ignoram). O schema.sql, reexecutado antes de
+        // cada migração pendente, já a cria; aqui ela é criada de novo de forma idempotente para não depender disso.
+        version: 18,
+        up: (db) => {
+            db.exec(`CREATE TABLE IF NOT EXISTS project_luts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                lut_hash TEXT NOT NULL,
+                lut_name TEXT NOT NULL,
+                lut_title TEXT,
+                lut_kind TEXT,
+                lut_size INTEGER,
+                file_bytes INTEGER,
+                lut_rel_path TEXT,
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(project_id, lut_hash),
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );`);
+            createIndexes(db, [
+                ['idx_project_luts_project', 'project_luts', 'project_id'],
+                ['idx_project_luts_hash', 'project_luts', 'lut_hash']
+            ]);
         }
     }
 ];

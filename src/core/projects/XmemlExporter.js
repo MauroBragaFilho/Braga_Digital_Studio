@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const crypto = require('crypto');
+const logger = require('../../services/logService');
 
 /**
  * XML xmeml v4 no MESMO formato que o Premiere/PluralEyes exportam (referência: gerar_xml.py e os XMLs em
@@ -42,8 +43,28 @@ function rateOf(fps) {
 const rateXml = (r) => `<rate><ntsc>${r.ntsc}</ntsc><timebase>${r.tb}</timebase></rate>`;
 
 class XmemlExporter {
-  constructor(projectService) {
+  /**
+   * @param {object} projectService
+   * @param {{ projectLutService?: import('./ProjectLutService') }} [luts] com ele, as LUTs do projeto são copiadas
+   *   para uma pasta ao lado do XML depois que ele é gravado (o XML em si não muda) e o resultado traz `luts`
+   */
+  constructor(projectService, { projectLutService = null } = {}) {
     this.projectService = projectService;
+    this.projectLutService = projectLutService;
+  }
+
+  /** Grava o XML e copia as LUTs do projeto ao lado dele; `luts` (contagens) só aparece se o projeto tem LUTs. */
+  _finish(projectId, outputPath, xml, result) {
+    fs.writeFileSync(outputPath, xml, 'utf8');
+    let luts = null;
+    if (this.projectLutService) {
+      try {
+        luts = this.projectLutService.copyBesideXml(projectId, outputPath);
+      } catch (err) {
+        logger.warn('[XmemlExporter] Não foi possível copiar as LUTs do projeto', { error: err && err.message });
+      }
+    }
+    return luts ? { ...result, luts } : result;
   }
 
   /** Fonte (arquivo) com ids de master clip, file e clipitems do master clip. */
@@ -112,8 +133,7 @@ class XmemlExporter {
     const media = this.projectService.getProjectMedia(projectId).filter((m) => m.media_type !== 'photo' && m.media_type !== 'raw');
     const sources = new Map(media.map((m) => [m.id, this._source(m)]));
     const xml = this._projectXml(project.name, this._binsXml(projectId, sources));
-    fs.writeFileSync(outputPath, xml, 'utf8');
-    return { filePath: outputPath, clips: sources.size };
+    return this._finish(projectId, outputPath, xml, { filePath: outputPath, clips: sources.size });
   }
 
   /**
@@ -187,8 +207,7 @@ class XmemlExporter {
       + `<audio>${audioXml}</audio></media><uuid>${sid}</uuid></sequence>`;
 
     const xml = this._projectXml(project.name, this._binsXml(projectId, sources) + sequence);
-    fs.writeFileSync(outputPath, xml, 'utf8');
-    return { filePath: outputPath, videoTracks: videoTracks.length, audioTracks: audioPairs.length * 2, clips: items.length, durationSeconds: end / seqRate.real };
+    return this._finish(projectId, outputPath, xml, { filePath: outputPath, videoTracks: videoTracks.length, audioTracks: audioPairs.length * 2, clips: items.length, durationSeconds: end / seqRate.real });
   }
 }
 

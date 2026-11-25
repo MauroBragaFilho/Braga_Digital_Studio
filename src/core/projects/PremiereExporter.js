@@ -1,10 +1,29 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('../../services/logService');
 
 class PremiereExporter {
-    constructor(projectService, sequenceBuilder) {
+    /**
+     * @param {object} projectService
+     * @param {object} sequenceBuilder
+     * @param {{ projectLutService?: import('./ProjectLutService') }} [luts] com ele, as LUTs do projeto são copiadas
+     *   para uma pasta ao lado do XML depois que ele é gravado (o XML em si não muda)
+     */
+    constructor(projectService, sequenceBuilder, { projectLutService = null } = {}) {
         this.projectService = projectService;
         this.sequenceBuilder = sequenceBuilder;
+        this.projectLutService = projectLutService;
+    }
+
+    /** Copia as LUTs do projeto ao lado do XML já gravado. Nunca derruba a exportação (devolve null em caso de falha). */
+    _copyLuts(projectId, outputPath) {
+        if (!this.projectLutService) return null;
+        try {
+            return this.projectLutService.copyBesideXml(projectId, outputPath);
+        } catch (err) {
+            logger.warn('[PremiereExporter] Não foi possível copiar as LUTs do projeto', { error: err && err.message });
+            return null;
+        }
     }
 
     _generateUUID() {
@@ -144,6 +163,7 @@ class PremiereExporter {
 `;
 
         fs.writeFileSync(outputPath, xml, 'utf8');
+        this._copyLuts(projectId, outputPath);
         return outputPath;
     }
 
@@ -260,6 +280,7 @@ ${audioTracksXml}
 `;
 
         fs.writeFileSync(outputPath, xml, 'utf8');
+        this._copyLuts(projectId, outputPath);
         return outputPath;
     }
 }

@@ -21,6 +21,7 @@ class AppPaths {
   constructor() {
     this._writableRoot = null;
     this._appRoot = null;
+    this._packaged = false;
   }
 
   /**
@@ -29,10 +30,12 @@ class AppPaths {
    *
    * @param {string} writableRoot - Diretório gravável (userData em produção, __dirname em dev)
    * @param {string} appRoot - Raiz do app (resourcesPath em produção, __dirname em dev)
+   * @param {{ packaged?: boolean }} [options] - packaged: true no app instalado (os recursos ficam em appRoot)
    */
-  init(writableRoot, appRoot) {
+  init(writableRoot, appRoot, { packaged = false } = {}) {
     this._writableRoot = writableRoot;
     this._appRoot = appRoot;
+    this._packaged = packaged === true;
   }
 
   _assertInit() {
@@ -83,6 +86,17 @@ class AppPaths {
   get lutsDir() {
     this._assertInit();
     return path.join(this._writableRoot, 'data', 'LUTs');
+  }
+
+  /**
+   * LUTs que acompanham o app (somente leitura). Instalado: resources/luts-embutidas (extraResources do
+   * instalador); desenvolvimento: resources/luts-embutidas na raiz do repositório.
+   */
+  get bundledLutsDir() {
+    this._assertInit();
+    return this._packaged
+      ? path.join(this._appRoot, 'luts-embutidas')
+      : path.join(this._appRoot, 'resources', 'luts-embutidas');
   }
 
   /** Thumbnails gerados */
@@ -175,7 +189,7 @@ class AppPaths {
    * Permite migração incremental: os serviços continuam recebendo `paths`
    * enquanto são migrados para usar `AppPaths` diretamente.
    *
-   * @returns {{ appRoot, dataDir, configDir, databaseDir, logsDir, lutsDir,
+   * @returns {{ appRoot, dataDir, configDir, databaseDir, logsDir, lutsDir, bundledLutsDir,
    *             thumbnailsDir, waveformsDir, tempDir, coversDir }}
    */
   toPlainObject() {
@@ -186,6 +200,7 @@ class AppPaths {
       databaseDir: this.databaseDir,
       logsDir: this.logsDir,
       lutsDir: this.lutsDir,
+      bundledLutsDir: this.bundledLutsDir,
       thumbnailsDir: this.thumbnailsDir,
       waveformsDir: this.waveformsDir,
       tempDir: this.tempDir,

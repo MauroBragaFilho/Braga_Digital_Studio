@@ -222,6 +222,13 @@ class ProjectService {
                 db.prepare('INSERT INTO project_delivery (project_id, status, deadline, items, destinations, notes) VALUES (?, ?, ?, ?, ?, ?)')
                     .run(newId, 'Não iniciada', delivery.deadline, delivery.items, delivery.destinations, delivery.notes);
             }
+            // LUTs do projeto (ligadas pelo conteúdo): a cópia nasce com as mesmas; a tabela é aditiva, então sem ela segue sem LUTs
+            try {
+                db.prepare(`INSERT INTO project_luts (project_id, lut_hash, lut_name, lut_title, lut_kind, lut_size, file_bytes, lut_rel_path, added_at)
+                    SELECT ?, lut_hash, lut_name, lut_title, lut_kind, lut_size, file_bytes, lut_rel_path, added_at FROM project_luts WHERE project_id = ? ORDER BY id`).run(newId, id);
+            } catch (e) {
+                logger.warn('[Projects] LUTs do projeto não copiadas ao duplicar', { error: e.message });
+            }
             this.logActivity(newId, 'duplicado', `Criado a partir de "${text(src.name, 80)}"`);
             this.logActivity(id, 'duplicado', 'Projeto duplicado');
             db.exec('COMMIT');
@@ -261,12 +268,14 @@ class ProjectService {
         }
         const bins = this.db.prepare('SELECT COUNT(*) AS n FROM project_bins WHERE project_id = ?').get(projectId).n;
         const devices = this.db.prepare('SELECT COUNT(*) AS n FROM project_devices WHERE project_id = ?').get(projectId).n;
+        let luts = 0;
+        try { luts = this.db.prepare('SELECT COUNT(*) AS n FROM project_luts WHERE project_id = ?').get(projectId).n; } catch (_) { luts = 0; }
         const delivery = this.getDelivery(projectId);
         const last = this.db.prepare('SELECT kind, message, created_at FROM project_activity WHERE project_id = ? ORDER BY id DESC LIMIT 1').get(projectId) || null;
         return {
             id: project.id,
             videos: counts.video, audios: counts.audio, photos: counts.photo, others: counts.other, total: media.length,
-            total_size: size, missing, bins, devices, transcripts,
+            total_size: size, missing, bins, devices, luts, transcripts,
             delivery: { status: delivery.status, done: delivery.items.filter((i) => i.done).length, items: delivery.items.length, deadline: delivery.deadline },
             last_activity_at: project.last_activity_at || project.created_at,
             last_activity: last

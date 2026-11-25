@@ -32,7 +32,7 @@ function assertOutputFile(p, exts, label) {
   return resolved;
 }
 
-module.exports = function registerProjectHandlers(projectService, premiereExporter, bdsproPackageService, paths = {}, waveformService = null, audioSyncService = null, sequenceBuilder = null) {
+module.exports = function registerProjectHandlers(projectService, premiereExporter, bdsproPackageService, paths = {}, waveformService = null, audioSyncService = null, sequenceBuilder = null, projectLutService = null) {
   const thumbnailsDir = paths.dataDir ? path.join(paths.dataDir, 'Thumbnails') : '';
   const coversDir = paths.dataDir ? path.join(paths.dataDir, 'covers') : '';
   let ffprobePath = '';
@@ -82,7 +82,8 @@ module.exports = function registerProjectHandlers(projectService, premiereExport
     return multicam;
   };
   let xmeml = null;
-  const getXmeml = () => { if (!xmeml) xmeml = new (require('../core/projects/XmemlExporter'))(projectService); return xmeml; };
+  // O exportador também copia as LUTs do projeto para uma pasta ao lado do XML (a gravação do XML fica no serviço)
+  const getXmeml = () => { if (!xmeml) xmeml = new (require('../core/projects/XmemlExporter'))(projectService, { projectLutService }); return xmeml; };
 
   handle('projects:listSyncSources', (_, projectId) => getMulticam().listSources(projectId));
   handle('projects:runMulticamSync', (event, { projectId, masterSourceId, sourceIds, name }) => getMulticam().sync({

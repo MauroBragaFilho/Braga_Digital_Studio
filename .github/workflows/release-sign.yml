@@ -95,9 +95,14 @@ jobs:
           if (-not (Test-Path "assets/icon.ico")) { Write-Error "assets/icon.ico não encontrado."; exit 1 }
 
       # Sem certificado local: o electron-builder só empacota. A assinatura é feita depois, pela SignPath.
+      - name: Conferir as LUTs embutidas (release)
+        shell: pwsh
+        run: npm run verify:package -- --release
+
       - name: Build do instalador Windows (sem assinatura)
         shell: pwsh
         env:
+          BDS_RELEASE: '1'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           $code = 1

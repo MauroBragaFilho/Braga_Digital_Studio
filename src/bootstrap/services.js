@@ -75,7 +75,7 @@ async function initPlatform({ settings, appPaths, paths, settingsManager, lutMan
 }
 
 /** Cria todos os serviços do app (ordem de construção preservada) e devolve o mapa de serviços. */
-async function createServices({ appPaths, paths, settingsManager, settings }) {
+async function createServices({ appPaths, paths, settingsManager, settings, lutManager }) {
   const getSettings = () => settingsManager.load();
 
   // 2. Inicializar Serviços Core e Infraestrutura
@@ -94,8 +94,12 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
   const jpgRecoveryService = lazyService(() => new (require('../services/jpgRecoveryService'))({ paths }));
 
   const sequenceBuilder = lazyService(() => new (require('../core/projects/SequenceBuilder'))(projectService));
-  const premiereExporter = lazyService(() => new (require('../core/projects/PremiereExporter'))(projectService, sequenceBuilder));
-  const bdsproPackageService = lazyService(() => new (require('../core/projects/BdsproPackageService'))(projectService));
+  // LUTs de projeto: ligam LUTs da coleção ao projeto inteiro (pelo conteúdo); não dependem de o módulo LUTs estar ligado
+  const projectLutService = lazyService(() => new (require('../core/projects/ProjectLutService'))({ db: () => dbManager.get(), lutManager, projectService }));
+  // Os exportadores levam as LUTs do projeto (no pacote .bdspro e numa pasta ao lado do XML) por qualquer caminho que
+  // exporte, inclusive o do assistente, que usa estas mesmas instâncias
+  const premiereExporter = lazyService(() => new (require('../core/projects/PremiereExporter'))(projectService, sequenceBuilder, { projectLutService }));
+  const bdsproPackageService = lazyService(() => new (require('../core/projects/BdsproPackageService'))(projectService, { lutManager, projectLutService }));
 
   const waveformService = lazyService(() => new (require('../core/projects/WaveformService'))({
     ffmpegPath: ffmpegTool.resolve({ mustExist: false }),
@@ -105,7 +109,7 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
     ffmpegPath: ffmpegTool.resolve({ mustExist: false })
   }));
 
-  const lutSyncService = lazyService(() => new (require('../core/devices/LutSyncService'))(paths.lutsDir));
+  const lutSyncService = lazyService(() => new (require('../core/devices/LutSyncService'))(paths.lutsDir, { lutManager }));
   const uploadScannerService = lazyService(() => new (require('../core/uploads/UploadScannerService'))({
     paths,
     ffprobePath: ffprobeTool.resolve({ mustExist: false }),
@@ -148,6 +152,7 @@ async function createServices({ appPaths, paths, settingsManager, settings }) {
     sequenceBuilder,
     premiereExporter,
     bdsproPackageService,
+    projectLutService,
     waveformService,
     audioSyncService,
     lutSyncService,

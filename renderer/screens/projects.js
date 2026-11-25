@@ -11,6 +11,7 @@ import { enhanceModals } from '../utils/modal.js';
 import { friendlyError } from '../utils/friendlyError.js';
 import { daysUntilLocal, formatLocalDate } from '../utils/localDate.js';
 import { toFileUrl } from '../utils/fileUrl.js';
+import { bdsproLutsNote, importLutsWarning } from '../utils/lutNotes.js';
 import { setContextProvider } from '../utils/assistantContext.js';
 import { STATUSES, STATUS_FILTERS, ACTIVE_STATUSES, normalizeStatus, statusInfo } from '../utils/projectStatus.js';
 
@@ -463,7 +464,7 @@ async function exportBdspro(p) {
     const result = await window.bds.exportBdspro(p.id, { folder: destFolder, name: p.name });
     if (result && result.success) {
       setAppStatus(`Projeto "${p.name}" exportado.`, 'success');
-      window.bdsModal.alert(`Pacote .bdspro exportado.\n\nSalvo em: ${result.filePath}`);
+      window.bdsModal.alert(`Pacote .bdspro exportado.\n\nSalvo em: ${result.filePath}${bdsproLutsNote(result.luts)}`);
     }
   } catch (e) {
     setAppStatus('Erro ao exportar pacote .bdspro', 'error');
@@ -632,8 +633,36 @@ function openRelinkModal(bdsproPath, data) {
   if (data.missingMediaCount > 0) { pillMissing.textContent = `${data.missingMediaCount} ausentes`; pillMissing.className = 'relink-pill relink-pill--warning'; }
   else { pillMissing.className = 'relink-pill relink-pill--success'; pillMissing.textContent = 'Mídias 100% OK'; }
   $('relinkMissingAlert').classList.toggle('hidden', !(data.missingMediaCount > 0));
+  renderLutsPill(data.luts);
   renderRelinkTable();
   modal.classList.add('open');
+}
+
+/** Resumo das LUTs "conforme o pacote": só o que o pacote declara; a conferência de verdade acontece ao importar. */
+function lutsPillText(luts) {
+  const noun = luts.total === 1 ? 'LUT' : 'LUTs';
+  return { text: `${luts.total} ${noun} (conforme o pacote)`, title: lutsPillTitle(luts) };
+}
+
+function lutsPillTitle(luts) {
+  const parts = [];
+  if (luts.declaredNew != null && luts.declaredExisting != null) {
+    parts.push(`${luts.declaredNew} ${luts.declaredNew === 1 ? 'nova' : 'novas'} para a coleção e ${luts.declaredExisting} já ${luts.declaredExisting === 1 ? 'existe' : 'existem'} nela`);
+  }
+  if (luts.skipped > 0) parts.push(`${luts.skipped} sem o arquivo no pacote (só o vínculo com o projeto)`);
+  parts.push('Os arquivos são conferidos ao importar');
+  return `${parts.join('. ')}.`;
+}
+
+function renderLutsPill(luts) {
+  const pill = $('pillLuts');
+  if (!pill) return;
+  const show = Boolean(luts && luts.total > 0);
+  pill.classList.toggle('hidden', !show);
+  if (!show) { pill.textContent = ''; pill.removeAttribute('title'); return; }
+  const { text, title } = lutsPillText(luts);
+  pill.textContent = text;
+  pill.title = title;
 }
 
 function renderRelinkTable() {
@@ -707,6 +736,8 @@ function setupRelinkModalListeners() {
         close();
         await loadProjects();
         selectProject(res.projectId);
+        const lutsWarning = importLutsWarning(res);
+        if (lutsWarning) window.bdsModal.alert(lutsWarning);
       }
     } catch (e) {
       setAppStatus('Erro ao importar projeto', 'error');

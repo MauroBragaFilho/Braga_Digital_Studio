@@ -4,8 +4,7 @@
  * e junção com path.join no processo principal (RK-039), sem '\\' fixo nem nome de projeto cru.
  */
 const path = require('path');
-
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const { RESERVED } = require('../luts/lutNames');
 
 /** Remove caracteres inválidos no Windows, pontos/espaços nas pontas e nomes reservados; limita o tamanho. */
 function sanitizeFileName(name, fallback = 'Projeto') {

@@ -147,6 +147,38 @@
       "returns": "promise"
     }
   },
+  "addProjectLuts": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addLuts",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:addLuts",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "addProjectMarker": {
     "type": "function",
     "length": 1,
@@ -891,6 +923,62 @@
       "returns": "promise"
     }
   },
+  "cancelLutImport": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:cancelImport",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:cancelImport",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "cancelLutScan": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:cancelScan",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:cancelScan",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "cancelMetadata": {
     "type": "function",
     "length": 0,
@@ -1603,6 +1691,64 @@
         {
           "op": "invoke",
           "ch": "luts:delete",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteLutFolder": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:deleteFolder",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:deleteFolder",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "deleteManyLuts": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:deleteMany",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:deleteMany",
           "args": [
             "__undefined__"
           ]
@@ -3632,14 +3778,14 @@
       "returns": "promise"
     }
   },
-  "getLuts": {
+  "getLutsInfo": {
     "type": "function",
     "length": 0,
     "withSentinels": {
       "made": [
         {
           "op": "invoke",
-          "ch": "luts:get",
+          "ch": "luts:getInfo",
           "args": []
         }
       ],
@@ -3649,7 +3795,7 @@
       "made": [
         {
           "op": "invoke",
-          "ch": "luts:get",
+          "ch": "luts:getInfo",
           "args": []
         }
       ],
@@ -4740,6 +4886,38 @@
       "returns": "promise"
     }
   },
+  "importScannedLuts": {
+    "type": "function",
+    "length": 3,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:importScanned",
+          "args": [
+            "@1",
+            "@2",
+            "@3"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:importScanned",
+          "args": [
+            "__undefined__",
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "importUsbItems": {
     "type": "function",
     "length": 4,
@@ -4954,6 +5132,30 @@
       "returns": "promise"
     }
   },
+  "listLuts": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:list",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "listMtpFolder": {
     "type": "function",
     "length": 2,
@@ -5034,6 +5236,34 @@
         {
           "op": "invoke",
           "ch": "projects:listDevices",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "listProjectLuts": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listLuts",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:listLuts",
           "args": [
             "__undefined__"
           ]
@@ -5173,6 +5403,36 @@
           "op": "invoke",
           "ch": "library:loadCloudMedia",
           "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "lutsUsage": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:usage",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:usage",
+          "args": [
+            "__undefined__",
             "__undefined__"
           ]
         }
@@ -6488,6 +6748,68 @@
       }
     ]
   },
+  "onLutsImportProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "luts:importProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "luts:importProgress"
+      },
+      {
+        "op": "off",
+        "ch": "luts:importProgress"
+      },
+      {
+        "op": "off",
+        "ch": "luts:importProgress"
+      }
+    ]
+  },
+  "onLutsScanProgress": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "on",
+          "ch": "luts:scanProgress"
+        }
+      ],
+      "returns": "function"
+    },
+    "noArgs": {
+      "made": [],
+      "returns": "function"
+    },
+    "unsubscribe": [
+      {
+        "op": "on",
+        "ch": "luts:scanProgress"
+      },
+      {
+        "op": "off",
+        "ch": "luts:scanProgress"
+      },
+      {
+        "op": "off",
+        "ch": "luts:scanProgress"
+      }
+    ]
+  },
   "onMediaImported": {
     "type": "function",
     "length": 1,
@@ -7435,6 +7757,34 @@
         {
           "op": "invoke",
           "ch": "system:openPath",
+          "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "openLutsFolder": {
+    "type": "function",
+    "length": 1,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:openFolder",
+          "args": [
+            "@1"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:openFolder",
           "args": [
             "__undefined__"
           ]
@@ -8729,6 +9079,14 @@
         },
         {
           "op": "off",
+          "ch": "luts:importProgress"
+        },
+        {
+          "op": "off",
+          "ch": "luts:scanProgress"
+        },
+        {
+          "op": "off",
           "ch": "metadata:log"
         },
         {
@@ -9013,6 +9371,36 @@
       "returns": "promise"
     }
   },
+  "removeProjectLut": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeLut",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:removeLut",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "removeProjectMedia": {
     "type": "function",
     "length": 1,
@@ -9090,6 +9478,36 @@
         {
           "op": "invoke",
           "ch": "luts:rename",
+          "args": [
+            "__undefined__",
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "renameLutFolder": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:renameFolder",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:renameFolder",
           "args": [
             "__undefined__",
             "__undefined__"
@@ -9213,6 +9631,30 @@
       "returns": "promise"
     }
   },
+  "restoreBundledLuts": {
+    "type": "function",
+    "length": 0,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:restoreBundled",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:restoreBundled",
+          "args": []
+        }
+      ],
+      "returns": "promise"
+    }
+  },
   "revealLocalPath": {
     "type": "function",
     "length": 1,
@@ -9262,6 +9704,36 @@
           "op": "invoke",
           "ch": "luts:reveal",
           "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "revealProjectLut": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:revealLut",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "projects:revealLut",
+          "args": [
+            "__undefined__",
             "__undefined__"
           ]
         }
@@ -9402,6 +9874,36 @@
           "op": "invoke",
           "ch": "settings:save",
           "args": [
+            "__undefined__"
+          ]
+        }
+      ],
+      "returns": "promise"
+    }
+  },
+  "scanLuts": {
+    "type": "function",
+    "length": 2,
+    "withSentinels": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:scan",
+          "args": [
+            "@1",
+            "@2"
+          ]
+        }
+      ],
+      "returns": "promise"
+    },
+    "noArgs": {
+      "made": [
+        {
+          "op": "invoke",
+          "ch": "luts:scan",
+          "args": [
+            "__undefined__",
             "__undefined__"
           ]
         }

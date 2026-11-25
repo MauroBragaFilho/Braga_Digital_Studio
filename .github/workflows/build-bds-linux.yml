@@ -68,8 +68,14 @@ jobs:
             exit 1
           fi
 
+      # Release sem as LUTs embutidas (ou com procedência "a-confirmar") não é publicado: falha aqui, antes do build.
+      - name: Conferir as LUTs embutidas (release)
+        run: npm run verify:package -- --release
+
       - name: Build dos pacotes Linux (AppImage + deb)
         env:
+          # O after-pack-check falha se o pacote sair sem nenhuma LUT embutida.
+          BDS_RELEASE: '1'
           # Caches do electron-builder/Electron dentro do workspace (tratados pela action
           # actions/cache), evitando re-baixar o zip do Electron e as ferramentas AppImage
           # em toda execução — a causa nº1 de falhas intermitentes de build no CI.

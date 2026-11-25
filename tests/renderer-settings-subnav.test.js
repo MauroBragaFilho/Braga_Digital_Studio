@@ -53,10 +53,14 @@ const GROUPS = {
   settingsAboutView: [
     ['Sobre', ['Braga Digital Studio']],
     ['Licenças', ['Licenças de código aberto']]
+  ],
+  settingsLutsView: [
+    ['Coleção', ['Coleção de LUTs']],
+    ['Pré-visualização', ['Imagem padrão de pré-visualização']]
   ]
 };
 // Atualizações: o subpainel "Aplicativo" foi fundido ao dos componentes (um cartão só, sem submenu)
-const NO_SUBMENU = ['settingsModulesView', 'settingsLutsView', 'settingsUpdatesView'];
+const NO_SUBMENU = ['settingsModulesView', 'settingsUpdatesView'];
 
 const cardTitle = (card) => {
   const h = card.querySelector('.st-card-title');
@@ -89,7 +93,7 @@ test('cada seção com submenu tem os itens e os cartões do agrupamento aprovad
   }
 });
 
-test('Módulos, LUTs e Atualizações não têm submenu e mantêm um cartão só', () => {
+test('Módulos e Atualizações não têm submenu e mantêm um cartão só (as LUTs têm dois cartões: Coleção e Pré-visualização)', () => {
   for (const id of NO_SUBMENU) {
     const view = staticDoc.getElementById(id);
     assert.ok(view, id);

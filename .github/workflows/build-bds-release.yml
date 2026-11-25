@@ -74,9 +74,16 @@ jobs:
             exit 1
           }
 
+      # Release sem as LUTs embutidas (ou com procedência "a-confirmar") não é publicado: falha aqui, antes do build.
+      - name: Conferir as LUTs embutidas (release)
+        shell: pwsh
+        run: npm run verify:package -- --release
+
       - name: Build do instalador Windows (NSIS)
         shell: pwsh
         env:
+          # O after-pack-check falha se o pacote sair sem nenhuma LUT embutida.
+          BDS_RELEASE: '1'
           # Evita que o electron-builder tente localizar/usar um certificado de assinatura
           # de código automaticamente (não configurado neste momento) — gera instalador
           # sem assinatura, que é o comportamento esperado até haver um certificado.

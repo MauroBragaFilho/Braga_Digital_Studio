@@ -2,6 +2,7 @@ import { normalizeAccentHex } from '../utils/accent-palette.js';
 import { state, setStatus, escapeHtml, applyTheme, applyAccentColor, applyUiPreferences, getVisibleSidebarTabs, getDefaultTabOrder, tabShortcutLabel } from '../app.js';
 import { friendlyError } from '../utils/friendlyError.js';
 import { enhanceModalOverlay } from '../utils/modal.js';
+import { toFileUrl } from '../utils/fileUrl.js';
 
 let customSources = [];
 
@@ -147,6 +148,11 @@ function showSub(viewId, subId, { remember = true } = {}) {
 
 /** Subpainéis cujo conteúdo muda sozinho são relidos toda vez que aparecem (no lugar de um botão "Atualizar"). */
 function onSubShown(viewId, sub) {
+  // LUTs, Coleção: pasta, contagem e LUTs padrão são sempre as do disco agora (só lê com a seção à vista)
+  if (viewId === 'settingsLutsView' && sub === 'collection') {
+    if (!document.getElementById(viewId)?.classList.contains('hidden')) loadLutsInfo();
+    return;
+  }
   if (viewId !== 'settingsSystemView') return;
   if (sub === 'about') loadCacheInfo();
   else if (sub === 'support') loadCrashReports();
@@ -515,7 +521,7 @@ function renderSettings() {
   setVal('lutPreviewImageInput', s.lutPreviewImage);
   const lutThumb = document.getElementById('settingsLutPreviewThumb');
   if (lutThumb) {
-    lutThumb.src = s.lutPreviewImage ? `file://${s.lutPreviewImage}` : './assets/lut_preview.jpg';
+    lutThumb.src = s.lutPreviewImage ? toFileUrl(s.lutPreviewImage) : './assets/lut_preview.jpg';
   }
 
   // Aceleração de Hardware (GPU)
@@ -731,6 +737,18 @@ function bindEvents() {
     }
   });
 
+  // LUTs, cartão Coleção: o ícone dentro do campo e o clique (ou Enter) no campo somente leitura abrem a pasta das LUTs
+  document.getElementById('lutsFolderOpenBtn')?.addEventListener('click', openLutsCollectionFolder);
+  const lutsFolderInput = document.getElementById('lutsFolderInput');
+  lutsFolderInput?.addEventListener('click', openLutsCollectionFolder);
+  lutsFolderInput?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    e.stopPropagation(); // aqui o Enter abre a pasta (nos outros campos ele salva)
+    openLutsCollectionFolder();
+  });
+  document.getElementById('lutsRestoreBtn')?.addEventListener('click', restoreBundledLutsAction);
+
   // LUTs: imagem de referência. O ícone dentro do campo, o clique (ou Enter) no campo somente leitura e o clique na miniatura abrem o seletor
   document.getElementById('lutPreviewImageSelectBtn')?.addEventListener('click', chooseLutPreviewImage);
   document.getElementById('settingsLutPreviewThumbBox')?.addEventListener('click', chooseLutPreviewImage);
@@ -911,6 +929,91 @@ async function restoreDefaultFolders(pairs) {
   }
 }
 
+/* ==========================================================================
+   LUTs: cartão "Coleção de LUTs" (pasta, quantas LUTs, abrir a pasta e "Restaurar LUTs padrão")
+   ========================================================================== */
+let lutsInfoSeq = 0;
+let lutsRestoreBusy = false;
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/** "40 LUTs em 3 pastas; 2 avisos." (pastas e avisos só aparecem quando há). */
+function describeLutsInfo(info) {
+  const count = Number(info.count) || 0;
+  const groups = Number(info.groups) || 0;
+  const warnings = Number(info.problemCount != null ? info.problemCount : (Array.isArray(info.problems) ? info.problems.length : 0)) || 0;
+  let text = count === 0 ? 'Nenhuma LUT na pasta' : `${plural(count, 'LUT', 'LUTs')}${groups ? ` em ${plural(groups, 'pasta', 'pastas')}` : ''}`;
+  if (warnings) text += `; ${plural(warnings, 'aviso', 'avisos')}`;
+  return `${text}.`;
+}
+
+/** Lê o resumo da coleção no processo principal e o mostra no cartão (só vale a leitura mais nova). */
+async function loadLutsInfo() {
+  const input = document.getElementById('lutsFolderInput');
+  const summary = document.getElementById('lutsCollectionSummary');
+  if (!input || !summary || !window.bds || typeof window.bds.getLutsInfo !== 'function') return;
+  const seq = ++lutsInfoSeq;
+  try {
+    const info = await window.bds.getLutsInfo();
+    if (seq !== lutsInfoSeq || !info) return;
+    input.value = info.folder || '';
+    input.title = info.folder || '';
+    summary.textContent = describeLutsInfo(info);
+    const problems = document.getElementById('lutsCollectionProblems');
+    if (problems) {
+      const list = (Array.isArray(info.problems) ? info.problems : []).slice(0, 3).map((p) => (p.name ? `${p.name} (${p.reason})` : p.reason));
+      problems.textContent = list.length ? `Atenção: ${list.join('; ')}${(Number(info.problemCount) || list.length) > list.length ? ' e mais' : ''}.` : '';
+      problems.hidden = !list.length;
+    }
+    const advanced = document.getElementById('lutsCollectionAdvanced');
+    if (advanced) advanced.hidden = !info.bundledAvailable; // sem LUTs padrão nesta instalação, não há o que restaurar
+  } catch (err) {
+    if (seq !== lutsInfoSeq) return;
+    console.error('[SETTINGS] Erro ao ler a coleção de LUTs:', err);
+    summary.textContent = friendlyError(err, 'Não foi possível ler a pasta de LUTs.');
+  }
+}
+
+async function openLutsCollectionFolder() {
+  const status = document.getElementById('lutsCollectionStatus');
+  try {
+    await window.bds.openLutsFolder();
+    if (status) status.textContent = '';
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao abrir a pasta das LUTs:', err);
+    if (status) status.textContent = friendlyError(err, 'Não foi possível abrir a pasta das LUTs.');
+  }
+}
+
+/** "Restaurar LUTs padrão": só depois de confirmar; devolve as que faltam e nunca apaga nem substitui nada. */
+async function restoreBundledLutsAction() {
+  const button = document.getElementById('lutsRestoreBtn');
+  const status = document.getElementById('lutsCollectionStatus');
+  if (lutsRestoreBusy || !status) return;
+  lutsRestoreBusy = true; // vale desde a pergunta: um segundo clique não abre outra
+  button?.setAttribute('aria-disabled', 'true'); // aria-disabled (e não disabled) para o foco não se perder do botão
+  try {
+    const ok = await window.bdsModal.confirm('Restaurar as LUTs padrão que não estão mais na pasta? Nada é apagado nem substituído: só voltam as que estão faltando.');
+    if (!ok) return;
+    status.textContent = 'Restaurando...';
+    const res = await window.bds.restoreBundledLuts();
+    const restored = Number(res && res.restored) || 0;
+    const failed = Number(res && res.failed) || 0;
+    const parts = [restored
+      ? `${plural(restored, 'LUT padrão restaurada', 'LUTs padrão restauradas')}.`
+      : 'Todas as LUTs padrão já estão na pasta.'];
+    if (failed) parts.push(`${plural(failed, 'LUT não pôde', 'LUTs não puderam')} ser ${failed === 1 ? 'copiada' : 'copiadas'}.`);
+    status.textContent = parts.join(' ');
+    loadLutsInfo();
+  } catch (err) {
+    console.error('[SETTINGS] Erro ao restaurar as LUTs padrão:', err);
+    status.textContent = friendlyError(err, 'Não foi possível restaurar as LUTs padrão.');
+  } finally {
+    lutsRestoreBusy = false;
+    button?.removeAttribute('aria-disabled');
+  }
+}
+
 /** Escolhe a imagem de referência do comparador de LUTs (campo somente leitura + miniatura). */
 async function chooseLutPreviewImage() {
   try {
@@ -924,7 +1027,7 @@ async function chooseLutPreviewImage() {
       const input = document.getElementById('lutPreviewImageInput');
       if (input) { input.value = filePath; input.dispatchEvent(new Event('input', { bubbles: true })); }
       const thumb = document.getElementById('settingsLutPreviewThumb');
-      if (thumb) thumb.src = `file://${filePath}`;
+      if (thumb) thumb.src = toFileUrl(filePath);
     }
   } catch (err) {
     console.error('[SETTINGS] Erro ao selecionar imagem de LUT:', err);
@@ -1194,7 +1297,7 @@ let saveShortcutHandler = null;
 
 const isTrackedField = (el) => el.id
   && el.id !== 'settingsSearch'
-  && !el.closest('#modulesList, #settingsAnalysisPanel, #settingsAssistantCard, #settingsTranscriptionPanel, #settingsAboutView');
+  && !el.closest('#modulesList, #settingsAnalysisPanel, #settingsAssistantCard, #settingsTranscriptionPanel, #settingsAboutView, #settingsLutsCollectionCard');
 
 function takeSnapshot() {
   const parts = [];

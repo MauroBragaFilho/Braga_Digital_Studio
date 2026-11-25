@@ -74,6 +74,11 @@
             <button class="ws-btn-outline" type="submit">Adicionar</button>
           </form>
         </div>
+        <div id="wsLutsCard" class="ws-card">
+          <h3 class="ws-card-title">LUTs</h3>
+          <ul id="wsLutsList" class="ws-luts-list" aria-live="polite"></ul>
+          <button id="wsLutsAdd" class="ws-link ws-luts-add" type="button" aria-haspopup="dialog">Adicionar da coleção…</button>
+        </div>
         <div class="ws-card">
           <h3 class="ws-card-title">Atividade</h3>
           <ul id="wsActivityList" class="ws-activity-list" aria-live="polite"></ul>
@@ -393,6 +398,23 @@
       <div class="ws-modal-footer">
         <span id="wsImportModalCount" class="ws-muted">0 selecionadas</span>
         <button id="wsBtnConfirmImportLibrary" class="ws-btn-accent" type="button">Adicionar ao projeto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADICIONAR LUTs DA COLEÇÃO AO PROJETO -->
+  <div id="wsLutPicker" class="ws-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wsLutPickerTitle">
+    <div class="ws-modal-box">
+      <div class="ws-modal-header">
+        <h3 id="wsLutPickerTitle">Adicionar LUTs da coleção</h3>
+        <button id="wsLutPickerClose" class="ws-icon-btn" type="button" title="Fechar" aria-label="Fechar"><span class="material-symbols-rounded">close</span></button>
+      </div>
+      <div class="ws-search"><span class="material-symbols-rounded" aria-hidden="true">search</span><input type="search" id="wsLutPickerSearch" placeholder="Buscar LUT" autocomplete="off" aria-label="Buscar LUT" data-autofocus /></div>
+      <div id="wsLutPickerList" class="ws-import-list" role="group" aria-label="LUTs da coleção"></div>
+      <p id="wsLutPickerNote" class="ws-muted" role="status" aria-live="polite"></p>
+      <div class="ws-modal-footer">
+        <span id="wsLutPickerCount" class="ws-muted" role="status" aria-live="polite">0 selecionadas</span>
+        <button id="wsLutPickerConfirm" class="ws-btn-accent" type="button" disabled>Adicionar</button>
       </div>
     </div>
   </div>

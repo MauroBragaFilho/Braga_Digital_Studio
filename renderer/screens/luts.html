@@ -18,10 +18,13 @@
           <option value="3d">LUT 3D</option>
           <option value="1d">LUT 1D</option>
         </select>
-        <select class="lut-select" id="lutSortFilter" aria-label="Ordenar">
+        <select class="lut-select" id="lutSortFilter" aria-label="Ordenar (dentro de cada pasta)" title="A ordem vale dentro de cada pasta">
           <option value="recent">Mais recentes</option>
-          <option value="name">Nome (A-Z)</option>
-          <option value="size">Tamanho</option>
+          <option value="oldest">Mais antigas</option>
+          <option value="name">Nome (A a Z)</option>
+          <option value="name-desc">Nome (Z a A)</option>
+          <option value="size">Maior tamanho</option>
+          <option value="size-asc">Menor tamanho</option>
         </select>
         <button class="lut-icon-btn lut-view-mode-btn" id="btnListView" title="Ver em lista" aria-label="Ver em lista">
             <span class="material-symbols-rounded">format_list_bulleted</span>
@@ -42,7 +45,7 @@
           <span class="material-symbols-rounded">folder_open</span>
       </button>
 
-      <button type="button" id="btnImportLut" class="lut-btn-primary">
+      <button type="button" id="btnImportLut" class="lut-btn-primary" aria-haspopup="menu" aria-expanded="false" aria-controls="lutImportMenu">
         <span class="material-symbols-rounded">add</span> Importar LUT
       </button>
     </div>
@@ -61,25 +64,38 @@
         </button>
       </div>
 
-      <div id="lutsGrid" class="luts-grid" role="listbox" aria-label="Minhas LUTs"></div>
+      <div id="lutsGrid" class="luts-grid" role="listbox" aria-multiselectable="true" aria-label="Minhas LUTs"></div>
 
       <div id="lutsEmptyState" class="luts-empty-state hidden">
         <span class="material-symbols-rounded luts-empty-icon" aria-hidden="true">gradient</span>
         <span class="luts-empty-text" id="lutsEmptyText">Nenhuma LUT encontrada.</span>
-        <span class="luts-empty-hint" id="lutsEmptyHint">Importe arquivos .cube ou arraste-os para esta tela.</span>
-        <button type="button" class="lut-btn-primary" id="btnEmptyImport">
+        <span class="luts-empty-hint" id="lutsEmptyHint">Importe arquivos .cube ou uma pasta, ou arraste-os para esta tela.</span>
+        <button type="button" class="lut-btn-primary" id="btnEmptyImport" aria-haspopup="menu" aria-expanded="false" aria-controls="lutImportMenu">
           <span class="material-symbols-rounded">add</span> Importar LUT
         </button>
       </div>
 
       <div id="lutsDropZone" class="luts-drop-zone hidden" aria-hidden="true">
         <span class="material-symbols-rounded">upload_file</span>
-        <span>Solte os arquivos .cube para importar</span>
+        <span>Solte arquivos .cube ou pastas para importar</span>
+      </div>
+
+      <!-- AÇÕES EM LOTE: só aparece com 2 ou mais LUTs selecionadas.
+           "Adicionar a um projeto…" some quando o módulo Projetos está desligado. -->
+      <div id="lutSelectionBar" class="lut-selection-bar hidden" role="toolbar" aria-label="Ações para as LUTs selecionadas">
+        <span id="lutSelCount" class="lut-selection-count">0 selecionadas</span>
+        <button type="button" id="btnSelAddProject" class="lut-btn-outline">
+          <span class="material-symbols-rounded" aria-hidden="true">playlist_add</span> Adicionar a um projeto…
+        </button>
+        <button type="button" id="btnSelDelete" class="lut-btn-outline lut-btn-danger">
+          <span class="material-symbols-rounded" aria-hidden="true">delete</span> Excluir
+        </button>
+        <button type="button" id="btnSelClear" class="lut-selection-clear">Limpar seleção</button>
       </div>
     </div>
 
     <!-- INSPECTOR LATERAL -->
-    <div class="luts-inspector">
+    <div class="luts-inspector" id="lutsInspector">
       <div class="inspector-header">
         <span class="inspector-title">Detalhes</span>
         <button class="lut-icon-btn lut-icon-btn-small" id="btnCloseInspector" type="button" aria-label="Fechar inspetor">
@@ -88,6 +104,14 @@
       </div>
 
       <div id="inspectorContent" class="inspector-content">
+        <!-- RESUMO DE VÁRIAS LUTs SELECIONADAS (no lugar do antes/depois e dos detalhes de uma só) -->
+        <div id="insMulti" class="inspector-multi hidden">
+          <h2 id="insMultiTitle" class="inspector-multi-title"></h2>
+          <p id="insMultiSize" class="inspector-multi-size"></p>
+          <ul id="insMultiList" class="inspector-multi-list"></ul>
+          <p class="inspector-multi-hint">As ações para todas ficam na barra abaixo da lista. Esc limpa a seleção.</p>
+        </div>
+
         <!-- COMPONENTE ANTES/DEPOIS -->
         <div class="lut-slider-container" id="lutSliderContainer">
           <img src="./assets/lut_preview.jpg" class="lut-slider-img lut-slider-img-base" id="lutSliderBaseImg" draggable="false">
@@ -99,7 +123,7 @@
             <div class="lut-slider-label lut-slider-label-after">Depois</div>
           </div>
           
-          <div class="lut-slider-divider" id="lutSliderDivider">
+          <div class="lut-slider-divider" id="lutSliderDivider" role="slider" tabindex="0" aria-label="Comparar antes e depois" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="Antes 50%, depois 50%">
             <div class="lut-slider-handle">
               <span class="material-symbols-rounded">code</span>
             </div>
@@ -107,14 +131,23 @@
         </div>
 
         <div class="inspector-header-info">
-          <h2 id="insName" class="inspector-name">Selecione um LUT</h2>
+          <h2 id="insName" class="inspector-name">Selecione uma LUT</h2>
           <span class="lut-badge lut-badge-3d" id="insBadge">3D LUT</span>
+        </div>
+
+        <!-- Aviso de LUT inválida (o motivo vem da leitura do arquivo) -->
+        <div id="insInvalid" class="inspector-invalid hidden" role="status" aria-live="polite">
+          <span class="material-symbols-rounded" aria-hidden="true">error</span>
+          <span id="insInvalidText" class="inspector-invalid-text"></span>
         </div>
 
         <div class="inspector-details">
           <div class="detail-row"><span class="detail-label">Tipo</span><span id="insType" class="detail-value">--</span></div>
           <div class="detail-row"><span class="detail-label">Tamanho</span><span id="insSize" class="detail-value">--</span></div>
           <div class="detail-row"><span class="detail-label">Modificado em</span><span id="insDate" class="detail-value">--</span></div>
+          <div class="detail-row hidden" id="insFolderRow"><span class="detail-label">Pasta</span><span id="insFolder" class="detail-value">--</span></div>
+          <div class="detail-row hidden" id="insProjectsRow"><span class="detail-label">Projetos</span><span id="insProjects" class="detail-value" role="status" aria-live="polite">--</span></div>
+          <button type="button" class="lut-text-link hidden" id="btnInsAddProject">Adicionar a um projeto…</button>
         </div>
 
         <!-- SEÇÃO: ARQUIVO .cube -->
@@ -167,24 +200,113 @@
   <div class="luts-footer">
     <span class="luts-footer-text">Total: <span id="ftTotal" class="luts-footer-highlight">0 LUTs</span></span>
     <span class="luts-footer-separator">|</span>
-    <span class="luts-footer-text">Selecionado: <span id="ftSelected" class="luts-footer-highlight">0 LUT</span></span>
+    <span class="luts-footer-text" role="status" aria-live="polite" aria-atomic="true">Selecionado: <span id="ftSelected" class="luts-footer-highlight">0 LUTs</span></span>
     <span class="luts-footer-spacer"></span>
     <span class="luts-footer-text luts-footer-hint">Para enviar ao celular, use Dispositivos → Sincronizar LUTs</span>
   </div>
 
   <!-- MENU DE AÇÕES DO CARTÃO -->
   <div id="lutCardMenu" class="lut-card-menu hidden" role="menu">
+    <button type="button" role="menuitem" data-action="add-project"><span class="material-symbols-rounded" aria-hidden="true">playlist_add</span> Adicionar a um projeto…</button>
     <button type="button" role="menuitem" data-action="rename"><span class="material-symbols-rounded">edit</span> Renomear</button>
     <button type="button" role="menuitem" data-action="reveal"><span class="material-symbols-rounded">folder_open</span> Mostrar na pasta</button>
-    <button type="button" role="menuitem" data-action="delete" class="danger"><span class="material-symbols-rounded">delete</span> Excluir</button>
+    <button type="button" role="menuitem" data-action="delete" class="danger"><span class="material-symbols-rounded">delete</span> <span class="lut-menu-label">Excluir</span></button>
   </div>
 
+  <!-- MENU: IMPORTAR (arquivos ou pasta) -->
+  <div id="lutImportMenu" class="lut-card-menu hidden" role="menu" aria-label="Importar LUTs">
+    <button type="button" role="menuitem" data-action="files"><span class="material-symbols-rounded" aria-hidden="true">description</span> Arquivos .cube…</button>
+    <button type="button" role="menuitem" data-action="folder"><span class="material-symbols-rounded" aria-hidden="true">folder</span> Pasta…</button>
+  </div>
+
+  <!-- MENU: PASTA (grupo) -->
+  <div id="lutGroupMenu" class="lut-card-menu hidden" role="menu" aria-label="Opções da pasta">
+    <button type="button" role="menuitem" data-action="select-folder"><span class="material-symbols-rounded" aria-hidden="true">select_all</span> Selecionar as LUTs desta pasta</button>
+    <button type="button" role="menuitem" data-action="add-project-folder"><span class="material-symbols-rounded" aria-hidden="true">playlist_add</span> Adicionar a um projeto…</button>
+    <button type="button" role="menuitem" data-action="rename-folder"><span class="material-symbols-rounded" aria-hidden="true">edit</span> Renomear pasta</button>
+    <button type="button" role="menuitem" data-action="open-folder"><span class="material-symbols-rounded" aria-hidden="true">folder_open</span> Abrir pasta</button>
+    <button type="button" role="menuitem" data-action="delete-folder" class="danger"><span class="material-symbols-rounded" aria-hidden="true">delete</span> Excluir pasta</button>
+  </div>
+
+  <!-- MODAL: IMPORTAR LUTs (procurar, resumo, importar) -->
+  <div id="lutImportModal" class="lut-import-modal hidden" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+    <div class="lut-import-inner">
+      <div class="lut-import-header">
+        <h2 id="importModalTitle" class="lut-import-title">Importar LUTs</h2>
+        <button id="btnImportClose" class="lut-icon-btn lut-icon-btn-small" type="button" aria-label="Fechar" title="Fechar">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+        </button>
+      </div>
+
+      <!-- 1. Procurando -->
+      <section id="importScanning" class="lut-import-section" aria-live="polite">
+        <p id="importScanText" class="lut-import-status">Procurando LUTs…</p>
+        <progress id="importScanBar" class="lut-import-bar" max="100" aria-label="Andamento da busca"></progress>
+        <div class="lut-import-actions">
+          <button type="button" id="btnImportScanCancel" class="lut-btn-outline">Cancelar</button>
+        </div>
+      </section>
+
+      <!-- 2. Resumo -->
+      <section id="importSummary" class="lut-import-section hidden">
+        <p id="importSummaryText" class="lut-import-summary" aria-live="polite"></p>
+        <ul id="importNotes" class="lut-import-notes hidden"></ul>
+        <div id="importFilters" class="lut-import-filters" role="group" aria-label="Mostrar"></div>
+        <div id="importGroups" class="lut-import-groups"></div>
+        <details id="importOptions" class="lut-import-options">
+          <summary>Opções</summary>
+          <label class="lut-import-check"><input type="checkbox" id="importKeepFolders" checked> Manter as subpastas</label>
+          <label class="lut-import-check"><input type="checkbox" id="importWrap" checked> Colocar dentro de uma pasta chamada</label>
+          <input type="text" id="importWrapName" class="lut-import-input" maxlength="100" aria-label="Nome da pasta">
+        </details>
+        <p id="importError" class="lut-import-error hidden" role="alert"></p>
+        <div class="lut-import-actions">
+          <button type="button" id="btnImportCancel" class="lut-btn-outline">Cancelar</button>
+          <button type="button" id="btnImportConfirm" class="lut-btn-primary" data-autofocus>Importar</button>
+        </div>
+      </section>
+
+      <!-- 3. Importando -->
+      <section id="importProgress" class="lut-import-section hidden" aria-live="polite">
+        <p id="importProgressText" class="lut-import-status"></p>
+        <progress id="importProgressBar" class="lut-import-bar" max="100" aria-label="Andamento da importação"></progress>
+        <div class="lut-import-actions">
+          <button type="button" id="btnImportStop" class="lut-btn-outline">Cancelar importação</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+
+  <!-- MODAL: ADICIONAR A UM PROJETO (escolher o projeto) -->
+  <div id="lutProjectPicker" class="lut-import-modal hidden" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
+    <div class="lut-import-inner lut-project-inner">
+      <div class="lut-import-header">
+        <h2 id="projectPickerTitle" class="lut-import-title">Adicionar a um projeto</h2>
+        <button id="btnProjectPickerClose" class="lut-icon-btn lut-icon-btn-small" type="button" aria-label="Fechar" title="Fechar">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <section class="lut-import-section">
+        <p id="projectPickerWhat" class="lut-import-summary"></p>
+        <input type="search" id="projectPickerSearch" class="lut-import-input" placeholder="Buscar projeto ou cliente" aria-label="Buscar projeto ou cliente" autocomplete="off" data-autofocus>
+        <div id="projectPickerList" class="lut-project-list" role="radiogroup" aria-label="Projetos"></div>
+        <label id="projectPickerArchivedRow" class="lut-import-check hidden"><input type="checkbox" id="projectPickerArchived"> Mostrar arquivados</label>
+        <p id="projectPickerStatus" class="lut-import-status" role="status" aria-live="polite"></p>
+        <p id="projectPickerError" class="lut-import-error hidden" role="alert"></p>
+        <div class="lut-import-actions">
+          <button type="button" id="btnProjectPickerCancel" class="lut-btn-outline">Cancelar</button>
+          <button type="button" id="btnProjectPickerConfirm" class="lut-btn-primary" disabled>Adicionar</button>
+        </div>
+      </section>
+    </div>
+  </div>
 
   <!-- MODAL FULLSCREEN -->
   <div id="lutFullscreenModal" class="lut-fullscreen-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fsLutName">
 
     <div class="lut-fullscreen-header">
-      <h2 id="fsLutName" class="lut-fullscreen-title">Nome do LUT</h2>
+      <h2 id="fsLutName" class="lut-fullscreen-title">Nome da LUT</h2>
       <span class="lut-fullscreen-subtitle">Pré-visualização em Tela Cheia</span>
     </div>
 
@@ -203,7 +325,7 @@
         <div class="lut-slider-label lut-slider-label-after">Depois</div>
       </div>
       
-      <div class="lut-slider-divider" id="fsSliderDivider">
+      <div class="lut-slider-divider" id="fsSliderDivider" role="slider" tabindex="0" aria-label="Comparar antes e depois" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="Antes 50%, depois 50%">
         <div class="lut-slider-handle">
           <span class="material-symbols-rounded">code</span>
         </div>

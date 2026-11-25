@@ -47,7 +47,7 @@ const isPackaged = app.isPackaged;
 const appRoot = isPackaged ? process.resourcesPath : __dirname;
 const writableRoot = isPackaged ? app.getPath('userData') : __dirname;
 
-appPaths.init(writableRoot, appRoot);
+appPaths.init(writableRoot, appRoot, { packaged: isPackaged });
 appPaths.ensureDirectories();
 process.env.BMD_LOGS_DIR = appPaths.logsDir;
 perf.setOutputDir(appPaths.logsDir);

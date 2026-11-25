@@ -4,6 +4,10 @@ const path = require('path');
 let _AdmZip = null;
 const loadAdmZip = () => (_AdmZip || (_AdmZip = require('adm-zip')));
 const logger = require('../../services/logService');
+const CubeParser = require('../luts/CubeParser');
+const { sha256 } = require('../luts/lutFileOps');
+const { cleanExternalText } = require('../luts/lutNames');
+const { MAX_PROJECT_LUTS, MAX_PACKAGE_LUT_FILE, MAX_PACKAGE_LUT_BYTES } = require('../luts/lutConstants');
 
 // Limites e validação de pacote (RK-053): o .bdspro vem de fora e não é confiável.
 const MAX_BDSPRO_BYTES = 512 * 1024 * 1024;        // arquivo .bdspro
@@ -16,6 +20,11 @@ const UUID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const COVER_NAME_RE = /^cover\.(?:jpe?g|png|webp|gif|bmp)$/i;
 const DEFAULT_PROJECT_COLOR = '#3b82f6';
+const HEX64_RE = /^[0-9a-f]{64}$/;
+/** Quantos itens da lista `luts` de um pacote são olhados (o resto é só contado como descartado). */
+const MAX_LUT_ITEMS_SCANNED = 1000;
+/** Espaço guardado para o project.json (com a lista de LUTs) ao calcular quanto de LUTs o pacote comporta. */
+const LUT_LIST_RESERVE_BYTES = 128 * 1024;
 
 /** Caminho de rede UNC (duas barras iniciais): nunca tocado a partir de dados do pacote. */
 function isUncPath(p) {
@@ -68,6 +77,41 @@ function readBdsproPackage(bdsproPath) {
 }
 
 /**
+ * Limpa a lista `luts` de um pacote (vinda de fora, não confiável). Cada item vira um objeto novo só com campos
+ * conhecidos: `hash` por regex (SHA-256 em minúsculas), `entry` aceito SOMENTE se for exatamente `luts/<hash>.cube`
+ * (qualquer outro texto vira vínculo só por hash, sem arquivo), nome e título sem controles nem marcas bidirecionais
+ * e com tamanho limitado, tamanho do arquivo numérico dentro do teto. Repetidos (mesmo hash) são unificados e no
+ * máximo MAX_PROJECT_LUTS entram; o resto é só contado em `dropped`.
+ * @param {unknown} list
+ * @returns {{ items: Array<{ hash: string, name: string, title: string|null, kind: '3D'|'1D'|null, lutSize: number|null, bytes: number|null, entry: string|null }>, dropped: number }}
+ */
+function sanitizePackageLuts(list) {
+    const out = { items: [], dropped: 0 };
+    if (!Array.isArray(list)) return out;
+    const seen = new Set();
+    list.forEach((raw, index) => {
+        if (index >= MAX_LUT_ITEMS_SCANNED) { out.dropped++; return; }
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { out.dropped++; return; }
+        const hash = typeof raw.hash === 'string' ? raw.hash : '';
+        if (!HEX64_RE.test(hash) || seen.has(hash)) { out.dropped++; return; }
+        if (out.items.length >= MAX_PROJECT_LUTS) { out.dropped++; return; }
+        seen.add(hash);
+        const bytes = Number.isInteger(raw.bytes) && raw.bytes >= 0 && raw.bytes <= MAX_PACKAGE_LUT_FILE ? raw.bytes : null;
+        const lutSize = Number.isInteger(raw.lutSize) && raw.lutSize >= 2 && raw.lutSize <= 65536 ? raw.lutSize : null;
+        out.items.push({
+            hash,
+            name: cleanExternalText(raw.name, 120) || 'LUT',
+            title: cleanExternalText(raw.title, 200) || null,
+            kind: raw.kind === '3D' || raw.kind === '1D' ? raw.kind : null,
+            lutSize,
+            bytes,
+            entry: raw.included !== false && raw.entry === `luts/${hash}.cube` ? raw.entry : null
+        });
+    });
+    return out;
+}
+
+/**
  * Valida (e sanitiza in loco) o project.json de um pacote: tipos das listas, limites, uuid por
  * regex, cor hexadecimal e nome de capa simples. Lança em caso de estrutura inválida.
  */
@@ -103,18 +147,36 @@ function validateProjectData(data) {
             m.thumbnail = isSafeThumbName(base) ? base : null;
         }
     }
+    // LUTs do projeto: lista limpa e limitada (pacote antigo não tem a chave). O descartado fica só contado, fora do JSON.
+    if (data.luts !== undefined && data.luts !== null) {
+        const clean = sanitizePackageLuts(data.luts);
+        data.luts = clean.items;
+        Object.defineProperty(data, 'lutsDropped', { value: clean.dropped, enumerable: false, writable: true, configurable: true });
+    }
 }
 
 class BdsproPackageService {
-    constructor(projectService) {
+    /**
+     * @param {object} projectService
+     * @param {{ lutManager?: import('../luts/LutManager'), projectLutService?: import('./ProjectLutService') }} [luts]
+     *   com os dois o pacote leva as LUTs do projeto e as restaura na importação; sem eles (testes antigos) o
+     *   comportamento é o de antes das LUTs
+     */
+    constructor(projectService, { lutManager = null, projectLutService = null } = {}) {
         this.projectService = projectService;
+        this.lutManager = lutManager;
+        this.projectLutService = projectLutService;
     }
 
     /**
      * Exporta um projeto completo para o formato .bdspro
-     * @param {number} projectId 
-     * @param {string} outputPath 
-     * @param {string} thumbnailsDir 
+     * As LUTs do projeto vão junto em `luts/<hash>.cube` (nome só pelo conteúdo, nunca o nome do usuário), conferidas
+     * contra o conteúdo registrado e dentro de um orçamento (32 MB por LUT, 128 MB no total, e o que o pacote ainda
+     * comporta). O que não cabe ou não está mais na coleção fica na lista `luts` do project.json com o motivo, e o
+     * resultado traz `luts` com as contagens e os avisos. Projeto sem LUTs: pacote idêntico ao de antes.
+     * @param {number} projectId
+     * @param {string} outputPath
+     * @param {string} thumbnailsDir
      */
     async exportBdspro(projectId, outputPath, thumbnailsDir) {
         try {
@@ -122,6 +184,8 @@ class BdsproPackageService {
             if (!projectModel) throw new Error('Projeto não encontrado');
 
             const zip = new (loadAdmZip())();
+            let fixedBytes = 0; // capa e miniaturas (sem compressão): entram na conta do orçamento de LUTs
+            const addFile = (name, buffer) => { zip.addFile(name, buffer); fixedBytes += buffer.length; };
 
             // 1. Processar capa do projeto se existir
             let coverRelativePath = null;
@@ -129,7 +193,7 @@ class BdsproPackageService {
                 const coverExt = path.extname(projectModel.metadata.cover_path) || '.jpg';
                 coverRelativePath = `cover${coverExt}`;
                 const coverBuffer = fs.readFileSync(projectModel.metadata.cover_path);
-                zip.addFile(coverRelativePath, coverBuffer);
+                addFile(coverRelativePath, coverBuffer);
             }
             projectModel.metadata.cover_relative_path = coverRelativePath;
 
@@ -145,25 +209,65 @@ class BdsproPackageService {
                         if (isSafeThumbName(path.basename(thumbPath)) && isInsideDir(thumbnailsDir, thumbPath)
                             && fs.existsSync(thumbPath)) {
                             const thumbBuffer = fs.readFileSync(thumbPath);
-                            zip.addFile(`thumbnails/${path.basename(thumbPath)}`, thumbBuffer);
+                            addFile(`thumbnails/${path.basename(thumbPath)}`, thumbBuffer);
                         }
                     }
                 }
             }
 
-            // 3. Adicionar project.json
-            const jsonString = JSON.stringify(projectModel, null, 2);
-            zip.addFile('project.json', Buffer.from(jsonString, 'utf8'));
+            // 3. LUTs do projeto (a chave `luts` só nasce aqui, pelo exportador; o modelo do projeto não muda)
+            const jsonBytes = Buffer.byteLength(JSON.stringify(projectModel, null, 2)) + LUT_LIST_RESERVE_BYTES;
+            const lutRoom = Math.min(MAX_BDSPRO_BYTES, MAX_TOTAL_UNCOMPRESSED_BYTES) - fixedBytes - jsonBytes;
+            let luts = null;
+            let lutsFailed = false;
+            if (this.projectLutService) {
+                try {
+                    luts = await this.projectLutService.collectForExport(projectId, { maxBytes: lutRoom });
+                } catch (err) {
+                    lutsFailed = true;
+                    logger.warn('[BdsproPackage] Não foi possível reunir as LUTs do projeto', { error: err && err.message });
+                }
+            }
+            const lutSummary = luts ? { ...luts.summary, warnings: [] } : (lutsFailed
+                ? { included: 0, missing: 0, skipped: 0, bytes: 0, warnings: ['Não foi possível incluir as LUTs do projeto no pacote.'] }
+                : null);
 
             // 4. Salvar arquivo .bdspro
             const finalOutputPath = outputPath.endsWith('.bdspro') ? outputPath : `${outputPath}.bdspro`;
-            
             const outputDir = path.dirname(finalOutputPath);
             if (!fs.existsSync(outputDir)) {
                 fs.mkdirSync(outputDir, { recursive: true });
             }
 
-            zip.writeZip(finalOutputPath);
+            const writePackage = (withLuts) => {
+                if (withLuts && luts) for (const [hash, buffer] of luts.buffers) zip.addFile(`luts/${hash}.cube`, buffer);
+                const list = luts ? (withLuts ? luts.list : luts.list.map((e) => (e.included
+                    ? { ...e, entry: null, included: false, reason: 'pacote cheio' } : e))) : null;
+                const body = list ? { ...projectModel, luts: list } : projectModel;
+                zip.addFile('project.json', Buffer.from(JSON.stringify(body, null, 2), 'utf8'));
+                zip.writeZip(finalOutputPath);
+            };
+            writePackage(true);
+
+            // O arquivo final nunca passa do limite que a importação aceita: se passou, refaz sem as LUTs e avisa.
+            if (luts && luts.summary.included > 0 && fs.statSync(finalOutputPath).size > MAX_BDSPRO_BYTES) {
+                try { fs.unlinkSync(finalOutputPath); } catch (_) { /* será sobrescrito abaixo */ }
+                for (const hash of luts.buffers.keys()) zip.deleteFile(`luts/${hash}.cube`);
+                zip.deleteFile('project.json');
+                writePackage(false);
+                lutSummary.skipped += lutSummary.included;
+                lutSummary.included = 0;
+                lutSummary.bytes = 0;
+                lutSummary.warnings.push('O pacote ficou grande demais com as LUTs; elas não foram incluídas.');
+            }
+            if (lutSummary && lutSummary.skipped > 0 && !lutSummary.warnings.length) {
+                lutSummary.warnings.push(lutSummary.skipped === 1 ? '1 LUT não coube no pacote.' : `${lutSummary.skipped} LUTs não couberam no pacote.`);
+            }
+            if (lutSummary && lutSummary.missing > 0) {
+                lutSummary.warnings.push(lutSummary.missing === 1
+                    ? '1 LUT do projeto não está mais na coleção (ou foi alterada) e foi levada só como vínculo.'
+                    : `${lutSummary.missing} LUTs do projeto não estão mais na coleção (ou foram alteradas) e foram levadas só como vínculo.`);
+            }
 
             logger.info(`[BdsproPackage] Projeto ${projectId} exportado com sucesso para ${finalOutputPath}`);
             return {
@@ -171,7 +275,8 @@ class BdsproPackageService {
                 filePath: finalOutputPath,
                 mediaCount: (projectModel.media || []).length,
                 tracksCount: ((projectModel.sequence?.video_tracks || []).length + (projectModel.sequence?.audio_tracks || []).length),
-                markersCount: (projectModel.markers || []).length
+                markersCount: (projectModel.markers || []).length,
+                ...(lutSummary ? { luts: lutSummary } : {})
             };
         } catch (error) {
             logger.error(`[BdsproPackage] Erro ao exportar .bdspro:`, error);
@@ -230,12 +335,110 @@ class BdsproPackageService {
                 foldersCount: (projectData.folders || []).length,
                 syncGroupsCount: (projectData.syncGroups || []).length,
                 markersCount: (projectData.markers || []).length,
+                ...(Array.isArray(projectData.luts) ? { luts: await this._inspectLuts(projectData) } : {}),
                 projectData
             };
         } catch (error) {
             logger.error(`[BdsproPackage] Erro ao inspecionar ${bdsproPath}:`, error);
             throw error;
         }
+    }
+
+    /**
+     * Resumo das LUTs "conforme o pacote": só o que o project.json DECLARA (hash e tamanho, já validados), sem abrir
+     * nem descompactar os arquivos do pacote. A conferência de verdade (tamanho, conteúdo e leitor) é feita na importação.
+     * `declaredNew`/`declaredExisting` comparam os conteúdos declarados com a coleção atual (null se não deu para saber).
+     * @returns {Promise<{ total: number, bytes: number, declaredNew: number|null, declaredExisting: number|null, skipped: number }>}
+     */
+    async _inspectLuts(projectData) {
+        const items = projectData.luts;
+        const dropped = projectData.lutsDropped || 0;
+        const withFile = items.filter((l) => l.entry);
+        const info = {
+            total: items.length + dropped,
+            bytes: withFile.reduce((sum, l) => sum + (l.bytes || 0), 0),
+            declaredNew: withFile.length ? null : 0,
+            declaredExisting: withFile.length ? null : 0,
+            skipped: items.length - withFile.length + dropped
+        };
+        if (withFile.length && this.lutManager) {
+            try {
+                const index = await this.lutManager.hashIndex();
+                info.declaredExisting = withFile.filter((l) => index.has(l.hash)).length;
+                info.declaredNew = withFile.length - info.declaredExisting;
+            } catch (err) {
+                logger.warn('[BdsproPackage] Não foi possível comparar as LUTs do pacote com a coleção', { error: err && err.message });
+            }
+        }
+        return info;
+    }
+
+    /**
+     * Grava na coleção de LUTs os arquivos que o pacote traz. Segurança: o nome da entrada do zip é CONSTRUÍDO a partir
+     * do hash já validado (`luts/<hash>.cube`), nunca lido do zip, e nunca vira caminho de gravação (quem decide o nome
+     * e o lugar é o LutManager). Cada arquivo só vale com: tamanho declarado dentro do teto e igual ao conteúdo, SHA-256
+     * igual ao do nome e aprovado pelo leitor de .cube; o total respeita o orçamento de LUTs do pacote. O que falhar é
+     * descartado com um aviso e não impede as demais.
+     * @returns {Promise<{ linked: number, restored: number, existing: number, linkOnly: number, failed: number, warnings: string[] }>}
+     *   linked: vínculos criados no projeto; restored: arquivos gravados agora; existing: já estavam na coleção;
+     *   linkOnly: só vínculo (o pacote não trouxe o arquivo); failed: arquivo do pacote descartado ou não gravado
+     */
+    async _restorePackageLuts(zip, projectData) {
+        const items = projectData.luts;
+        const result = { linked: items.length, restored: 0, existing: 0, linkOnly: 0, failed: 0, warnings: [] };
+        const dropped = projectData.lutsDropped || 0;
+        if (dropped > 0) result.warnings.push(`${dropped} ${dropped === 1 ? 'item da lista de LUTs do pacote foi descartado' : 'itens da lista de LUTs do pacote foram descartados'} (repetidos, inválidos ou acima do limite de ${MAX_PROJECT_LUTS}).`);
+
+        const fail = (item, why) => { result.failed++; result.warnings.push(`LUT "${item.name}" não restaurada: ${String(why).replace(/\.$/, '')}.`); };
+        let batch = [];
+        let batchBytes = 0;
+        let totalBytes = 0;
+        const flush = async () => {
+            if (!batch.length) return;
+            const current = batch;
+            batch = [];
+            batchBytes = 0;
+            if (!this.lutManager) { for (const entry of current) fail(entry.item, 'a coleção de LUTs não está disponível'); return; }
+            let answers;
+            try {
+                answers = await this.lutManager.addBuffers(current.map((entry) => ({ buffer: entry.buffer, name: entry.item.name })));
+            } catch (err) {
+                logger.warn('[BdsproPackage] Não foi possível gravar as LUTs do pacote', { error: err && err.message });
+                for (const entry of current) fail(entry.item, 'não foi possível gravar na coleção');
+                return;
+            }
+            answers.forEach((answer, i) => {
+                if (answer.status === 'added') result.restored++;
+                else if (answer.status === 'exists') result.existing++;
+                else fail(current[i].item, answer.reason || 'não foi possível gravar');
+            });
+        };
+
+        for (const item of items) {
+            if (!item.entry) { result.linkOnly++; continue; }
+            try {
+                const entry = zip.getEntry(`luts/${item.hash}.cube`); // nome construído, nunca lido do zip
+                if (!entry || entry.isDirectory) { fail(item, 'o arquivo não está no pacote'); continue; }
+                const declared = Number(entry.header && entry.header.size) || 0;
+                if (declared <= 0 || declared > MAX_PACKAGE_LUT_FILE) { fail(item, 'tamanho fora do limite'); continue; }
+                if (item.bytes != null && declared !== item.bytes) { fail(item, 'o tamanho não confere com o declarado'); continue; }
+                if (totalBytes + declared > MAX_PACKAGE_LUT_BYTES) { fail(item, 'o pacote tem LUTs demais para restaurar de uma vez'); continue; }
+                const data = entry.getData();
+                if (data.length !== declared) { fail(item, 'o tamanho não confere com o conteúdo'); continue; }
+                if (sha256(data) !== item.hash) { fail(item, 'o conteúdo não confere com o nome'); continue; }
+                const check = CubeParser.validate(data);
+                if (!check.ok) { fail(item, check.reason); continue; }
+                totalBytes += data.length;
+                batch.push({ item, buffer: data });
+                batchBytes += data.length;
+                if (batchBytes >= MAX_PACKAGE_LUT_FILE) await flush(); // segura pouco na memória por vez
+            } catch (err) {
+                logger.warn('[BdsproPackage] LUT do pacote ilegível', { error: err && err.message });
+                fail(item, 'o arquivo do pacote está danificado');
+            }
+        }
+        await flush();
+        return result;
     }
 
     /**
@@ -616,6 +819,15 @@ class BdsproPackageService {
                         .run(newProjectId, typeof a.kind === 'string' ? a.kind.slice(0, 30) : 'editado', a.message.slice(0, 200), typeof a.created_at === 'string' ? a.created_at.slice(0, 30) : null);
                 }
             }
+            // 10. LUTs do projeto: só os vínculos (pelo conteúdo), por SQL direto nesta transação já aberta (o serviço de
+            // LUTs abriria outra). A lista já vem limpa, deduplicada e limitada a 100. Os arquivos ficam para depois do COMMIT.
+            const lutItems = Array.isArray(projectData.luts) ? projectData.luts : [];
+            if (lutItems.length) {
+                const insertLut = this.projectService.db.prepare(`INSERT OR IGNORE INTO project_luts
+                    (project_id, lut_hash, lut_name, lut_title, lut_kind, lut_size, file_bytes, lut_rel_path) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`);
+                for (const l of lutItems) insertLut.run(newProjectId, l.hash, l.name, l.title, l.kind, l.lutSize, l.bytes);
+            }
+
             this.projectService.logActivity(newProjectId, 'importado', 'Importado de um pacote .bdspro');
 
             this.projectService.db.exec('COMMIT');
@@ -625,11 +837,19 @@ class BdsproPackageService {
                 throw txErr;
             }
 
+            // Depois do COMMIT: restaura os arquivos das LUTs em melhor esforço. Falha aqui não desfaz o projeto: a LUT
+            // aparece como "LUT ausente" e o resultado diz o que aconteceu.
+            let lutsResult = null;
+            if (Array.isArray(projectData.luts)) {
+                lutsResult = await this._restorePackageLuts(zip, projectData);
+            }
+
             logger.info(`[BdsproPackage] Projeto importado com sucesso. Novo ID: ${newProjectId}`);
             return {
                 success: true,
                 projectId: newProjectId,
-                projectName: metadata.name || 'Projeto Importado'
+                projectName: metadata.name || 'Projeto Importado',
+                ...(lutsResult ? { luts: lutsResult, lutsWarnings: lutsResult.warnings } : {})
             };
         } catch (error) {
             logger.error(`[BdsproPackage] Erro ao importar .bdspro:`, error);
@@ -642,4 +862,5 @@ module.exports = BdsproPackageService;
 
 module.exports.readBdsproPackage = readBdsproPackage;
 module.exports.validateProjectData = validateProjectData;
+module.exports.sanitizePackageLuts = sanitizePackageLuts;
 module.exports.isUncPath = isUncPath;

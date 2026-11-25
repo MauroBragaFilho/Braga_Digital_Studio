@@ -130,6 +130,7 @@
 .lut-btn-primary:hover:not(:disabled) { background: var(--btn-bg-hover); }
 
 .lut-btn-primary:disabled,
+.lut-btn-primary[aria-disabled="true"],
 .lut-btn-outline:disabled,
 .lut-icon-btn:disabled {
   opacity: 0.5;
@@ -197,6 +198,13 @@
 .lut-select:focus-visible,
 .lut-fullscreen-close-btn:focus-visible,
 .inspector-section > summary:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* O divisor do antes/depois é um controle de teclado (setas, Home e End): o anel de foco vai na alça */
+.lut-slider-divider:focus-visible { outline: none; }
+.lut-slider-divider:focus-visible .lut-slider-handle {
   outline: var(--focus-ring);
   outline-offset: 2px;
 }
@@ -289,17 +297,15 @@
 
 .lut-card:hover { border-color: var(--muted); }
 .lut-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Shift+clique marca um intervalo: o clique não pode virar seleção de texto */
+.lut-card { user-select: none; }
 
 .lut-card-img {
   width: 100%;
   aspect-ratio: 16/10;
   object-fit: cover;
   border-bottom: 1px solid var(--line);
-  filter: brightness(0.9);
-  transition: filter var(--dur-slow);
 }
-
-.lut-card:hover .lut-card-img { filter: brightness(1.1); }
 
 .lut-card-body {
   padding: var(--space-3) var(--space-4);
@@ -350,7 +356,12 @@
 }
 
 .lut-card:hover .lut-checkbox,
-.lut-card:focus-visible .lut-checkbox { opacity: 1; }
+.lut-card:focus-visible .lut-checkbox,
+.luts-grid.has-selection .lut-checkbox { opacity: 1; } /* com alguma LUT marcada todos os círculos ficam à mostra */
+
+/* O círculo é um botão de marcar: a área de clique passa um pouco do desenho */
+.lut-checkbox { cursor: pointer; }
+.lut-checkbox::after { content: ''; position: absolute; inset: -6px; }
 
 .lut-card.selected .lut-checkbox {
   opacity: 1;
@@ -564,6 +575,39 @@
   padding: 2px 10px;
 }
 
+/* --- LUT inválida (arquivo que não pôde ser lido): selo, cartão, aviso e prévia só com a imagem base --- */
+.lut-badge-3d.lut-badge-invalid { background: var(--danger-solid); }
+
+.inspector-header-info .lut-badge-3d.lut-badge-invalid {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+.lut-card-invalid { border-color: var(--danger); }
+.lut-card-invalid .lut-card-img { filter: grayscale(1); }
+.lut-card-invalid:hover .lut-card-img { filter: grayscale(1); }
+
+.inspector-invalid {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  font-size: var(--fs-label);
+}
+
+.inspector-invalid .material-symbols-rounded { font-size: 18px; flex-shrink: 0; }
+.inspector-invalid-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* Sem antes/depois: fica só a imagem base, sem divisor nem rótulos */
+.lut-slider-container.lut-slider-invalid .lut-slider-overlay,
+.lut-slider-container.lut-slider-invalid .lut-slider-divider,
+.lut-slider-container.lut-slider-invalid .lut-slider-label { display: none; }
+
 .inspector-details {
   display: flex;
   flex-direction: column;
@@ -583,6 +627,71 @@
 .detail-row:last-child { border-bottom: 0; }
 .detail-label { color: var(--muted); }
 .detail-value { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* --- SELEÇÃO MÚLTIPLA --- */
+/* Barra de ações em lote ao pé da grade (padrão da barra de seleção do projeto); só aparece com 2 ou mais LUTs marcadas */
+.lut-selection-bar {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+
+.lut-selection-count { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
+
+.lut-selection-clear {
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lut-selection-clear:hover { text-decoration: underline; }
+.lut-selection-clear:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+/* Com várias LUTs marcadas o inspetor resume (nada de antes/depois nem de ações de uma LUT só) */
+.inspector-multiple .lut-slider-container,
+.inspector-multiple .inspector-header-info,
+.inspector-multiple .inspector-invalid,
+.inspector-multiple .inspector-details,
+.inspector-multiple .inspector-section,
+.inspector-multiple .inspector-footer { display: none; }
+
+.inspector-multi-title { margin: 0 0 var(--space-1); font-size: var(--fs-section); font-weight: 600; color: var(--text); }
+.inspector-multi-size { margin: 0 0 var(--space-4); font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; }
+.inspector-multi-list {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--fs-label);
+  color: var(--text);
+}
+.inspector-multi-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+.inspector-multi-list li:last-child { border-bottom: 0; }
+.inspector-multi-list .inspector-multi-more { color: var(--muted); }
+.inspector-multi-hint { margin: 0; font-size: var(--fs-label); color: var(--muted); }
 
 .inspector-section-title {
   font-size: var(--fs-label);
@@ -930,6 +1039,243 @@ details.inspector-section:not([open]) > summary { margin-bottom: 0; }
 .lut-card-menu button:focus-visible { background: var(--card-2); outline: var(--focus-ring); outline-offset: -2px; }
 .lut-card-menu button.danger { color: var(--danger-fg); }
 .lut-card-menu .material-symbols-rounded { font-size: 18px; }
+
+/* --- GRUPOS (subpastas da coleção) --- */
+.lut-group-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-1);
+  margin-top: var(--space-3);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.lut-group-head:first-child { margin-top: 0; }
+.lut-group-icon { font-size: 20px; color: var(--muted); flex-shrink: 0; }
+
+.lut-group-name {
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lut-group-count { color: var(--muted); font-size: var(--fs-label); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.lut-group-spacer { flex: 1; }
+.lut-group-toggle .material-symbols-rounded { transition: transform var(--dur-fast) var(--ease); }
+.lut-group-head.collapsed .lut-group-toggle .material-symbols-rounded { transform: rotate(-90deg); }
+
+/* Recolher é diferente de esconder pelo filtro (.hidden): só a pessoa muda este estado */
+.lut-card.lut-collapsed { display: none; }
+
+.lut-card-folder {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.lut-card-folder[hidden] { display: none; }
+
+/* --- JANELA: IMPORTAR LUTs --- */
+.lut-import-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+.lut-import-modal.hidden { display: none; }
+
+.lut-import-inner {
+  width: 640px;
+  max-width: 92vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px var(--shadow);
+  overflow: hidden;
+}
+
+.lut-import-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.lut-import-title { margin: 0; font-family: var(--font-title); font-size: 15px; font-weight: 600; color: var(--text); }
+
+.lut-import-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.lut-import-section.hidden { display: none; }
+.lut-import-status,
+.lut-import-summary { margin: 0; color: var(--text); font-size: var(--fs-body); line-height: 1.4; }
+.lut-import-summary { font-weight: 600; }
+.lut-import-bar { width: 100%; height: 8px; accent-color: var(--accent-solid); }
+
+.lut-import-notes {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  color: var(--muted);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+}
+
+.lut-import-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.lut-import-chip {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+
+.lut-import-chip:hover { background: var(--card-2); }
+.lut-import-chip[aria-pressed="true"] { background: var(--accent-light); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.lut-import-chip:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+.lut-import-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 38vh;
+  min-height: 80px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  scrollbar-width: thin;
+}
+
+.lut-import-group-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+.lut-import-group-label { flex: 1; min-width: 0; }
+.lut-import-group-name { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lut-import-count { color: var(--muted); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+
+.lut-import-items { display: flex; flex-direction: column; margin: 0; padding: 0 0 var(--space-1) var(--space-6); list-style: none; }
+.lut-import-items[hidden] { display: none; }
+.lut-import-item { display: flex; flex-direction: column; padding: 2px var(--space-2); min-width: 0; }
+.lut-import-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lut-import-reason { margin-left: var(--space-6); color: var(--muted); font-size: var(--fs-label); }
+.lut-import-reason-bad { color: var(--danger-fg); }
+.lut-import-empty { margin: var(--space-3); color: var(--muted); text-align: center; }
+
+.lut-import-check { display: flex; align-items: center; gap: var(--space-2); color: var(--text); font-size: var(--fs-body); cursor: pointer; }
+.lut-import-check.hidden { display: none; }
+/* O estilo global de "input" dá 100% de largura e 40 px de altura; caixas e rádios precisam do tamanho explícito,
+   senão viram um círculo gigante por cima do nome (visto na tela real, não nos testes). */
+.lut-import-check input[type="checkbox"],
+.lut-import-check input[type="radio"],
+.lut-project-item input[type="radio"],
+.lut-project-item input[type="checkbox"] {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent-solid);
+  cursor: pointer;
+}
+
+.lut-import-options { color: var(--text); font-size: var(--fs-label); }
+.lut-import-options summary { cursor: pointer; color: var(--muted); padding: var(--space-1) 0; }
+.lut-import-options[open] { display: flex; flex-direction: column; gap: var(--space-2); }
+.lut-import-options summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+.lut-import-input {
+  width: 100%;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.lut-import-input:focus-visible { outline: var(--focus-ring); border-color: var(--accent); }
+.lut-import-input.hidden { display: none; }
+.lut-import-input:disabled { opacity: 0.6; }
+
+.lut-import-error { margin: 0; color: var(--danger-fg); font-size: var(--fs-label); }
+.lut-import-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
+/* --- JANELA: ADICIONAR A UM PROJETO --- */
+.lut-project-inner { width: 480px; }
+.lut-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 38vh;
+  min-height: 80px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  scrollbar-width: thin;
+}
+.lut-project-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+.lut-project-item:hover { background: var(--card-2); }
+.lut-project-item.is-disabled { cursor: default; opacity: 0.65; }
+.lut-project-item.is-disabled:hover { background: transparent; }
+.lut-project-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lut-project-meta { color: var(--muted); font-size: var(--fs-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.lut-project-has { color: var(--accent-text); font-size: var(--fs-label); font-weight: 600; white-space: nowrap; }
+.lut-project-empty { margin: var(--space-3); color: var(--muted); text-align: center; }
+
+/* Link de texto (não é botão fixo): "Adicionar a um projeto…" no painel de detalhes */
+.lut-text-link {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 0;
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.lut-text-link.hidden { display: none; }
+.lut-text-link:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* --- RODAPÉ --- */
 .luts-footer {

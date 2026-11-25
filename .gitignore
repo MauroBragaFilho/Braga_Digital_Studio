@@ -26,6 +26,10 @@ src/logs/
 # Pacotes e arquivos locais
 *.zip
 
+# LUTs embutidas: as .cube só entram no Git depois de a procedência/licença ser confirmada
+# (resources/luts-embutidas/PROCEDENCIA.json). Ao confirmar, apague a linha abaixo.
+resources/luts-embutidas/*.cube
+
 # Documentação interna (README*.md, LICENSE e docs novos continuam versionáveis)
 /.docs/
 /_Archives/

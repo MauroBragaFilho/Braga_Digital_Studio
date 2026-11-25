@@ -220,9 +220,15 @@ jobs:
             exit 1
           }
 
+      # Release sem as LUTs embutidas (ou com procedência "a-confirmar") não é publicado: falha aqui, antes do build.
+      - name: Conferir as LUTs embutidas (release)
+        shell: pwsh
+        run: npm run verify:package -- --release
+
       - name: Build do instalador Windows (NSIS)
         shell: pwsh
         env:
+          BDS_RELEASE: '1'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
           ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
@@ -432,8 +438,12 @@ jobs:
             exit 1
           fi
 
+      - name: Conferir as LUTs embutidas (release)
+        run: npm run verify:package -- --release
+
       - name: Build dos pacotes Linux (AppImage + deb)
         env:
+          BDS_RELEASE: '1'
           ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
           ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
         run: |

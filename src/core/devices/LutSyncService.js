@@ -6,13 +6,17 @@ const { BdsmError } = BdsmClient;
 const logger = require('../../services/logService');
 const { EventEmitter } = require('events');
 const { PathGuard } = require('../../infrastructure/filesystem/PathGuard');
+const { LUT_EXT, MAX_SEGMENTS, PHONE_MAX_PATH, COLLECTION_MAX_ENTRIES } = require('../luts/lutConstants');
+const { walkTree } = require('../luts/lutTree');
 
 const LUT_EXTENSIONS = new Set(['.cube', '.3dl']);
 
-// O celular só aceita .cube, com até 4 segmentos e 255 caracteres (LutLibraryService.resolveSafe).
-const PHONE_LUT_EXTENSION = '.cube';
-const PHONE_MAX_SEGMENTS = 4;
-const PHONE_MAX_PATH = 255;
+// O celular só aceita .cube, com até 4 segmentos e 255 caracteres (LutLibraryService.resolveSafe). A coleção do
+// computador usa o MESMO limite de níveis (lutConstants.MAX_SEGMENTS): a tela e o celular veem a mesma árvore.
+const PHONE_LUT_EXTENSION = LUT_EXT;
+const PHONE_MAX_SEGMENTS = MAX_SEGMENTS;
+const SCAN_DEADLINE_MS = 60000;
+const MSG_TOO_MANY = 'A pasta de LUTs tem arquivos demais para sincronizar.';
 
 /** Falhas que invalidam o resto da sincronização (não adianta tentar o próximo arquivo). */
 const FATAL_CODES = new Set(['PAIRING_REQUIRED', 'DEVICE_UNREACHABLE']);
@@ -28,9 +32,16 @@ const FATAL_CODES = new Set(['PAIRING_REQUIRED', 'DEVICE_UNREACHABLE']);
  *    a LUT do celular é apagada e a do computador enviada (o celular recusa sobrescrever com 409).
  */
 class LutSyncService extends EventEmitter {
-    constructor(lutsDir) {
+    /**
+     * @param {string} lutsDir
+     * @param {{ lutManager?: import('../luts/LutManager'), maxEntries?: number }} [deps] com o LutManager, o hash do conteúdo
+     *   vem do cache persistente (não relê a coleção inteira a cada análise); maxEntries: teto de entradas lidas (o da coleção)
+     */
+    constructor(lutsDir, { lutManager = null, maxEntries = COLLECTION_MAX_ENTRIES } = {}) {
         super();
         this.lutsDir = lutsDir;
+        this.lutManager = lutManager;
+        this.maxEntries = maxEntries;
     }
 
     /**
@@ -59,34 +70,35 @@ class LutSyncService extends EventEmitter {
         return seg.length <= PHONE_MAX_SEGMENTS && !seg.some((s) => s === '' || s === '.' || s === '..');
     }
 
-    _getFileHash(filePath) {
-        if (!fs.existsSync(filePath)) return null;
-        const fileBuffer = fs.readFileSync(filePath);
-        const hashSum = crypto.createHash('sha256');
-        hashSum.update(fileBuffer);
-        return hashSum.digest('hex');
+    /** SHA-256 do conteúdo: do cache do LutManager (quando há) ou lido na hora. null se não foi possível ler. */
+    async _hashOf(filePath) {
+        if (this.lutManager) return this.lutManager.hashOfAsync(filePath);
+        try {
+            return crypto.createHash('sha256').update(await fs.promises.readFile(filePath)).digest('hex');
+        } catch (_) {
+            return null;
+        }
     }
 
-    _walkDir(dir, base = '') {
-        let results = [];
-        const list = fs.readdirSync(dir);
-        list.forEach(file => {
-            const filePath = path.join(dir, file);
-            const stat = fs.statSync(filePath);
-            const relativePath = path.join(base, file).replace(/\\/g, '/');
-            if (stat && stat.isDirectory()) {
-                results = results.concat(this._walkDir(filePath, relativePath));
-            } else {
-                if (file.toLowerCase().endsWith('.cube') || file.toLowerCase().endsWith('.3dl')) {
-                    results.push({
-                        relativePath: relativePath,
-                        absolutePath: filePath,
-                        hash: this._getFileHash(filePath)
-                    });
-                }
+    /**
+     * As LUTs locais que o celular aceita, pela MESMA regra da lista da tela (walkTree: .cube, até 4 segmentos,
+     * sem links, sem arquivos ocultos). Pasta com arquivos demais interrompe a análise com uma mensagem clara.
+     */
+    async _listLocal() {
+        const walk = await walkTree(this.lutsDir, { maxSegments: PHONE_MAX_SEGMENTS, exts: [PHONE_LUT_EXTENSION], maxEntries: this.maxEntries, deadlineMs: SCAN_DEADLINE_MS });
+        if (walk.rootError) throw walk.rootError;
+        if (walk.truncated) throw new Error(MSG_TOO_MANY);
+        const local = [];
+        for (const file of walk.files) {
+            if (!this._phoneAccepts(file.relPath)) continue;
+            const hash = await this._hashOf(file.abs);
+            if (!hash) {
+                logger.warn(`[LutSync] LUT local ignorada (não foi possível ler o conteúdo): ${file.relPath}`);
+                continue;
             }
-        });
-        return results;
+            local.push({ relativePath: file.relPath, absolutePath: file.abs, hash });
+        }
+        return local;
     }
 
     async analyzeSync(deviceIp, devicePort) {
@@ -94,7 +106,7 @@ class LutSyncService extends EventEmitter {
 
         // 1. LUTs locais que o celular aceita
         if (!fs.existsSync(this.lutsDir)) fs.mkdirSync(this.lutsDir, { recursive: true });
-        const localLuts = this._walkDir(this.lutsDir).filter((l) => this._phoneAccepts(l.relativePath));
+        const localLuts = await this._listLocal();
 
         // 2. LUTs do celular
         let remoteLuts = [];

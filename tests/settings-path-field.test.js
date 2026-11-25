@@ -231,7 +231,8 @@ test('LUTs: o ícone, o clique e o Enter no campo e o clique na miniatura abrem 
   await settle(20);
   assert.equal(estado.seletoresDeImagem, base + 1);
   assert.equal($('lutPreviewImageInput').value, 'D:/Imagens/ref.png');
-  assert.equal($('settingsLutPreviewThumb').getAttribute('src'), 'file://D:/Imagens/ref.png');
+  // URL de arquivo bem formada (três barras antes da unidade), montada pelo auxiliar único toFileUrl
+  assert.equal($('settingsLutPreviewThumb').getAttribute('src'), 'file:///D:/Imagens/ref.png');
   $('lutPreviewImageInput').click();
   await settle(20);
   assert.equal(estado.seletoresDeImagem, base + 2, 'clique no campo somente leitura');

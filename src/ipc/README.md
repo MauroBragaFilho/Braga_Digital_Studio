@@ -30,6 +30,39 @@ scripts/generate-preload.js gera o preload.js a partir da tabela (npm run genera
 | `null`    | `null`                                              | `luts:getReferenceImage`                  |
 | `empty`   | `[]`                                                | `library:getFolderFiles`, `projects:probeAudioStreams` |
 
+Exceção de formato, no domínio `luts`: `luts:parse` e `luts:getHeader` só leem arquivos da coleção de LUTs (o handler
+confere o caminho; fora da pasta a chamada é rejeitada) e devolvem `{ ok: true, ... }` com os dados, ou
+`{ ok: false, code, reason }` quando o conteúdo do `.cube` é inválido (o `reason` já está em português, pronto para a tela).
+`luts:list` devolve `{ folder, items, problems }` (cada item traz `relPath`, `folder` e `depth`: a coleção tem subpastas, até 3
+níveis) e `luts:openFolder` abre a pasta da coleção, ou, com um `relPath` relativo, uma subpasta (o main confere que é uma pasta
+comum dentro da coleção). Cada item de `luts:list` traz também `kind` (`3D`, `1D` ou `null`), `lutSize` e `title`, lidos só dos primeiros
+8 KB do arquivo (cache por caminho, tamanho e data; a tabela nunca é interpretada para listar). `luts:parse` devolve `data` como
+`Float32Array` (R, G, B de cada linha em sequência; R varia mais rápido) e `preview` com as 100 primeiras linhas como listas `[r, g, b]`;
+`luts:getHeader` de um arquivo acima de 64 KB lê só o começo (`totalEntries` fica `null` e `partial` é `true`).
+`luts:getInfo` (Configurações) devolve `{ folder, count, groups, problems, problemCount, bundledAvailable }` e `luts:restoreBundled`
+("Restaurar LUTs padrão", só por ação do usuário) devolve `{ restored, alreadyThere, failed, missingSource }`: copia só as LUTs padrão que
+faltam, dentro da trava única de escrita, sem apagar nem sobrescrever nada e sem recriar a que já existe (por nome ou por conteúdo) em
+qualquer ponto da coleção.
+
+Importar de pasta (domínio `luts`): `luts:scan` abre o diálogo no processo principal (a tela só informa `{ mode: 'folder' | 'files' }`)
+ou, com `paths` (arrastar-e-soltar, a única entrada de caminho vinda da tela: até 200, absolutos, nunca de rede), valida os caminhos;
+procura em segundo plano e devolve só um resumo (`scanId`, números e itens com `key`), sem copiar nada. `luts:importScanned` copia as
+`keys` marcadas; os caminhos de origem ficam guardados no main. Progresso pelos eventos `luts:scanProgress` e `luts:importProgress`;
+`luts:cancelScan` e `luts:cancelImport` cancelam. `luts:renameFolder` e `luts:deleteFolder` (`dryRun` só conta) agem em qualquer nível da
+coleção e só tocam em pasta comum dentro dela. `luts:deleteMany` (seleção múltipla da tela, 1 a 5000 `.cube` absolutos) manda cada LUT para a
+Lixeira, uma a uma, dentro da trava única de escrita, e devolve `{ trashed, missing, failed }`: o que estiver fora da coleção vai para
+`failed` sem impedir as demais. `luts:import` (arquivos soltos, sem resumo) continua existindo por compatibilidade.
+
+LUTs de projeto (domínio `projectLuts`, `projectLutHandlers.js`): ligam LUTs da coleção ao projeto INTEIRO, pelo conteúdo (SHA-256),
+nunca pelo nome ou pelo caminho. Nenhum caminho de arquivo vem da tela: só caminhos RELATIVOS à coleção (`relPaths`, até 500, e
+`folders`, até 50, que o main expande para as LUTs de qualquer nível) e o `hash` (64 caracteres minúsculos). `projects:listLuts`
+devolve as LUTs do projeto já resolvidas contra a coleção (`status`: `ok`, `changed` = "Arquivo alterado" ou `missing` = "LUT ausente");
+`projects:addLuts` lê cada arquivo uma única vez, valida e calcula o conteúdo do mesmo buffer e devolve
+`{ added, already, invalid: [{ name, reason }], overLimit }` (o projeto aceita até 100 LUTs); `projects:removeLut` só tira a ligação;
+`projects:revealLut` mostra o arquivo na pasta. `luts:usage` diz em quais projetos as LUTs indicadas estão, calculado sobre o CONJUNTO
+(`remainingCopies` conta só as cópias idênticas fora dele): é o que a tela usa para avisar "usada em N projetos" antes de excluir. Falhas
+voltam em português; o texto cru de uma exceção nunca chega à tela.
+
 Um canal sem entrada na tabela (ou sem esquema) **não registra**: o app falha ao iniciar em vez de expor um canal sem
 validação. O teste `tests/ipc-registry.test.js` também falha se aparecer `ipcMain.handle` fora do registrador.
 

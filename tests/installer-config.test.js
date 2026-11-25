@@ -59,3 +59,64 @@ test('licença do instalador: texto do LICENSE em UTF-16 LE com BOM e CRLF (acen
   const text = b.slice(2).toString('utf16le');
   assert.equal(text, 'Licença\r\nSegunda linha');
 });
+
+// ─── LUTs embutidas no instalador ──────────────────────────────────────────────────────────────
+
+const lutsDir = path.join(ROOT, 'resources', 'luts-embutidas');
+const provenance = JSON.parse(fs.readFileSync(path.join(lutsDir, 'PROCEDENCIA.json'), 'utf8'));
+const cubes = fs.readdirSync(lutsDir).filter((n) => n.toLowerCase().endsWith('.cube')).sort();
+const EXCLUDED_ADOBE = ['8Bits Parcial para Completo.cube', 'SMPTEToFull8.cube', 'SMPTEToFull10.cube', 'SMPTEToFull12.cube'];
+
+test('instalador: as LUTs embutidas vão como recurso fora do asar e a pasta data/ continua fora do pacote', () => {
+  const entry = pkg.build.extraResources.find((r) => r.from === 'resources/luts-embutidas');
+  assert.ok(entry, 'extraResources precisa levar resources/luts-embutidas');
+  assert.equal(entry.to, 'luts-embutidas');
+  assert.deepEqual(entry.filter, ['*.cube'], 'só as .cube (nada de PROCEDENCIA.json/README no instalador)');
+  assert.ok(pkg.build.files.includes('!data/**'));
+  assert.ok(!pkg.build.files.some((p) => typeof p === 'string' && !p.startsWith('!') && /^resources/.test(p)), 'resources/ não entra no asar');
+});
+
+test('instalador: os scripts de build rodam a conferência em modo release; verify:package sozinho só avisa', () => {
+  for (const name of ['build', 'build:win', 'build:win:portable', 'build:linux', 'build:linux:appimage', 'build:linux:deb']) {
+    assert.match(pkg.scripts[name], /^npm run verify:package -- --release && electron-builder /, name);
+  }
+  assert.equal(pkg.scripts['verify:package'], 'node scripts/verify-package-contents.js');
+});
+
+test('LUTs embutidas: .gitignore segura as .cube enquanto a procedência não é confirmada e .gitattributes protege os bytes', () => {
+  const gitignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8').split(/\r?\n/);
+  const attributes = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8').split(/\r?\n/);
+  const pending = provenance.arquivos.some((a) => a.status !== 'confirmada');
+  assert.equal(gitignore.includes('resources/luts-embutidas/*.cube'), pending, 'a linha só sai do .gitignore depois de confirmada');
+  assert.ok(attributes.includes('resources/luts-embutidas/*.cube -text'));
+});
+
+test('LUTs embutidas: PROCEDENCIA.json deixa de fora as 4 da Adobe e é coerente com o status', () => {
+  assert.deepEqual(provenance.excluidas.map((e) => e.nome).sort(), [...EXCLUDED_ADOBE].sort());
+  assert.equal(provenance.arquivos.length, 40);
+  const names = provenance.arquivos.map((a) => a.nome);
+  assert.equal(new Set(names).size, 40, 'sem nomes repetidos');
+  for (const n of EXCLUDED_ADOBE) assert.ok(!names.includes(n), `${n} não pode constar como embutida`);
+  for (const a of provenance.arquivos) {
+    assert.match(a.sha256, /^[0-9a-f]{64}$/, a.nome);
+    assert.ok(['a-confirmar', 'confirmada'].includes(a.status), a.nome);
+    assert.ok(a.origem && a.licenca, `${a.nome}: origem e licença precisam estar preenchidas (mesmo que "não declarada")`);
+  }
+  const pending = provenance.arquivos.some((a) => a.status !== 'confirmada');
+  assert.equal(provenance.release, !pending, '"release" só é true com tudo confirmado');
+});
+
+test('LUTs embutidas: se as .cube estão na pasta, são exatamente as 40 listadas, sem aviso de copyright e com o SHA-256 registrado', (t) => {
+  if (cubes.length === 0) { t.skip('clone limpo: as .cube ainda não são versionadas'); return; }
+  const crypto = require('node:crypto');
+  assert.deepEqual(cubes, provenance.arquivos.map((a) => a.nome).sort());
+  for (const n of EXCLUDED_ADOBE) assert.ok(!cubes.includes(n), `${n} (Adobe) não pode estar na pasta`);
+  const byName = new Map(provenance.arquivos.map((a) => [a.nome, a]));
+  for (const n of cubes) {
+    const data = fs.readFileSync(path.join(lutsDir, n));
+    assert.doesNotMatch(data.subarray(0, 2048).toString('latin1'), /adobe|copyright/i, `${n}: cabeçalho com aviso de copyright`);
+    assert.equal(crypto.createHash('sha256').update(data).digest('hex'), byName.get(n).sha256, `${n}: SHA-256 diferente do registrado`);
+    assert.equal(data.length, byName.get(n).bytes, `${n}: tamanho diferente do registrado`);
+    assert.ok(!data.includes(0x0d), `${n}: precisa ser LF puro (sem conversão de fim de linha)`);
+  }
+});

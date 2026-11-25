@@ -9,6 +9,7 @@
  *  4. Exportar: sequência multicâmera em XML para o Premiere (aba Entrega também).
  */
 import { ws, $, mk, icon, formatClock, formatDuration, relativeWhen, reloadSyncGroups, emitChange, setAppStatus, friendlyError } from './state.js';
+import { xmlLutsNote } from '../../utils/lutNotes.js';
 
 let sources = [];
 let masterId = null;
@@ -177,7 +178,7 @@ async function exportMulticam() {
     const r = await window.bds.exportProjectXmeml(ws.projectId, { mode: 'multicam', groupId: model.group.id });
     if (!r) { setAppStatus('Exportação cancelada.', 'info'); return; }
     setAppStatus('XML exportado.', 'success');
-    window.bdsModal.alert(`Sequência multicâmera exportada.\n\n${r.filePath}\n\n${r.videoTracks} camadas de vídeo, ${r.audioTracks} trilhas de áudio, ${r.clips} clipes.\n\nNo Premiere: Arquivo → Importar e escolha este XML.`);
+    window.bdsModal.alert(`Sequência multicâmera exportada.\n\n${r.filePath}\n\n${r.videoTracks} camadas de vídeo, ${r.audioTracks} trilhas de áudio, ${r.clips} clipes.\n\nNo Premiere: Arquivo → Importar e escolha este XML.${xmlLutsNote(r.luts)}`);
   } catch (e) { window.bdsModal.alert(`Não foi possível exportar: ${friendlyError(e)}`); }
 }
 

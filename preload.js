@@ -198,11 +198,21 @@ const api = {
   exportDiagnosticLogs: () => ipcRenderer.invoke('logs:export'),
 
   // --- LUTs ---
-  getLuts: () => ipcRenderer.invoke('luts:get'),
+  listLuts: () => ipcRenderer.invoke('luts:list'),
+  getLutsInfo: () => ipcRenderer.invoke('luts:getInfo'),
+  restoreBundledLuts: () => ipcRenderer.invoke('luts:restoreBundled'),
+  openLutsFolder: (relPath) => ipcRenderer.invoke('luts:openFolder', relPath),
+  scanLuts: (paths, options) => ipcRenderer.invoke('luts:scan', paths, options),
+  cancelLutScan: (scanId) => ipcRenderer.invoke('luts:cancelScan', scanId),
+  importScannedLuts: (scanId, keys, options) => ipcRenderer.invoke('luts:importScanned', scanId, keys, options),
+  cancelLutImport: (scanId) => ipcRenderer.invoke('luts:cancelImport', scanId),
+  renameLutFolder: (relPath, newName) => ipcRenderer.invoke('luts:renameFolder', relPath, newName),
+  deleteLutFolder: (relPath, dryRun) => ipcRenderer.invoke('luts:deleteFolder', relPath, dryRun),
   importLut: (paths) => ipcRenderer.invoke('luts:import', paths),
   revealLut: (filePath) => ipcRenderer.invoke('luts:reveal', filePath),
   getLutReferenceImage: (filePath) => ipcRenderer.invoke('luts:getReferenceImage', filePath),
   deleteLut: (filePath) => ipcRenderer.invoke('luts:delete', filePath),
+  deleteManyLuts: (paths) => ipcRenderer.invoke('luts:deleteMany', paths),
   renameLut: (oldPath, newName) => ipcRenderer.invoke('luts:rename', oldPath, newName),
   parseLutCube: (filePath) => ipcRenderer.invoke('luts:parse', filePath),
   getLutHeader: (filePath) => ipcRenderer.invoke('luts:getHeader', filePath),
@@ -403,6 +413,13 @@ const api = {
   getTrackAudioPath: (params) => ipcRenderer.invoke('projects:getTrackAudioPath', params),
   runAudioSync: (params) => ipcRenderer.invoke('projects:runAudioSync', params),
 
+  // --- LUTs de projeto ---
+  listProjectLuts: (projectId) => ipcRenderer.invoke('projects:listLuts', projectId),
+  addProjectLuts: (projectId, relPaths, folders) => ipcRenderer.invoke('projects:addLuts', projectId, relPaths, folders),
+  removeProjectLut: (projectId, hash) => ipcRenderer.invoke('projects:removeLut', projectId, hash),
+  revealProjectLut: (projectId, hash) => ipcRenderer.invoke('projects:revealLut', projectId, hash),
+  lutsUsage: (relPaths, folders) => ipcRenderer.invoke('luts:usage', relPaths, folders),
+
   // --- organizer ---
   organizerStatus: () => ipcRenderer.invoke('organizer:status'),
   organizerPlan: (data) => ipcRenderer.invoke('organizer:plan', data),
@@ -465,6 +482,8 @@ const api = {
   onBdsmProgress: (cb) => registerListener('bdsm:progress', cb),
   onBdsmLutSyncProgress: (cb) => registerListener('bdsm:lutSyncProgress', cb),
   onBdsmPairing: (cb) => registerListener('bdsm:pairing', cb),
+  onLutsScanProgress: (cb) => registerListener('luts:scanProgress', cb),
+  onLutsImportProgress: (cb) => registerListener('luts:importProgress', cb),
 
   // --- Utilitários fixos ---
   getPathForFile: (file) => webUtils.getPathForFile(file),

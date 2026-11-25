@@ -12,11 +12,12 @@ import {
   ws, $, reloadMedia, reloadSyncGroups, reloadMissing, onChange, clearListeners, emitChange,
   toFileUrl, formatLocalDate, setAppStatus, friendlyError, autosave, hideMenu
 } from './workspace/state.js';
-import { bindOverview, renderOverview, flushOverview } from './workspace/overview.js';
+import { bindOverview, renderOverview, renderActivity, flushOverview } from './workspace/overview.js';
 import { bindFiles, renderFiles, openAddMenu, selectAllVisible } from './workspace/files.js';
 import { bindMonitor, closeMonitor, monitorKey, monitorOpen } from './workspace/monitor.js';
 import { bindAudio, unbindAudio, renderAudio } from './workspace/audio.js';
 import { bindDevices } from './workspace/devices.js';
+import { bindLuts, unbindLuts } from './workspace/luts.js';
 import { bindDelivery, renderDelivery, flushDelivery } from './workspace/delivery.js';
 
 const TABS = ['overview', 'files', 'audio', 'delivery'];
@@ -47,6 +48,7 @@ export async function initScreen() {
     bindMonitor();
     bindAudio(switchTab);
     bindDevices();
+    bindLuts();
     bindDelivery();
     enhanceModals($('project_workspaceView') || document, '.ws-modal-overlay');
 
@@ -55,6 +57,7 @@ export async function initScreen() {
       // dados mudaram numa aba: o cabeçalho e os próximos passos acompanham
       if (what === 'media' || what === 'sync') renderHeaderCounts();
       if ((what === 'media' || what === 'sync' || what === 'delivery') && ws.tab === 'overview') renderOverview();
+      if (what === 'luts' && ws.tab === 'overview') renderActivity(); // a LUT adicionada/removida entra na atividade
     });
     switchTab('overview');
   } catch (e) {
@@ -79,6 +82,7 @@ export function onLeave() {
   closeMonitor();
   hideMenu();
   unbindAudio();
+  unbindLuts();
   if (unsubChange) { unsubChange(); unsubChange = null; }
   if (onOutside) { document.removeEventListener('pointerdown', onOutside, true); onOutside = null; }
   setContextProvider('workspaceProject', null);

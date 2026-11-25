@@ -779,9 +779,48 @@
         </div>
       </section>
 
-      <section id="settingsLutsView" class="settings-view hidden" data-module="luts">
+      <section id="settingsLutsView" class="settings-view st-has-sub hidden" data-module="luts">
         <h3 class="settings-section-title">LUTs</h3>
 
+        <div class="st-subnav" role="tablist" aria-label="Seções das LUTs">
+          <button type="button" class="st-subtab active" role="tab" id="subtab-settingsLutsView-collection" data-sub="collection" aria-selected="true" aria-controls="subpanel-settingsLutsView-collection">Coleção</button>
+          <button type="button" class="st-subtab" role="tab" id="subtab-settingsLutsView-preview" data-sub="preview" aria-selected="false" aria-controls="subpanel-settingsLutsView-preview">Pré-visualização</button>
+        </div>
+
+        <div class="st-subpanel" role="tabpanel" id="subpanel-settingsLutsView-collection" data-sub-panel="collection" aria-labelledby="subtab-settingsLutsView-collection">
+        <div class="st-card" id="settingsLutsCollectionCard">
+          <h4 class="st-card-title"><span class="material-symbols-rounded">folder_special</span> Coleção de LUTs</h4>
+          <p class="st-card-desc">Onde ficam as LUTs (.cube) da tela de LUTs, dos projetos e do celular. A importação é feita na própria tela de LUTs.</p>
+
+          <div class="st-row st-row-stack">
+            <label class="st-row-label" for="lutsFolderInput">Pasta das LUTs</label>
+            <div class="settings-folder-controls">
+              <div class="st-path-field">
+                <input type="text" id="lutsFolderInput" class="settings-input" readonly aria-describedby="lutsCollectionSummary" />
+                <button id="lutsFolderOpenBtn" class="st-path-pick" type="button" aria-label="Abrir a pasta das LUTs" title="Abrir a pasta das LUTs">
+                  <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                </button>
+              </div>
+            </div>
+            <span id="lutsCollectionSummary" class="st-row-hint" role="status" aria-live="polite">Lendo a pasta...</span>
+            <span id="lutsCollectionProblems" class="st-row-hint" hidden></span>
+          </div>
+
+          <details class="st-advanced" id="lutsCollectionAdvanced" hidden>
+            <summary>Ajustes avançados</summary>
+            <div class="st-row st-row-stack">
+              <span class="st-row-label">Restaurar LUTs padrão</span>
+              <span class="st-row-hint">Copia de volta as LUTs que vêm com o aplicativo e não estão mais na pasta. Nada é apagado nem substituído.</span>
+              <div class="st-row-control">
+                <button id="lutsRestoreBtn" class="settings-btn-outline" type="button">Restaurar LUTs padrão</button>
+              </div>
+            </div>
+          </details>
+          <span id="lutsCollectionStatus" class="st-row-hint" role="status" aria-live="polite"></span>
+        </div>
+        </div>
+
+        <div class="st-subpanel hidden" role="tabpanel" id="subpanel-settingsLutsView-preview" data-sub-panel="preview" aria-labelledby="subtab-settingsLutsView-preview">
         <div class="st-card">
           <h4 class="st-card-title"><span class="material-symbols-rounded">gradient</span> Imagem padrão de pré-visualização</h4>
           <p class="st-card-desc">Imagem de referência usada no comparador (Antes/Depois) da tela de LUTs.</p>
@@ -808,6 +847,7 @@
             </div>
             <span id="lutPreviewImageHint" class="st-row-hint">Clique no campo ou na imagem para escolher outra. Formatos suportados: PNG, JPG, JPEG, WEBP.</span>
           </div>
+        </div>
         </div>
       </section>
 

@@ -63,6 +63,26 @@ CREATE TABLE IF NOT EXISTS project_delivery (
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
+-- LUTs do projeto inteiro (não de clipes). A ligação é pelo CONTEÚDO da LUT (lut_hash, SHA-256 em hex, 64 caracteres),
+-- nunca pelo nome: renomear ou mover a LUT na coleção não a desliga do projeto. O nome, o título, o tipo e o tamanho
+-- são o que a LUT era quando foi adicionada (para mostrar "LUT ausente" quando ela sair da coleção).
+CREATE TABLE IF NOT EXISTS project_luts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    lut_hash TEXT NOT NULL,
+    lut_name TEXT NOT NULL,
+    lut_title TEXT,
+    lut_kind TEXT,
+    lut_size INTEGER,
+    file_bytes INTEGER,
+    lut_rel_path TEXT,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, lut_hash),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_luts_project ON project_luts(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_luts_hash ON project_luts(lut_hash);
+
 CREATE TABLE IF NOT EXISTS project_bins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER,
