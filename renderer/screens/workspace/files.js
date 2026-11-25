@@ -10,17 +10,22 @@ import {
 } from './state.js';
 import { openMonitor } from './monitor.js';
 import { bindSilence } from './silence.js';
+import { createShiftRange, noTextSelectOnShift } from '../../utils/shiftRange.js';
 
 let dragged = null; // { type: 'media'|'bin'|'library', id }
 let goTo = () => {};
 let relinkResults = [];
 let importSelection = new Set();
+let mediaRange = createShiftRange();  // Shift+clique na grade/lista de arquivos
+let importRange = createShiftRange(); // Shift+clique na janela "Adicionar da Biblioteca"
 let pickResolve = null; // janela "Em qual pasta colocar?" aberta: quem espera a resposta
 
 /** Liga os eventos aos elementos desta abertura (a tela é recriada a cada projeto aberto). */
 export function bindFiles(navigate) {
   goTo = navigate;
   dragged = null; relinkResults = []; importSelection = new Set(); pickResolve = null;
+  mediaRange = createShiftRange(); importRange = createShiftRange();
+  noTextSelectOnShift($('wsMediaGrid')); noTextSelectOnShift($('wsMediaTableBody')); noTextSelectOnShift($('wsImportModalList'));
   // selecionar todos (barra de filtros e cabeçalho da tabela) e, na Biblioteca, todas as mídias da lista
   $('wsSelectAll')?.addEventListener('change', (e) => setAllVisible(e.target.checked));
   $('wsSelectAllTable')?.addEventListener('change', (e) => setAllVisible(e.target.checked));
@@ -228,19 +233,16 @@ function mediaCard(pm, syncSet) {
     class: `ws-media-card${ws.selected.has(pm.pm_id) ? ' selected' : ''}${ws.inspected === pm.pm_id ? ' inspected' : ''}${pm.missing ? ' is-missing' : ''}`,
     tabindex: '0', role: 'option', 'aria-selected': String(ws.selected.has(pm.pm_id)), 'data-pm': pm.pm_id
   }, [
-    mk('label', { class: 'ws-media-check' }, [mk('input', { type: 'checkbox', checked: ws.selected.has(pm.pm_id), 'aria-label': `Selecionar ${nameOf(pm)}`, onclick: (e) => e.stopPropagation(), onchange: (e) => { toggleSelect(pm.pm_id, e.target.checked); } })]),
+    mk('label', { class: 'ws-media-check' }, [mk('input', { type: 'checkbox', checked: ws.selected.has(pm.pm_id), 'aria-label': `Selecionar ${nameOf(pm)}`, onclick: (e) => { e.stopPropagation(); mediaRange.noteClick(e); }, onchange: (e) => pickMedia(pm.pm_id, e.target.checked) })]),
     thumb,
     mk('div', { class: 'ws-media-name', text: nameOf(pm), title: nameOf(pm) }),
     mk('div', { class: `ws-media-state${pm.missing ? ' tone-warn' : ''}`, text: stateLine(pm, syncSet) || extLabel(pm) })
   ]);
   card.draggable = true;
   card.addEventListener('dragstart', (e) => { e.stopPropagation(); dragged = { type: 'media', id: pm.pm_id }; e.dataTransfer.effectAllowed = 'move'; });
-  card.addEventListener('click', (e) => {
-    if (e.ctrlKey || e.metaKey) { toggleSelect(pm.pm_id, !ws.selected.has(pm.pm_id)); return; }
-    ws.inspected = pm.pm_id; renderMedia();
-  });
+  card.addEventListener('click', (e) => clickMedia(e, pm));
   card.addEventListener('dblclick', () => openMonitor(pm));
-  card.addEventListener('keydown', (e) => { if (e.key === 'Enter') openMonitor(pm); if (e.key === ' ') { e.preventDefault(); toggleSelect(pm.pm_id, !ws.selected.has(pm.pm_id)); } });
+  card.addEventListener('keydown', (e) => { if (e.key === 'Enter') openMonitor(pm); if (e.key === ' ') { e.preventDefault(); mediaRange.setAnchor(pm.pm_id); toggleSelect(pm.pm_id, !ws.selected.has(pm.pm_id)); } });
   return card;
 }
 
@@ -248,7 +250,7 @@ function mediaRow(pm, syncSet) {
   const kind = kindOf(pm);
   const binName = pm.bin_id ? (ws.bins.find((b) => b.id === pm.bin_id) || {}).name : '—';
   const tr = mk('tr', { class: `${ws.selected.has(pm.pm_id) ? 'selected' : ''}${ws.inspected === pm.pm_id ? ' inspected' : ''}`, tabindex: '0' }, [
-    mk('td', {}, [mk('input', { type: 'checkbox', checked: ws.selected.has(pm.pm_id), 'aria-label': `Selecionar ${nameOf(pm)}`, onclick: (e) => e.stopPropagation(), onchange: (e) => toggleSelect(pm.pm_id, e.target.checked) })]),
+    mk('td', {}, [mk('input', { type: 'checkbox', checked: ws.selected.has(pm.pm_id), 'aria-label': `Selecionar ${nameOf(pm)}`, onclick: (e) => { e.stopPropagation(); mediaRange.noteClick(e); }, onchange: (e) => pickMedia(pm.pm_id, e.target.checked) })]),
     mk('td', {}, [mk('div', { class: 'ws-td-name' }, [icon(kind === 'audio' ? 'mic' : kind === 'photo' ? 'image' : 'movie'), mk('span', { text: nameOf(pm), title: nameOf(pm) })])]),
     mk('td', { text: binName || '—' }),
     mk('td', { class: 'ws-td-num', text: !isPhoto(pm) && pm.duration ? formatDuration(pm.duration) : '—' }),
@@ -256,7 +258,7 @@ function mediaRow(pm, syncSet) {
     mk('td', { class: 'ws-td-num', text: formatBytes(pm.filesize) }),
     mk('td', { class: pm.missing ? 'tone-warn' : '', text: pm.missing ? 'ausente' : syncSet.has(pm.id) ? 'sincronizado' : '' })
   ]);
-  tr.addEventListener('click', (e) => { if (e.ctrlKey || e.metaKey) { toggleSelect(pm.pm_id, !ws.selected.has(pm.pm_id)); return; } ws.inspected = pm.pm_id; renderMedia(); });
+  tr.addEventListener('click', (e) => clickMedia(e, pm));
   tr.addEventListener('dblclick', () => openMonitor(pm));
   tr.draggable = true;
   tr.addEventListener('dragstart', (e) => { dragged = { type: 'media', id: pm.pm_id }; e.dataTransfer.effectAllowed = 'move'; });
@@ -293,6 +295,30 @@ function syncSelectAll() {
     cb.indeterminate = n > 0 && n < list.length;
     cb.disabled = list.length === 0;
   }
+}
+
+/** Clique no cartão/linha: Ctrl alterna, Shift marca o intervalo desde o último clique, o resto abre o inspetor. */
+function clickMedia(e, pm) {
+  const order = visibleMedia().map((m) => m.pm_id);
+  if (e.shiftKey) {
+    const ids = mediaRange.rangeTo(order, pm.pm_id);
+    if (ids) {
+      if (!(e.ctrlKey || e.metaKey)) ws.selected.clear();
+      for (const id of ids) ws.selected.add(id);
+      renderMedia();
+      return;
+    }
+  }
+  mediaRange.setAnchor(pm.pm_id);
+  if (e.ctrlKey || e.metaKey) { toggleSelect(pm.pm_id, !ws.selected.has(pm.pm_id)); return; }
+  ws.inspected = pm.pm_id; renderMedia();
+}
+
+/** Caixa de um arquivo mudou: com Shift marca/desmarca o intervalo inteiro, igual ao estado da caixa clicada. */
+function pickMedia(pmId, on) {
+  const ids = mediaRange.resolve(visibleMedia().map((m) => m.pm_id), pmId);
+  for (const id of ids || [pmId]) { if (on) ws.selected.add(id); else ws.selected.delete(id); }
+  renderMedia();
 }
 
 function toggleSelect(pmId, on) {
@@ -508,7 +534,7 @@ async function handleImportResult(result) {
 }
 
 async function openImportModal() {
-  importSelection = new Set();
+  importSelection = new Set(); importRange.reset();
   try { const res = await window.bds.searchLibrary({ limit: 1000 }); ws.library = Array.isArray(res) ? res : ((res && res.items) || []); } catch (_) { ws.library = []; }
   fillBinSelect($('wsImportModalBin'), suggestedBin());
   renderImportList();
@@ -536,13 +562,27 @@ function renderImportList() {
   list.textContent = '';
   if (!available.length) list.append(mk('div', { class: 'ws-empty-line', text: q ? 'Nenhuma mídia para essa busca.' : 'Todas as mídias da Biblioteca já estão no projeto.' }));
   for (const m of available) {
-    const row = mk('label', { class: `ws-import-item${importSelection.has(m.id) ? ' checked' : ''}` }, [
-      mk('input', { type: 'checkbox', checked: importSelection.has(m.id), onchange: (e) => { if (e.target.checked) importSelection.add(m.id); else importSelection.delete(m.id); row.classList.toggle('checked', e.target.checked); updateImportCount(); } }),
+    const row = mk('label', { class: `ws-import-item${importSelection.has(m.id) ? ' checked' : ''}`, onclick: (e) => importRange.noteClick(e) }, [
+      mk('input', { type: 'checkbox', checked: importSelection.has(m.id), 'data-id': m.id, onchange: (e) => pickImport(m.id, e.target.checked, available.map((x) => x.id)) }),
       (() => { const t = mk('span', { class: 'ws-import-thumb' }); const bg = thumbCss(m); if (bg) t.style.backgroundImage = bg; return t; })(),
       mk('span', { class: 'ws-import-name', text: m.filename, title: m.filename }),
       mk('span', { class: 'ws-import-meta', text: `${formatBytes(m.filesize)} · ${extLabel(m)}` })
     ]);
     list.append(row);
+  }
+  updateImportCount();
+}
+/** Caixa da janela mudou: com Shift o intervalo inteiro (só as linhas da busca atual) ganha o mesmo estado. */
+function pickImport(id, on, order) {
+  const ids = importRange.resolve(order, id) || [id];
+  for (const x of ids) { if (on) importSelection.add(x); else importSelection.delete(x); }
+  const list = $('wsImportModalList');
+  if (list) {
+    for (const box of list.querySelectorAll('input[data-id]')) {
+      const checked = importSelection.has(Number(box.getAttribute('data-id')));
+      box.checked = checked;
+      box.closest('.ws-import-item')?.classList.toggle('checked', checked);
+    }
   }
   updateImportCount();
 }

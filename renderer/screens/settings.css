@@ -1042,7 +1042,7 @@
 .settings-view > .settings-section-title { column-span: all; margin-bottom: 14px; }
 /* Seções com submenu: submenu no topo e um subpainel por vez, sempre em coluna única. */
 .settings-view.st-has-sub { column-width: auto; column-count: 1; }
-.st-subnav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+.st-subnav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 .st-subtab {
   padding: 8px 16px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
   background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -1053,7 +1053,7 @@
 .st-subtab:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .st-subtab.hidden { display: none; }
 .st-subnav.hidden { display: none; }
-.st-subpanel { display: flex; flex-direction: column; gap: 14px; }
+.st-subpanel { display: flex; flex-direction: column; gap: 10px; }
 .st-subpanel.hidden { display: none !important; }
 /* Na busca, todos os subpainéis aparecem e o submenu some (o filtro já separa o que casa) */
 .st-searching .st-subnav { display: none; }
@@ -1113,7 +1113,7 @@
 .settings-btn-accent, .settings-cache-bar strong { color: var(--accent-text); }
 .settings-system-item span { color: var(--muted); }
 .st-nav-group, .st-advanced > summary { color: var(--muted); }
-@media (min-width: 901px) { .st-savebar { margin-left: 260px; } }
+@media (min-width: 901px) { .st-savebar { margin-left: 250px; } }
 #modalSettingsLeave .settings-modal { width: 560px; } #modalSettingsLeave .settings-modal-footer { flex-wrap: wrap; } #modalSettingsLeave .settings-modal-footer button { white-space: nowrap; }
 
 /* ----- Menu lateral das Configurações sempre visível -----
@@ -1141,47 +1141,49 @@
    ESTILO NOVO (tokens globais): cartões de 16px, botões em pílula, navegação em pílula
    com item ativo no acento, tipografia Montserrat (títulos) + Inter (texto), espaço generoso.
    ========================================================================== */
-.settings-container { gap: 24px; }
+.settings-container { gap: 14px; }
 .settings-description { font-size: var(--fs-body); line-height: 1.5; }
-.settings-layout { grid-template-columns: 260px minmax(0, 1fr); gap: 32px; }
+.settings-layout { grid-template-columns: 230px minmax(0, 1fr); gap: 20px; }
 
 /* Navegação lateral da tela */
-.settings-sidebar { gap: 16px; }
-.st-nav { gap: 4px; }
-.st-search { border-radius: var(--radius-pill); padding: 0 16px; background: var(--card); }
+.settings-sidebar { gap: 10px; }
+.st-nav { gap: 2px; }
+.settings-tab { padding: 8px 14px; }
+.st-search { border-radius: var(--radius-pill); padding: 0 14px; background: var(--card); }
 .st-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .st-search-input:focus-visible { outline: none; }
-.st-nav-group { margin: 16px 16px 4px; font-size: var(--fs-label); letter-spacing: 0; }
+.st-nav-group { margin: 10px 14px 2px; font-size: var(--fs-label); letter-spacing: 0; }
 
 /* Títulos: seção (18px, Montserrat) e cartão (15px, Inter 600) */
 .settings-section-title {
   font-family: var(--font-title); font-size: var(--fs-section); font-weight: 600; letter-spacing: -0.01em;
-  text-transform: none; margin: 0 0 4px;
+  text-transform: none; margin: 0 0 2px;
 }
 .st-searching .settings-section-title { font-size: var(--fs-label); font-family: var(--font-body); font-weight: 600; letter-spacing: 0; }
 .st-card-title {
-  font-family: var(--font-body); font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none; margin: 0 0 8px;
+  font-family: var(--font-body); font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none; margin: 0 0 4px;
 }
-.st-card-title .material-symbols-rounded { color: var(--accent); font-size: 22px; }
+.st-card-title .material-symbols-rounded { color: var(--accent); font-size: 20px; }
 
 /* Cartões planos: borda de 1px e raio de 16px, sem sombra */
 .st-card {
-  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 20px 24px; gap: 4px; box-shadow: none;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; gap: 2px; box-shadow: none;
 }
 .st-card-danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); background: color-mix(in srgb, var(--danger) 5%, var(--card)); }
-.st-row { padding: 14px 0; gap: 24px; }
+.st-row { padding: 8px 0; gap: 16px; }
+.st-row-text { gap: 1px; }
 .st-row-label { font-size: var(--fs-body); font-weight: 600; }
 .st-row-hint, .st-card-desc { font-size: var(--fs-label); }
 .st-row-toggle:hover .st-row-label { color: var(--accent-text); }
-.settings-view > * { margin-bottom: 16px; }
-.settings-view { column-gap: 16px; }
+.settings-view > * { margin-bottom: 10px; }
+.settings-view { column-gap: 10px; }
 
 /* Campos */
 .settings-select, .settings-input, .settings-textarea {
   background: var(--input-bg); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 13px;
 }
-.settings-select { padding: 9px 12px; min-height: 40px; }
-.settings-input { height: 40px; }
+.settings-select { padding: 6px 12px; min-height: 34px; }
+.settings-input { height: 34px; }
 .settings-select:focus-visible, .settings-input:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .st-order-item,
 .settings-custom-source-item,
@@ -1193,17 +1195,17 @@
   border-radius: var(--radius-pill);
 }
 .settings-btn-primary {
-  background: var(--btn-bg); color: var(--btn-fg); padding: 11px 24px; font-size: 14px; font-weight: 600; justify-content: center;
+  background: var(--btn-bg); color: var(--btn-fg); padding: 8px 20px; font-size: 14px; font-weight: 600; justify-content: center;
 }
 .settings-btn-primary:hover:not(:disabled) { background: var(--btn-bg-hover); filter: none; }
 .settings-btn-outline {
   background: transparent; color: var(--text); border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
-  padding: 8px 18px; font-size: 13px; font-weight: 600;
+  padding: 6px 16px; font-size: 13px; font-weight: 600;
 }
 .settings-btn-outline:hover:not(:disabled) { background: var(--card-2); }
-.settings-btn-accent { padding: 8px 18px; font-size: 13px; background: var(--accent-light); border-color: transparent; }
+.settings-btn-accent { padding: 6px 16px; font-size: 13px; background: var(--accent-light); border-color: transparent; }
 .settings-btn-accent:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-.settings-btn-danger { background: var(--danger-bg); border-color: transparent; padding: 9px 18px; font-size: 13px; }
+.settings-btn-danger { background: var(--danger-bg); border-color: transparent; padding: 6px 16px; font-size: 13px; }
 .settings-btn-icon { background: var(--card-2); border-color: transparent; color: var(--accent-text); }
 .settings-btn-primary:focus-visible, .settings-btn-outline:focus-visible, .settings-btn-accent:focus-visible,
 .settings-btn-danger:focus-visible, .settings-btn-icon:focus-visible, .st-reset-icon:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }

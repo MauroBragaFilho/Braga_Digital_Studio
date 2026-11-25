@@ -1060,11 +1060,11 @@ function setupDelegatedMediaClicks() {
 
     const isCheckbox = e.target.closest('.lib-card-checkbox');
 
-    if (e.shiftKey && !isCheckbox && lastSelectedId != null) {
-      // Seleção de intervalo: do último item clicado até este (ctrl+shift soma à seleção atual)
+    if (e.shiftKey && lastSelectedId != null) {
+      // Seleção de intervalo: do último item clicado até este (ctrl+shift ou o círculo do cartão somam à seleção atual)
       const range = rangeBetween(mediaItems.map((m) => m.id), lastSelectedId, id);
       if (range) {
-        if (!(e.ctrlKey || e.metaKey)) selectedIds = new Set();
+        if (!(e.ctrlKey || e.metaKey || isCheckbox)) selectedIds = new Set();
         for (let i = range[0]; i <= range[1]; i++) selectedIds.add(mediaItems[i].id);
         updateSelectionVisuals();
         return;

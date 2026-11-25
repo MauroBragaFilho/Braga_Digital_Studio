@@ -7,6 +7,7 @@
  */
 import { ws, $, mk, icon, formatBytes, setAppStatus, friendlyError, emitChange } from './state.js';
 import { createLutThumbs } from '../../utils/lutThumb.js';
+import { createShiftRange, noTextSelectOnShift } from '../../utils/shiftRange.js';
 import { state as appState } from '../../app.js';
 
 const PICKER_MAX_ROWS = 300;
@@ -19,6 +20,7 @@ let listObserver = null;
 let pickerObserver = null;
 let collection = [];         // LUTs da coleção (janela de adicionar)
 let pickerSelection = new Set();
+let pickerRange = createShiftRange(); // Shift+clique na janela de adicionar LUTs
 let pickerBusy = false;
 let onModules = null;
 
@@ -52,7 +54,7 @@ export function unbindLuts() {
   pickerObserver?.disconnect(); pickerObserver = null;
   current = [];
   collection = [];
-  pickerSelection = new Set();
+  pickerSelection = new Set(); pickerRange = createShiftRange(); noTextSelectOnShift($('wsLutPickerList'));
 }
 
 function applyAllowed() {
@@ -175,7 +177,7 @@ function inProject(item) {
 async function openPicker() {
   const modal = $('wsLutPicker');
   if (!modal || pickerBusy) return;
-  pickerSelection = new Set();
+  pickerSelection = new Set(); pickerRange.reset();
   collection = [];
   const search = $('wsLutPickerSearch');
   if (search) search.value = '';
@@ -218,14 +220,10 @@ function renderPicker() {
     const checked = !had && pickerSelection.has(item.relPath);
     const label = item.displayName || item.name;
     const thumb = mk('span', { class: 'ws-lut-thumb ws-lut-thumb-small', 'data-thumb-key': thumbKey(item), 'data-thumb-path': item.path }, [icon('gradient')]);
-    const row = mk('label', { class: `ws-import-item${checked ? ' checked' : ''}${had ? ' is-disabled' : ''}` }, [
+    const row = mk('label', { class: `ws-import-item${checked ? ' checked' : ''}${had ? ' is-disabled' : ''}`, onclick: (e) => pickerRange.noteClick(e) }, [
       mk('input', {
         type: 'checkbox', checked, disabled: had, 'data-rel': item.relPath, 'aria-label': `Escolher ${label}`,
-        onchange: (e) => {
-          if (e.target.checked) pickerSelection.add(item.relPath); else pickerSelection.delete(item.relPath);
-          row.classList.toggle('checked', e.target.checked);
-          updatePickerCount();
-        }
+        onchange: (e) => pickInRange(item.relPath, e.target.checked, shown.filter((i) => !inProject(i)).map((i) => i.relPath))
       }),
       thumb,
       mk('span', { class: 'ws-import-name', text: label, title: item.folder ? `${item.folder} / ${label}` : label }),
@@ -237,6 +235,18 @@ function renderPicker() {
     list.append(mk('div', { class: 'ws-empty-line', text: `Mostrando ${shown.length} de ${matches.length}. Use a busca para achar as outras.` }));
   }
   observePickerThumbs(list);
+  updatePickerCount();
+}
+
+/** Caixa mudou: com Shift o intervalo (só as LUTs que ainda podem ser adicionadas) ganha o mesmo estado da caixa clicada. */
+function pickInRange(rel, on, order) {
+  const rels = pickerRange.resolve(order, rel) || [rel];
+  for (const r of rels) { if (on) pickerSelection.add(r); else pickerSelection.delete(r); }
+  for (const box of $('wsLutPickerList')?.querySelectorAll('input[data-rel]') || []) {
+    const checked = !box.disabled && pickerSelection.has(box.getAttribute('data-rel'));
+    box.checked = checked;
+    box.closest('.ws-import-item')?.classList.toggle('checked', checked);
+  }
   updatePickerCount();
 }
 

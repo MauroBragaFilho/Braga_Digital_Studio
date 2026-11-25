@@ -2,6 +2,7 @@
 // marcado e permite cancelar. Os caminhos de origem ficam no processo principal: aqui só existem números de item.
 // Sem estado de módulo: cada tela cria o seu fluxo (createImportFlow) com os elementos do seu HTML.
 import { countLuts } from './groups.js';
+import { createShiftRange } from '../../utils/shiftRange.js';
 
 const GROUP_PAGE = 300; // linhas criadas por grupo antes de "Ver mais" (a lista pode ter milhares)
 const FILTERS = [
@@ -29,6 +30,7 @@ export function createImportFlow({ els, getBds, showNotice, errMsg, onImported, 
     let scanId = null;
     let scan = null;
     let selected = new Set();
+    const shiftRange = createShiftRange(); // Shift+clique marca o intervalo entre duas caixas
     let filter = 'new';
     const shownRows = new Map();
     let bound = false;
@@ -51,6 +53,7 @@ export function createImportFlow({ els, getBds, showNotice, errMsg, onImported, 
         scan = null;
         scanId = null;
         selected = new Set();
+        shiftRange.reset();
         shownRows.clear();
         setBusy(false);
     }
@@ -492,6 +495,8 @@ export function createImportFlow({ els, getBds, showNotice, errMsg, onImported, 
             }
         });
 
+        els.groups?.addEventListener('click', (e) => shiftRange.noteClick(e), true);
+        els.groups?.addEventListener('mousedown', (e) => { if (e.shiftKey) e.preventDefault(); });
         els.groups?.addEventListener('change', (e) => {
             if (!scan) return;
             const group = e.target.closest('.lut-import-group');
@@ -502,8 +507,20 @@ export function createImportFlow({ els, getBds, showNotice, errMsg, onImported, 
                 syncGroupCheck(group);
             } else if (e.target.dataset.key !== undefined) {
                 const key = Number(e.target.dataset.key);
-                if (e.target.checked) selected.add(key); else selected.delete(key);
-                if (group) syncGroupCheck(group);
+                // Shift+clique: o intervalo desde a última caixa clicada (só as linhas à vista) ganha o estado desta
+                const boxes = [...els.groups.querySelectorAll('input[data-key]')].filter((b) => !b.closest('ul[hidden]'));
+                const keys = shiftRange.resolve(boxes.map((b) => Number(b.dataset.key)), key) || [key];
+                const inRange = new Set(keys);
+                for (const k of keys) { if (e.target.checked) selected.add(k); else selected.delete(k); }
+                const touched = new Set();
+                for (const b of boxes) {
+                    if (!inRange.has(Number(b.dataset.key))) continue;
+                    b.checked = e.target.checked;
+                    const g = b.closest('.lut-import-group');
+                    if (g) touched.add(g);
+                }
+                if (group) touched.add(group);
+                for (const g of touched) syncGroupCheck(g);
             } else {
                 return;
             }

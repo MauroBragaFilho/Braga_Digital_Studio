@@ -407,7 +407,7 @@ export async function initScreen() {
               btn.classList.remove('loading'); // Remove quando terminar
           });
         });
-        domRefs.btnCloseInspector?.addEventListener('click', () => selectLut(null));
+        domRefs.btnCloseInspector?.addEventListener('click', closeInspector);
 
         domRefs.searchInput?.addEventListener('input', () => {
             clearTimeout(searchDebounce);
@@ -1484,6 +1484,13 @@ function selectLut(lut) {
     mutateSelection(() => selection.replace(lut ? [lut.path] : [], lut ? lut.path : null));
 }
 
+/** Botão X do inspetor: limpa a seleção (o painel some) e devolve o foco ao cartão em que a pessoa estava. */
+function closeInspector() {
+    const anchorPath = selection.anchor || selection.paths()[0] || null;
+    selectLut(null);
+    focusCard(anchorPath);
+}
+
 /** Ctrl/Cmd+clique e círculo do cartão: alterna esta LUT sem mexer nas outras. */
 function toggleSelected(lut) {
     mutateSelection(() => selection.toggle(lut.path));
@@ -1602,6 +1609,7 @@ function updateInspector() {
     const btnDelete = domRefs.btnDelete;
 
     domRefs.ftSelected.textContent = countLuts(selection.size); // "Selecionado: 0 LUTs / 1 LUT / 5 LUTs"
+    domRefs.inspectorPanel?.classList.toggle('hidden', selection.size === 0); // o painel só existe com alguma LUT marcada
     renderSelectionSummary(); // com várias marcadas o inspetor mostra o resumo no lugar dos detalhes de uma só
 
     if (!selectedLut) {

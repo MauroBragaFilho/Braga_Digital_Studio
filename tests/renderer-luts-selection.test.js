@@ -70,9 +70,11 @@ test('clique comum marca só uma; Ctrl+clique alterna sem tirar as outras; rodap
     assert.equal($(h, '#lutsGrid').getAttribute('aria-multiselectable'), 'true');
     assert.equal(ft(h), '0 LUTs');
     assert.ok(!barShown(h));
+    assert.ok(hasClass($(h, '#lutsInspector'), 'hidden'), 'sem seleção o inspetor fica escondido');
 
     click(h, card(h, 'A1.cube'));
     await settle(10);
+    assert.ok(!hasClass($(h, '#lutsInspector'), 'hidden'), 'com uma LUT marcada o inspetor aparece');
     assert.deepEqual(selectedNames(h), ['A1.cube']);
     assert.equal($(h, '#ftSelected').textContent, '1 LUT');
     assert.equal($(h, '#insName').textContent, 'A1.cube');

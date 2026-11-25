@@ -504,5 +504,6 @@ test('fechar o inspetor limpa o estado de LUT inválida (aviso, selo e antes/dep
     assert.ok(!$(h, '#insBadge').classList.contains('lut-badge-invalid'));
     assert.ok(!$(h, '#lutSliderContainer').classList.contains('lut-slider-invalid'));
     assert.equal($(h, '#insName').textContent, 'Selecione uma LUT');
+    assert.ok($(h, '#lutsInspector').classList.contains('hidden'), 'o X realmente fecha o painel');
   } finally { await h.cleanup(); }
 });
